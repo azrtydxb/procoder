@@ -87,6 +87,12 @@ test('the declared licence agrees with the LICENSE file', () => {
     assert.strictEqual(readJson(manifest).license, expected,
       `${manifest} declares a licence the LICENSE file does not grant`);
   }
+
+  // Lockfiles carry both fields too, and npm only refreshes them when asked.
+  for (const lock of ['package-lock.json', 'procoder-mcp/package-lock.json']) {
+    assert.strictEqual(readJson(lock).packages[''].license, expected,
+      `${lock} is stale — run: npm install --package-lock-only`);
+  }
 });
 
 test('versions agree across every manifest', () => {
@@ -94,6 +100,8 @@ test('versions agree across every manifest', () => {
   assert.strictEqual(readJson('.claude-plugin/plugin.json').version, version);
   assert.strictEqual(readJson('procoder-mcp/package.json').version, version);
   assert.strictEqual(readJson('gemini-extension.json').version, version);
+  assert.strictEqual(readJson('package-lock.json').version, version);
+  assert.strictEqual(readJson('procoder-mcp/package-lock.json').version, version);
 });
 
 test('the MCP server reports the version from its own manifest, not a hardcoded literal', () => {
