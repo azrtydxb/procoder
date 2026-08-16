@@ -18,9 +18,16 @@ const PACKS = [ts, py, go, rust, jvm, dotnet];
 
 // External findings land on rung TRUE: a configured linter's rules are the
 // project's own definition of correct, and procoder defers to them.
-function externalFinding(line, message, tool) {
+//
+// The id carries the tool's own rule id (e.g. `true/eslint:no-eval`), not
+// just the tool name. Two different rules firing on the same line must not
+// collapse into one baseline fingerprint — that would let baselining one
+// rule's hit silently suppress a different rule's hit at the same location
+// later, exactly what procoder's own inline-suppression doctrine forbids.
+function externalFinding(line, message, tool, ruleId) {
+  const id = ruleId ? `true/${tool}:${ruleId}` : `true/${tool}`;
   return finding({
-    rung: 'TRUE', id: `true/${tool}`, line,
+    rung: 'TRUE', id, line,
     message: String(message).slice(0, 120),
     fix: `resolve the ${tool} finding`,
   });
@@ -34,7 +41,7 @@ const TOOLS = {
     parse: (stdout) => {
       try {
         return JSON.parse(stdout).map((item) =>
-          externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff'));
+          externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff', item.code));
       } catch (e) {
         return [];
       }
@@ -48,7 +55,7 @@ const TOOLS = {
       try {
         const results = JSON.parse(stdout);
         return results.flatMap((result) => (result.messages || []).map((m) =>
-          externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint')));
+          externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId)));
       } catch (e) {
         return [];
       }
@@ -61,7 +68,7 @@ const TOOLS = {
     parse: (stdout) => {
       try {
         return (JSON.parse(stdout).Issues || []).map((issue) =>
-          externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint'));
+          externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter));
       } catch (e) {
         return [];
       }
