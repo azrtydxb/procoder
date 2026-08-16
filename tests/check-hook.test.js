@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
+const { MAX_FILE_BYTES, BUDGET_MS } = require('../hooks/checks/run');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -17,8 +18,8 @@ function repoWith(files) {
   return dir;
 }
 
-function runHook(repo, filePath, env = {}, payload = {}) {
-  const stdout = execFileSync('node', [HOOK], {
+function runHookRaw(repo, filePath, env = {}, payload = {}) {
+  const res = spawnSync('node', [HOOK], {
     encoding: 'utf8',
     cwd: repo,
     input: JSON.stringify({
@@ -29,6 +30,11 @@ function runHook(repo, filePath, env = {}, payload = {}) {
     }),
     env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
   });
+  return { stdout: res.stdout || '', stderr: res.stderr || '', status: res.status };
+}
+
+function runHook(repo, filePath, env = {}, payload = {}) {
+  const { stdout } = runHookRaw(repo, filePath, env, payload);
   return stdout.trim() ? JSON.parse(stdout) : {};
 }
 
@@ -161,6 +167,65 @@ test('the hook stays inside its budget on a minified file', () => {
   while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
   const repo = repoWith({ 'min.ts': line });
   assertNearBareHook(repo, path.join(repo, 'min.ts'), '200KB single line');
+});
+
+// The largest input the engine now accepts, run through the real hook process
+// the way the harness runs it.
+//
+// Two assertions, because they fail for different reasons. The first is
+// relative: a file at the cap against a quarter of the cap, same machine, same
+// spawn, so load moves both — linear work lands near 4x and anything
+// super-linear runs away from it. The second is the requirement itself, and
+// BUDGET_MS is an engine constant rather than a machine one; it is worth
+// asserting here because the margin is real (measured 440ms against 2000ms),
+// unlike the one-line runs where 65ms against 2000ms asserted nothing.
+test('the hook stays inside its budget on a file at the size cap', () => {
+  const unit = 'export function f(a, b) { if (a) { return b; } return a; }\n';
+  const fill = (bytes) => unit.repeat(Math.ceil(bytes / unit.length)).slice(0, bytes);
+  const repo = repoWith({
+    'quarter.ts': fill(MAX_FILE_BYTES / 4),
+    'atcap.ts': fill(MAX_FILE_BYTES),
+  });
+
+  const quarter = bestOf(3, () => runHook(repo, path.join(repo, 'quarter.ts')));
+  const atCap = bestOf(3, () => runHook(repo, path.join(repo, 'atcap.ts')));
+
+  assert.ok(atCap < quarter * 6,
+    `a file at the cap cost ${atCap}ms against ${quarter}ms for a quarter of it — `
+    + 'the size-dependent work is no longer linear');
+  assert.ok(atCap < BUDGET_MS,
+    `the largest permitted input took ${atCap}ms of a ${BUDGET_MS}ms budget`);
+});
+
+// A skipped file must say why. The hook emits no context for it — there are no
+// findings to report — so silence on stdout is correct and silence everywhere
+// is not: "too large to check" and "clean" are opposite answers, and the user
+// gets no way to tell them apart. stderr is the channel that reaches the
+// transcript without becoming model context on every excluded file.
+//
+// RED: the hook returned on `skipped` without writing anything anywhere.
+test('a skipped file says why on stderr rather than passing as clean', () => {
+  const repo = repoWith({ 'huge.ts': 'const x = 1;\n'.repeat(MAX_FILE_BYTES / 6) });
+  const { stdout, stderr } = runHookRaw(repo, path.join(repo, 'huge.ts'));
+  assert.strictEqual(stdout.trim(), '', 'a skipped file must not emit findings');
+  assert.match(stderr, /huge\.ts/);
+  assert.match(stderr, /too-large/);
+});
+
+test('an excluded file also says why, naming the reason', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["generated/"]\n',
+    'generated/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const { stderr } = runHookRaw(repo, path.join(repo, 'generated/a.ts'));
+  assert.match(stderr, /excluded/);
+});
+
+test('a clean file stays silent on both channels', () => {
+  const repo = repoWith({ 'a.ts': 'export const x = 1;\n' });
+  const { stdout, stderr } = runHookRaw(repo, path.join(repo, 'a.ts'));
+  assert.strictEqual(stdout.trim(), '');
+  assert.strictEqual(stderr.trim(), '', 'a clean file must not be announced as skipped');
 });
 
 test('an Edit reports only the region it touched', () => {

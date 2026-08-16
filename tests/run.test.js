@@ -4,7 +4,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { checkFile, MAX_FINDINGS_PER_LINE } = require('../hooks/checks/run');
+const {
+  checkFile, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, BUDGET_MS,
+} = require('../hooks/checks/run');
 const { loadConfig } = require('../hooks/checks/config');
 const { writeBaseline, fingerprint } = require('../hooks/checks/baseline');
 const { finding } = require('../hooks/checks/finding');
@@ -441,4 +443,114 @@ test('a negated pattern puts a file back in the gate', () => {
   const out = checkFile(path.join(repo, 'gen/keep.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.strictEqual(out.skipped, null);
   assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+});
+
+// --- the caps, re-derived from measurement ---------------------------------
+
+function grow(unit, bytes) {
+  let s = '';
+  while (s.length < bytes) s += unit;
+  return s.slice(0, bytes);
+}
+
+function bestOf(runs, work) {
+  let best = Infinity;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    work();
+    best = Math.min(best, Date.now() - started);
+  }
+  return best;
+}
+
+// A file that yields one finding per line. At 3MB that is ~157,000 findings,
+// and `push(...findings)` spreads every one of them onto the call stack.
+//
+// RED against the 4MB cap: this threw `Maximum call stack size exceeded` at 3MB
+// and 4MB, which the hook's top-level catch turns into a silent exit — the file
+// is reported as clean rather than as skipped. That is the exact failure mode a
+// cap is supposed to prevent, reachable from inside the cap.
+const ONE_FINDING_PER_LINE = 'try{a();}catch(e){}\n';  // procoder: literal true/swallowed-error the unit this test repeats to flood the finding list
+
+test('a file at the cap yields findings rather than overflowing the stack', () => {
+  const repo = repoWith({ 'gen.ts': grow(ONE_FINDING_PER_LINE, MAX_FILE_BYTES) });
+  const out = checkFile(path.join(repo, 'gen.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.strictEqual(out.skipped, null);
+  assert.ok(out.findings.length > 0, 'a file at the cap produced no findings at all');
+});
+
+// The same input one byte past the cap: skipped, and skipped for a reason the
+// caller can report. Never silently clean.
+test('one byte past the cap is skipped with a reason', () => {
+  const repo = repoWith({ 'gen.ts': grow(ONE_FINDING_PER_LINE, MAX_FILE_BYTES + 1) });
+  const out = checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, 'too-large');
+  assert.deepStrictEqual(out.findings, []);
+});
+
+// RED against the 4MB cap: a 4MB source is inside it, so this was `null` and the
+// engine spent ~1.8s of a 2s budget on it once the project's linter was in play.
+test('the cap is set below the size that cannot be handled in budget', () => {
+  const repo = repoWith({ 'gen.ts': grow('const x = 1;\n', 4 * 1024 * 1024) });
+  const out = checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, 'too-large', '4MB is past what fits the budget');
+});
+
+// Parameter counts are the one shape metric a long line does not corrupt: a
+// signature's parameters are all on the same line whether or not the file was
+// minified, so an 8-parameter function in a generated client is an 8-parameter
+// function. RED before the shape guard became rule-scoped: no obvious/* finding
+// at all, because the whole line was blanked before the pack saw it.
+test('parameter counts are measured on a generated long line', () => {
+  const repo = repoWith({
+    'client.ts': `${'export function q(a,b,c,d,e,f,g,h) { return a; }'.repeat(200)}\n`,
+  });
+  const out = checkFile(path.join(repo, 'client.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(out.findings.some((f) => f.id === 'obvious/too-many-params'),
+    'the long line was blanked before the parameter count was taken');
+});
+
+// The metrics a long line does corrupt stay guarded. Every function on a
+// minified line starts and ends on that line, so its length is 1, its nesting
+// depth is the whole bundle's and its complexity is every branch in the file
+// added together — "complexity ~497" repeated 248 times is not a measurement.
+test('span-derived shape metrics still do not see a minified line', () => {
+  const repo = repoWith({ 'min.ts': `${minifiedLine(20 * 1024)}\n` });
+  const out = checkFile(path.join(repo, 'min.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const ids = out.findings.map((f) => f.id);
+  for (const id of ['obvious/function-too-long', 'obvious/complexity', 'obvious/nesting-depth']) {
+    assert.ok(!ids.includes(id), `${id} was measured across a minified line`);
+  }
+});
+
+// The budget's worst realistic composition: the project's linter hangs and the
+// file is at the cap. The linter is given the budget that is left after the
+// pack's share of it is reserved, so growing the file does not grow the total —
+// it moves time from the linter to the pack.
+//
+// Relative by construction: both sides run the same hung linter on the same
+// machine, so load moves them together. RED against a fixed linter timeout:
+// the tiny file cost ~1.0s and the file at the cap ~1.8s, a ratio of 1.8.
+test('a hung linter plus a file at the cap costs no more than a hung linter alone', shimTest, () => {
+  const hang = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
+  const repo = repoWith({
+    '.eslintrc.json': '{}',
+    'tiny.ts': 'const x = 1;\n',
+    'atcap.ts': grow('export function f(a, b) { if (a) { return b; } return a; }\n', MAX_FILE_BYTES),
+  });
+  const config = loadConfig(repo);
+  const run = (name) => checkFile(path.join(repo, name), { repoRoot: repo, config });
+
+  withShim('eslint', hang, () => {
+    const tiny = bestOf(2, () => run('tiny.ts'));
+    const atCap = bestOf(2, () => run('atcap.ts'));
+    assert.ok(atCap < tiny * 1.35 + 100,
+      `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file — `
+      + 'the linter did not yield its slice to the pack');
+    assert.ok(atCap < BUDGET_MS * 0.8,
+      `the worst realistic composition took ${atCap}ms of a ${BUDGET_MS}ms budget`);
+  });
 });

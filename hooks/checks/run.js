@@ -29,50 +29,93 @@ const MAX_FINDINGS = 5;
 // universal pack 5, plus the handful of shape findings that can share a start
 // line — under 20 in total, so no honest line is ever capped. Anything past it
 // is the same rule matching a minified line over and over.
+//
+// Re-derived and kept: it is not a performance cap, it costs one Map over the
+// findings, and it is the only thing standing between a generated one-liner and
+// a report of 248 identical entries. A minified line still reaches that — with
+// parameter counts now measured on long lines (see SHAPE_IDS), one generated
+// line of 200 eight-parameter signatures produces 200 honest findings that are
+// all the same sentence.
 const MAX_FINDINGS_PER_LINE = 20;
 
 // The hook runs on every write and the harness kills it at 2s, so the budget is
 // real: past it the user gets a stall and no findings at all.
 const BUDGET_MS = 2000;
 
-// Total-size skip. Cost of everything that survives the line guard below is
-// linear in file size: measured end to end on many-short-line files, 1MB costs
-// 34ms, 4MB costs 122ms, 8MB costs 250ms, 16MB costs 507ms. 4MB is about 6% of
-// the budget and larger than any file a human edits, so that is where the skip
-// sits — not 256KB, which was inherited from when a long line could blow the
-// budget, and which threw away every finding on an ordinary large source.
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
+// What a language pack costs per megabyte of source, measured on this engine
+// across all six packs at 1MB: ts 187ms, java 188ms, cs 184ms, rs 169ms, go
+// 165ms, py 134ms — linear in size, and the universal pack adds 12ms/MB on top.
+// 200 is the worst of those rounded up, and it is used two ways: to reserve the
+// pack's share of the budget from the linter below, and to derive MAX_FILE_BYTES.
+const PACK_MS_PER_MB = 200;
 
-// Line-length guard for the SHAPE path only — function length, nesting depth
-// and complexity.
+// Total-size skip.
 //
-// Cost: nothing real. Every function on a minified line starts and ends on that
-// one line, so "function is 1 line" and the brace depth of a whole bundle are
-// noise, not measurements of code a human wrote.
+// This came down from 4MB, which measurement did not support. The old comment
+// claimed 4MB cost 122ms; measured end to end through the hook process it costs
+// 896ms, and the number that matters is not the file alone but the worst
+// realistic composition — the project's linter hangs and burns its slice, then
+// the pack runs. That measured 1797ms of a 2000ms budget at 4MB, and the hook
+// process as a whole took 2608ms, past the kill. Worse, 3MB and 4MB did not
+// merely stall: one finding per line is ~157,000 findings, and the engine threw
+// `Maximum call stack size exceeded` from inside the cap — which the hook's
+// top-level catch turns into a silent clean result.
 //
-// It is no longer a performance guard: the paths that were quadratic in line
-// length are linear now, so the packs are cheap on a minified line — checkFile
-// end to end costs 7ms at 100KB, 23ms at 500KB and 42ms at 1MB against a 2s
-// budget, against 1ms/1ms/2ms when the guard blanked the line and found nothing.
-// That is why the language packs' line rules now read it: safe/sql-injection,
-// safe/xss-sink, safe/dynamic-eval,
-// safe/shell-injection and safe/tls-disabled were invisible on any line over
-// 4KB, and a minified bundle, a generated client or a vendored file is exactly
-// where an injection sink hides.
+// 2MB is where the size-dependent work stays at a quarter of the budget:
+// 2MB x (200 + 12)ms/MB = 424ms measured, against 2000ms. The worst realistic
+// composition at 2MB measures ~1030ms — 52% of budget, so a machine would have
+// to be 1.9x slower than this one to breach. At 4MB the same composition sat at
+// 90% and any machine 1.15x slower breached it. 2MB is still larger than any
+// file a human edits, and far above the 256KB this cap once used.
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+// Line-length guard for the SPAN-derived shape metrics only — function length,
+// nesting depth and complexity.
+//
+// Not a performance guard, and no longer a whole-shape guard. Measured with the
+// guard lifted entirely, checkFile on a single line costs the same to within
+// noise at every size: 4KB 0.9ms/0.9ms, 64KB 9.8/9.1, 256KB 38.4/37.7, 1MB
+// 152.2/152.8, 4MB 624.8/640.0 (guarded/lifted). It buys no time at all — it
+// even costs a little, because a file with a long line runs the pack twice.
+//
+// What it buys is silence where a measurement would be a lie. A metric derived
+// from a function's line SPAN is meaningless once the function is one line:
+// every function on a minified line is "1 line long", the nesting depth is the
+// whole bundle's, and complexity is every branch in the file summed — measured
+// output was "cyclomatic complexity ~497" repeated 248 times on an 8KB line.
+//
+// Parameter counts are not span-derived, so they are no longer guarded: a
+// signature's parameters sit on the signature's own line whether or not the
+// file was minified, and an 8-parameter function in a generated client is an
+// 8-parameter function. See SHAPE_IDS.
+//
+// 4096 is therefore a plausibility threshold, not a cost one: past ~4KB on one
+// line nobody wrote that line by hand, so its span means nothing.
 //
 // The universal pack has never been subject to this guard and still is not: it
-// is the rung-1 path (secrets, PII in logs, rot) and measures flat — 12ms on a
-// 5MB single line.
+// is the rung-1 path (secrets, PII in logs, rot) and measures flat — 12ms/MB,
+// 9.7ms on a 4MB single line.
 const MAX_LINE_BYTES = 4096;
 
-// What the shape guard covers: everything shapeFindings emits. The rest of a
-// pack's output is line-oriented and reads the raw source.
+// What the shape guard covers: the metrics a long line corrupts, which is every
+// metric derived from a function's line span. obvious/too-many-params is
+// deliberately absent — it counts within one signature and stays exact on a
+// minified line, so it is taken from the raw source like the line rules.
 const SHAPE_IDS = new Set([
   'obvious/function-too-long',
-  'obvious/too-many-params',
   'obvious/complexity',
   'obvious/nesting-depth',
 ]);
+
+// `target.push(...items)` puts every item on the call stack. A 3MB file with
+// one finding per line is ~157,000 items and V8 throws `Maximum call stack size
+// exceeded` somewhere past 125,000 — which the hook's top-level catch renders
+// as a clean file. Findings are unbounded until the caps below run, so every
+// bulk append goes through here.
+function pushAll(target, items) {
+  for (const item of items) target.push(item);
+  return target;
+}
 
 // Findings this many lines either side of the touched region still belong to
 // the edit — a guard clause removed just above it, a brace it unbalanced.
@@ -105,12 +148,12 @@ function capFindingsPerLine(findings) {
   const kept = [];
   for (const [line, group] of byLine) {
     if (group.length <= MAX_FINDINGS_PER_LINE) {
-      kept.push(...group);
+      pushAll(kept, group);
       continue;
     }
     // Ranked before slicing: what survives a cap must be the rung-1 findings,
     // never whichever pack happened to run first.
-    kept.push(...sortFindings(group).slice(0, MAX_FINDINGS_PER_LINE));
+    pushAll(kept, sortFindings(group).slice(0, MAX_FINDINGS_PER_LINE));
     const suppressed = group.length - MAX_FINDINGS_PER_LINE;
     kept.push(finding({
       rung: 'TRUE', id: 'true/findings-suppressed', line,
@@ -156,11 +199,22 @@ function readSource(absPath, relPath, config) {
 // injection, shell injection or disabled TLS verification by default.
 // `answered` is false for a linter that timed out or crashed, and for no
 // linter at all — both leave the pack covering the whole file.
-function toolResults(relPath, { repoRoot, absPath, deadline, budgetMs }) {
+//
+// The linter gets half the budget minus the pack's share of it, because the
+// linter is the one consumer of the budget that can hang and the one whose
+// absence costs least: rung 1 has already run, the pack's SAFE rules run after
+// this regardless, and all a timeout loses is the linter's own rung-2 findings.
+// Reserving first is what keeps the total flat as the file grows — measured
+// against a hung linter, a one-line file cost 1005ms and a file at the cap
+// 1788ms before the reserve, and ~1030ms for both after it.
+function toolResults(relPath, { repoRoot, absPath, deadline, budgetMs, bytes }) {
   const tool = resolveFor(relPath, { repoRoot });
   if (!tool || Date.now() >= deadline) return { findings: [], answered: false };
+  const packReserveMs = Math.ceil((bytes / (1024 * 1024)) * PACK_MS_PER_MB);
   const result = runToolResult(tool, {
-    repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
+    repoRoot,
+    absPath,
+    timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2) - packReserveMs)),
   });
   return { findings: result.findings, answered: result.ok };
 }
@@ -174,6 +228,26 @@ function packResults(pack, source, shaped, options) {
   if (shaped === source) return findings;
   return findings.filter((f) => !SHAPE_IDS.has(f.id))
     .concat(pack.check(shaped, options).filter((f) => SHAPE_IDS.has(f.id)));
+}
+
+// The project's linter plus the language pack: everything that answers for this
+// one file's own code, and so everything the touched-range narrowing may reduce.
+// The universal pack is deliberately not here — it is never narrowed.
+function narrowableFindings(relPath, source, shaped, opts) {
+  const { repoRoot, absPath, config, deadline, budgetMs } = opts;
+  const tool = toolResults(relPath, {
+    repoRoot, absPath, deadline, budgetMs, bytes: source.length,
+  });
+  const local = [...tool.findings];
+
+  const pack = packFor(relPath);
+  if (pack && Date.now() < deadline) {
+    const packFindings = packResults(pack, source, shaped, { relPath, config });
+    pushAll(local, tool.answered
+      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
+      : packFindings);
+  }
+  return local;
 }
 
 // Narrowed to the touched region when the caller could identify one.
@@ -229,27 +303,20 @@ function checkFile(absPath, {
   // from the narrowing below — a credential is a leak wherever it sits.
   const findings = checkUniversal(source, { relPath, config });
 
-  const tool = toolResults(relPath, { repoRoot, absPath, deadline, budgetMs });
-  const local = [...tool.findings];
-
-  const pack = packFor(relPath);
-  if (pack && Date.now() < deadline) {
-    const packFindings = packResults(pack, source, shaped, { relPath, config });
-    local.push(...(tool.answered
-      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
-      : packFindings));
-  }
-  findings.push(...withinTouched(local, source, touched));
+  pushAll(findings, withinTouched(
+    narrowableFindings(relPath, source, shaped, { repoRoot, absPath, config, deadline, budgetMs }),
+    source, touched,
+  ));
 
   // Dependency manifests get one extra pass: a floating range or an absent
   // lockfile is a rung-1 finding no language pack looks for.
   if (MANIFEST_FILES.has(path.basename(relPath)) && Date.now() < deadline) {
-    findings.push(...checkManifest(absPath, source));
+    pushAll(findings, checkManifest(absPath, source));
   }
 
   return reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings });
 }
 
 module.exports = {
-  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, MAX_LINE_BYTES,
+  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, MAX_LINE_BYTES, BUDGET_MS,
 };
