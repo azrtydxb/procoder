@@ -55,7 +55,7 @@ test('a configured linter never displaces the SAFE rung', shimTest, () => {
   const ids = out.findings.map((f) => f.id);
   assert.ok(ids.includes('safe/shell-injection'), 'shell injection was deferred to ruff');
   assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to ruff');
-  assert.ok(ids.includes('true/ruff'), 'the configured linter did not run');
+  assert.ok(ids.some((id) => id.startsWith('true/ruff')), 'the configured linter did not run');
 });
 
 test('a configured linter does displace the built-in shape rules', shimTest, () => {
@@ -78,7 +78,7 @@ test('a present but unconfigured linter leaves the pack in charge', shimTest, ()
     checkFile(path.join(repo, 'a.py'),
       { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
   const ids = out.findings.map((f) => f.id);
-  assert.ok(!ids.includes('true/ruff'), 'ran a linter the project has not configured');
+  assert.ok(!ids.some((id) => id.startsWith('true/ruff')), 'ran a linter the project has not configured');
   assert.ok(ids.includes('safe/shell-injection'));
 });
 
@@ -87,7 +87,7 @@ test('a configured but absent linter leaves the pack in charge', shimTest, () =>
   const out = checkFile(path.join(repo, 'a.py'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   const ids = out.findings.map((f) => f.id);
-  assert.ok(!ids.includes('true/ruff'));
+  assert.ok(!ids.some((id) => id.startsWith('true/ruff')));
   assert.ok(ids.includes('safe/dynamic-eval'));
 });
 
@@ -124,7 +124,7 @@ test('the same preference applies to the other ecosystems', shimTest, () => {
     checkFile(path.join(repo, 'a.ts'),
       { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
   const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('true/eslint'), 'the configured linter did not run');
+  assert.ok(ids.some((id) => id.startsWith('true/eslint')), 'the configured linter did not run');
   assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to eslint');
   assert.ok(ids.includes('safe/xss-sink'), 'the XSS sink was deferred to eslint');
 });
