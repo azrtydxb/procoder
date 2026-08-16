@@ -72,6 +72,23 @@ test('every command resolves to a skill whose frontmatter name matches its direc
   }
 });
 
+// The manifests once said MIT while LICENSE said Apache 2.0, so anyone reading
+// package.json would have believed the wrong licence and acted on it. Same
+// drift class as the version mismatch below, which is why it gets the same
+// guard: the LICENSE file is authoritative and the manifests must agree with it.
+test('the declared licence agrees with the LICENSE file', () => {
+  const license = fs.readFileSync(path.join(root, 'LICENSE'), 'utf8');
+  const expected = /Apache License/.test(license) ? 'Apache-2.0'
+    : /MIT License/.test(license) ? 'MIT'
+      : null;
+  assert.ok(expected, 'LICENSE is neither Apache 2.0 nor MIT — teach this test the new one');
+
+  for (const manifest of ['package.json', 'procoder-mcp/package.json', '.claude-plugin/plugin.json']) {
+    assert.strictEqual(readJson(manifest).license, expected,
+      `${manifest} declares a licence the LICENSE file does not grant`);
+  }
+});
+
 test('versions agree across every manifest', () => {
   const version = readJson('package.json').version;
   assert.strictEqual(readJson('.claude-plugin/plugin.json').version, version);
