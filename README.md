@@ -27,9 +27,10 @@ isn't done until the thing it replaced is gone.**
 *(This table is copied from `skills/procoder/SKILL.md`, the single source of
 the doctrine. It's the one place duplication is accepted — a README that
 sends the reader to another file to learn what the tool does has failed at
-its job. `scripts/sync-rules.js` keeps the ten generated rule files in sync
-with the doctrine automatically; this README is not one of them, so keep this
-table in step by hand when the doctrine's ladder changes.)*
+its job. `scripts/sync-rules.js` keeps the generated rule files listed in
+"Other platforms" below in sync with the doctrine automatically; this README
+is not one of them, so keep this table in step by hand when the doctrine's
+ladder changes.)*
 
 ## Install
 
