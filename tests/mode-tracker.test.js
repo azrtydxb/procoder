@@ -31,6 +31,26 @@ test('/procoder paranoid switches the level', () => {
   assert.strictEqual(run('/procoder paranoid').level, 'paranoid');
 });
 
+// End to end through the hook: the parser unit test is not enough, because the
+// break was that the whole chain no-opped while the command looked like it worked.
+test('/procoder:level writes the new level to the level file', () => {
+  assert.strictEqual(run('/procoder:level paranoid', 'strict').level, 'paranoid');
+  assert.strictEqual(run('/procoder:level pragmatic', 'strict').level, 'pragmatic');
+  assert.strictEqual(run('/procoder:level off', 'strict').level, 'off');
+});
+
+test('/procoder:level mentioned in prose leaves the level file alone', () => {
+  assert.strictEqual(
+    run('should /procoder:level paranoid be documented in the README?', 'strict').level,
+    'strict',
+  );
+});
+
+test('/procoder:level with no argument leaves the level alone', () => {
+  assert.strictEqual(run('/procoder:level', 'strict').level, 'strict');
+  assert.strictEqual(run('/procoder:level bogus', 'strict').level, 'strict');
+});
+
 test('/procoder with no argument leaves the level alone', () => {
   assert.strictEqual(run('/procoder').level, null);
 });
