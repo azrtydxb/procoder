@@ -109,6 +109,8 @@ test('stays linear on a very long single line', () => {
   const units = [
     'Process.Start("a" ',
     'var psi = new ProcessStartInfo { UseShellExecute = true, Name = "a", ',
+    'var token = ',
+    'ServerCertificateValidationCallback = ',
     'var x = foo(a, b) + "s" + bar; ',
   ];
   for (const unit of units) {

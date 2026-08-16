@@ -30,19 +30,19 @@ const LINE_RULES = [
   },
   {
     id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]*new\s+Random\s*\(|Math\.random\s*\(\s*\)[^;]*\b(?:token|key|secret)\b/i,
+    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]{0,500}new\s+Random\s*\(|Math\.random\s*\(\s*\)[^;]{0,500}\b(?:token|key|secret)\b/i,
     message: 'java.util.Random used for a security value',
     fix: 'use SecureRandom',
   },
   {
     id: 'safe/tls-disabled', rung: 'SAFE',
-    re: /TrustAllCerts|checkServerTrusted\s*\([^)]*\)\s*\{\s*\}|ALLOW_ALL_HOSTNAME_VERIFIER/,
+    re: /TrustAllCerts|checkServerTrusted\s*\([^)]{0,500}\)\s*\{\s*\}|ALLOW_ALL_HOSTNAME_VERIFIER/,
     message: 'TLS certificate or hostname verification disabled',
     fix: 'trust the proper CA instead of accepting all certificates',
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Runtime\.getRuntime\(\)\.exec\s*\([^)]*\+|new\s+ProcessBuilder\s*\([^)]*"(?:sh|bash|cmd(?:\.exe)?|powershell)"[^)]*"(?:-c|\/c)"/,
+    re: /Runtime\.getRuntime\(\)\.exec\s*\([^)]{0,500}\+|new\s+ProcessBuilder\s*\([^)]{0,500}"(?:sh|bash|cmd(?:\.exe)?|powershell)"[^)]{0,500}"(?:-c|\/c)"/,
     message: 'shell invoked with an interpolated command',
     fix: 'call the binary directly with a separate argument list',
   },

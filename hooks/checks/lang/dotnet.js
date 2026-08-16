@@ -34,13 +34,13 @@ const LINE_RULES = [
   },
   {
     id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]*new\s+Random\s*\(/i,
+    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]{0,500}new\s+Random\s*\(/i,
     message: 'System.Random used for a security value',
     fix: 'use RandomNumberGenerator.GetBytes',
   },
   {
     id: 'safe/tls-disabled', rung: 'SAFE',
-    re: /ServerCertificateValidationCallback\s*(?:\+?=)\s*[^;]*=>\s*true|DangerousAcceptAnyServerCertificateValidator/,
+    re: /ServerCertificateValidationCallback\s*(?:\+?=)\s*[^;]{0,500}=>\s*true|DangerousAcceptAnyServerCertificateValidator/,
     message: 'TLS certificate validation disabled',
     fix: 'validate against the proper CA instead',
   },

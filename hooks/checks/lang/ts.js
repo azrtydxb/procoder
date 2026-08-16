@@ -16,12 +16,12 @@ const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 // literal may contain the *other* quote — `"rm '"` and `'rm "'` are exactly how
 // shell and SQL fragments get built, and a single `["'][^"']*["']` class misses
 // both. Each branch is anchored on its own quote, so there is no backtracking.
-const LITERAL_PLUS = String.raw`(?:"[^"]*"|'[^']*')\s*\+`;
+const LITERAL_PLUS = String.raw`(?:"[^"]{0,500}"|'[^']{0,500}')\s*\+`;
 
 const LINE_RULES = [
   {
     id: 'safe/sql-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`, 'i'),
+    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})`, 'i'),
     message: 'SQL built by interpolation or concatenation',
     fix: 'use a parameterized query with bound values',
   },
@@ -39,7 +39,7 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})|\b(?:spawn|execFile)\s*\([^)]*\bshell\s*:\s*true`),
+    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})|\b(?:spawn|execFile)\s*\([^)]{0,500}\bshell\s*:\s*true`),
     message: 'shell invoked with an interpolated command',
     fix: 'use execFile/spawn with an argument array and shell:false',
   },
@@ -63,7 +63,7 @@ const LINE_RULES = [
   },
   {
     id: 'obvious/nested-ternary', rung: 'OBVIOUS', onCode: true,
-    re: /\?[^?:\n]*\?[^:\n]*:[^:\n]*:/,
+    re: /\?[^?:\n]{0,500}\?[^:\n]{0,500}:[^:\n]{0,500}:/,
     message: 'nested ternary',
     fix: 'rewrite as if/else or a lookup',
   },
@@ -73,7 +73,7 @@ const LINE_RULES = [
 const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
 
 const FUNCTION_SIGNATURE =
-  /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?\w+\s*)\(([^)]*)\)\s*(?::[^{=]+)?(?:=>)?\s*\{/g;
+  /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?\w+\s*)\(([^)]{0,500})\)\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/g;
 
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');

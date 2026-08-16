@@ -64,3 +64,25 @@ test('the clean fixture is silent and the dirty one is not', () => {
   assert.ok(check(fs.readFileSync(path.join(dir, 'dirty.py'), 'utf8'),
     { relPath: 'dirty.py', config }).length >= 6);
 });
+
+// Perf guard: every rule here must stay linear in line length. Each unit below
+// is an adversarial prefix — repeated, it makes any unbounded span in a rule
+// re-scan to end of line from every offset, which is the quadratic shape that
+// took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
+// in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
+// a loaded CI machine; the hook's whole budget is 2s.
+test('stays linear on a very long single line', () => {
+  const units = [
+    "yaml.load(",
+    "execute(\"x\" ",
+    "def f(a=1, ",
+    "x = f(a, b) + \"s\" + c; ",
+  ];
+  for (const unit of units) {
+    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
+    const started = Date.now();
+    check(line, { relPath: 'x.py', config });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
+  }
+});

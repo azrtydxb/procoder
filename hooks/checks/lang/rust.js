@@ -23,7 +23,7 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)[^;]*\.arg\s*\(\s*"-c"/,
+    re: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)[^;]{0,500}\.arg\s*\(\s*"-c"/,
     message: 'shell invoked with an interpolated command',
     fix: 'call the binary directly with separate args',
   },
@@ -35,7 +35,7 @@ const LINE_RULES = [
   },
   {
     id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*(?::[^=]+)?=\s*rand::(?:random|thread_rng)\b/i,
+    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*(?::[^=]{1,500})?=\s*rand::(?:random|thread_rng)\b/i,
     message: 'general-purpose RNG used for a security value',
     fix: 'use a CSPRNG (rand::rngs::OsRng or the ring crate)',
   },
@@ -49,7 +49,7 @@ const LINE_RULES = [
 
 const UNSAFE_BLOCK = /^\s*(?:.*\s)?unsafe\s*\{/;
 const SAFETY_COMMENT = /\/\/\s*SAFETY:|\/\/!\s*SAFETY:/i;
-const FN_SIGNATURE = /fn\s+\w+\s*(?:<[^>]*>)?\s*\(([^)]*)\)[^{\n]*\{/g;
+const FN_SIGNATURE = /fn\s+\w+\s*(?:<[^>]{0,500}>)?\s*\(([^)]{0,500})\)[^{\n]{0,500}\{/g;
 const TEST_ATTR = /#\[cfg\(test\)\]|#\[test\]|#\[tokio::test\]/;
 // unwrap()/expect() directly on a Mutex/RwLock lock() is near-universal Rust
 // practice: a poisoned lock means a prior panic already corrupted shared

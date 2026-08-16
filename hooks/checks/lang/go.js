@@ -77,7 +77,7 @@ const LINE_RULES = [
 // `if err != nil { return ... }` guard immediately before the defer.
 const DEFER_LOOKAHEAD = 5;
 
-const FUNC_SIGNATURE = /func\s+(?:\([^)]*\)\s*)?\w*\s*\(([^)]*)\)[^{\n]*\{/g;
+const FUNC_SIGNATURE = /func\s+(?:\([^)]{0,500}\)\s*)?\w*\s*\(([^)]{0,500})\)[^{\n]{0,500}\{/g;
 
 const DEFERRED_CLOSE = /defer\s+\w+(?:\.\w+)*\.Close\s*\(/;
 
