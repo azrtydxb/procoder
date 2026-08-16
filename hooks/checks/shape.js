@@ -24,14 +24,19 @@ const blankInside = (m) => m[0] + ' '.repeat(Math.max(0, m.length - 2)) + m[0];
 // reused rather than written a second time. It deliberately keeps string
 // literals (the packs' sink rules need them); blanking those afterwards is
 // safe, because no quote out of a comment or a regex survives its pass.
-function stripNoise(source) {
-  return stripComments(source, 'js')
+//
+// `style` is comments.js's, and is what decides whether `#` opens a comment.
+// This used to blank from any `#` to end of line in every language, which is
+// right for Python, Ruby, shell, TOML and YAML and wrong for JS/TS, where `#`
+// opens a private class member: `#wide(a, b, c) {` lost its parameters and its
+// block-opening brace, so the method was measured as nothing at all. Asking
+// comments.js instead is the same single language-aware pass the packs already
+// use — a second `#` mechanism here is the duplicate logic rung 4 forbids.
+function stripNoise(source, style = 'js') {
+  return stripComments(source, style)
     .replace(/"(?:[^"\\\n]|\\.)*"/g, blankInside)
     .replace(/'(?:[^'\\\n]|\\.)*'/g, blankInside)
-    .replace(/`(?:[^`\\]|\\.)*`/g, (m) => m.replace(/[^\n]/g, ' '))
-    // `#` comments, for the packs whose language has them. Last, because by now
-    // any `#` inside a string or a comment is already blank.
-    .replace(/#[^\n]*/g, (m) => m.replace(/./g, ' '));
+    .replace(/`(?:[^`\\]|\\.)*`/g, (m) => m.replace(/[^\n]/g, ' '));
 }
 
 // A `{` sitting in expression position opens a data literal, not a block. That
@@ -180,8 +185,12 @@ function bracketBalance(line) {
   return balance;
 }
 
+// Indentation *is* the block structure, so this runs only for the indentation
+// pack — Python — and says so: `#` opens a comment there, and a docstring is a
+// comment spelled as a literal. The brace packs never reach it; they go through
+// analyzeBraces and stripNoise, which keep the 'js' default.
 function analyzeIndent(source, { tabWidth = 4 } = {}) {
-  const lines = stripNoise(source).split(/\r?\n/);
+  const lines = stripNoise(source, 'py').split(/\r?\n/);
   const blocks = [];
   const columns = [];
   const mixed = mixesTabsAndSpaces(lines);

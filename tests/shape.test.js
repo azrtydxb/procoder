@@ -494,3 +494,38 @@ test('binding patterns are data, not nesting', () => {
   assert.strictEqual(
     analyzeBraces('function f(){\nswitch(x){\ncase 1: {\nif(a){\ngo();\n}}}}\n').maxDepth, 4);
 });
+
+// --- `#` opens a comment only where the language says so --------------------
+//
+// stripNoise blanked from any `#` to end of line whatever the language. In
+// JS/TS `#` opens a private class member, so `#wide(a, b, c, d, e, f) {` lost
+// its parameter list AND its block-opening brace: the method got no block, no
+// signature and so no finding at all, while the identical public method
+// reported six parameters. Hiding a violation is the worse direction of error,
+// and private members are ordinary modern JS.
+test('a private class method is measured like a public one', () => {
+  const re = /(?:async\s+)?(?<!\w)\w+\s*\(([^)]{0,500})\)\s*\{/g;
+  const measure = (src) => {
+    const { blocks } = analyzeBraces(src);
+    return measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
+  };
+  const src = (name) => [
+    'class Cache {',
+    `  ${name}(a, b, c, d, e, f) {`,
+    '    return a;',
+    '  }',
+    '}',
+  ].join('\n');
+
+  const priv = measure(src('#wide')).find((b) => b.startLine === 2);
+  assert.ok(priv, 'the private method was measured as no block at all');
+  assert.strictEqual(priv.params, 6);
+  assert.strictEqual(priv.params, measure(src('wide')).find((b) => b.startLine === 2).params);
+});
+
+test('stripNoise blanks # comments for the languages that have them', () => {
+  // Python, Ruby, shell, TOML and YAML: there `#` genuinely opens a comment.
+  assert.strictEqual(stripNoise('x = 1  # note\n', 'py'), 'x = 1        \n');
+  // JS/TS: it does not.
+  assert.strictEqual(stripNoise('this.#n = go(1);'), 'this.#n = go(1);');
+});
