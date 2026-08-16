@@ -34,9 +34,20 @@ const LOG_CALL = /\b(?:console\.(?:log|info|warn|error|debug)|logger?\.(?:log|in
 const SECRET_WORD = /\b(?:token|password|passwd|secret|api[_-]?key|authorization|auth[_-]?header|cookie|session[_-]?id|credential|private[_-]?key)\b/i;
 const PII_WORD = /\b(?:email|e-mail|ssn|social[_-]?security|phone[_-]?number|date[_-]?of[_-]?birth|dob|home[_-]?address|street[_-]?address|passport|credit[_-]?card|card[_-]?number|iban)\b/i;
 
+// Every `[^x]*` span below is capped at SPAN_MAX instead of running to the end
+// of the line. Unbounded, each one is quadratic in line length: an unclosed `${`
+// or `(` makes the scanner walk to end-of-line from every start position, so a
+// 300KB minified line cost ~36s — sixteen times the whole hook budget, which
+// means no findings at all. Capped, the work per start position is constant and
+// the pass is linear. 200 characters is longer than any real interpolated
+// expression or argument list; a span longer than that is minified noise, and
+// the remaining arms of LOOKS_LIKE_CODE still classify it.
+const SPAN_MAX = 200;
+
 // Interpolation or concatenation of a variable into the logged string — a bare
 // literal mentioning the word is fine ("password reset requested").
-const INTERPOLATED = /\$\{[^}]*\}|%[sdv]|\{\}|\{[a-z_][\w.]*\}|["'`]\s*[+,]\s*\w|\bf["']/i;
+const INTERPOLATED = new RegExp(
+  `\\$\\{[^}]{0,${SPAN_MAX}}\\}|%[sdv]|\\{\\}|\\{[a-z_][\\w.]*\\}|["'\`]\\s*[+,]\\s*\\w|\\bf["']`, 'i');
 
 const COMMENT_LINE = /^\s*(?:\/\/|#|--|\*(?!\/))\s?(.*)$/;
 // A commented line is CODE, not prose, when it ends in a code terminator or
@@ -57,7 +68,10 @@ const LOOKS_LIKE_CODE = new RegExp(
   '[;{}]\\s*$' +
   '|^\\s*(?:if|for|while|return|const|let|var|def|func|fn|class|import|from|public|private)\\b' +
   `|^\\s*${ASSIGN_TARGET}\\s*(?:[-+*/%|&^]|\\?\\?|\\|\\||&&|<<|>>)?=[^=]` +
-  '|\\w+\\([^)]*\\)\\s*[;{]?\\s*$');
+  // `\w` rather than `\w+`: for a boolean test the two are equivalent (any
+  // match of `\w+\(` has one starting at its last word character), but the
+  // greedy `\w+` re-walked the whole line from every position.
+  `|\\w\\([^)]{0,${SPAN_MAX}}\\)\\s*[;{]?\\s*$`);
 
 // A run this long, mostly code-shaped, is a commented-out block rather than a
 // paragraph of explanation that happens to mention a symbol. "Mostly" is a
@@ -73,7 +87,7 @@ const CODE_COMMENTS_MIN = 2;
 function interpolatedExpressions(line) {
   const exprs = [];
   let m;
-  const braceRe = /\$\{([^}]*)\}|(?<!\$)\{([a-z_][\w.]*)\}/gi;
+  const braceRe = new RegExp(`\\$\\{([^}]{0,${SPAN_MAX}})\\}|(?<!\\$)\\{([a-z_][\\w.]*)\\}`, 'gi');
   while ((m = braceRe.exec(line))) exprs.push(m[1] || m[2]);
   const concatRe = /["'`]\s*[+,]\s*([A-Za-z_][\w.]*)|([A-Za-z_][\w.]*)\s*\+\s*["'`]/g;
   while ((m = concatRe.exec(line))) exprs.push(m[1] || m[2]);

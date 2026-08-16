@@ -170,3 +170,37 @@ test('does not catastrophically backtrack on a long line', () => {
   run(long);
   assert.ok(Date.now() - start < 500, 'took too long on pathological input');
 });
+
+// A 300KB minified bundle on one line — the file the pack is exempted from the
+// line-length guard in order to keep scanning for credentials. Each shape below
+// used to drive an unbounded `[^x]*` span to end-of-line from every start
+// position: 300KB cost ~36s, against a 2s hook budget.
+//
+// Bound: 500ms for all three, measured at ~2ms each. The margin is deliberately
+// enormous — a loaded CI runner can lose a factor of fifty and still pass, while
+// any return of the quadratic behaviour costs seconds to tens of seconds and
+// cannot slip under it. The point of the assertion is the growth rate, not the
+// constant, so it is not tightened to the measurement.
+test('stays linear on a single 300KB line', () => {
+  const rep = (unit) => unit.repeat(Math.ceil((300 * 1024) / unit.length));
+  const shapes = {
+    'word run in a comment': '// ' + rep('a'),
+    'unclosed parens in a comment': '// ' + rep('a('),
+    'unclosed interpolation in a log call': 'console.log("' + rep('${') + '")',
+  };
+  for (const [what, source] of Object.entries(shapes)) {
+    const start = Date.now();
+    run(source);
+    const ms = Date.now() - start;
+    assert.ok(ms < 500, `${what}: took ${ms}ms on a 300KB line`);
+  }
+});
+
+// A credential on such a line is exactly what the exemption exists to catch, so
+// speed must not have been bought by skipping the line.
+test('finds a credential on a 300KB minified line', () => {
+  const filler = 'function e(t){return t.x?f(t,1):g(t)};var n=[1,2,3];'.repeat(3000);
+  const findings = run(`${filler};var q="AKIAIOSFODNN7EXAMPLE";${filler}`);
+  assert.ok(findings.some((f) => f.id === 'safe/hardcoded-secret'),
+    'a hardcoded AWS key on a 300KB line went unreported');
+});
