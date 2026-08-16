@@ -5,7 +5,7 @@ description: Set the procoder intensity level: pragmatic, strict, or paranoid.
 <!-- DO NOT EDIT. Generated from skills/procoder/SKILL.md by scripts/sync-rules.js.
      Hand edits are overwritten and fail CI. Edit the source instead. -->
 
-The user invoked /procoder with arguments: $ARGUMENTS
+The user invoked /procoder:level with arguments: $ARGUMENTS
 
 If the arguments name a level (pragmatic, strict, paranoid, or off), the
 UserPromptSubmit hook has already persisted it — confirm the new level in one

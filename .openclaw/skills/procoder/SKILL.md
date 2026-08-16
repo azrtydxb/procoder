@@ -12,7 +12,7 @@ after you leave.
 
 ACTIVE EVERY RESPONSE. Still active if unsure. Off only: "stop procoder" /
 "normal mode". Default level: **strict**. Switch:
-`/procoder pragmatic|strict|paranoid`.
+`/procoder:level pragmatic|strict|paranoid`.
 
 ## The ladder
 
