@@ -54,6 +54,7 @@ test('flags leftover debugging', () => {
 // Both directions of the shared principle: a rule sees code, not prose, and
 // the string literals a sink is assembled from are code.
 test('ignores rules named in comments and docstrings, not the code beside them', () => {
+  // procoder: literal safe/dynamic-eval the eval( is the assertion input, not a call
   assert.ok(!ids('# never use eval(user_input) here').includes('safe/dynamic-eval'));
   assert.ok(!ids('run(cmd)  # do not pass shell=True').includes('safe/shell-injection'));
   assert.ok(!ids('# cursor.execute(f"SELECT {uid}") is how not to do it')
@@ -63,6 +64,7 @@ test('ignores rules named in comments and docstrings, not the code beside them',
   assert.ok(!ids('# print("here") was removed').includes('alone/debug-leftover'));
   assert.ok(!ids('# except: is never acceptable').includes('true/bare-except'));
 
+  // procoder: literal safe/dynamic-eval the eval( is the assertion input, not a call
   assert.ok(ids('eval(user_input)  # never use eval here').includes('safe/dynamic-eval'));
   assert.ok(ids('run(cmd, shell=True)  # do not pass shell=True').includes('safe/shell-injection'));
   assert.ok(ids('cursor.execute(f"SELECT {uid}")  # bad').includes('safe/sql-injection'));

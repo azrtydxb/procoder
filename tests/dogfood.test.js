@@ -42,12 +42,6 @@ const HELD_OUT = [
 // a hold-out that has stopped holding anything out is exactly the stale
 // suppression rung 4 is about.
 const PENDING = [
-  {
-    path: 'tests/lang-py.test.js',
-    why: 'two safe/dynamic-eval findings on Python fixture strings, needing the '
-      + 'same literal markers the other pack tests now carry. The file is owned '
-      + 'by the concurrent py.js change, so the markers land there',
-  },
 ];
 
 const excluded = (file) =>
