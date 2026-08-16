@@ -18,13 +18,21 @@ it printed.
    |---|---|
    | no statusLine configured | run `statusline install` |
    | installed | say so, stop — install would be a no-op |
+   | installed, composed with an existing statusLine | say so, stop |
    | a statusLine that is not procoder's | step 2 |
    | removal was asked for | run `statusline uninstall` |
 
 2. **Foreign statusLine — ask, do not replace.** Run `statusline install`
    without flags. It refuses, printing what is configured and what procoder
-   would set. Show the user both, ask whether to replace it, and only re-run
-   with `--force` if they say yes. That statusLine is their work.
+   would set. Show the user both and offer the two ways forward, in this order:
+
+   - `--append` keeps their statusline and prints the badge after it. Both
+     commands get the same session JSON on stdin, so a prompt reading `.cwd`
+     keeps working; `uninstall` restores theirs byte for byte. POSIX only.
+   - `--force` replaces theirs with the bare badge.
+
+   Recommend `--append`, and re-run only after an explicit yes. That statusLine
+   is their work.
 
 3. **Report the result.** Name the settings file written, and the timestamped
    `.backup-<ms>` copy the CLI printed. Add one line: the badge appears at the
@@ -39,5 +47,6 @@ it printed.
 ## Do not
 
 - Do not pass `--force` on your own initiative — only after an explicit yes.
+  Offer `--append` first: it keeps the statusline they already have.
 - Do not edit `settings.json` by hand; the CLI backs up and writes atomically.
 - Do not claim the badge is visible yet — it starts with the next session.

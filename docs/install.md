@@ -35,12 +35,39 @@ new file is written to a temp file and renamed, so an interrupted run cannot
 leave a truncated `settings.json` behind. If the file is not valid JSON, the
 command says so and changes nothing rather than overwriting what it could not
 read. If a `statusLine` is already configured and it is not procoder's, it
-reports both and stops; `--force` replaces it.
+reports both and stops, and offers two ways forward:
+
+```bash
+procoder statusline install --append   # keep yours, print the badge after it
+procoder statusline install --force    # replace yours with the badge
+```
+
+`--append` writes a single command that runs both. Claude Code sends the session
+JSON on stdin, and stdin can be read only once — a pipeline or a `a; b` sequence
+would leave one of the two commands with an empty stdin, so a prompt that reads
+`.cwd` from it would quietly lose its directory. The wrapper reads stdin once and
+replays it into both, and passes each command line as an argument rather than
+splicing it into the script, so any shape of existing command survives. Your
+original entry is stored verbatim as `statusLine.procoderOriginal`, and
+`uninstall` restores it byte for byte instead of deleting the key. `--append`
+builds a POSIX shell command and is refused on Windows.
+
+Because a plugin install lives under a version-named directory
+(`.../plugins/cache/procoder/procoder/0.2.0/`) that `/procoder:update` replaces,
+the command written for one resolves the installed version at run time — it
+globs the sibling versions and runs the most recently written. Pinning today's
+path would mean the script simply disappearing after the next update, and a
+missing statusline script prints nothing, so the badge would vanish with no
+error anywhere. When the plugin is removed entirely the command prints nothing
+and exits 0. A clone has a stable path and gets the direct command instead.
 
 ```bash
 procoder statusline status     # what is configured today
-procoder statusline uninstall  # remove procoder's entry, leave everything else
+procoder statusline uninstall  # remove procoder's entry, restore any it composed with
 ```
+
+`status` distinguishes four states: no `statusLine` configured, procoder's,
+somebody else's, and procoder's composed with somebody else's.
 
 ### Doing it by hand
 
@@ -244,9 +271,10 @@ isn't one of `pragmatic`, `strict`, or `paranoid`. Confirm: `procoder statusline
 status` reports procoder's command as configured — if it reports nothing, or
 somebody else's statusline, run `procoder statusline install`; the level file
 exists and holds a real level, not `off` or empty; and the script is readable at
-the path the command names. A settings file written by hand against an older
-install can point at a path that no longer exists — re-running the install
-command rewrites it from where procoder lives now.
+the path the command names. A settings file written by hand — or by a procoder
+older than the version-resolving command described above — can point at a
+version directory that no longer exists; re-running the install command rewrites
+it from where procoder lives now.
 
 **A wall of findings on first use.**
 

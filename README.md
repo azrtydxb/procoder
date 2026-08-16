@@ -305,12 +305,34 @@ the script path from where this copy of procoder actually lives and picking the
 `.sh` or the `.ps1` for your platform. Everything else in that file is left as
 it was, the previous version is copied to a timestamped `.backup-` file first,
 and running it twice changes nothing the second time. A `statusLine` that is not
-procoder's is reported, not replaced — pass `--force` if you mean to replace it.
+procoder's is reported, not replaced.
+
+If you already have a statusline you like, keep it and put the badge after it:
+
+```bash
+procoder statusline install --append   # yours, then [PROCODER:STRICT]
+procoder statusline install --force    # replace yours with the badge
+```
+
+`--append` wraps both commands in one that reads the session JSON Claude Code
+sends on stdin once and replays it into each of them, so a statusline that reads
+`.cwd` keeps working. Your original entry is recorded verbatim next to the
+wrapper, and `procoder statusline uninstall` puts it back exactly as it was.
+`--append` builds a POSIX shell command, so it is not available on Windows.
 
 ```bash
 procoder statusline status     # what is configured today
-procoder statusline uninstall  # remove procoder's entry, leave everything else
+procoder statusline uninstall  # remove procoder's entry, restore any it composed with
 ```
+
+`status` names one of four states: nothing configured, procoder's, somebody
+else's, or procoder's composed with somebody else's.
+
+A plugin install lives under a version-named directory that the next update
+replaces, so the command written for one resolves the current version when it
+runs rather than naming today's — otherwise the badge would silently vanish on
+every update. Installed from a clone, where the path is stable, it names the
+script directly.
 
 If you would rather edit the file yourself — or the installer declined because
 your install path contains characters a shell would interpret — the block it
