@@ -5,7 +5,29 @@
 // actually configured in the project is resolve.js's job.
 
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { finding } = require('./finding');
+
+// golangci-lint v2 removed `--out-format json` in favor of
+// `--output.json.path <path>` (JSON schema on the wire is unchanged — only
+// the flag that requests it moved). Passing the wrong flag for the
+// installed major version makes the linter exit with a flag-parse error, so
+// parse() silently returns [] no matter how good the regex is. Detecting
+// the major version once (cached for the process lifetime) and picking the
+// matching flag is cheap next to golangci-lint's own runtime, and it means
+// both v1 and v2 installs stay working — no config, no guessing.
+let golangciMajor = null;
+function golangciMajorVersion() {
+  if (golangciMajor !== null) return golangciMajor;
+  try {
+    const out = execFileSync('golangci-lint', ['--version'], { encoding: 'utf8', timeout: 1000 });
+    const m = /\bv?(\d+)\./.exec(out);
+    golangciMajor = m ? Number(m[1]) : 1;
+  } catch (e) {
+    golangciMajor = 1;
+  }
+  return golangciMajor;
+}
 
 const ts = require('./lang/ts');
 const py = require('./lang/py');
@@ -64,7 +86,9 @@ const TOOLS = {
   go: {
     name: 'golangci-lint',
     configFiles: ['.golangci.yml', '.golangci.yaml', '.golangci.toml'],
-    argv: (file) => ['run', '--out-format', 'json', file],
+    argv: (file) => golangciMajorVersion() >= 2
+      ? ['run', '--output.json.path', 'stdout', file]
+      : ['run', '--out-format', 'json', file],
     parse: (stdout) => {
       try {
         return (JSON.parse(stdout).Issues || []).map((issue) =>
@@ -74,15 +98,44 @@ const TOOLS = {
       }
     },
   },
-  rust: {
-    name: 'clippy',
-    configFiles: ['clippy.toml', '.clippy.toml', 'Cargo.toml'],
-    argv: () => ['clippy', '--message-format', 'short', '--quiet'],
-    parse: (stdout) => String(stdout).split('\n')
-      .map((line) => /^[^:]+:(\d+):\d+:\s*(?:warning|error):\s*(.+)$/.exec(line))
-      .filter(Boolean)
-      .map((m) => externalFinding(Number(m[1]), m[2], 'clippy')),
-  },
+  // There is no standalone `clippy` binary on a normal PATH — only
+  // `cargo-clippy`, which `cargo clippy` dispatches to. The binary to
+  // invoke (and to probe for with `which`, in resolve.js) is `cargo`, with
+  // `clippy` as its first argument.
+  //
+  // cargo clippy has no per-file scoping: unlike eslint/ruff/golangci-lint,
+  // which take a single file as their argv target, clippy always compiles
+  // and lints the whole crate. That is a real limitation this fix does not
+  // remove — see the report for why the entry stays enabled anyway. What it
+  // DOES fix is attribution: rustTarget records the absolute path argv() was
+  // called for, and parse() discards every finding whose reported path
+  // isn't that file, so a warning in src/other.rs is never presented as a
+  // fact about the file actually being written.
+  rust: (() => {
+    let rustTarget = null;
+    const sameFile = (reported, absPath) => {
+      const norm = (s) => String(s).replace(/\\/g, '/');
+      const r = norm(reported);
+      const a = norm(absPath);
+      return a === r || a.endsWith(`/${r}`);
+    };
+    return {
+      name: 'cargo',
+      configFiles: ['clippy.toml', '.clippy.toml', 'Cargo.toml'],
+      argv: (file) => {
+        rustTarget = file;
+        return ['clippy', '--message-format', 'short', '--quiet'];
+      },
+      parse: (stdout) => String(stdout).split('\n')
+        .map((line) => /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/.exec(line))
+        .filter(Boolean)
+        .filter((m) => !rustTarget || sameFile(m[1], rustTarget))
+        .map((m) => {
+          const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
+          return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
+        }),
+    };
+  })(),
 };
 
 const EXT_TO_TOOL = new Map();

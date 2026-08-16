@@ -24,8 +24,34 @@ test('toolFor names the external tool preferred for each language', () => {
   assert.strictEqual(toolFor('a.py').name, 'ruff');
   assert.strictEqual(toolFor('a.ts').name, 'eslint');
   assert.strictEqual(toolFor('a.go').name, 'golangci-lint');
-  assert.strictEqual(toolFor('a.rs').name, 'clippy');
+  // The rust entry invokes the `cargo` binary (argv starts with 'clippy') —
+  // there is no standalone `clippy` binary on a normal PATH, only
+  // `cargo-clippy`, which cargo dispatches to internally.
+  assert.strictEqual(toolFor('a.rs').name, 'cargo');
   assert.strictEqual(toolFor('README.md'), null);
+});
+
+test('clippy argv invokes cargo clippy, not a nonexistent clippy binary', () => {
+  const rust = toolFor('a.rs');
+  const argv = rust.argv('/repo/src/main.rs');
+  assert.strictEqual(argv[0], 'clippy');
+});
+
+test('clippy parse discards findings attributed to a different file', () => {
+  const rust = toolFor('a.rs');
+  // cargo clippy cannot be scoped to a single file — it always compiles the
+  // whole crate — so its output can legitimately contain warnings from
+  // files other than the one being checked. argv() records which absolute
+  // path is under inspection; parse() must discard anything not from it.
+  rust.argv('/repo/src/main.rs');
+  const stdout = [
+    'src/main.rs:10:5: warning: unused variable: `x` [unused_variables]',
+    'src/other.rs:412:3: warning: needless return [clippy::needless_return]',
+  ].join('\n');
+  const parsed = rust.parse(stdout);
+  assert.strictEqual(parsed.length, 1);
+  assert.strictEqual(parsed[0].line, 10);
+  assert.match(parsed[0].message, /unused variable/);
 });
 
 test('each tool entry can parse its own output format', () => {
