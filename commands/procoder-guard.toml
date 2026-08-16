@@ -1,0 +1,9 @@
+description = "Install procoder as a pre-commit hook and CI check."
+prompt = """
+Use the procoder-guard skill. Arguments (optional: "pre-commit", "ci", or a CI
+provider name): $ARGUMENTS
+
+Detect any existing hook manager and CI provider first, integrate with it rather
+than adding a second one, name every file you will create or modify, and wait
+for confirmation before writing.
+"""
