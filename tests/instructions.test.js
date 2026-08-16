@@ -22,12 +22,27 @@ test('level markers never appear in output', () => {
   }
 });
 
+function nonBlankLines(text) {
+  return text.split('\n').filter((line) => line.trim() !== '');
+}
+
+function assertLineSubset(lowerLevel, higherLevel) {
+  const lowerLines = nonBlankLines(getProcoderInstructions(lowerLevel));
+  const higherLines = nonBlankLines(getProcoderInstructions(higherLevel));
+  const higherSet = new Set(higherLines);
+  for (const line of lowerLines) {
+    assert.ok(higherSet.has(line),
+      `${higherLevel} is missing a line present in ${lowerLevel}: ${JSON.stringify(line)}`);
+  }
+  assert.ok(higherLines.length > lowerLines.length,
+    `${higherLevel} must add content over ${lowerLevel}`);
+}
+
 test('higher levels are supersets of lower ones', () => {
-  const pragmatic = getProcoderInstructions('pragmatic').length;
-  const strict = getProcoderInstructions('strict').length;
-  const paranoid = getProcoderInstructions('paranoid').length;
-  assert.ok(pragmatic < strict, 'strict must add content over pragmatic');
-  assert.ok(strict < paranoid, 'paranoid must add content over strict');
+  // Real containment, not just length: every non-blank line of the lower
+  // level must appear somewhere in the higher level's output.
+  assertLineSubset('pragmatic', 'strict');
+  assertLineSubset('strict', 'paranoid');
 });
 
 test('an unknown level is treated as the default', () => {

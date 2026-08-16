@@ -42,8 +42,9 @@ test('off emits nothing and writes no level file', () => {
 });
 
 test('PROCODER_NO_HOOK disables activation entirely', () => {
-  const { stdout } = run(HOOK, { PROCODER_NO_HOOK: '1' });
+  const { stdout, levelFile } = run(HOOK, { PROCODER_NO_HOOK: '1' });
   assert.ok(!/SAFE/.test(stdout));
+  assert.ok(!fs.existsSync(levelFile), 'PROCODER_NO_HOOK must not write a level file');
 });
 
 test('subagent hook wraps context in hookSpecificOutput', () => {
