@@ -63,12 +63,22 @@ function isExcluded(config, relPath) {
     if (pattern.endsWith('/')) {
       return normalized === pattern.slice(0, -1) || normalized.startsWith(pattern);
     }
-    const regex = new RegExp(
-      '^' + pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*\//g, '(?:.*/)?')
-        .replace(/\*/g, '[^/]*') + '$');
-    return regex.test(normalized);
+    // `?` is not a documented glob wildcard here (only `*` and `**` are), so
+    // it must be escaped like the other regex metacharacters, else patterns
+    // such as "?abc.ts" build an invalid regex ("nothing to repeat").
+    try {
+      const regex = new RegExp(
+        '^' + pattern
+          .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
+          .replace(/\*\*\//g, '(?:.*/)?')
+          .replace(/\*/g, '[^/]*') + '$');
+      return regex.test(normalized);
+    } catch (e) {
+      // Belt-and-braces: any pattern shape we didn't anticipate must never
+      // throw into the hook. An exclude that fails to match is far better
+      // than a crashed session, so fall back to a plain literal comparison.
+      return normalized === pattern;
+    }
   });
 }
 

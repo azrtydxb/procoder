@@ -61,3 +61,31 @@ test('findRepoRoot returns the start dir when no .git exists', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-nogit-'));
   assert.strictEqual(findRepoRoot(dir), dir);
 });
+
+test('isExcluded treats a bare "?" as a literal character, never throws', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\npaths = ["?abc.ts"]\n',
+  }));
+  assert.doesNotThrow(() => isExcluded(cfg, '?abc.ts'));
+  assert.ok(isExcluded(cfg, '?abc.ts'));
+  assert.ok(!isExcluded(cfg, 'xabc.ts'));
+});
+
+test('isExcluded treats other regex metacharacters as literals, never throws', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\npaths = ["a+b(c)[d]$.ts"]\n',
+  }));
+  assert.doesNotThrow(() => isExcluded(cfg, 'a+b(c)[d]$.ts'));
+  assert.ok(isExcluded(cfg, 'a+b(c)[d]$.ts'));
+  assert.ok(!isExcluded(cfg, 'aXbXcXdX.ts'));
+});
+
+test('isExcluded returns a boolean rather than throwing on any malformed pattern', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\npaths = ["***???+++((("]\n',
+  }));
+  assert.doesNotThrow(() => {
+    const result = isExcluded(cfg, 'anything.ts');
+    assert.strictEqual(typeof result, 'boolean');
+  });
+});
