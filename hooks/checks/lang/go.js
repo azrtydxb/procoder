@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+// procoder — Go pack.
+
+const { finding } = require('../finding');
+const { analyzeBraces, countParams, estimateComplexity, shapeFindings, stripNoise } = require('../shape');
+
+const EXTENSIONS = ['.go'];
+
+// `, _ :=`/`, _ =` discarding an error. Deliberately requires the assigned
+// expression to look like a call (`identifier(` or `pkg.Method(`, dots
+// allowed) directly after the operator, with no arbitrary text in between.
+// `for i, _ := range xs` / `for k, _ := range m` never satisfy this, because
+// after `range` there is a space before the next identifier, never a `(` —
+// so the loop form never matches, only genuine `x, _ := someCall(...)` does.
+const IGNORED_ERROR = /,\s*_\s*:?=\s*[\w.]+\(|\b_\s*=\s*\w+\.(?:Close|Write|Exec)\s*\(/;
+
+const LINE_RULES = [
+  {
+    id: 'safe/sql-injection', rung: 'SAFE',
+    re: /\b(?:Query|QueryRow|Exec)\w*\s*\(\s*(?:fmt\.Sprintf|["'`][^"'`]*["'`]\s*\+)/,
+    message: 'SQL built by Sprintf or concatenation',
+    fix: 'use placeholders ($1, ?) and pass the values as arguments',
+  },
+  {
+    id: 'safe/shell-injection', rung: 'SAFE',
+    re: /exec\.Command\s*\(\s*["'`](?:sh|bash|cmd|powershell)["'`]\s*,\s*["'`]-c/,
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with an argument slice',
+  },
+  {
+    id: 'safe/tls-disabled', rung: 'SAFE',
+    re: /InsecureSkipVerify\s*:\s*true/,
+    message: 'TLS certificate verification disabled',
+    fix: 'configure RootCAs with the proper certificate',
+  },
+  {
+    id: 'safe/weak-hash', rung: 'SAFE',
+    re: /\b(?:md5|sha1)\.(?:New|Sum)\s*\(/,
+    message: 'weak hash used where a secure one is expected',
+    fix: 'use sha256, or argon2/bcrypt for passwords',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE',
+    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*:?=\s*rand\.(?:Int|Intn|Int63|Float64)\b/i,
+    message: 'math/rand used for a security value',
+    fix: 'use crypto/rand',
+  },
+  {
+    id: 'true/panic-in-library', rung: 'TRUE',
+    re: /^\s*panic\s*\(/,
+    message: 'panic in library code crashes the caller',
+    fix: 'return an error and let the caller decide',
+  },
+  {
+    id: 'true/unclosed-resource', rung: 'TRUE',
+    re: /\b(?:resp|res|f|file|conn|rows)\s*,\s*(?:err|_)\s*:?=\s*(?:http\.(?:Get|Post|Do)|os\.(?:Open|Create)|net\.Dial|db\.Query)\b/,
+    message: 'resource opened without a visible Close',
+    fix: 'add defer <resource>.Close() nearby',
+  },
+  {
+    id: 'alone/debug-leftover', rung: 'ALONE',
+    re: /\bfmt\.Print(?:ln|f)?\s*\(|\bspew\.Dump\s*\(/,
+    message: 'leftover debugging statement',
+    fix: 'delete it, or route through the project logger',
+  },
+];
+
+// How many lines to look ahead for a `defer <resource>.Close()` that
+// discharges the unclosed-resource finding — covers the common
+// `if err != nil { return ... }` guard immediately before the defer.
+const DEFER_LOOKAHEAD = 5;
+
+const FUNC_SIGNATURE = /func\s+(?:\([^)]*\)\s*)?\w*\s*\(([^)]*)\)[^{\n]*\{/g;
+
+function check(source, { relPath, config } = {}) {
+  const findings = [];
+  const text = String(source || '');
+  const lines = text.split(/\r?\n/);
+  const stripped = stripNoise(text);
+
+  lines.forEach((line, index) => {
+    if (IGNORED_ERROR.test(line)) {
+      findings.push(finding({
+        rung: 'TRUE', id: 'true/ignored-error', line: index + 1,
+        message: 'error discarded into _',
+        fix: 'handle it, wrap it with context, or return it',
+      }));
+    }
+
+    for (const rule of LINE_RULES) {
+      if (!rule.re.test(line)) continue;
+      if (rule.id === 'true/unclosed-resource') {
+        const ahead = lines.slice(index + 1, index + 1 + DEFER_LOOKAHEAD).join('\n');
+        if (/defer\s+\w+(?:\.\w+)*\.Close\s*\(/.test(ahead)) continue;
+      }
+      findings.push(finding({
+        rung: rule.rung, id: rule.id, line: index + 1,
+        message: rule.message, fix: rule.fix,
+      }));
+    }
+  });
+
+  const { maxDepth, blocks } = analyzeBraces(text);
+  const signatures = new Map();
+  for (const match of stripped.matchAll(FUNC_SIGNATURE)) {
+    signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
+  }
+
+  const measured = blocks
+    .filter((block) => signatures.has(block.startLine))
+    .map((block) => ({
+      ...block,
+      params: countParams('(' + signatures.get(block.startLine) + ')'),
+      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
+    }));
+
+  findings.push(...shapeFindings({
+    blocks: measured, maxDepth, thresholds: config.thresholds, kind: 'func',
+  }));
+
+  return findings;
+}
+
+module.exports = { check, EXTENSIONS };
