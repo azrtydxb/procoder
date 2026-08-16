@@ -74,6 +74,25 @@ test('procoder reports no findings against its own source', () => {
 // is how the previous list rotted: entries outlived the findings that put them
 // there. Every PENDING path must still report something, so the day the change
 // that owns it lands, this test says to delete the entry.
+// PENDING has that check below, but HELD_OUT never did: a permanent exemption
+// for a path that has gone clean — or that no longer matches any tracked file —
+// narrows the gate silently, which is the same rung-4 rot the marker rules are
+// about. These entries are meant to be permanent, not unexamined.
+test('every hold-out still earns its exemption', () => {
+  const all = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+
+  for (const h of HELD_OUT) {
+    const covered = all.filter((f) => f.startsWith(h.path) && (!h.match || h.match(f)));
+    assert.ok(covered.length > 0,
+      `HELD_OUT entry ${h.path} matches no tracked file — delete it`);
+
+    const { code } = selfScan(covered.map((f) => path.join(root, f)));
+    assert.strictEqual(code, 1,
+      `${h.path} is clean now — delete its HELD_OUT entry so the path is gated again`);
+  }
+});
+
 test('every pending hold-out still has the finding that put it there', () => {
   for (const p of PENDING) {
     const { code } = selfScan([path.join(root, p.path)]);
