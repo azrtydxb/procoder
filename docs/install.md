@@ -62,6 +62,8 @@ the installer refuses to build a command around one and prints this instead:
 quoted or escaped to suit your shell. On Windows, the command is
 `powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
 
+In Claude Code, `/procoder-statusline` runs the installer for you.
+
 ## Cursor
 
 Copy or symlink the generated rule file into your project:

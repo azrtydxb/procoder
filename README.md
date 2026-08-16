@@ -69,6 +69,7 @@ level) when you want procoder back.
 | `/procoder-debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
 | `/procoder-gain` | Measured progress: rot removed, boundaries hardened, baseline shrinkage. |
 | `/procoder-guard` | Install procoder as a pre-commit hook and CI check. |
+| `/procoder-statusline` | Install, inspect, or remove the statusline badge. |
 | `/procoder-help` | Show procoder's rungs, levels, and commands. |
 
 `/procoder-rot` and `/procoder-threat` have no equivalent in comparable tools:
