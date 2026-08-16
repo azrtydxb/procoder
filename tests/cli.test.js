@@ -7,8 +7,18 @@ const path = require('path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'procoder.js');
 
+// Every test builds its own throwaway repo under the OS temp dir; without
+// cleanup a run leaves dozens of them behind. Tracked centrally and swept in
+// one `after` hook rather than a try/finally per test, so a test that adds a
+// new repoWith() call later can't forget the teardown.
+const tempDirs = [];
+test.after(() => {
+  for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cli-'));
+  tempDirs.push(dir);
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
   for (const [rel, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
@@ -163,4 +173,44 @@ test('unknown subcommand prints usage and exits non-zero', () => {
   const result = cli(repo, ['frobnicate']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /usage/i);
+});
+
+// --unused-exclusions: a rule-scoped exclusion that stops suppressing anything
+// (finding fixed, file changed) is itself an unnamed, stale suppression — a
+// rung-4 violation in procoder's own config format.
+
+test('a rule exclusion that suppresses a live finding is not reported as unused', () => {
+  const repo = repoWith({
+    'a.ts': 'eval(x);\n',
+    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n',
+  });
+  const result = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
+  assert.strictEqual(result.code, 0);
+  assert.doesNotMatch(result.out, /suppressed nothing/i);
+});
+
+test('a rule exclusion that suppresses nothing is reported, and fails only with the flag', () => {
+  const repo = repoWith({
+    'a.ts': 'const x = 1;\n',
+    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n',
+  });
+  const plain = cli(repo, ['verify', 'a.ts']);
+  assert.strictEqual(plain.code, 0, 'plain verify does not fail CI over a stale exclusion');
+  assert.match(plain.out, /suppressed nothing/i);
+  assert.match(plain.out, /a\.ts:safe\/dynamic-eval/);
+
+  const flagged = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
+  assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
+  assert.match(flagged.out, /suppressed nothing/i);
+});
+
+test('a rule exclusion naming a file outside the run scope is not reported either way', () => {
+  const repo = repoWith({
+    'a.ts': 'const x = 1;\n',
+    'other.ts': 'const y = 1;\n',
+    '.procoder.toml': '[exclude]\nrules = ["other.ts:safe/dynamic-eval"]\n',
+  });
+  const result = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
+  assert.strictEqual(result.code, 0, 'an exclusion for a file the run never touched cannot be judged');
+  assert.doesNotMatch(result.out, /suppressed nothing/i);
 });
