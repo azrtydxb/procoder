@@ -104,6 +104,47 @@ test('flags leftover debugging', () => {
   assert.ok(!ids('tracing::info!("started");').includes('alone/debug-leftover'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose, and
+// the string literals a sink is assembled from are code.
+test('ignores rules named in comments, not the code beside them', () => {
+  assert.ok(!ids('// never parse(input).unwrap() in a library').includes('true/unwrap-in-library'));
+  assert.ok(!ids('/// Do not `sqlx::query(&format!("SELECT {}", id))`.').includes('safe/sql-injection'));
+  assert.ok(!ids('// never Command::new("sh").arg("-c").arg(user_input)').includes('safe/shell-injection'));
+  assert.ok(!ids('// never .danger_accept_invalid_certs(true)').includes('safe/tls-disabled'));
+  assert.ok(!ids('// let token = rand::random::<u64>(); is not a CSPRNG').includes('safe/weak-random'));
+  assert.ok(!ids('// println!("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('// unsafe { ptr::read(p) } needs a SAFETY note').includes('safe/unsafe-block'));
+
+  assert.ok(ids('let v = parse(input).unwrap(); // never do this').includes('true/unwrap-in-library'));
+  assert.ok(ids('sqlx::query(&format!("SELECT {}", id)); // bad').includes('safe/sql-injection'));
+  assert.ok(ids('Command::new("sh").arg("-c").arg(user_input); // bad').includes('safe/shell-injection'));
+  assert.ok(ids('.danger_accept_invalid_certs(true) // bad').includes('safe/tls-disabled'));
+  assert.ok(ids('let token = rand::random::<u64>(); // bad').includes('safe/weak-random'));
+  assert.ok(ids('println!("here"); // bad').includes('alone/debug-leftover'));
+  assert.ok(ids('unsafe { ptr::read(p) } // no safety note').includes('safe/unsafe-block'));
+});
+
+// The SAFETY comment is the one place a comment is the subject of the rule,
+// so it keeps reading raw lines.
+test('a SAFETY comment still discharges the unsafe rule', () => {
+  assert.ok(!ids('// SAFETY: p is non-null and aligned, checked above.\nunsafe { ptr::read(p) }')
+    .includes('safe/unsafe-block'));
+});
+
+// A commented-out #[test] is not a test module, and must not blind the
+// checker to the library code that follows it.
+test('a commented-out test attribute does not open a test region', () => {
+  const src = '// #[cfg(test)]\nmod helpers {\n    fn t() {\n        parse("x").unwrap();\n    }\n}\n';
+  assert.ok(ids(src).includes('true/unwrap-in-library'));
+});
+
+test('keeps seeing sinks built inside string literals', () => {
+  assert.ok(ids('sqlx::query(&format!("SELECT * FROM t WHERE id = {}", id))')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('Command::new("bash").arg("-c").arg(format!("rm {}", dir))')
+    .includes('safe/shell-injection'));
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'rust');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.rs'), 'utf8'),

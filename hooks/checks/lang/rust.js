@@ -2,6 +2,7 @@
 // procoder — Rust pack.
 
 const { finding } = require('../finding');
+const { stripComments } = require('./comments');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -86,12 +87,13 @@ function blockCloseIndex(lines, openIndex) {
 
 // Braces are counted on noise-stripped lines, as shape.js does: a `{` inside a
 // string or a comment is not structure, and counting one leaves the depth
-// unbalanced and runs the region to end of file. The attributes themselves are
-// matched on the raw lines, since stripNoise blanks `#`-prefixed lines and
-// would erase `#[cfg(test)]` before it could be seen.
-function testRegions(lines, codeLines) {
+// unbalanced and runs the region to end of file. The attributes are matched on
+// comment-stripped lines — `#` is not a comment in Rust, so `#[cfg(test)]`
+// survives — which keeps a commented-out `// #[test]` from opening a region
+// and blinding the checker to the library code that follows.
+function testRegions(attrLines, codeLines) {
   const regions = [];
-  lines.forEach((line, index) => {
+  attrLines.forEach((line, index) => {
     if (!TEST_ATTR.test(line)) return;
     const openIndex = blockOpenIndex(codeLines, index);
     if (openIndex === -1) return;
@@ -109,9 +111,13 @@ const SAFETY_LOOKBACK = 3;
 
 // How many lines back a // SAFETY: comment may sit and still count as the
 // justification for this unsafe block.
-function unsafeFindings(lines) {
+//
+// The block itself is found on comment-stripped lines — `// unsafe { ... }` in
+// prose is not an unsafe block — while the justification is looked for in the
+// raw ones, since a comment is exactly what this rule asks for.
+function unsafeFindings(codeLines, lines) {
   const findings = [];
-  lines.forEach((line, index) => {
+  codeLines.forEach((line, index) => {
     if (!UNSAFE_BLOCK.test(line)) return;
     const preceding = lines.slice(Math.max(0, index - SAFETY_LOOKBACK), index).join('\n');
     if (SAFETY_COMMENT.test(preceding)) return;
@@ -124,20 +130,26 @@ function unsafeFindings(lines) {
   return findings;
 }
 
+// Every rule here matches code, never prose: `// never parse(x).unwrap()` and
+// a doc comment showing the SQL not to build are documentation, not defects.
+// String literals stay — `format!("SELECT {}", id)` *is* the SQL. The one
+// comment a rule genuinely asks about, `// SAFETY:`, still reads raw lines.
+// See comments.js for the principle the six packs share.
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
+  const codeLines = stripComments(text, 'c').split(/\r?\n/);
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const tests = testRegions(lines, stripped.split(/\r?\n/));
+  const tests = testRegions(codeLines, stripped.split(/\r?\n/));
   const isTestFile = TEST_PATH.test(String(relPath || ''));
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
 
   return [
-    ...lineRuleFindings(LINE_RULES, lines, { skip: expectedPanic }),
-    ...unsafeFindings(lines),
+    ...lineRuleFindings(LINE_RULES, codeLines, { skip: expectedPanic }),
+    ...unsafeFindings(codeLines, lines),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FN_SIGNATURE)),
       maxDepth,

@@ -66,3 +66,15 @@ fn make_token() -> u64 {
 fn debug_print(x: i32) {
     tracing::info!("here {}", x);
 }
+
+/// Documentation that warns against a practice must not be flagged for the
+/// practice: every rule rust.js has, named in prose, still silent.
+///
+/// - never `parse(input).unwrap()` or `.expect("should parse")` in a library
+/// - never `sqlx::query(&format!("SELECT * FROM t WHERE id = {}", id))`
+/// - never `Command::new("sh").arg("-c").arg(user_input)`
+/// - never `.danger_accept_invalid_certs(true)`
+/// - never `let token = rand::random::<u64>();` for a secret
+/// - no leftover `println!("here")` or `dbg!(value)`
+/// - never `unsafe { ptr::read(p) }` without a SAFETY note
+pub fn documented_clean() {}
