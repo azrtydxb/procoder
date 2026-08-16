@@ -95,6 +95,21 @@ test('a quoted string containing "," inside a multi-line array is not mis-split'
   assert.deepStrictEqual(out.paths, ['a,b/', 'c/']);
 });
 
+test('unsupported syntax warns with file and line, but still returns defaults-friendly output', () => {
+  const originalWrite = process.stderr.write;
+  let captured = '';
+  process.stderr.write = (chunk) => { captured += chunk; return true; };
+  let out;
+  try {
+    out = parseToml('level = "strict"\n{inline = "table"}\n', 'my-config.toml');
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.strictEqual(out.level, 'strict');
+  assert.match(captured, /my-config\.toml/);
+  assert.match(captured, /\bline 2\b|:2:/);
+});
+
 test('an unterminated array does not throw, does not hang, and warns', () => {
   const originalWrite = process.stderr.write;
   let captured = '';

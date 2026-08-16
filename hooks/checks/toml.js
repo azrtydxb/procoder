@@ -178,7 +178,10 @@ function parseToml(text, fileName) {
     if (header) { table = tableAt(result, header[1]); continue; }
 
     const pair = KEY_VALUE.exec(line);
-    if (!pair) continue;
+    if (!pair) {
+      warn(name, i + 1, `unrecognized syntax, ignored: ${line}`);
+      continue;
+    }
 
     const startLine = i + 1;
     const resolved = resolveValue(lines, i, pair[2].trim());
