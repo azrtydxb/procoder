@@ -12,9 +12,20 @@
 <div class="shell">
   {% include nav.html %}
   <main class="content" id="main" tabindex="-1">
+    <!-- Badges, drawn rather than fetched. A shields.io image would be one
+         external request per badge on a site whose whole claim is that it makes
+         none, from a tool whose first rung calls a new dependency a new trust
+         boundary. Every value here is a fact of the release, not a status that
+         can change between builds: a CI badge belongs on the README, where
+         GitHub serves it from the workflow itself. -->
+    <ul class="badges" aria-label="Release facts">
+      <li class="badge"><span class="badge-k">version</span><span class="badge-v">{{ site.version }}</span></li>
+      <li class="badge"><span class="badge-k">licence</span><span class="badge-v">Apache-2.0</span></li>
+      <li class="badge"><span class="badge-k">node</span><span class="badge-v">≥ 18</span></li>
+      <li class="badge"><span class="badge-k">runtime deps</span><span class="badge-v">0</span></li>
+    </ul>
     {{ content }}
     <footer class="foot">
-      <p>procoder v{{ site.version }} · Apache-2.0 · Node ≥ 18 · no runtime dependencies</p>
       <p>No fonts, no analytics, no scripts. This page makes no external request.</p>
     </footer>
   </main>

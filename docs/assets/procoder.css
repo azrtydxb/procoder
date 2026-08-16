@@ -150,6 +150,35 @@ body {
   margin: 0 0 .8rem;
 }
 
+/* ---- badges ---- */
+
+/* Two cells, key then value, in the utility face — the shape a reader already
+   reads as a badge, built from the tokens above so it belongs to this site
+   rather than to a badge service. Nothing here is fetched. */
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: 0 0 1.6rem;
+  padding: 0;
+  list-style: none;
+}
+.badge {
+  display: inline-flex;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: .66rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  border: 1px solid rgb(211, 216, 214);
+}
+.badge-k { padding: .2rem .5rem; color: rgb(90, 100, 105); }
+.badge-v {
+  padding: .2rem .5rem;
+  font-weight: 700;
+  color: rgb(17, 97, 73);
+  border-left: 1px solid rgb(211, 216, 214);
+}
+
 h1, h2, h3 {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   line-height: 1.18;
@@ -313,6 +342,9 @@ td.nowrap { white-space: nowrap; }
   .nav-link:hover { color: rgb(95, 191, 155); border-bottom-color: rgb(95, 191, 155); border-left-color: rgb(95, 191, 155); }
   .nav-link.is-current { color: rgb(95, 191, 155); border-bottom-color: rgb(95, 191, 155); border-left-color: rgb(95, 191, 155); }
   .skip { background: rgb(228, 232, 230); color: rgb(16, 19, 20); }
+  .badge { border-color: rgb(38, 44, 46); }
+  .badge-k { color: rgb(142, 154, 152); }
+  .badge-v { color: rgb(95, 191, 155); border-left-color: rgb(38, 44, 46); }
   a, .arrow { color: rgb(95, 191, 155); }
   .brand:focus-visible, .nav-link:focus-visible, a:focus-visible { outline-color: rgb(95, 191, 155); }
   h2, .foot { border-top-color: rgb(38, 44, 46); }
