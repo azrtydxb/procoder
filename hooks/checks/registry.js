@@ -179,6 +179,39 @@ function clippyDiagnostics(lines) {
   return found;
 }
 
+// A crate that did not compile is a crate clippy did not lint, and the run is
+// therefore not an answer — whatever else was on the stream.
+//
+// Neither diagnostic pattern above reads a compile error as a finding, so an
+// output carrying ONLY compile errors already fell through to the "no
+// diagnostic in output" throw. The gap this closes is the mixed one, verified
+// against cargo 1.93.1 / clippy 0.1.93 on a package whose lib unit is fresh and
+// whose bin unit does not compile:
+//
+//   src/lib.rs:2:5: warning: unneeded `return` statement
+//   src/main.rs:2:13: error[E0425]: cannot find value `missing_value` ...
+//   error: could not compile `demo` (bin "demo") due to 1 previous error
+//
+// The warning is a cached replay attributed to the file under inspection, so
+// parse() returned one finding, and resolve.js reads a non-empty finding list
+// as an answer — deleting the Rust pack's obvious/* rules for a crate clippy
+// never finished analysing. Exit 101 did not save it either: linters exit
+// non-zero when they find something, so the exit code cannot tell the two apart.
+//
+// Two markers, because rustc's diagnostic codes do not cover every compile
+// error — a syntax error has no `E####` — and cargo's summary line does:
+//   - `error[E####]:` in either rendering (the short form prefixes it with
+//     `file:line:col: `, the long form starts the line with it);
+//   - cargo's own `error: could not compile` / rustc's `error: aborting due to`.
+//
+// The one thing this over-reads: a crate built with `-D warnings` whose denied
+// lint fails the build prints "could not compile" too, and clippy DID lint it.
+// That crate now falls back to the pack and can see a shape finding twice. It
+// is the right way round to be wrong — the invariant is that a tool's failure
+// must never REDUCE coverage, and duplication is not a reduction. A clean crate
+// under `-D warnings` prints nothing at all and is still answered.
+const COMPILE_ERROR = /(?:^|\s)error\[[A-Z]\d+\]:|^error: (?:could not compile|aborting due to)\b/m;
+
 // Whether a path clippy reported names the file under inspection. Reported
 // paths are relative to the crate root; the target is absolute.
 function sameFile(reported, absPath) {
@@ -297,6 +330,9 @@ const TOOLS = {
       },
       parse: (output) => {
         const text = String(output);
+        // Checked before the diagnostics, and regardless of them: a warning
+        // replayed from cache next to a compile error is still not an answer.
+        if (COMPILE_ERROR.test(text)) declined('the crate did not compile');
         const diagnostics = clippyDiagnostics(text.split('\n'));
         // `--quiet` means a clean crate prints nothing at all, so any non-empty
         // output carrying no diagnostic is output we could not read: a compile

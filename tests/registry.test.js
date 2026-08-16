@@ -117,6 +117,57 @@ test('a long-format replay for another file is still attributed away', () => {
   assert.deepStrictEqual(rust.parse(CACHED_LONG_REPLAY), []);
 });
 
+// --- a crate that did not compile -------------------------------------------
+//
+// Captured byte for byte from cargo 1.93.1 / clippy 0.1.93: a package whose lib
+// unit is fresh (its warning replayed from cache) and whose bin unit does not
+// compile. Exit 101. The warning belongs to the file under inspection, so it
+// survives attribution, parse() returns one finding, and resolve.js reads
+// `findings.length > 0` as an answer — deleting the Rust pack's obvious/* rules
+// for a crate clippy never finished analysing.
+const COMPILE_ERROR_WITH_REPLAY = [
+  'src/lib.rs:2:5: warning: unneeded `return` statement',
+  'src/main.rs:2:13: error[E0425]: cannot find value `missing_value` in this scope: not found in this scope',
+  'error: could not compile `demo` (bin "demo") due to 1 previous error',
+].join('\n');
+
+test('a compile error alongside a warning is not an answer', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  assert.throws(() => rust.parse(COMPILE_ERROR_WITH_REPLAY), /did not lint/,
+    'a crate that does not compile is a crate clippy did not lint');
+});
+
+test('a compile error in rustc long format is not an answer either', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  assert.throws(() => rust.parse([
+    'warning: unneeded `return` statement',
+    ' --> src/lib.rs:2:5',
+    '',
+    'error[E0425]: cannot find value `missing_value` in this scope',
+    ' --> src/main.rs:2:13',
+    '',
+    'error: could not compile `demo` (bin "demo") due to 1 previous error',
+  ].join('\n')), /did not lint/);
+});
+
+test('warnings without a compile error still answer', () => {
+  // The over-correction to avoid: if every run with the word "error" in it were
+  // unanswered, the built-in pack would fire alongside clippy and every Rust
+  // user would see the same shape finding twice.
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  const parsed = rust.parse('src/lib.rs:2:5: warning: unneeded `return` statement');
+  assert.strictEqual(parsed.length, 1);
+});
+
+test('a clean crate parses to no findings rather than to an error', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  assert.deepStrictEqual(rust.parse(''), []);
+});
+
 test('a long-format id matches the short-format id for the same finding', () => {
   // The same warning must not fingerprint differently depending on whether
   // cargo recompiled or replayed: a baseline entry keyed on one id would stop

@@ -457,6 +457,41 @@ test('cargo (real): a cache primed by a hand-run cargo clippy still answers', { 
   assert.strictEqual(out.ok, true);
 });
 
+test('cargo (real): a compile error plus a warning is not an answer', { skip: CARGO }, () => {
+  // Two compilation units in one package: lib.rs carries a lint warning and
+  // compiles, bin/main.rs does not compile at all. cargo prints the warning
+  // AND `error[E0425]`, and exits 101. The warning is attributed to the file
+  // under inspection, so parse() used to succeed with one finding and the run
+  // read as answered — deleting the Rust pack's obvious/* rules for a crate
+  // clippy never finished analysing.
+  const repo = tempRepo({
+    'Cargo.toml': '[package]\nname = "cratea"\nversion = "0.1.0"\nedition = "2021"\n\n[lints.clippy]\nall = "warn"\n',
+    'src/lib.rs': 'pub fn f(x: i32) -> i32 {\n    return x + 1;\n}\n',
+    'src/main.rs': 'fn main() {\n    let _ = missing_value;\n}\n',
+  });
+  const tool = resolveFor('src/lib.rs', { repoRoot: repo });
+  assert.ok(tool, 'a configured cargo must resolve');
+  const out = runToolResult(tool, {
+    repoRoot: repo, absPath: path.join(repo, 'src/lib.rs'), timeoutMs: REAL_TIMEOUT_MS,
+  });
+  assert.strictEqual(out.ok, false, 'a crate that does not compile is a crate clippy did not lint');
+});
+
+test('cargo (real): a genuinely clean crate still answers', { skip: CARGO }, () => {
+  // The over-correction to guard against: if a clean run stopped counting as an
+  // answer, the built-in Rust pack would run alongside clippy on every crate.
+  const repo = tempRepo({
+    'Cargo.toml': '[package]\nname = "cleanc"\nversion = "0.1.0"\nedition = "2021"\n\n[lints.clippy]\nall = "warn"\n',
+    'src/lib.rs': 'pub fn f(x: i32) -> i32 {\n    x + 1\n}\n',
+  });
+  const tool = resolveFor('src/lib.rs', { repoRoot: repo });
+  const out = runToolResult(tool, {
+    repoRoot: repo, absPath: path.join(repo, 'src/lib.rs'), timeoutMs: REAL_TIMEOUT_MS,
+  });
+  assert.strictEqual(out.ok, true, 'a clean crate must stay answered, or the pack duplicates it');
+  assert.deepStrictEqual(out.findings, []);
+});
+
 test('the SAFE rung is never deferred to an external tool', () => {
   // Every external finding lands on TRUE, so no tool run can ever stand in for
   // a safe/* rule — run.js keeps the pack's SAFE rules whatever the tool says.
