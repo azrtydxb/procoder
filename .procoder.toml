@@ -3,5 +3,13 @@ level = "strict"
 [exclude]
 paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
 
+# One file, three named rules. hooks/checks/patterns/markers.js is the pattern
+# table for the rung-4 marker checks: a list of regexes that match orphan TODOs,
+# blanket suppressions and stale deprecations is textually indistinguishable
+# from a file containing those things. Nothing else in that file is exempt, and
+# no other file is exempt for these rules — the logic that uses the table lives
+# in hooks/checks/universal.js and is checked in full.
+rules = ["hooks/checks/patterns/markers.js:alone/orphan-todo", "hooks/checks/patterns/markers.js:alone/blanket-suppression", "hooks/checks/patterns/markers.js:alone/deprecated-no-trigger"]
+
 [baseline]
 enforce_no_growth = true

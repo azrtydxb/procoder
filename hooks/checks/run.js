@@ -6,7 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isExcluded } = require('./config');
+const { isExcluded, isRuleExcluded } = require('./config');
 const { packFor } = require('./registry');
 const { resolveFor, runTool } = require('./resolve');
 const { checkUniversal } = require('./universal');
@@ -46,10 +46,12 @@ function checkFile(absPath, {
   // source, PII in logs, or a deprecation with no removal trigger.
   findings.push(...checkUniversal(source, { relPath, config }));
 
+  const scoped = findings.filter((f) => !isRuleExcluded(config, relPath, f.id));
+
   const lines = source.split(/\r?\n/);
   const kept = applyBaseline
-    ? suppress(findings, { baseline: loadBaseline(repoRoot, config), relPath, lines })
-    : findings;
+    ? suppress(scoped, { baseline: loadBaseline(repoRoot, config), relPath, lines })
+    : scoped;
 
   return {
     relPath,

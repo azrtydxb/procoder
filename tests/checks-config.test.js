@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadConfig, isExcluded, DEFAULTS, findRepoRoot } = require('../hooks/checks/config');
+const { loadConfig, isExcluded, isRuleExcluded, DEFAULTS, findRepoRoot } = require('../hooks/checks/config');
 
 function tempRepo(files = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cfg-'));
@@ -88,4 +88,22 @@ test('isExcluded returns a boolean rather than throwing on any malformed pattern
     const result = isExcluded(cfg, 'anything.ts');
     assert.strictEqual(typeof result, 'boolean');
   });
+});
+
+test('a rule exclusion silences only the named check in the named file', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["a/patterns.js:alone/orphan-todo"]\n',
+  }));
+  assert.ok(isRuleExcluded(cfg, 'a/patterns.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'a/patterns.js', 'alone/commented-code'));
+  assert.ok(!isRuleExcluded(cfg, 'a/other.js', 'alone/orphan-todo'));
+  assert.ok(!isExcluded(cfg, 'a/patterns.js'));
+});
+
+test('a rule exclusion missing either half is dropped, never widened', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["a/patterns.js", "alone/orphan-todo", ":x", "y:"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, []);
+  assert.ok(!isRuleExcluded(cfg, 'a/patterns.js', 'alone/orphan-todo'));
 });
