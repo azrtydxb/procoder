@@ -19,6 +19,15 @@ test('flags SQL built by string concatenation or template', () => {
   assert.ok(!ids('db.query("SELECT * FROM users WHERE id = ?", [id])').includes('safe/sql-injection'));
 });
 
+test('flags SQL concatenation where the literal holds the other quote character', () => {
+  assert.ok(ids(`db.query("SELECT * FROM u WHERE id = '" + id + "'")`).includes('safe/sql-injection'));
+  assert.ok(ids(`db.query('SELECT * FROM u WHERE name = "' + name + '"')`).includes('safe/sql-injection'));
+  assert.ok(ids('db.query(`SELECT * FROM u WHERE id = \'${id}\'`)').includes('safe/sql-injection'));
+  assert.ok(!ids('db.query("SELECT * FROM users WHERE id = $1", [id])').includes('safe/sql-injection'));
+  assert.ok(!ids('const msg = "hello " + name;').includes('safe/sql-injection'));
+  assert.ok(!ids('// build the query with "SELECT " + cols').includes('safe/sql-injection'));
+});
+
 test('flags XSS sinks and dynamic evaluation', () => {
   assert.ok(ids('el.innerHTML = userInput;').includes('safe/xss-sink'));
   assert.ok(ids('<div dangerouslySetInnerHTML={{ __html: body }} />').includes('safe/xss-sink'));
@@ -38,6 +47,14 @@ test('flags shell injection', () => {
   assert.ok(ids("spawn('sh', [cmd], { shell: true });").includes('safe/shell-injection'));
   assert.ok(!ids("execFile('git', ['log', branch]);").includes('safe/shell-injection'));
   assert.ok(!ids("spawn('ls', [dir]);").includes('safe/shell-injection'));
+});
+
+test('flags shell injection where the literal holds the other quote character', () => {
+  assert.ok(ids(`exec("rm '" + x + "'")`).includes('safe/shell-injection'));
+  assert.ok(ids(`exec('rm "' + x + '"')`).includes('safe/shell-injection'));
+  assert.ok(ids('exec(`rm \'${x}\'`)').includes('safe/shell-injection'));
+  assert.ok(!ids("execFile('git', ['log', branch]);").includes('safe/shell-injection'));
+  assert.ok(!ids('const msg = "hello " + name;').includes('safe/shell-injection'));
 });
 
 test('flags swallowed errors and floating promises', () => {

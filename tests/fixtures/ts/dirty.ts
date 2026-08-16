@@ -4,6 +4,26 @@ function lookupUser(db: any, id: string) {
   return db.query(`SELECT * FROM users WHERE id = ${id}`);
 }
 
+function lookupUserQuoted(db: any, id: string) {
+  return db.query("SELECT * FROM u WHERE id = '" + id + "'");
+}
+
+function lookupUserQuotedSingle(db: any, name: string) {
+  return db.query('SELECT * FROM u WHERE name = "' + name + '"');
+}
+
+function removeQuoted(x: string) {
+  exec("rm '" + x + "'");
+}
+
+function removeQuotedSingle(x: string) {
+  exec('rm "' + x + '"');
+}
+
+function removeTemplate(x: string) {
+  exec(`rm '${x}'`);
+}
+
 function renderBio(el: any, userInput: string) {
   el.innerHTML = userInput;
 }

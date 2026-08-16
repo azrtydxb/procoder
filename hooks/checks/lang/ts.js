@@ -12,10 +12,16 @@ const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 // Set it where the pattern describes code shape rather than string content, so a
 // regex literal or a string that merely quotes the pattern is not a hit. Rules
 // that must see literal text (SQL built inside a template string) leave it off.
+// A string literal followed by `+`, matching each quote style separately so a
+// literal may contain the *other* quote — `"rm '"` and `'rm "'` are exactly how
+// shell and SQL fragments get built, and a single `["'][^"']*["']` class misses
+// both. Each branch is anchored on its own quote, so there is no backtracking.
+const LITERAL_PLUS = String.raw`(?:"[^"]*"|'[^']*')\s*\+`;
+
 const LINE_RULES = [
   {
     id: 'safe/sql-injection', rung: 'SAFE',
-    re: /\b(?:query|execute|raw|exec)\s*\(\s*(?:`[^`]*\$\{|["'][^"']*["']\s*\+)/i,
+    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`, 'i'),
     message: 'SQL built by interpolation or concatenation',
     fix: 'use a parameterized query with bound values',
   },
@@ -33,7 +39,7 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: /\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:`[^`]*\$\{|["'][^"']*["']\s*\+)|\b(?:spawn|execFile)\s*\([^)]*\bshell\s*:\s*true/,
+    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})|\b(?:spawn|execFile)\s*\([^)]*\bshell\s*:\s*true`),
     message: 'shell invoked with an interpolated command',
     fix: 'use execFile/spawn with an argument array and shell:false',
   },
