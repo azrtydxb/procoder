@@ -1,5 +1,7 @@
 // Deliberately unsafe/broken fixture — exercises every go.js finding id.
-package dirty
+//
+// Shares a directory (and so a package) with clean.go — see the note there.
+package fixtures
 
 import (
 	"crypto/md5"
