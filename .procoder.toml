@@ -1,0 +1,7 @@
+level = "strict"
+
+[exclude]
+paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
+
+[baseline]
+enforce_no_growth = true
