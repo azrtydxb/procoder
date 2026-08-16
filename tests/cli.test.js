@@ -45,7 +45,7 @@ function atLevel(repo, level) {
 }
 
 test('check exits non-zero and prints findings for a dirty file', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const result = cli(repo, ['check', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /SAFE/);
@@ -57,31 +57,31 @@ test('check exits 0 for a clean file', () => {
 });
 
 test('baseline records findings, after which check passes', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   assert.ok(fs.existsSync(path.join(repo, '.procoder-baseline.json')));
   assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
 });
 
 test('a NEW violation still fails after a baseline exists', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const result = cli(repo, ['check', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /xss|innerHTML|SAFE/i);
 });
 
 test('verify passes when the baseline has not grown', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
 test('verify fails when new violations appear on top of the baseline', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const result = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /not in the baseline/i);
@@ -90,11 +90,11 @@ test('verify fails when new violations appear on top of the baseline', () => {
 // Fixing an old finding must not buy room for a new one: the totals are
 // identical at step 3, so only fingerprint identity can catch it.
 test('verify fails when a baselined finding is swapped for a different one', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 1);
 
   fs.writeFileSync(path.join(repo, 'a.ts'), 'el.innerHTML = y;\n');
@@ -107,9 +107,9 @@ test('verify fails when a baselined finding is swapped for a different one', () 
 // normalized content, so without an occurrence ordinal one baselined line
 // accepts an unlimited number of clones.
 test('verify fails when a baselined violation is cloned', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(51));
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(51));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
 
   const verified = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(verified.code, 0);
@@ -121,16 +121,16 @@ test('verify fails when a baselined violation is cloned', () => {
 });
 
 test('verify passes when the baselined duplicate count is unchanged', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
   assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
 });
 
 test('verify passes when a duplicate violation is deleted — shrinking is fine', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(2));
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(2));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
@@ -145,7 +145,7 @@ test('a path that does not exist is an error, not a clean run', () => {
 test('a directory holding only excluded files is still a clean run', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
-    'src/a.ts': 'eval(x);\n',
+    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   assert.strictEqual(cli(repo, ['check', 'src']).code, 0);
 });
@@ -156,7 +156,7 @@ test('a directory holding only excluded files is still a clean run', () => {
 const V1_BASELINE = JSON.stringify({ version: 1, fingerprints: ['deadbeef'] });
 
 test('verify against a stale baseline explains the format change instead of failing on counts', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const result = cli(repo, ['verify', 'a.ts']);
   assert.strictEqual(result.code, 2);
   assert.match(result.out, /baseline.*format|re-run `procoder baseline/i);
@@ -164,12 +164,12 @@ test('verify against a stale baseline explains the format change instead of fail
 });
 
 test('check against a stale baseline says to re-baseline', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.match(cli(repo, ['check', 'a.ts']).out, /fingerprint format changed/i);
 });
 
 test('re-baselining over a stale baseline replaces it with the current format', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   const written = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
   assert.strictEqual(written.version, 2);
@@ -190,7 +190,7 @@ test('unknown subcommand prints usage and exits non-zero', () => {
 
 test('a rule exclusion that suppresses a live finding is not reported as unused', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',
+    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
     '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n',
   });
   const result = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
@@ -226,7 +226,7 @@ test('a rule exclusion naming a file outside the run scope is not reported eithe
 
 // The README promises OBVIOUS and ALONE are advisory at `pragmatic`. The CLI is
 // what pre-commit hooks and CI run, so a blocking exit there contradicts it.
-const ADVISORY_ONLY = '// TODO: fix this later\n';
+const ADVISORY_ONLY = '// TODO: fix this later\n';  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
 
 test('pragmatic reports judgment findings but does not fail on them alone', () => {
   const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'pragmatic');
@@ -237,7 +237,7 @@ test('pragmatic reports judgment findings but does not fail on them alone', () =
 });
 
 test('pragmatic still fails on a SAFE finding', () => {
-  const repo = atLevel(repoWith({ 'a.ts': 'eval(x);\n' }), 'pragmatic');
+  const repo = atLevel(repoWith({ 'a.ts': 'eval(x);\n' }), 'pragmatic');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const result = cli(repo, ['check', 'a.ts']);
   assert.strictEqual(result.code, 1);
   assert.match(result.out, /SAFE/);
@@ -277,7 +277,7 @@ test('check says a file was skipped for size instead of counting it clean', () =
 test('check stays quiet about a deliberately excluded path', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
-    'src/a.ts': 'eval(x);\n',
+    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const result = cli(repo, ['check', 'src']);
   assert.strictEqual(result.code, 0);

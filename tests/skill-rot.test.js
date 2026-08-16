@@ -11,7 +11,7 @@ test('frontmatter names the skill and its triggers', () => {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(skill);
   assert.ok(m, 'missing frontmatter');
   assert.match(m[1], /^name: procoder-rot$/m);
-  assert.match(m[1], /dead code|stale|deprecated|unused/i);
+  assert.match(m[1], /dead code|stale|deprecated|unused/i);  // procoder: literal alone/deprecated-no-trigger scanner input for that rule, not an instance of it
 });
 
 test('covers every rot category from the spec', () => {

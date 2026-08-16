@@ -30,7 +30,7 @@ test('flags weak hashing and predictable randomness', () => {
 });
 
 test('flags shell injection', () => {
-  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch);').includes('safe/shell-injection'));
+  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch);').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
   assert.ok(ids('new ProcessBuilder("sh", "-c", cmd).start();').includes('safe/shell-injection'));
   assert.ok(!ids('Runtime.getRuntime().exec(new String[]{"git", "log", branch});').includes('safe/shell-injection'));
   assert.ok(!ids('new ProcessBuilder("git", "log", cmd).start();').includes('safe/shell-injection'));

@@ -22,7 +22,7 @@ test('flags SQL built with f-strings, % or concatenation', () => {
 test('flags shell and dynamic execution risks', () => {
   assert.ok(ids('subprocess.run(cmd, shell=True)').includes('safe/shell-injection'));
   assert.ok(ids('os.system("rm " + target)').includes('safe/shell-injection'));
-  assert.ok(ids('eval(user_input)').includes('safe/dynamic-eval'));
+  assert.ok(ids('eval(user_input)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.ok(!ids('subprocess.run(["ls", target])').includes('safe/shell-injection'));
 });
 

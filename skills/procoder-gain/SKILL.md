@@ -17,7 +17,7 @@ The ratchet only counts if someone reads it. This is the readout.
 3. **Net lines.** `git diff --stat <ref>..HEAD` — added versus deleted.
 4. **Rot removals.** `git log <ref>..HEAD --oneline` plus
    `git log <ref>..HEAD -p --diff-filter=D --name-only` for whole files removed.
-   Count commits that deleted exports, settled feature flags, or deprecated
+   Count commits that deleted exports, settled feature flags, or deprecated  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
    paths — verify by reading the diff, not the commit message.
 5. **Boundaries hardened.** `git diff <ref>..HEAD -U0 | grep '^+'` for added
    validation, authz checks, and parameterized queries at entry points. Count

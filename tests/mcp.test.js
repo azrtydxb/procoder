@@ -60,7 +60,7 @@ test('procoder_doctrine returns the ladder', async () => {
 test('procoder_check reports findings for a dirty file', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'a.ts'), 'eval(x);\n');
+  fs.writeFileSync(path.join(dir, 'a.ts'), 'eval(x);\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const [res] = await rpc([{
     jsonrpc: '2.0', id: 4, method: 'tools/call',
     params: { name: 'procoder_check', arguments: { path: path.join(dir, 'a.ts') } },

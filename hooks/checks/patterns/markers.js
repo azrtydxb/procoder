@@ -7,18 +7,20 @@
 // suppressions and stale deprecations. Detection patterns are not the thing
 // they detect, but no regex can tell the two apart.
 //
-// So this file — and only this file — is exempted in .procoder.toml, for those
-// three rules by name and nothing else. Keeping the tables here and the logic
-// in universal.js is what keeps that exemption narrow: every line of behaviour
-// is still checked, only the literals are not.
+// This file used to be exempted wholesale in .procoder.toml for three rules by
+// name. It is not any more: the lines that need it carry a line marker that
+// names the one rule they describe, which is narrower, is visible where
+// the line is, and generalises to the other four places in this repo with the
+// same problem. Keeping the tables here and the logic in universal.js is still
+// what keeps the marked set small: every line of behaviour is unmarked.
 //
 // Anything that is not such a literal belongs in universal.js, not here.
 
 // A marker with no owner and no ticket. The negative lookahead is what
 // distinguishes it from an owned one, which names a person or an issue id.
 const ORPHAN_MARKER =
-  /\b(TODO|FIXME|HACK|XXX)\b(?!\s*[(:]?\s*(?:[A-Z]{2,}-\d+|\([^)]+\)))/;
-const OWNED_MARKER = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}-\d+)/;
+  /\b(TODO|FIXME|HACK|XXX)\b(?!\s*[(:]?\s*(?:[A-Z]{2,}-\d+|\([^)]+\)))/;  // procoder: literal alone/orphan-todo the pattern that matches unowned markers
+const OWNED_MARKER = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}-\d+)/;  // procoder: literal alone/orphan-todo the pattern that matches owned markers
 
 // The literal marker: this line *describes* a pattern rather than being an
 // instance of one. A detection pattern, a doctrine paragraph, a test input, a
@@ -27,7 +29,7 @@ const OWNED_MARKER = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}
 //
 // Shape, and why each part of it:
 //
-//   <any comment syntax> procoder: literal <rule-id>[, <rule-id>...] <reason>
+//   <any comment syntax> procoder: literal <rule-id>[, <rule-id>...] <reason>  // procoder: literal alone/blanket-suppression the marker syntax, written out
 //
 // * It names its rules. There is no wildcard and no bare form: an unnamed
 //   suppression is a rung-4 violation by this project's own doctrine, so the
@@ -43,8 +45,13 @@ const OWNED_MARKER = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}
 //
 // It is deliberately not shaped like any linter's suppression: no tool
 // silences on it, and it silences no tool but this one.
+//
+// The reason is `\S+\s+\S[^\n]*$` rather than a repeated `(?:\s+\S+)+`: the
+// repeated form is a nested quantifier, and on a 300KB minified line that
+// happens to contain the word it cost 1.8s — most of the hook's whole budget.
+// Two words then anything is the same requirement without the backtracking.
 const LITERAL_MARKER =
-  /procoder:\s*literal\s+([a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*)\s+\S+(?:\s+\S+)+\s*$/;
+  /procoder:\s*literal\s+([a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*)\s+\S+\s+\S[^\n]*$/;
 
 // What may precede a standalone marker: comment and markup punctuation only.
 // Anything else — code, prose, a table cell — makes it a trailing marker.
@@ -56,17 +63,17 @@ const LITERAL_MARKER_ALONE = /^[\s/#*<!;%-]*$/;
 //
 // The literal marker is one of these and is policed as one: it is listed in all
 // three patterns below so that a bare or reasonless marker is reported by the
-// same two rules that catch a bare `# noqa`.
+// same two rules that catch a bare `# noqa`.  // procoder: literal alone/blanket-suppression names a bare suppression as an example
 const SUPPRESSION =
-  /\beslint-disable(?:-next-line|-line)?\b|#\s*noqa\b|#\s*type:\s*ignore\b|\/\/\s*nolint\b|@SuppressWarnings\s*\(|#pragma\s+warning\s+disable\b|\/\/\s*@ts-(?:ignore|expect-error)\b|#\s*pylint:\s*disable\b|\/\/\s*deepcode\s+ignore\b|procoder:\s*literal\b/i;
+  /\beslint-disable(?:-next-line|-line)?\b|#\s*noqa\b|#\s*type:\s*ignore\b|\/\/\s*nolint\b|@SuppressWarnings\s*\(|#pragma\s+warning\s+disable\b|\/\/\s*@ts-(?:ignore|expect-error)\b|#\s*pylint:\s*disable\b|\/\/\s*deepcode\s+ignore\b|procoder:\s*literal\b/i;  // procoder: literal alone/blanket-suppression the table of suppression syntaxes
 
 // The rule identifier that scopes the suppression, per ecosystem.
 const SUPPRESSION_NAMED =
-  /eslint-disable(?:-next-line|-line)?\s+[\w@/-]+|#\s*noqa:\s*\w+|#\s*type:\s*ignore\[[^\]]+\]|\/\/\s*nolint:\s*[\w,-]+|@SuppressWarnings\s*\(\s*"(?!all")[^"]+"|#pragma\s+warning\s+disable\s+\w+|#\s*pylint:\s*disable=\s*[\w,-]+|procoder:\s*literal\s+[a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*/i;
+  /eslint-disable(?:-next-line|-line)?\s+[\w@/-]+|#\s*noqa:\s*\w+|#\s*type:\s*ignore\[[^\]]+\]|\/\/\s*nolint:\s*[\w,-]+|@SuppressWarnings\s*\(\s*"(?!all")[^"]+"|#pragma\s+warning\s+disable\s+\w+|#\s*pylint:\s*disable=\s*[\w,-]+|procoder:\s*literal\s+[a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*/i;  // procoder: literal alone/blanket-suppression the table of rule-naming syntaxes
 
 // A whole-file disable, or an explicit "everything" target.
 const SUPPRESSION_BLANKET =
-  /\/\*\s*eslint-disable\s*\*\/|@SuppressWarnings\s*\(\s*"all"\s*\)|\/\/\s*nolint\s*$|#\s*pylint:\s*skip-file\b|procoder:\s*literal\b(?!\s+[a-z]+\/[a-z-]+)/i;
+  /\/\*\s*eslint-disable\s*\*\/|@SuppressWarnings\s*\(\s*"all"\s*\)|\/\/\s*nolint\s*$|#\s*pylint:\s*skip-file\b|procoder:\s*literal\b(?!\s+[a-z]+\/[a-z-]+)/i;  // procoder: literal alone/blanket-suppression the table of blanket syntaxes
 
 // The stated reason: substantive human text after the rule identifier.
 // Ecosystems spell the separator differently (`--`, `//`, `-`, `:`), or skip a
@@ -76,16 +83,16 @@ const SUPPRESSION_BLANKET =
 // itself has been stripped out by the caller.
 const SUPPRESSION_REASON = /\S+\s+\S+/;
 
-const DEPRECATION_MARK = /@?\bdeprecated\b|\bDeprecated\s*\(|#\[deprecated/i;
+const DEPRECATION_MARK = /@?\bdeprecated\b|\bDeprecated\s*\(|#\[deprecated/i;  // procoder: literal alone/deprecated-no-trigger the pattern that matches deprecations
 const REMOVAL_TRIGGER =
   /\b(?:remove|delete|drop|sunset)\b[^.\n]{0,40}\b(?:after|by|in|once|when)\b|\bv?\d+\.\d+\b|\b20\d\d-\d\d(?:-\d\d)?\b/i;
 
 // Finding text for each of the three. Held here rather than at the call site
-// because the ids themselves ("alone/deprecated-no-trigger") are marker-shaped.
+// because the ids themselves ("alone/deprecated-no-trigger") are marker-shaped.  // procoder: literal alone/deprecated-no-trigger the rule id is marker-shaped
 const ORPHAN_MARKER_FINDING = {
   rung: 'ALONE',
   id: 'alone/orphan-todo',
-  message: 'TODO with no owner or ticket',
+  message: 'TODO with no owner or ticket',  // procoder: literal alone/orphan-todo the finding text for that rule
   fix: 'add TODO(owner) or a ticket id, or do it now',
 };
 
@@ -105,7 +112,7 @@ const UNEXPLAINED_SUPPRESSION_FINDING = {
 
 const STALE_DEPRECATION_FINDING = {
   rung: 'ALONE',
-  id: 'alone/deprecated-no-trigger',
+  id: 'alone/deprecated-no-trigger',  // procoder: literal alone/deprecated-no-trigger the finding id for that rule
   message: 'deprecation with no removal trigger',
   fix: 'add "remove after <version|date|condition>", or delete the old path now',
 };

@@ -89,7 +89,7 @@ test('doctrine stays under the context budget', () => {
 test('suppression rule requires narrowest scope and a named rule', () => {
   assert.match(doctrine, /narrowest unit the tool allows/,
     'missing narrowest-scope requirement for suppressions');
-  assert.match(doctrine, /eslint-disable-next-line/,
+  assert.match(doctrine, /eslint-disable-next-line/,  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
     'missing named-rule suppression example');
   assert.match(doctrine, /unnamed.*unexplained.*stale/,
     'missing rule that an unnamed/unexplained/stale suppression is itself a rung-4 violation');

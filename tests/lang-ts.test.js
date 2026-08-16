@@ -14,15 +14,15 @@ test('declares the extensions it owns', () => {
 });
 
 test('flags SQL built by string concatenation or template', () => {
-  assert.ok(ids('db.query(`SELECT * FROM users WHERE id = ${id}`)').includes('safe/sql-injection'));
-  assert.ok(ids('db.query("SELECT * FROM t WHERE a = " + a)').includes('safe/sql-injection'));
+  assert.ok(ids('db.query(`SELECT * FROM users WHERE id = ${id}`)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('db.query("SELECT * FROM t WHERE a = " + a)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
   assert.ok(!ids('db.query("SELECT * FROM users WHERE id = ?", [id])').includes('safe/sql-injection'));
 });
 
 test('flags SQL concatenation where the literal holds the other quote character', () => {
-  assert.ok(ids(`db.query("SELECT * FROM u WHERE id = '" + id + "'")`).includes('safe/sql-injection'));
-  assert.ok(ids(`db.query('SELECT * FROM u WHERE name = "' + name + '"')`).includes('safe/sql-injection'));
-  assert.ok(ids('db.query(`SELECT * FROM u WHERE id = \'${id}\'`)').includes('safe/sql-injection'));
+  assert.ok(ids(`db.query("SELECT * FROM u WHERE id = '" + id + "'")`).includes('safe/sql-injection'));  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+  assert.ok(ids(`db.query('SELECT * FROM u WHERE name = "' + name + '"')`).includes('safe/sql-injection'));  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('db.query(`SELECT * FROM u WHERE id = \'${id}\'`)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
   assert.ok(!ids('db.query("SELECT * FROM users WHERE id = $1", [id])').includes('safe/sql-injection'));
   assert.ok(!ids('const msg = "hello " + name;').includes('safe/sql-injection'));
   assert.ok(!ids('// build the query with "SELECT " + cols').includes('safe/sql-injection'));
@@ -31,28 +31,28 @@ test('flags SQL concatenation where the literal holds the other quote character'
 test('flags XSS sinks and dynamic evaluation', () => {
   assert.ok(ids('el.innerHTML = userInput;').includes('safe/xss-sink'));
   assert.ok(ids('<div dangerouslySetInnerHTML={{ __html: body }} />').includes('safe/xss-sink'));
-  assert.ok(ids('eval(payload)').includes('safe/dynamic-eval'));
+  assert.ok(ids('eval(payload)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.ok(!ids('el.textContent = userInput;').includes('safe/xss-sink'));
 });
 
 test('flags disabled TLS verification and weak randomness for tokens', () => {
-  assert.ok(ids('rejectUnauthorized: false').includes('safe/tls-disabled'));
-  assert.ok(ids('const token = Math.random().toString(36);').includes('safe/weak-random'));
+  assert.ok(ids('rejectUnauthorized: false').includes('safe/tls-disabled'));  // procoder: literal safe/tls-disabled scanner input for that rule, not an instance of it
+  assert.ok(ids('const token = Math.random().toString(36);').includes('safe/weak-random'));  // procoder: literal safe/weak-random scanner input for that rule, not an instance of it
   assert.ok(!ids('const jitter = Math.random() * 100;').includes('safe/weak-random'));
 });
 
 test('flags shell injection', () => {
-  assert.ok(ids('exec(`git log ${branch}`);').includes('safe/shell-injection'));
-  assert.ok(ids("execSync('rm -rf ' + dir);").includes('safe/shell-injection'));
-  assert.ok(ids("spawn('sh', [cmd], { shell: true });").includes('safe/shell-injection'));
+  assert.ok(ids('exec(`git log ${branch}`);').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids("execSync('rm -rf ' + dir);").includes('safe/shell-injection'));  // procoder: literal safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids("spawn('sh', [cmd], { shell: true });").includes('safe/shell-injection'));  // procoder: literal safe/shell-injection scanner input for that rule, not an instance of it
   assert.ok(!ids("execFile('git', ['log', branch]);").includes('safe/shell-injection'));
   assert.ok(!ids("spawn('ls', [dir]);").includes('safe/shell-injection'));
 });
 
 test('flags shell injection where the literal holds the other quote character', () => {
-  assert.ok(ids(`exec("rm '" + x + "'")`).includes('safe/shell-injection'));
-  assert.ok(ids(`exec('rm "' + x + '"')`).includes('safe/shell-injection'));
-  assert.ok(ids('exec(`rm \'${x}\'`)').includes('safe/shell-injection'));
+  assert.ok(ids(`exec("rm '" + x + "'")`).includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids(`exec('rm "' + x + '"')`).includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('exec(`rm \'${x}\'`)').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
   assert.ok(!ids("execFile('git', ['log', branch]);").includes('safe/shell-injection'));
   assert.ok(!ids('const msg = "hello " + name;').includes('safe/shell-injection'));
 });
@@ -64,8 +64,8 @@ test('flags swallowed errors and floating promises', () => {
 });
 
 test('flags leftover debugging', () => {
-  assert.ok(ids('console.log("here")').includes('alone/debug-leftover'));
-  assert.ok(ids('debugger;').includes('alone/debug-leftover'));
+  assert.ok(ids('console.log("here")').includes('alone/debug-leftover'));  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
+  assert.ok(ids('debugger;').includes('alone/debug-leftover'));  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
   assert.ok(!ids('logger.info("started")').includes('alone/debug-leftover'));
 });
 

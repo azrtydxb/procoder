@@ -9,10 +9,10 @@ const run = (src) => checkUniversal(src, { relPath: 'x.js', config });
 const ids = (src) => run(src).map((f) => f.id);
 
 test('flags hardcoded secrets of several shapes', () => {
-  assert.ok(ids('const k = "AKIAIOSFODNN7EXAMPLE";').includes('safe/hardcoded-secret'));
-  assert.ok(ids('token = "ghp_aBcD1234567890aBcD1234567890aBcD12"').includes('safe/hardcoded-secret'));
-  assert.ok(ids('-----BEGIN RSA PRIVATE KEY-----').includes('safe/hardcoded-secret'));
-  assert.ok(ids('const password = "hunter2correcthorse";').includes('safe/hardcoded-secret'));
+  assert.ok(ids('const k = "AKIAIOSFODNN7EXAMPLE";').includes('safe/hardcoded-secret'));  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  assert.ok(ids('token = "ghp_aBcD1234567890aBcD1234567890aBcD12"').includes('safe/hardcoded-secret'));  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  assert.ok(ids('-----BEGIN RSA PRIVATE KEY-----').includes('safe/hardcoded-secret'));  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  assert.ok(ids('const password = "hunter2correcthorse";').includes('safe/hardcoded-secret'));  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
 });
 
 test('does not flag secrets read from the environment or a manager', () => {
@@ -23,10 +23,10 @@ test('does not flag secrets read from the environment or a manager', () => {
 });
 
 test('flags secrets and PII reaching log calls', () => {
-  assert.ok(ids('logger.info(`auth ${token}`)').includes('safe/secret-in-log'));
-  assert.ok(ids('console.log("authorization: " + req.headers.authorization)').includes('safe/secret-in-log'));
-  assert.ok(ids('log.debug(`session ${sessionId} rotated`)').includes('safe/secret-in-log'));
-  assert.ok(ids('log.debug(f"user email {user.email}")').includes('safe/pii-in-log'));
+  assert.ok(ids('logger.info(`auth ${token}`)').includes('safe/secret-in-log'));  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
+  assert.ok(ids('console.log("authorization: " + req.headers.authorization)').includes('safe/secret-in-log'));  // procoder: literal safe/secret-in-log, alone/debug-leftover scanner input for that rule, not an instance of it
+  assert.ok(ids('log.debug(`session ${sessionId} rotated`)').includes('safe/secret-in-log'));  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
+  assert.ok(ids('log.debug(f"user email {user.email}")').includes('safe/pii-in-log'));  // procoder: literal safe/pii-in-log scanner input for that rule, not an instance of it
   assert.deepStrictEqual(ids('logger.info(`user ${user.id} logged in`)'), []);
 });
 
@@ -38,8 +38,8 @@ test('does not flag a sensitive word in the log message when it is not what is i
 });
 
 test('still flags when the sensitive word is part of the interpolated expression itself', () => {
-  assert.ok(ids('log.info(`${user.password}`)').includes('safe/secret-in-log'));
-  assert.ok(ids('log.info(`${config.apiKey}`)').includes('safe/secret-in-log'));
+  assert.ok(ids('log.info(`${user.password}`)').includes('safe/secret-in-log'));  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
+  assert.ok(ids('log.info(`${config.apiKey}`)').includes('safe/secret-in-log'));  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
 });
 
 test('flags a block of commented-out code but not prose comments', () => {
@@ -97,19 +97,19 @@ test('reads measured explanations as prose, not commented-out code', () => {
 });
 
 test('flags TODOs without an owner or ticket', () => {
-  assert.ok(ids('// TODO: fix this later').includes('alone/orphan-todo'));
+  assert.ok(ids('// TODO: fix this later').includes('alone/orphan-todo'));  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   assert.ok(!ids('// TODO(pascal): drop the shim').includes('alone/orphan-todo'));
   assert.ok(!ids('// TODO INFRA-4821: drop the shim').includes('alone/orphan-todo'));
 });
 
 test('flags blanket suppressions but not narrow, named, explained ones', () => {
   // File-wide or unnamed: silences everything at that location, including future findings.
-  assert.ok(ids('/* eslint-disable */').includes('alone/blanket-suppression'));
-  assert.ok(ids('// eslint-disable-next-line').includes('alone/blanket-suppression'));
-  assert.ok(ids('x = compute()  # noqa').includes('alone/blanket-suppression'));
-  assert.ok(ids('y = cast(v)  # type: ignore').includes('alone/blanket-suppression'));
-  assert.ok(ids('//nolint').includes('alone/blanket-suppression'));
-  assert.ok(ids('@SuppressWarnings("all")').includes('alone/blanket-suppression'));
+  assert.ok(ids('/* eslint-disable */').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('// eslint-disable-next-line').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('x = compute()  # noqa').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('y = cast(v)  # type: ignore').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('//nolint').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('@SuppressWarnings("all")').includes('alone/blanket-suppression'));  // procoder: literal alone/blanket-suppression scanner input for that rule, not an instance of it
 
   // Named + scoped + explained: the sanctioned form, must stay silent.
   assert.deepStrictEqual(
@@ -120,8 +120,8 @@ test('flags blanket suppressions but not narrow, named, explained ones', () => {
 });
 
 test('flags a named suppression that gives no reason', () => {
-  assert.ok(ids('// eslint-disable-next-line no-eval').includes('alone/unexplained-suppression'));
-  assert.ok(ids('#pragma warning disable CS0618').includes('alone/unexplained-suppression'));
+  assert.ok(ids('// eslint-disable-next-line no-eval').includes('alone/unexplained-suppression'));  // procoder: literal alone/unexplained-suppression scanner input for that rule, not an instance of it
+  assert.ok(ids('#pragma warning disable CS0618').includes('alone/unexplained-suppression'));  // procoder: literal alone/unexplained-suppression scanner input for that rule, not an instance of it
 });
 
 test('flags a suppression with a reason expressed as trailing prose, no separator', () => {
@@ -130,7 +130,7 @@ test('flags a suppression with a reason expressed as trailing prose, no separato
 });
 
 test('flags deprecations with no removal trigger', () => {
-  assert.ok(ids('// @deprecated use createUser instead').includes('alone/deprecated-no-trigger'));
+  assert.ok(ids('// @deprecated use createUser instead').includes('alone/deprecated-no-trigger'));  // procoder: literal alone/deprecated-no-trigger scanner input for that rule, not an instance of it
   assert.ok(!ids('// @deprecated remove after v3.0').includes('alone/deprecated-no-trigger'));
   assert.ok(!ids('// procoder: remove after the 2026-10 migration').includes('alone/deprecated-no-trigger'));
 });
@@ -148,7 +148,7 @@ test('the clean fixture produces no findings and the dirty one produces several'
 });
 
 test('every finding carries a line number and a fix', () => {
-  for (const f of run('const k = "AKIAIOSFODNN7EXAMPLE";\n// TODO: later\n')) {
+  for (const f of run('const k = "AKIAIOSFODNN7EXAMPLE";\n// TODO: later\n')) {  // procoder: literal safe/hardcoded-secret, alone/orphan-todo scanner input for that rule, not an instance of it
     assert.ok(f.line > 0, `${f.id} has no line`);
     assert.ok(f.fix.length > 0, `${f.id} has no fix`);
   }
@@ -186,7 +186,7 @@ test('stays linear on a single 300KB line', () => {
   const shapes = {
     'word run in a comment': '// ' + rep('a'),
     'unclosed parens in a comment': '// ' + rep('a('),
-    'unclosed interpolation in a log call': 'console.log("' + rep('${') + '")',
+    'unclosed interpolation in a log call': 'console.log("' + rep('${') + '")',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
   };
   for (const [what, source] of Object.entries(shapes)) {
     const start = Date.now();
@@ -200,7 +200,7 @@ test('stays linear on a single 300KB line', () => {
 // speed must not have been bought by skipping the line.
 test('finds a credential on a 300KB minified line', () => {
   const filler = 'function e(t){return t.x?f(t,1):g(t)};var n=[1,2,3];'.repeat(3000);
-  const findings = run(`${filler};var q="AKIAIOSFODNN7EXAMPLE";${filler}`);
+  const findings = run(`${filler};var q="AKIAIOSFODNN7EXAMPLE";${filler}`);  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
   assert.ok(findings.some((f) => f.id === 'safe/hardcoded-secret'),
     'a hardcoded AWS key on a 300KB line went unreported');
 });
@@ -237,12 +237,12 @@ test('a literal marker silences nothing it did not name', () => {
   assert.ok(ids(`const k = "${KEY}"; // ${MARK}alone/orphan-todo wrong rule named here`)
     .includes('safe/hardcoded-secret'));
   assert.deepStrictEqual(
-    ids(`// TODO: later ${MARK}alone/orphan-todo describes an unowned marker`), []);
+    ids(`// TODO: later ${MARK}alone/orphan-todo describes an unowned marker`), []);  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
 });
 
 test('a literal marker may name several rules', () => {
   assert.deepStrictEqual(
-    ids(`// TODO: later, deprecated too // ${MARK}alone/orphan-todo, alone/deprecated-no-trigger both described here`),
+    ids(`// TODO: later, deprecated too // ${MARK}alone/orphan-todo, alone/deprecated-no-trigger both described here`),  // procoder: literal alone/orphan-todo, alone/deprecated-no-trigger scanner input for that rule, not an instance of it
     []);
 });
 

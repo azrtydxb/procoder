@@ -125,7 +125,7 @@ test('a linter that crashes without parseable output falls back to the pack', sh
 test('the same preference applies to the other ecosystems', shimTest, () => {
   const repo = repoWith({
     '.eslintrc.json': '{}',
-    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',
+    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const eslint = '#!/bin/sh\necho \'[{"messages":[{"line":1,"ruleId":"no-unused-vars","message":"unused"}]}]\'\n';
   const out = withShim('eslint', eslint, () =>
@@ -138,7 +138,7 @@ test('the same preference applies to the other ecosystems', shimTest, () => {
 });
 
 test('runs both the language pack and the universal pack', () => {
-  const repo = repoWith({ 'src/a.ts': 'el.innerHTML = x;\n// TODO: later\n' });
+  const repo = repoWith({ 'src/a.ts': 'el.innerHTML = x;\n// TODO: later\n' });  // procoder: literal safe/xss-sink, alone/orphan-todo scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   const ids = out.findings.map((f) => f.id);
   assert.ok(ids.includes('safe/xss-sink'), 'language pack did not run');
@@ -146,7 +146,7 @@ test('runs both the language pack and the universal pack', () => {
 });
 
 test('runs the universal pack even for unsupported file types', () => {
-  const repo = repoWith({ 'notes.md': 'key = "AKIAIOSFODNN7EXAMPLE"\n' });
+  const repo = repoWith({ 'notes.md': 'key = "AKIAIOSFODNN7EXAMPLE"\n' });  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'notes.md'), { repoRoot: repo, config: loadConfig(repo) });
   assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
 });
@@ -154,7 +154,7 @@ test('runs the universal pack even for unsupported file types', () => {
 test('excluded paths are skipped entirely', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["generated/"]\n',
-    'generated/a.ts': 'eval(x);\n',
+    'generated/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = checkFile(path.join(repo, 'generated/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.strictEqual(out.skipped, 'excluded');
@@ -170,12 +170,12 @@ test('an unreadable file yields skipped, not a throw', () => {
 test('findings are sorted by rung and capped', () => {
   const repo = repoWith({
     'src/a.ts': [
-      '// TODO: one',
-      '// TODO: two',
-      'eval(a);',
+      '// TODO: one',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+      '// TODO: two',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+      'eval(a);',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
       'el.innerHTML = b;',
-      'debugger;',
-      'console.log(1);',
+      'debugger;',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
+      'console.log(1);',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
     ].join('\n'),
   });
   const out = checkFile(path.join(repo, 'src/a.ts'),
@@ -185,22 +185,22 @@ test('findings are sorted by rung and capped', () => {
 });
 
 test('baselined findings are suppressed', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });
+  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const config = loadConfig(repo);
   writeBaseline(repo, config, [
     fingerprint(finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
-      'src/a.ts', 'eval(a);'),
+      'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   ]);
   const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.deepStrictEqual(out.findings.map((f) => f.id), []);
 });
 
 test('applyBaseline false reports findings the baseline would suppress', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });
+  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const config = loadConfig(repo);
   writeBaseline(repo, config, [
     fingerprint(finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
-      'src/a.ts', 'eval(a);'),
+      'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   ]);
   const out = checkFile(path.join(repo, 'src/a.ts'),
     { repoRoot: repo, config: loadConfig(repo), applyBaseline: false });
@@ -217,7 +217,7 @@ test('a file past the size cap is skipped, not scanned', () => {
 // cap exists for files no human edits, so a 400KB one must still be scanned.
 test('a large but ordinary source is scanned, not skipped', () => {
   const repo = repoWith({
-    'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,
+    'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
   });
   const started = Date.now();
   const out = checkFile(path.join(repo, 'big.ts'),
@@ -240,7 +240,7 @@ test('a minified file finishes well inside the 2s budget', () => {
 
 test('a long line does not stall a file of otherwise normal lines', () => {
   const repo = repoWith({
-    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,
+    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const started = Date.now();
   const out = checkFile(path.join(repo, 'mixed.ts'),
@@ -256,7 +256,7 @@ test('a long line does not stall a file of otherwise normal lines', () => {
 // bundle or a generated file is exactly where a leaked key hides.
 test('a secret on a minified line is still reported', () => {
   const long = `function f(a,b){return a&&b?a:b;}`.repeat(300);
-  const repo = repoWith({ 'bundle.js': `${long}var k="AKIAIOSFODNN7EXAMPLE";${long}\n` });
+  const repo = repoWith({ 'bundle.js': `${long}var k="AKIAIOSFODNN7EXAMPLE";${long}\n` });  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'bundle.js'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'),
@@ -281,7 +281,7 @@ test('an injection sink on a minified line is reported', () => {
 test('disabled TLS verification on a minified line is reported', () => {
   const filler = minifiedLine(20 * 1024);
   const repo = repoWith({
-    'bundle.ts': `${filler}https.get({rejectUnauthorized:false});${filler}\n`,
+    'bundle.ts': `${filler}https.get({rejectUnauthorized:false});${filler}\n`,  // procoder: literal safe/tls-disabled scanner input for that rule, not an instance of it
   });
   const out = checkFile(path.join(repo, 'bundle.ts'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
@@ -360,7 +360,7 @@ test('the suppressed overflow is reported, not silent', () => {
 });
 
 test('a line under the cap gets no suppression notice', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });
+  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'src/a.ts'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   assert.ok(!out.findings.some((f) => f.id === 'true/findings-suppressed'));
@@ -377,10 +377,10 @@ test('a flooded line does not crowd out findings from other lines', () => {
 
 test('touched narrows the language pack to the edited region', () => {
   const repo = repoWith({
-    'src/a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+    'src/a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = checkFile(path.join(repo, 'src/a.ts'), {
-    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],
+    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const lines = out.findings.filter((f) => f.id === 'safe/dynamic-eval').map((f) => f.line);
   assert.deepStrictEqual(lines, [42]);
@@ -388,16 +388,16 @@ test('touched narrows the language pack to the edited region', () => {
 
 test('touched never narrows the universal pack — a secret anywhere counts', () => {
   const repo = repoWith({
-    'src/a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+    'src/a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/hardcoded-secret, safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = checkFile(path.join(repo, 'src/a.ts'), {
-    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],
+    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret' && f.line === 1));
 });
 
 test('touched text that is not in the file falls back to the whole file', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });
+  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'src/a.ts'), {
     repoRoot: repo, config: loadConfig(repo), touched: ['nothing like this'],
   });
@@ -405,7 +405,7 @@ test('touched text that is not in the file falls back to the whole file', () => 
 });
 
 test('relPath is repo-relative and uses forward slashes', () => {
-  const repo = repoWith({ 'src/deep/a.ts': 'eval(a);\n' });
+  const repo = repoWith({ 'src/deep/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const out = checkFile(path.join(repo, 'src/deep/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.strictEqual(out.relPath, 'src/deep/a.ts');
 });
