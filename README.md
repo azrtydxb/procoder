@@ -61,7 +61,19 @@ level) when you want procoder back.
 | Command | Purpose |
 |---|---|
 | `/procoder` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
+| `/procoder-review` | Review the current diff against the four rungs. |
+| `/procoder-audit` | Audit the whole repository, ranked by rung severity. |
+| `/procoder-rot` | Find dead, stale, and deprecated code left behind. |
+| `/procoder-threat` | Map every trust boundary and what validates it. |
+| `/procoder-deps` | Audit dependencies: vulnerable, abandoned, unpinned, unused. |
+| `/procoder-debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
+| `/procoder-gain` | Measured progress: rot removed, boundaries hardened, baseline shrinkage. |
+| `/procoder-guard` | Install procoder as a pre-commit hook and CI check. |
 | `/procoder-help` | Show procoder's rungs, levels, and commands. |
+
+`/procoder-rot` and `/procoder-threat` have no equivalent in comparable tools:
+one hunts what previous changes left behind, the other maps where untrusted
+data enters and what validates it.
 
 ## Configuration
 
