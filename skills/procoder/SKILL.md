@@ -104,6 +104,9 @@ concurrent access, partial failure, retry/idempotency. Money is never a float.
 connections. Shared mutable state is guarded or eliminated.
 Cancellation/timeouts exist on every outbound call.
 
+**Suppressions are not a fix.** Silencing a linter/type-checker to go green
+is rung-4 rot, not rung-2 correctness — see ALONE below.
+
 **Tests — quality, not count.**
 
 - Non-trivial logic leaves behind ONE runnable check, minimum.
@@ -192,6 +195,16 @@ A change isn't done until the thing it replaced is gone.
   a violation.
 - Stale documentation, dead config keys, unused dependencies, and orphaned test
   fixtures are all rot.
+- **Suppressions.** A suppression claims the tool is wrong — earn that: fix the
+  code first, suppress only a confirmed false positive. Never blanket-disable
+  (a file, a whole rule set, or a rule in config to pass one site). Scope to
+  the narrowest unit the tool allows — next-line over block, block over file.
+  Always name the specific rule: `// eslint-disable-next-line <rule> -- <why>`,
+  `# noqa: <code>`, `# type: ignore[<code>]`, `//nolint:<linter> // <why>`,
+  `@SuppressWarnings("<specific>")` on the narrowest declaration, `#pragma
+  warning disable <ID>` paired with a matching restore. State why, in the
+  suppression itself. An unnamed, unexplained, or stale (finding since fixed)
+  suppression is itself a rung-4 violation.
 
 Applies to the diff.
 <!-- /level -->

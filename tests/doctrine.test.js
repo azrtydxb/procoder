@@ -48,3 +48,12 @@ test('covers every spec requirement area', () => {
 test('doctrine stays under the context budget', () => {
   assert.ok(doctrine.length < 12000, `doctrine is ${doctrine.length} chars; budget is 12000`);
 });
+
+test('suppression rule requires narrowest scope and a named rule', () => {
+  assert.match(doctrine, /narrowest unit the tool allows/,
+    'missing narrowest-scope requirement for suppressions');
+  assert.match(doctrine, /eslint-disable-next-line/,
+    'missing named-rule suppression example');
+  assert.match(doctrine, /unnamed.*unexplained.*stale/,
+    'missing rule that an unnamed/unexplained/stale suppression is itself a rung-4 violation');
+});
