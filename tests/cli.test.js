@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -27,12 +27,19 @@ function repoWith(files) {
   return dir;
 }
 
-function cli(repo, args) {
-  try {
-    return { code: 0, out: execFileSync('node', [CLI, ...args], { cwd: repo, encoding: 'utf8' }) };
-  } catch (e) {
-    return { code: e.status, out: String(e.stdout || '') + String(e.stderr || '') };
-  }
+// CLAUDE_CONFIG_DIR defaults to the throwaway repo, which holds no level file:
+// the CLI then sees the default level (strict), not whatever the developer
+// running the suite happens to have set for themselves.
+function cli(repo, args, env = {}) {
+  const r = spawnSync('node', [CLI, ...args], {
+    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
+  });
+  return { code: r.status, out: String(r.stdout || '') + String(r.stderr || '') };
+}
+
+function atLevel(repo, level) {
+  fs.writeFileSync(path.join(repo, '.procoder-active'), level + '\n');
+  return repo;
 }
 
 test('check exits non-zero and prints findings for a dirty file', () => {
@@ -213,4 +220,55 @@ test('a rule exclusion naming a file outside the run scope is not reported eithe
   const result = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
   assert.strictEqual(result.code, 0, 'an exclusion for a file the run never touched cannot be judged');
   assert.doesNotMatch(result.out, /suppressed nothing/i);
+});
+
+// The README promises OBVIOUS and ALONE are advisory at `pragmatic`. The CLI is
+// what pre-commit hooks and CI run, so a blocking exit there contradicts it.
+const ADVISORY_ONLY = '// TODO: fix this later\n';
+
+test('pragmatic reports judgment findings but does not fail on them alone', () => {
+  const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'pragmatic');
+  const result = cli(repo, ['check', 'a.ts']);
+  assert.strictEqual(result.code, 0);
+  assert.match(result.out, /ALONE/);
+  assert.match(result.out, /advisory|not blocking/i);
+});
+
+test('pragmatic still fails on a SAFE finding', () => {
+  const repo = atLevel(repoWith({ 'a.ts': 'eval(x);\n' }), 'pragmatic');
+  const result = cli(repo, ['check', 'a.ts']);
+  assert.strictEqual(result.code, 1);
+  assert.match(result.out, /SAFE/);
+});
+
+// CI has no user-level config, so an absent level file must mean strict.
+test('no level file means strict, so judgment findings fail', () => {
+  const repo = repoWith({ 'a.ts': ADVISORY_ONLY });
+  assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 1);
+});
+
+test('strict fails on a judgment finding', () => {
+  const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'strict');
+  assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 1);
+});
+
+// A file over the size cap was never checked. Silence makes it identical to a
+// clean pass, which is how an unchecked 400KB file rides into main.
+test('check says a file was skipped for size instead of counting it clean', () => {
+  const repo = repoWith({ 'big.ts': `const x = 1;\n// ${'x'.repeat(300 * 1024)}\n` });
+  const result = cli(repo, ['check', 'big.ts']);
+  assert.strictEqual(result.code, 0, 'a size skip reports, it does not fail the build');
+  assert.match(result.out, /skipped/i);
+  assert.match(result.out, /big\.ts/);
+});
+
+// An excluded path is deliberate config, not news.
+test('check stays quiet about a deliberately excluded path', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
+    'src/a.ts': 'eval(x);\n',
+  });
+  const result = cli(repo, ['check', 'src']);
+  assert.strictEqual(result.code, 0);
+  assert.doesNotMatch(result.out, /skipped/i);
 });
