@@ -302,36 +302,45 @@ test('check says a file was skipped for size instead of counting it clean', () =
 // costs the most: the ratchet compares present findings against the baseline,
 // so a file nothing looked at contributes nothing and the build goes green.
 // `check` said so all along; verify and baseline did not.
-test('verify and baseline say a file was skipped for size', () => {
+// A size skip used to report and still exit 0. It does not any more: the
+// ratchet is a claim about what was looked at, and `max_file_bytes` set too low
+// skips every file while verify prints "ratchet holds" — a CI gate passing
+// because it read nothing. 2, not 1: "cannot verify", not "you added findings".
+test('verify and baseline say a file was skipped for size, and verify stops', () => {
   const repo = repoWith({ 'big.ts': 'const x = 1;\n' });
   fs.truncateSync(path.join(repo, 'big.ts'), MAX_FILE_BYTES + 1);
   const baselined = cli(repo, ['baseline', 'big.ts']);
   assert.match(baselined.out, /skipped/i, 'baseline recorded nothing and said nothing');
   const verified = cli(repo, ['verify', 'big.ts']);
-  assert.strictEqual(verified.code, 0, 'a size skip reports, it does not fail the build');
-  assert.match(verified.out, /skipped/i, 'the ratchet held over a file nothing looked at');
+  assert.strictEqual(verified.code, 2, 'the ratchet held over a file nothing looked at');
+  assert.doesNotMatch(verified.out, /ratchet holds/);
+  assert.match(verified.out, /skipped/i);
   assert.match(verified.out, /big\.ts/);
 });
 
-// ...and the same restraint as `check`: deliberate config is not news, on any
-// subcommand.
-test('verify stays quiet about a deliberately excluded path', () => {
+// Deliberate config, and still news: a .procoderignore has always reported its
+// count, and a path exclusion narrows the gate exactly as much. What it must
+// not do is report once per file — that is what would bury the findings — so
+// the count is one line naming the pattern that did it.
+test('verify reports an excluded path by count, not by silence', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
     'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
-  assert.doesNotMatch(cli(repo, ['verify', 'src']).out, /skipped/i);
+  const result = cli(repo, ['verify', 'src']);
+  assert.strictEqual(result.code, 0);
+  assert.match(result.out, /1 file skipped by \[exclude\] paths "src\/"/);
 });
 
-// An excluded path is deliberate config, not news.
-test('check stays quiet about a deliberately excluded path', () => {
+test('check reports an excluded path by count, and still passes', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
     'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const result = cli(repo, ['check', 'src']);
   assert.strictEqual(result.code, 0);
-  assert.doesNotMatch(result.out, /skipped/i);
+  assert.match(result.out, /1 file skipped by \[exclude\] paths "src\/"/);
+  assert.doesNotMatch(result.out, /SAFE/);
 });
 
 // The ratchet only holds if every subcommand agrees on which files exist. A
@@ -387,6 +396,72 @@ test('--no-ignore does not re-include a [exclude] paths exclusion', () => {
     'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   assert.strictEqual(cli(repo, ['check', '--no-ignore', '.']).code, 0);
+});
+
+// --- [exclude] paths, said out loud ----------------------------------------
+//
+// A path exclusion narrowed the gate exactly as much as a .procoderignore did
+// and said nothing at all about it, so a project could lose whole directories
+// of coverage and see the same output as a clean run.
+const EXCLUDED_TREE = {
+  '.procoder.toml': '[exclude]\npaths = ["gen/"]\n',
+  'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  'gen/b.ts': 'eval(y);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  'src/c.ts': 'const x = 1;\n',
+};
+
+test('check reports how many files [exclude] paths skipped, and which pattern did it', () => {
+  const result = cli(repoWith(EXCLUDED_TREE), ['check', '.']);
+  assert.strictEqual(result.code, 0);
+  assert.match(result.out, /2 files skipped by \[exclude\] paths "gen\/"/);
+});
+
+test('verify reports the same count, so the ratchet says what it did not look at', () => {
+  assert.match(cli(repoWith(EXCLUDED_TREE), ['verify', '.']).out, /skipped by \[exclude\] paths/);
+});
+
+// The sharpest form: the user asks for one named file and gets silence, which
+// reads exactly like a pass.
+test('a file named on the command line is never silently excluded', () => {
+  const result = cli(repoWith(EXCLUDED_TREE), ['check', 'gen/a.ts']);
+  assert.match(result.out, /gen\/a\.ts/);
+  assert.match(result.out, /\[exclude\] paths "gen\/"/);
+  assert.match(result.out, /\.procoder\.toml/);
+  assert.match(result.out, /not checked/);
+});
+
+test('a path exclusion pointing at a directory that no longer exists is reported', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["gone/"]\n',
+    'src/c.ts': 'const x = 1;\n',
+  });
+  const plain = cli(repo, ['verify', '.']);
+  assert.strictEqual(plain.code, 0, 'plain verify does not fail CI over a stale exclusion');
+  assert.match(plain.out, /gone\//);
+  assert.match(plain.out, /excludes nothing|suppressed nothing|no longer exists/i);
+
+  const flagged = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
+});
+
+test('a path exclusion that still covers a real directory is not reported', () => {
+  const result = cli(repoWith(EXCLUDED_TREE), ['verify', '--unused-exclusions', '.']);
+  assert.strictEqual(result.code, 0);
+  assert.doesNotMatch(result.out, /excludes nothing/i);
+});
+
+// A CI gate that passes because it looked at nothing is the worst version of
+// this defect: `max_file_bytes` set too low skipped every file in the repo and
+// verify still printed "ratchet holds" and exited 0.
+test('verify does not claim the ratchet holds over files it never read', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[limits]\nmax_file_bytes = 4\n',
+    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const result = cli(repo, ['verify', 'a.ts']);
+  assert.notStrictEqual(result.code, 0, 'a verify that read nothing must not pass');
+  assert.doesNotMatch(result.out, /ratchet holds/);
+  assert.match(result.out, /not checked|could not be checked/i);
 });
 
 test('check says nothing about ignore files when none matched', () => {

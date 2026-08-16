@@ -97,12 +97,19 @@ function loadConfig(repoRoot) {
     }
   }
 
+  // `configuredPaths` is the project's own list, kept apart from the built-in
+  // defaults it is concatenated onto. Only the author's entries can go stale
+  // (see unusedPathExclusions), and only theirs are worth naming back to them:
+  // nobody needs telling that node_modules/ is excluded.
+  const configured = Array.isArray(raw.exclude && raw.exclude.paths)
+    ? raw.exclude.paths.filter((p) => typeof p === 'string')
+    : [];
+
   return {
     root: repoRoot,
     exclude: {
-      paths: Array.isArray(raw.exclude && raw.exclude.paths)
-        ? DEFAULTS.exclude.paths.concat(raw.exclude.paths)
-        : DEFAULTS.exclude.paths.slice(),
+      paths: DEFAULTS.exclude.paths.concat(configured),
+      configuredPaths: configured,
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
     limits: { max_file_bytes: fileBytesLimit(raw, text, '.procoder.toml') },
@@ -258,6 +265,41 @@ function isExcluded(config, relPath) {
   return excludeReason(config, relPath) !== null;
 }
 
+// Which `[exclude] paths` pattern kept this file out, or null. `excludeReason`
+// answers "was it excluded"; a caller telling the user why a file they named
+// themselves produced no output has to be able to name the line to change.
+// Separate rather than folded into the reason string, because that string is
+// compared by value throughout the engine and by the baseline.
+function excludingPattern(config, relPath) {
+  const normalized = String(relPath).replace(/\\/g, '/');
+  return config.exclude.paths.find((pattern) => matchesPattern(pattern, normalized)) || null;
+}
+
+// Path exclusions that can no longer be excluding anything: the directory or
+// file they name is not there.
+//
+// A rule exclusion goes stale when the finding it silenced gets fixed, and the
+// CLI detects that by re-running. A path exclusion cannot be judged that way —
+// a run over one file says nothing about a pattern naming another tree — but
+// the commonest rot is decidable without running anything at all: `vendor/`
+// after vendor/ was deleted, `src/generated/` after the generator moved. It
+// stays in force forever, silently, and the next directory to land at that
+// path is excluded by a decision nobody made.
+//
+// Only the project's own entries, never the built-in defaults, and only
+// patterns with no `*` in them: what a glob would have matched depends on the
+// tree, and "matched nothing in this run" is not the same claim as "matches
+// nothing" when the run covered one file. Those are left alone rather than
+// guessed at, which is the same restraint rule exclusions outside the run get.
+function unusedPathExclusions(config) {
+  // A hand-built config (a direct API caller, a test) may carry no
+  // `configuredPaths` at all, and nothing here may throw into a hook.
+  if (!config.root || !Array.isArray(config.exclude && config.exclude.configuredPaths)) return [];
+  return config.exclude.configuredPaths.filter((pattern) =>
+    pattern && !pattern.includes('*')
+    && !fs.existsSync(path.join(config.root, pattern.replace(/\/+$/, ''))));
+}
+
 // `rules = ["path/pattern:check/id"]` — the narrow form of exclusion. A path
 // exclusion silences every rung at once and forever; this one silences a single
 // named check in a single place, which is the only shape the doctrine allows.
@@ -294,6 +336,6 @@ function isRuleExcluded(config, relPath, id) {
 }
 
 module.exports = {
-  DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, isRuleExcluded,
-  findRepoRoot, IGNORE_FILE,
+  DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, excludingPattern,
+  unusedPathExclusions, isRuleExcluded, findRepoRoot, IGNORE_FILE,
 };

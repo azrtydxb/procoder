@@ -22,8 +22,25 @@ const SECRET_PATTERNS = [
 
 // A literal assigned to a credential-shaped name. Values that are empty, obvious
 // placeholders, or reads from env/secret managers are not credentials.
+//
+// There is no word boundary in FRONT of the credential word, and that asymmetry
+// is the whole rule. With one there, only the bare spelling matched —
+// `password = "..."` — and every ordinary identifier a codebase actually uses
+// put a word character in front of it: `dbPassword`, `userPassword`,
+// `apiSecret`, `api_secret`, `myApiKey`. The bare word is the rare form; the
+// compound is the common one, so the boundary was silencing the majority case.
+//
+// The boundary AFTER the word stays, and it is what keeps this from becoming a
+// false-positive generator on rung 1 — which is the real risk of loosening a
+// credential pattern. It is what makes `passwordPolicy`, `tokenizer`,
+// `keyboard`, `keys(...)` and `secretsManager.get(...)` not match: in every one
+// of them the credential word is a PREFIX of a longer identifier that means
+// something else. A credential-shaped name ends in the credential word — the
+// noun is the head of the phrase — and reads as anything else the moment the
+// name continues past it. `monkeypatch` matches nothing either way: `key` alone
+// was never a credential word here, only `api_key`/`apikey`/`private_key`.
 const CREDENTIAL_ASSIGN =
-  /\b(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i;
+  /(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i;
 
 const PLACEHOLDER = /^(?:x{3,}|\.{3,}|<[^>]+>|\{\{.*\}\}|\$\{.*\}|changeme|placeholder|example|test|dummy|redacted|your[_-]?\w+)$/i;
 
@@ -351,10 +368,38 @@ function filterMarkedLiterals(source, findings, relPath) {
   if (!findings.length || String(source).indexOf('procoder:') < 0) return findings;
   const marked = markedLines(String(source).split(/\r?\n/), relPath);
   if (!marked.size) return findings;
-  return findings.filter((f) => !(marked.get(f.line) || EMPTY_SET).has(f.id));
+  return findings.filter((f) => !markedIds(marked, f).has(f.id));
 }
 
 const EMPTY_SET = new Set();
+
+// A cross-line finding — the taint scan's — is reported at the SINK, and its
+// message names the line the value was built on. Both lines are the finding:
+// the sink is where the hole opens, the build line is where the string was
+// assembled, and which of the two an author reads as the subject depends on
+// the code. Marking the build line used to suppress nothing and say nothing,
+// so an author who read the message, went to the line it named and marked it
+// there got no effect and no explanation — the failure mode this whole
+// mechanism exists to prevent.
+//
+// So the marker reaches either line. It still names its rule, still states a
+// reason, and still reaches no line the finding does not already name: the
+// scope is the finding's own two lines, not a range between them.
+//
+// The build line is read back out of the message rather than off a field,
+// because `finding()` keeps five keys and a sixth would have to be added in
+// taint.js, which this change does not own. That coupling is the weak part of
+// this fix and is deliberately confined to one regex: the durable form is a
+// `sourceLine` on the finding itself.
+const BUILT_AT = /\bbuilt at line (\d+)\b/;
+
+function markedIds(marked, f) {
+  const at = marked.get(f.line) || EMPTY_SET;
+  const built = BUILT_AT.exec(f.message || '');
+  if (!built) return at;
+  const also = marked.get(Number(built[1]));
+  return also ? new Set([...at, ...also]) : at;
+}
 
 function checkUniversal(source, { relPath, config } = {}) {
   const lines = String(source || '').split(/\r?\n/);

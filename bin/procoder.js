@@ -9,7 +9,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadConfig, findRepoRoot } = require('../hooks/checks/config');
+const {
+  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions,
+} = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
 const { readLevel } = require('../hooks/procoder-runtime');
@@ -28,11 +30,13 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
 
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
-                        suppressed nothing in this run — a stale suppression
-                        left behind after the finding it silenced was fixed
+                        suppressed nothing in this run, or a [exclude] paths
+                        entry names a path that no longer exists — a stale
+                        suppression left behind after what it silenced was fixed
   --no-ignore           check files a .procoderignore covers anyway — answers
                         "why is this file not being checked?". [exclude] paths
-                        in .procoder.toml still applies.
+                        in .procoder.toml still applies, and every file it holds
+                        back is reported by count, or by name if you named it.
 
   statusline install    add procoder's statusLine to your Claude Code settings
   statusline uninstall  remove it again, restoring any statusLine it composed with
@@ -51,14 +55,26 @@ function expandDirectory(abs) {
     .flatMap((entry) => expand([path.join(abs, entry)]));
 }
 
-function expand(targets) {
+// A file the user typed themselves, as opposed to one a directory walk found.
+// The difference is the whole of how a skip is reported: a directory walk that
+// steps over vendor/ is the config working, and one line per file would bury
+// the findings; a file named on the command line is a direct question, and
+// answering it with silence reads as a pass.
+const namedOnCommandLine = new Set();
+
+function expand(targets, explicit = false) {
   const files = [];
   for (const target of targets) {
     const abs = path.resolve(target);
     let stat = null;
     try { stat = fs.statSync(abs); } catch (e) { stat = null; }
     if (stat === null) continue;
-    files.push(...(stat.isDirectory() ? expandDirectory(abs) : [abs]));
+    if (stat.isDirectory()) {
+      files.push(...expandDirectory(abs));
+    } else {
+      files.push(abs);
+      if (explicit) namedOnCommandLine.add(abs);
+    }
   }
   return files;
 }
@@ -72,6 +88,8 @@ function expand(targets) {
 // one piece of news, not two.
 const skipsReported = new Set();
 const ignoredCounts = new Map();
+const excludedCounts = new Map();
+let uncheckedFiles = 0;
 
 // maxFindings Infinity throughout: the CLI reports and records everything,
 // unlike the hook, which shows a top-5 sample inside its time budget.
@@ -79,7 +97,7 @@ function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
   const out = checkFile(absPath, { repoRoot, config, maxFindings: Infinity, applyBaseline });
   if (out.skipped && !skipsReported.has(out.relPath)) {
     skipsReported.add(out.relPath);
-    reportSkip(out.relPath, out.skipped);
+    reportSkip(out.relPath, out.skipped, absPath, config);
   }
   return out;
 }
@@ -92,7 +110,7 @@ function runBaseline(files, repoRoot, config) {
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
     entries.push(...fingerprintsFor(findings, relPath, lines));
   }
-  reportIgnored();
+  reportSkipped();
   writeBaseline(repoRoot, config, entries);
   process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
   return 0;
@@ -122,9 +140,9 @@ function presentFindings(files, repoRoot, config) {
 // then sits in .procoder.toml suppressing nothing, forever, unnoticed.
 // Detected by re-running the same files through a config with `rules` cleared
 // (paths exclusions untouched) and checking, per exclusion, whether a finding
-// with its exact (path, id) still turns up. Only `rules` are checked: `paths`
-// exclusions are commonly aspirational (a vendor/ that does not exist yet),
-// so flagging them would just be noise. Only files the run actually covered
+// with its exact (path, id) still turns up. Path exclusions are judged by a
+// different test — see unusedPathExclusions in config.js — because re-running
+// cannot answer for them. Only files the run actually covered
 // can answer for an exclusion naming them — a single-file `verify` cannot
 // know whether some other file's exclusion is still earning its keep, so an
 // exclusion naming a path outside this run is skipped rather than guessed at.
@@ -160,12 +178,21 @@ function sample(added, present) {
 // underlying finding got fixed) must not turn into a CI failure by default.
 function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
   const stale = unusedRuleExclusions(files, repoRoot, config);
-  if (stale.length === 0) return 0;
-  process.stdout.write(
-    `procoder: ${stale.length} exclusion rule${stale.length === 1 ? '' : 's'} suppressed nothing ` +
-    'in this run:\n' + stale.map((r) => `  ${r.path}:${r.id}\n`).join('') +
-    'Remove them from [exclude] rules in .procoder.toml, or note why they still apply.\n');
-  return unusedExclusions ? 1 : 0;
+  const gone = unusedPathExclusions(config);
+  if (stale.length > 0) {
+    process.stdout.write(
+      `procoder: ${stale.length} exclusion rule${stale.length === 1 ? '' : 's'} suppressed nothing ` +
+      'in this run:\n' + stale.map((r) => `  ${r.path}:${r.id}\n`).join('') +
+      'Remove them from [exclude] rules in .procoder.toml, or note why they still apply.\n');
+  }
+  if (gone.length > 0) {
+    process.stdout.write(
+      `procoder: ${gone.length} path exclusion${gone.length === 1 ? '' : 's'} excludes nothing — ` +
+      'the path no longer exists:\n' + gone.map((p) => `  ${p}\n`).join('') +
+      'Remove them from [exclude] paths in .procoder.toml, or restore the path. Left in place, ' +
+      'they silently exclude whatever lands there next.\n');
+  }
+  return unusedExclusions && stale.length + gone.length > 0 ? 1 : 0;
 }
 
 // The ratchet: accepted debt may shrink, never grow. Compares fingerprints,
@@ -173,7 +200,7 @@ function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
 function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
   const baseline = loadBaseline(repoRoot, config);
   const present = presentFindings(files, repoRoot, config);
-  reportIgnored();
+  reportSkipped();
 
   const { ok, added, delta } = growthCheck(baseline, present.keys());
   if (!ok) {
@@ -182,6 +209,22 @@ function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
       `(${baseline.size} accepted, ${present.size} present).\n` + sample(added, present) +
       'Fix them, or run `procoder baseline <paths>` only if they are genuinely pre-existing.\n');
     return 1;
+  }
+  // A ratchet is a claim about what was looked at. `max_file_bytes` set too
+  // low skips every file in the repo, and this line used to print "ratchet
+  // holds" and exit 0 over a run that read nothing at all — a CI gate that
+  // passes because it looked at nothing, which is the worst shape this project
+  // has. Excluded and ignored paths are not this: they are a decision the
+  // project made about scope, and the counts above say what they cost. A file
+  // that was in scope and could not be read is a hole in the scope itself, so
+  // verify stops at 2 — "cannot verify" — rather than 1, which would read as
+  // "you added findings".
+  if (uncheckedFiles > 0) {
+    process.stdout.write(
+      `procoder: ${uncheckedFiles} file${uncheckedFiles === 1 ? '' : 's'} could not be checked ` +
+      '(see above) — the ratchet cannot hold over files nothing looked at. Raise or remove ' +
+      '[limits] max_file_bytes, or exclude the path deliberately.\n');
+    return 2;
   }
   process.stdout.write(
     `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
@@ -208,34 +251,54 @@ function summarize(blocking, advisory, level) {
     : `\nprocoder: ${counts} — advisory only at this level, not failing the run.\n`;
 }
 
-// An `excluded` skip is the config doing its job — vendor/ is excluded on
-// purpose, and saying so once per file would bury the findings. `too-large` and
-// `unreadable` are different: a file that should have been gated was not, and
-// silence makes that indistinguishable from a clean pass. Said on stderr so it
-// survives a piped stdout, and it does not fail the run — an unchecked file is
-// news, not a violation.
+// Every narrowing of the gate is said out loud, and none of them is said once
+// per file: the cases these instruments exist for are whole generated subtrees,
+// and a line per file would bury the findings they were supposed to make room
+// for. Both are counted here and reported in one line each by reportSkipped().
 //
-// A `.procoderignore` skip is also deliberate config, but unlike .procoder.toml
-// it can sit anywhere in the tree, so "which file did this and how much did it
-// cover" is not something the user can see at a glance. It is counted here and
-// reported once per ignore file rather than once per skipped file: the case the
-// feature exists for is a large generated subtree, and a line per file would
-// bury the findings it was supposed to make room for.
-function reportSkip(relPath, skipped) {
-  if (skipped === 'excluded') return;
+// `[exclude] paths` used to be the exception — deliberate config, therefore not
+// news. That reasoning does not survive contact with the other half of it: a
+// .procoderignore is deliberate config too and has always reported its count,
+// and the asymmetry meant a project could lose whole directories of coverage
+// and see output identical to a clean run. Coverage lost is news however
+// deliberate it was; which pattern did it is what makes the news actionable.
+//
+// `too-large` and `unreadable` are a different kind again — a file that should
+// have been gated was not — and they stay one line per file, and are counted so
+// `verify` cannot claim a ratchet over them.
+//
+// All of it on stderr, so it survives a piped stdout.
+function reportSkip(relPath, skipped, absPath, config) {
+  if (skipped === 'excluded') {
+    const pattern = excludingPattern(config, relPath) || '(unknown)';
+    if (namedOnCommandLine.has(absPath)) {
+      process.stderr.write(
+        `procoder: skipped ${relPath} ([exclude] paths "${pattern}" in .procoder.toml) `
+        + '— not checked.\n');
+      return;
+    }
+    excludedCounts.set(pattern, (excludedCounts.get(pattern) || 0) + 1);
+    return;
+  }
   if (skipped.startsWith('ignored:')) {
     const file = skipped.slice('ignored:'.length);
     ignoredCounts.set(file, (ignoredCounts.get(file) || 0) + 1);
     return;
   }
+  uncheckedFiles += 1;
   process.stderr.write(`procoder: skipped ${relPath} (${skipped}) — not checked.\n`);
 }
 
-function reportIgnored() {
-  for (const [file, count] of ignoredCounts) {
-    process.stderr.write(
-      `procoder: ${count} file${count === 1 ? '' : 's'} skipped by ${file} — not checked.\n`);
+function countLine(count, what) {
+  return `procoder: ${count} file${count === 1 ? '' : 's'} skipped by ${what} — not checked.\n`;
+}
+
+function reportSkipped() {
+  for (const [pattern, count] of excludedCounts) {
+    process.stderr.write(countLine(count, `[exclude] paths "${pattern}" in .procoder.toml`));
   }
+  for (const [file, count] of ignoredCounts) process.stderr.write(countLine(count, file));
+  excludedCounts.clear();
   ignoredCounts.clear();
 }
 
@@ -252,7 +315,7 @@ function runCheck(files, repoRoot, config) {
     process.stdout.write(formatFindings(findings, relPath) + '\n');
   }
 
-  reportIgnored();
+  reportSkipped();
   if (blocking + advisory === 0) return 0;
   process.stdout.write(summarize(blocking, advisory, level));
   return blocking > 0 ? 1 : 0;
@@ -595,7 +658,7 @@ function main(argv) {
     return 2;
   }
 
-  const files = expand(targets);
+  const files = expand(targets, true);
   if (files.length === 0) return 0;
 
   const repoRoot = findRepoRoot(path.dirname(files[0]));

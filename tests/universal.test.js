@@ -477,6 +477,82 @@ test('every check id the engine can produce is in the known-id set', () => {
   assert.deepStrictEqual([...missing], [], 'check ids missing from BUILTIN_RULE_IDS');
 });
 
+// ---------------------------------------------------------------------------
+// Compound credential names.
+//
+// The pattern demanded a word boundary in FRONT of the credential word, so it
+// only ever saw the bare spelling — `password = "..."`. Every ordinary
+// identifier a real codebase uses (`dbPassword`, `api_secret`, `myApiKey`) put
+// a word character there and went unreported, which is the majority spelling,
+// not the exception.
+const COMPOUND = [
+  'const dbPassword = "hunter2correcthorse";',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  'let userPassword = "hunter2correcthorse";',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  'const apiSecret = "s3cr3tvaluehere";',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  'api_secret = "s3cr3tvaluehere"',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  'const authToken = "abcdef1234567890";',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  'const myApiKey = "abcdef1234567890";',  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+];
+
+test('a credential literal is reported whatever the identifier is prefixed with', () => {
+  for (const line of COMPOUND) {
+    assert.ok(ids(line).includes('safe/hardcoded-secret'), `missed: ${line}`);
+  }
+});
+
+// The other direction, and it matters more: this rule gates rung 1, so a
+// loosened credential pattern is the classic false-positive generator. None of
+// these is a credential, and none of them may report.
+const NOT_CREDENTIALS = [
+  'const passwordPolicy = "min-length-twelve";',
+  'const tokenizer = "whitespace-splitter";',
+  'const keyboard = "qwerty-us-layout";',
+  'const monkeypatch = "replace-the-method";',
+  'const names = keys("some-long-string");',
+  'const v = secretsManager.get("production-db");',
+  'const password = process.env.DB_PASSWORD;',
+  'password = os.environ["DB_PASSWORD"]',
+  'const secretsCache = new Map("seed-value-here");',
+];
+
+test('compound spellings do not turn ordinary identifiers into credentials', () => {
+  for (const line of NOT_CREDENTIALS) {
+    assert.deepStrictEqual(ids(line), [], `false positive: ${line}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A cross-line finding is reported at its sink and names the line the value was
+// built on. A marker written at that build line — where the author sees the
+// real subject of the finding — has to reach it, or an author who marks the
+// concatenation gets no effect and no explanation.
+const CROSS_LINE = [{
+  rung: 'SAFE',
+  id: 'safe/sql-injection',
+  line: 4,
+  message: 'query built from untrusted input, built at line 2',
+  fix: 'parameterize',
+}];
+
+const crossLineSource = (rule) => [
+  'function f(id) {',
+  `  const q = "SELECT " + id; // ${MARK}${rule} the doctrine example, not a live query`,
+  '  // ...',
+  '  db.query(q);',
+].join('\n');
+
+test('a literal marker on the line a cross-line finding was built at silences it', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  assert.deepStrictEqual(
+    filterMarkedLiterals(crossLineSource('safe/sql-injection'), CROSS_LINE), []);
+});
+
+test('the build-line marker still silences nothing it did not name', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  assert.deepStrictEqual(
+    filterMarkedLiterals(crossLineSource('safe/xss-sink'), CROSS_LINE), CROSS_LINE);
+});
+
 test('marker scanning is cheap on a large marker-free file', () => {
   const { filterMarkedLiterals } = require('../hooks/checks/universal');
   const source = Array.from({ length: 20000 }, (_, i) => `const a${i} = compute(${i});`).join('\n');
