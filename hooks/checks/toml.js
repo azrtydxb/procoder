@@ -56,18 +56,27 @@ function stripComment(line) {
 const TABLE_HEADER = /^\[([A-Za-z0-9_.\-]+)\]$/;
 const KEY_VALUE = /^([A-Za-z0-9_\-]+)\s*=\s*(.+)$/;
 
-// Walks (creating as needed) the table a [dotted.header] names.
+// A config file is untrusted input. These names are never real config, and
+// walking them turns `[exclude.__proto__]` into a two-line kill switch for the
+// whole gate, so reject them rather than coerce them.
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+// Walks (creating as needed) the table a [dotted.header] names. A forbidden
+// part returns a detached table, so the header's keys land nowhere.
 function tableAt(root, dottedName) {
   let table = root;
   for (const part of dottedName.split('.')) {
-    if (typeof table[part] !== 'object' || table[part] === null) table[part] = {};
+    if (FORBIDDEN_KEYS.has(part)) return Object.create(null);
+    if (typeof table[part] !== 'object' || table[part] === null) {
+      table[part] = Object.create(null);
+    }
     table = table[part];
   }
   return table;
 }
 
 function parseToml(text) {
-  const result = {};
+  const result = Object.create(null);
   let table = result;
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
@@ -77,7 +86,7 @@ function parseToml(text) {
 
     // Anything else is silently skipped: defaults beat a crash.
     if (header) table = tableAt(result, header[1]);
-    else if (pair) table[pair[1]] = parseValue(pair[2]);
+    else if (pair && !FORBIDDEN_KEYS.has(pair[1])) table[pair[1]] = parseValue(pair[2]);
   }
 
   return result;

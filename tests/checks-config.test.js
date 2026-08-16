@@ -100,6 +100,19 @@ test('a rule exclusion silences only the named check in the named file', () => {
   assert.ok(!isExcluded(cfg, 'a/patterns.js'));
 });
 
+// The reported kill switch: two lines of config that read as noise and turn
+// the entire gate off by writing `paths` onto Object.prototype.
+test('a [exclude.__proto__] table cannot switch the gate off', () => {
+  delete Object.prototype.paths;
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude.__proto__]\npaths = ["**/*"]\n',
+  }));
+  assert.ok(!cfg.exclude.paths.includes('**/*'));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+  assert.strictEqual(Object.prototype.paths, undefined);
+  delete Object.prototype.paths;
+});
+
 test('a rule exclusion missing either half is dropped, never widened', () => {
   const cfg = loadConfig(tempRepo({
     '.procoder.toml': '[exclude]\nrules = ["a/patterns.js", "alone/orphan-todo", ":x", "y:"]\n',
