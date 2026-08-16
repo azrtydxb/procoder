@@ -56,3 +56,20 @@ def startup():
 
 def shallow(a, b):
     return a + b
+
+
+# Documentation that warns against a practice must not be flagged for the
+# practice: every rule py.js has, named in prose, still silent.
+#
+#   never use eval(user_input) or exec(payload) here
+#   never pass shell=True, and never call os.system("rm " + target)
+#   never cursor.execute(f"SELECT * FROM t WHERE id = {uid}")
+#   never pickle.loads(payload) or yaml.load(text)
+#   never hashlib.md5(secret) and never verify=False
+#   no leftover print("here") or breakpoint()
+#   `except:` bare, or `except Exception:` over `pass`, is never acceptable
+def documented(value):
+    """Do not call eval(value) here, and never build SQL as
+    cursor.execute(f"SELECT {value}") — parameterize instead.
+    """
+    return value

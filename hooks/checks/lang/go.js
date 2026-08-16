@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // procoder — Go pack.
 
+const { stripComments } = require('./comments');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -87,9 +88,14 @@ function closedNearby(rule, lines, lineNo) {
   return DEFERRED_CLOSE.test(lines.slice(lineNo, lineNo + DEFER_LOOKAHEAD).join('\n'));
 }
 
+// Every rule here matches code, never prose — `// don't build SQL with
+// fmt.Sprintf` documents the hole, it does not open one — and the discharge
+// looks at code too, so a commented-out `defer resp.Close()` cannot silence
+// the resource rule. String literals stay: `"SELECT " + id` *is* the SQL.
+// See comments.js for the principle the six packs share.
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
-  const lines = text.split(/\r?\n/);
+  const lines = stripComments(text, 'c').split(/\r?\n/);
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 

@@ -2,6 +2,7 @@
 // procoder — Python pack.
 
 const { finding } = require('../finding');
+const { stripComments } = require('./comments');
 const {
   analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings,
 } = require('../shape');
@@ -99,8 +100,12 @@ function measureBlocks(lines, blocks) {
   });
 }
 
+// Every rule here matches code, never prose: `# never use eval(user_input)`
+// documents the hole, it does not open one. String literals stay — an f-string
+// or a `%` template *is* the SQL, and blanking it would blind the rule that
+// looks for it. See comments.js for the principle the six packs share.
 function check(source, { relPath, config } = {}) {
-  const lines = String(source || '').split(/\r?\n/);
+  const lines = stripComments(source, 'py').split(/\r?\n/);
   const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
 
   return [

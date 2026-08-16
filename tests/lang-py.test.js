@@ -51,6 +51,32 @@ test('flags leftover debugging', () => {
   assert.ok(!ids('logger.info("started")').includes('alone/debug-leftover'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose, and
+// the string literals a sink is assembled from are code.
+test('ignores rules named in comments and docstrings, not the code beside them', () => {
+  assert.ok(!ids('# never use eval(user_input) here').includes('safe/dynamic-eval'));
+  assert.ok(!ids('run(cmd)  # do not pass shell=True').includes('safe/shell-injection'));
+  assert.ok(!ids('# cursor.execute(f"SELECT {uid}") is how not to do it')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('def f():\n    """Never call pickle.loads(payload) on user bytes."""\n')
+    .includes('safe/unsafe-deserialize'));
+  assert.ok(!ids('# print("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('# except: is never acceptable').includes('true/bare-except'));
+
+  assert.ok(ids('eval(user_input)  # never use eval here').includes('safe/dynamic-eval'));
+  assert.ok(ids('run(cmd, shell=True)  # do not pass shell=True').includes('safe/shell-injection'));
+  assert.ok(ids('cursor.execute(f"SELECT {uid}")  # bad').includes('safe/sql-injection'));
+  assert.ok(ids('pickle.loads(payload)  # bad').includes('safe/unsafe-deserialize'));
+  assert.ok(ids('print("here")  # bad').includes('alone/debug-leftover'));
+  assert.ok(ids('try:\n    go()\nexcept:  # bad\n    pass\n').includes('true/bare-except'));
+});
+
+test('keeps seeing sinks built inside string literals', () => {
+  assert.ok(ids('cursor.execute("SELECT * FROM t WHERE id = %s" % uid)')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('os.system("rm " + target)').includes('safe/shell-injection'));
+});
+
 test('flags shape violations using indentation depth', () => {
   const deep = 'def a():\n    if x:\n        for y in z:\n            while w:\n                go()\n';
   assert.ok(ids(deep).includes('obvious/nesting-depth'));

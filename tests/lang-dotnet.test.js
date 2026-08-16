@@ -50,6 +50,37 @@ test('flags swallowed exceptions and leftover debugging', () => {
   assert.ok(!ids('_logger.LogInformation("started");').includes('alone/debug-leftover'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose, and
+// the string literals a sink is assembled from are code.
+test('ignores rules named in comments, not the code beside them', () => {
+  assert.ok(!ids('// never context.Users.FromSqlRaw($"SELECT * FROM Users WHERE Id = {id}")')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('// never new BinaryFormatter()').includes('safe/unsafe-deserialize'));
+  assert.ok(!ids('/* MD5.Create() is not a password hash */').includes('safe/weak-hash'));
+  assert.ok(!ids('// var token = new Random().Next(); is predictable').includes('safe/weak-random'));
+  assert.ok(!ids('// never Process.Start($"git log {branch}");').includes('safe/shell-injection'));
+  assert.ok(!ids('// ServerCertificateValidationCallback = (a, b, c, d) => true; is never ok')
+    .includes('safe/tls-disabled'));
+  assert.ok(!ids('// Console.WriteLine("here") was removed').includes('alone/debug-leftover'));
+
+  assert.ok(ids('context.Users.FromSqlRaw($"SELECT * FROM Users WHERE Id = {id}"); // never do this')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('var f = new BinaryFormatter(); // bad').includes('safe/unsafe-deserialize'));
+  assert.ok(ids('MD5.Create(); // bad').includes('safe/weak-hash'));
+  assert.ok(ids('var token = new Random().Next().ToString(); // bad').includes('safe/weak-random'));
+  assert.ok(ids('Process.Start($"git log {branch}"); // bad').includes('safe/shell-injection'));
+  assert.ok(ids('ServerCertificateValidationCallback = (a, b, c, d) => true; // bad')
+    .includes('safe/tls-disabled'));
+  assert.ok(ids('Console.WriteLine("here"); // bad').includes('alone/debug-leftover'));
+});
+
+test('keeps seeing sinks built inside string literals', () => {
+  assert.ok(ids('cmd.CommandText = "SELECT * FROM t WHERE id = " + id;').includes('safe/sql-injection'));
+  assert.ok(ids('Process.Start("cmd.exe", "/c " + cmd);').includes('safe/shell-injection'));
+  // A URL inside a string is not the start of a comment.
+  assert.ok(ids('var u = "http://h/x"; Console.WriteLine(u);').includes('alone/debug-leftover'));
+});
+
 test('the signature regex does not treat if/catch as methods', () => {
   const src = [
     'class X {',

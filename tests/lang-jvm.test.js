@@ -47,6 +47,50 @@ test('flags leftover debugging', () => {
   assert.ok(!ids('log.info("started");').includes('alone/debug-leftover'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose, and
+// the string literals a sink is assembled from are code.
+test('ignores rules named in comments, not the code beside them', () => {
+  assert.ok(!ids('// never stmt.executeQuery("SELECT * FROM t WHERE id = " + id);')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('// never new ObjectInputStream(payload)').includes('safe/unsafe-deserialize'));
+  assert.ok(!ids('/* MessageDigest.getInstance("MD5") is not a password hash */')
+    .includes('safe/weak-hash'));
+  assert.ok(!ids('// never Runtime.getRuntime().exec("git log " + branch);')
+    .includes('safe/shell-injection'));
+  assert.ok(!ids('// e.printStackTrace() is not error handling').includes('true/printstacktrace'));
+  assert.ok(!ids('// System.out.println("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('// DocumentBuilderFactory.newInstance() needs hardening').includes('safe/xxe-risk'));
+
+  assert.ok(ids('stmt.executeQuery("SELECT * FROM t WHERE id = " + id); // never do this')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('var in = new ObjectInputStream(payload); // bad').includes('safe/unsafe-deserialize'));
+  assert.ok(ids('MessageDigest.getInstance("MD5"); // bad').includes('safe/weak-hash'));
+  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch); // bad')
+    .includes('safe/shell-injection'));
+  assert.ok(ids('e.printStackTrace(); // bad').includes('true/printstacktrace'));
+  assert.ok(ids('System.out.println("here"); // bad').includes('alone/debug-leftover'));
+  assert.ok(ids('DocumentBuilderFactory.newInstance(); // bad').includes('safe/xxe-risk'));
+});
+
+// Hardening promised in a comment is not hardening: prose must not discharge
+// a SAFE rule, or the discharge becomes the cheapest way to silence it.
+test('a commented-out hardening call does not discharge xxe-risk', () => {
+  const commented = [
+    'DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();',
+    '// dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);',
+  ].join('\n');
+  assert.ok(ids(commented).includes('safe/xxe-risk'));
+});
+
+test('keeps seeing sinks built inside string literals', () => {
+  assert.ok(ids('stmt.executeQuery("SELECT * FROM t WHERE id = " + id);')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('new ProcessBuilder("sh", "-c", "rm " + dir).start();')
+    .includes('safe/shell-injection'));
+  // A URL inside a string is not the start of a comment.
+  assert.ok(ids('String u = "http://h/x"; System.out.println(u);').includes('alone/debug-leftover'));
+});
+
 test('the signature regex does not treat if/catch as methods', () => {
   const src = [
     'class X {',

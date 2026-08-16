@@ -55,6 +55,38 @@ test('flags leftover debugging', () => {
   assert.ok(!ids('log.Info("started")').includes('alone/debug-leftover'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose, and
+// the string literals a sink is assembled from are code.
+test('ignores rules named in comments, not the code beside them', () => {
+  assert.ok(!ids('// never db.Query(fmt.Sprintf("SELECT %s", col))').includes('safe/sql-injection'));
+  assert.ok(!ids('// never exec.Command("sh", "-c", userInput)').includes('safe/shell-injection'));
+  assert.ok(!ids('// InsecureSkipVerify: true is never acceptable').includes('safe/tls-disabled'));
+  assert.ok(!ids('// h := md5.New() is not a password hash').includes('safe/weak-hash'));
+  assert.ok(!ids('// result, _ := doWork() discards the error').includes('true/ignored-error'));
+  assert.ok(!ids('// fmt.Println("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('/* token := rand.Int63() is not a secret */').includes('safe/weak-random'));
+
+  assert.ok(ids('db.Query(fmt.Sprintf("SELECT %s", col)) // never do this')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('exec.Command("sh", "-c", userInput) // bad').includes('safe/shell-injection'));
+  assert.ok(ids('cfg := &tls.Config{InsecureSkipVerify: true} // bad').includes('safe/tls-disabled'));
+  assert.ok(ids('h := md5.New() // bad').includes('safe/weak-hash'));
+  assert.ok(ids('result, _ := doWork() // bad').includes('true/ignored-error'));
+  assert.ok(ids('fmt.Println("here") // bad').includes('alone/debug-leftover'));
+});
+
+// A comment is not a Close: prose promising cleanup must not discharge the
+// rule, or the discharge becomes the easiest way to silence it.
+test('a defer Close in a comment does not discharge the resource rule', () => {
+  const commented = 'resp, err := http.Get(url)\n// defer resp.Body.Close()\n';
+  assert.ok(ids(commented).includes('true/unclosed-resource'));
+});
+
+test('keeps seeing sinks built inside string literals', () => {
+  assert.ok(ids('db.Query("SELECT * FROM t WHERE id = " + id)').includes('safe/sql-injection'));
+  assert.ok(ids('exec.Command("bash", "-c", "rm "+dir)').includes('safe/shell-injection'));
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'go');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.go'), 'utf8'),
