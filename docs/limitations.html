@@ -18,16 +18,16 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 
 <ul class="findings findings-display">
   <li class="finding">
-    <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/checks/shape.js</span> brace and indent counter, not a parser <span class="arrow">→</span> a private class member erases the rest of its own line, rules and all</span>
-  </li>
-  <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/</span> regex spans stop at 500 characters <span class="arrow">→</span> a sink whose argument list runs past that is not matched</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/</span> every rung-1 rule reads one line, inside the sink <span class="arrow">→</span> bind the query to a variable first and nothing is reported</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[2 TRUE]</span>
-    <span class="msg"><span class="loc">hooks/checks/resolve.js</span> clippy cannot be scoped to one file <span class="arrow">→</span> on a real crate it times out and the built-in Rust pack covers the file instead</span>
+    <span class="msg"><span class="loc">hooks/checks/resolve.js</span> clippy writes to stderr, the runner reads stdout <span class="arrow">→</span> a Rust crate with clippy configured gets fewer findings than one without</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[3 OBVIOUS]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/py.js</span> depth is columns divided by a hard-coded tab width of 4 <span class="arrow">→</span> Python indented two spaces per level reports half its real nesting</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[4 ALONE]</span>
@@ -42,6 +42,18 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 <p class="meta-line">
   None of those are hypothetical, and none of them are the whole list.
 </p>
+
+<div class="note">
+  <p>
+    Those five lines are a pointer, not a second copy: every one of them is
+    restated from
+    <a href="{{ site.repo }}/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>,
+    which is the only place a limitation is recorded, measured and dated. This
+    page is a twin by rung 4's definition and has drifted from that document
+    before — twice, both times into claiming a defect that had already been
+    fixed. If the two disagree, the markdown is right and this page is stale.
+  </p>
+</div>
 
 <h2>The engine covers the smaller half</h2>
 
@@ -120,16 +132,24 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <thead><tr><th>Section</th><th>What it covers</th></tr></thead>
   <tbody>
     <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-safe-rules-read-one-line-and-only-inside-the-sink">The SAFE rules read one line</a></td>
+      <td>The same injection written two ways, in five languages: reported inside the sink call, invisible once it is bound to a variable first.</td>
+    </tr>
+    <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
-      <td>The four verified cases where the brace and indent counter measures the wrong thing, or nothing.</td>
+      <td>The four verified cases where the brace and indent counter measures the wrong thing, or nothing — with the measured cut-off for each language.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>
-      <td>Four limits on the one mechanism for text that describes a violation — including the silent no-op when it names an external linter's rule id.</td>
+      <td>Four limits on the one mechanism for text that describes a violation — including the rule id that is accepted without being checked against anything.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-self-scan-and-what-is-ignored">The self-scan, and what is ignored</a></td>
       <td>Which paths are held out, by what, and why no mechanism reports one that has gone stale.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linters-two-of-the-four-report-nothing-at-all">External linters</a></td>
+      <td>Which of the four integrations report nothing, why, and the one case where configuring your linter leaves you with less coverage than not configuring it.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#cargo-clippy-cannot-be-scoped-to-one-file">clippy cannot be scoped to one file</a></td>
@@ -154,10 +174,6 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-only-reports-near-the-edit">The hook reports near the edit</a></td>
       <td>Which findings the in-session hook narrows to the edited region, and which are exempt.</td>
-    </tr>
-    <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linter-deference">External linter deference</a></td>
-      <td>When your linter replaces procoder's readability rules, and why a broken linter degrades to less coverage rather than to silent passing.</td>
     </tr>
   </tbody>
 </table>
