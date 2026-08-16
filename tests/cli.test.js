@@ -59,13 +59,29 @@ test('verify passes when the baseline has not grown', () => {
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
-test('verify fails when new violations push the count above the baseline', () => {
+test('verify fails when new violations appear on top of the baseline', () => {
   const repo = repoWith({ 'a.ts': 'eval(x);\n' });
   cli(repo, ['baseline', 'a.ts']);
   fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');
   const result = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
-  assert.match(result.out, /grew|grow/i);
+  assert.match(result.out, /not in the baseline/i);
+});
+
+// Fixing an old finding must not buy room for a new one: the totals are
+// identical at step 3, so only fingerprint identity can catch it.
+test('verify fails when a baselined finding is swapped for a different one', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  cli(repo, ['baseline', 'a.ts']);
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
+
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 1);
+
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'el.innerHTML = y;\n');
+  const swapped = cli(repo, ['verify', 'a.ts']);
+  assert.strictEqual(swapped.code, 1);
+  assert.match(swapped.out, /innerHTML|xss/i);
 });
 
 test('unknown subcommand prints usage and exits non-zero', () => {

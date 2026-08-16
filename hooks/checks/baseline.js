@@ -4,7 +4,7 @@
 // Without this, opening procoder on a five-year-old repo produces four thousand
 // findings and gets switched off within the hour. Existing violations are
 // recorded once and suppressed everywhere; only new and changed code is gated,
-// and the recorded count may shrink but never grow.
+// and the recorded set may shrink but never gain a member.
 //
 // Fingerprints deliberately exclude line numbers: a reformat must not resurrect
 // every suppressed finding.
@@ -52,9 +52,13 @@ function suppress(findings, { baseline, relPath, lines }) {
     !baseline.has(fingerprint(f, relPath, lines[f.line - 1])));
 }
 
-function growthCheck(baseline, currentCount) {
-  const delta = currentCount - baseline.size;
-  return { ok: delta <= 0, delta };
+// The ratchet: a finding present today that the baseline never accepted is
+// growth, no matter how many old findings were fixed in the same run.
+// Counting totals instead would let a new violation ride in behind an
+// unrelated fix.
+function growthCheck(baseline, currentFingerprints) {
+  const added = [...currentFingerprints].filter((fp) => !baseline.has(fp));
+  return { ok: added.length === 0, added, delta: added.length };
 }
 
 module.exports = {

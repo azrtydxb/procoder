@@ -59,10 +59,23 @@ test('suppression survives the file being reformatted', () => {
     suppress([f(1)], { baseline: known, relPath: 'a.ts', lines: after }), []);
 });
 
-test('growthCheck fails only when the count rises', () => {
+test('growthCheck passes when every current finding is baselined', () => {
   const baseline = new Set(['a', 'b', 'c']);
-  assert.strictEqual(growthCheck(baseline, 3).ok, true);
-  assert.strictEqual(growthCheck(baseline, 1).ok, true);
-  assert.strictEqual(growthCheck(baseline, 5).ok, false);
-  assert.strictEqual(growthCheck(baseline, 5).delta, 2);
+  assert.strictEqual(growthCheck(baseline, new Set(['a', 'b', 'c'])).ok, true);
+  assert.strictEqual(growthCheck(baseline, new Set(['a'])).ok, true);
+  assert.strictEqual(growthCheck(baseline, new Set()).ok, true);
+});
+
+test('growthCheck reports the findings the baseline never accepted', () => {
+  const baseline = new Set(['a', 'b', 'c']);
+  const result = growthCheck(baseline, new Set(['a', 'd', 'e']));
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.delta, 2);
+  assert.deepStrictEqual(result.added, ['d', 'e']);
+});
+
+// The point of the ratchet: fixing one finding must not buy room for a
+// different one. A count-based comparison passes this; identity must not.
+test('growthCheck fails when a finding is swapped for a new one of equal count', () => {
+  assert.strictEqual(growthCheck(new Set(['a']), new Set(['b'])).ok, false);
 });

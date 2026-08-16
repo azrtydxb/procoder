@@ -5,7 +5,7 @@
 // Usage:
 //   procoder check <paths...>     exit 1 if any non-baselined finding exists
 //   procoder baseline <paths...>  record current findings as accepted
-//   procoder verify <paths...>    exit 1 only if findings exceed the baseline
+//   procoder verify <paths...>    exit 1 if any finding is not in the baseline
 
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +18,7 @@ const USAGE = `usage: procoder <check|baseline|verify> <paths...>
 
   check     report findings not present in the baseline; exit 1 if any
   baseline  record every current finding as accepted, so only new code is gated
-  verify    exit 1 only if total findings exceed the baseline — the CI ratchet
+  verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
 `;
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -60,24 +60,49 @@ function runBaseline(files, repoRoot, config) {
   return 0;
 }
 
-// The ratchet: accepted debt may shrink, never grow. Counts findings BEFORE
-// baseline suppression, so a fix and a fresh violation do not cancel out.
+// Fingerprint → a human-readable location, for every finding present today.
+// Findings are collected BEFORE baseline suppression, so the ratchet compares
+// the full picture against what was accepted.
+function presentFindings(files, repoRoot, config) {
+  const present = new Map();
+  for (const absPath of files) {
+    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config, false);
+    if (skipped) continue;
+    const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
+    for (const f of findings) {
+      present.set(fingerprint(f, relPath, lines[f.line - 1]),
+        `${relPath}:${f.line}  ${f.id} — ${f.message}`);
+    }
+  }
+  return present;
+}
+
+const SAMPLE_SIZE = 3;
+
+// Naming a few of the new findings makes a CI failure actionable; the full
+// list is what `procoder check` is for.
+function sample(added, present) {
+  const shown = added.slice(0, SAMPLE_SIZE).map((fp) => `  ${present.get(fp)}\n`).join('');
+  const rest = added.length - SAMPLE_SIZE;
+  return shown + (rest > 0 ? `  ...and ${rest} more\n` : '');
+}
+
+// The ratchet: accepted debt may shrink, never grow. Compares fingerprints,
+// not counts, so fixing an old finding buys no room for a new one.
 function runVerify(files, repoRoot, config) {
   const baseline = loadBaseline(repoRoot, config);
-  const total = files.reduce((sum, absPath) => {
-    const { findings, skipped } = findingsFor(absPath, repoRoot, config, false);
-    return skipped ? sum : sum + findings.length;
-  }, 0);
+  const present = presentFindings(files, repoRoot, config);
 
-  const { ok, delta } = growthCheck(baseline, total);
+  const { ok, added, delta } = growthCheck(baseline, present.keys());
   if (!ok) {
     process.stdout.write(
-      `procoder: findings grew by ${delta} beyond the baseline (${baseline.size} accepted, ${total} present).\n` +
-      'Fix the new findings, or run `procoder baseline <paths>` only if they are genuinely pre-existing.\n');
+      `procoder: ${delta} finding${delta === 1 ? '' : 's'} not in the baseline ` +
+      `(${baseline.size} accepted, ${present.size} present).\n` + sample(added, present) +
+      'Fix them, or run `procoder baseline <paths>` only if they are genuinely pre-existing.\n');
     return 1;
   }
   process.stdout.write(
-    `procoder: ${total} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
+    `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
   return 0;
 }
 
