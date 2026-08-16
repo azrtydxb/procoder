@@ -1,0 +1,201 @@
+---
+layout: page
+href: start.html
+title: Get started
+pagetitle: Get started — procoder
+description: Install procoder in Claude Code, wire the statusline, run the CLI in CI, or copy the generated rule file for any other host — and know what the first run will look like.
+---
+
+<p class="eyebrow">Using it</p>
+
+<h1>Get started</h1>
+
+<p class="lede">
+  Two lines in Claude Code, or one npm install anywhere else. This page is the
+  onramp; the exact, copy-pasteable commands for every supported host are in
+  <a href="{{ site.repo }}/blob/main/docs/install.md">docs/install.md</a>,
+  which stays authoritative so this page cannot drift from it.
+</p>
+
+<h2>Claude Code</h2>
+
+<pre><code>claude plugin marketplace add azrtydxb/procoder
+claude plugin install procoder</code></pre>
+
+<p>
+  Installing from a clone instead? Point the marketplace at the path:
+  <code>claude plugin marketplace add ./procoder</code>.
+</p>
+
+<p>
+  procoder is active from the next response onwards, at level
+  <code>strict</code>. Nothing else needs configuring. Run
+  <code>/procoder:help</code> to see the rungs, levels and commands in-session.
+</p>
+
+<h3>Put the level in your status line</h3>
+
+<pre><code>procoder statusline install</code></pre>
+
+<p>
+  That writes the <code>statusLine</code> block into your Claude Code settings —
+  <code>$CLAUDE_CONFIG_DIR/settings.json</code>, or
+  <code>~/.claude/settings.json</code> — and works out the script path itself.
+  Every other key keeps its value and its position, the previous version is
+  copied to a timestamped backup first, and the file is written atomically.
+  Running it twice changes nothing the second time.
+</p>
+
+<p>
+  A <code>statusLine</code> that is not procoder's is reported, never replaced.
+  If you already have one you like:
+</p>
+
+<pre><code>procoder statusline install --append   # yours, then the badge
+procoder statusline install --force    # replace yours with the badge
+procoder statusline status             # what is configured today
+procoder statusline uninstall          # remove it, restore what it composed with</code></pre>
+
+<p>
+  <code>--append</code> builds a POSIX shell command that reads the session JSON
+  once and replays it into both commands, so a statusline of yours that reads the
+  working directory keeps working. It is not available on Windows.
+</p>
+
+<h2>The CLI, for a pre-commit hook or CI</h2>
+
+<p>
+  The same engine the hooks use ships as a dependency-free CLI. It needs Node 18
+  or newer and nothing else.
+</p>
+
+<pre><code>npm install -g procoder
+
+procoder check &lt;paths...&gt;     # exit 1 if a finding blocks at the active level
+procoder baseline &lt;paths...&gt;  # record current findings as accepted
+procoder verify &lt;paths...&gt;    # exit 1 if a finding is not in the baseline</code></pre>
+
+<p>
+  <code>verify</code> is the CI ratchet: accepted debt may shrink, never grow. It
+  takes one extra flag, <code>--unused-exclusions</code>, which also fails when an
+  exclusion stopped suppressing anything — a suppression left behind after the
+  finding it silenced was fixed is itself rung-4 rot.
+</p>
+
+<p>
+  Inside a Claude Code session, <code>/procoder:guard</code> writes the
+  pre-commit hook and the CI job for you.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Expect a wall of findings on the first run of an existing repo.</strong>
+    That debt was written before procoder was watching, and the tool has no way
+    to tell it from today's. <code>procoder baseline &lt;paths...&gt;</code>
+    records every current finding as accepted, so only new and changed code is
+    gated from then on. What the baseline's fingerprinting does and does not
+    survive is on <a href="limitations.html">what it misses</a>.
+  </p>
+</div>
+
+<h2>Every other host</h2>
+
+<p>
+  The doctrine lives once, in <code>skills/procoder/SKILL.md</code>, and
+  <code>scripts/sync-rules.js</code> renders it into the file each host actually
+  reads. CI fails if any generated file drifts from that source, so every path
+  below is the same doctrine — hand-editing one is not an option.
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Host</th><th>How it is installed</th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="nowrap">Cursor, Windsurf, Cline,<br>Kiro, Qoder, <code>.agents</code></td>
+      <td>Copy or symlink one generated rule file into the project, at the path that host reads. For Cursor that is <code>.cursor/rules/procoder.mdc</code>, with <code>alwaysApply: true</code> so it covers every request.</td>
+    </tr>
+    <tr>
+      <td class="nowrap">opencode, openclaw</td>
+      <td>The doctrine plus twelve ported slash commands, copied into <code>.opencode/command/</code> or <code>.openclaw/commands/</code>.</td>
+    </tr>
+    <tr>
+      <td class="nowrap">Codex, GitHub Copilot</td>
+      <td>Both read <code>AGENTS.md</code> directly. The hooks speak each host's own wire protocol via <code>PROCODER_HOST</code>; Codex is auto-detected.</td>
+    </tr>
+    <tr>
+      <td class="nowrap">pi</td>
+      <td><code>package.json</code> already declares the skills directory and the extension entry point, so pi resolves it wherever procoder is installed.</td>
+    </tr>
+    <tr>
+      <td class="nowrap">Any MCP host</td>
+      <td>Point an <code>mcpServers</code> entry at <code>procoder-mcp/server.js</code>. See below.</td>
+    </tr>
+    <tr>
+      <td class="nowrap">CLI or CI only</td>
+      <td>No agent, no rule file — just the deterministic engine, as above.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Levels are a Claude Code feature and an MCP argument. The copied rule files are
+  rendered at <code>strict</code>, so those hosts get the strict doctrine and no
+  in-session switch.
+</p>
+
+<h2>MCP</h2>
+
+<p>
+  <code>procoder-mcp/server.js</code> is a dependency-free JSON-RPC 2.0 server
+  over stdio, exposing the same engine as the hooks:
+</p>
+
+<pre><code>{
+  "mcpServers": {
+    "procoder": {
+      "command": "node",
+      "args": ["/path/to/procoder/procoder-mcp/server.js"]
+    }
+  }
+}</code></pre>
+
+<p>
+  It answers <code>initialize</code>, <code>tools/list</code>, and three
+  <code>tools/call</code> targets: <code>procoder_doctrine</code> (the rungs,
+  filtered to a level), <code>procoder_check</code> (run the engine against a
+  file), and <code>procoder_baseline</code> (read the ratchet baseline).
+</p>
+
+<h2>When something does not fire</h2>
+
+<p>
+  The three most common causes, each with a one-line check:
+</p>
+
+<ul>
+  <li>
+    <strong>No findings ever appear.</strong> <code>PROCODER_NO_HOOK=1</code> in
+    your environment makes every hook a silent no-op — check for it in a dotfile
+    before anything else.
+  </li>
+  <li>
+    <strong>The level file says <code>off</code>.</strong> Deactivation is
+    persisted at
+    <code>${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-active</code> and
+    survives restarts. <code>/procoder:level strict</code> brings it back.
+  </li>
+  <li>
+    <strong>The statusline is blank.</strong> The script prints nothing on
+    purpose whenever the level file is missing or does not hold a real level.
+    <code>procoder statusline status</code> says what is configured.
+  </li>
+</ul>
+
+<p>
+  The full troubleshooting section — including why the first session after a
+  release never mentions the update, and what
+  <code>procoder verify</code> exiting 2 means — is in
+  <a href="{{ site.repo }}/blob/main/docs/install.md">docs/install.md</a>.
+</p>

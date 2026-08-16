@@ -1,0 +1,248 @@
+---
+layout: page
+href: configuration.html
+title: Configuration
+pagetitle: Configuration — procoder
+description: .procoder.toml, .procoderignore, the literal line marker, the ratchet baseline, and every environment variable procoder reads.
+---
+
+<p class="eyebrow">Using it</p>
+
+<h1>Configuration</h1>
+
+<p class="lede">
+  Four mechanisms, in descending order of how much they narrow the gate:
+  <code>.procoder.toml</code> configures the engine project-wide,
+  <code>.procoderignore</code> excludes paths, the literal marker excuses one
+  line, and the baseline accepts today's debt without accepting tomorrow's.
+  Every one of them is visible in the diff, on purpose.
+</p>
+
+<h2><code>.procoder.toml</code></h2>
+
+<p>
+  Sits at the repository root and configures rung severities, shape thresholds
+  and exclusions. Every key is optional; the values below for
+  <code>[thresholds]</code> and <code>[baseline]</code> are the defaults.
+</p>
+
+<pre><code>[rungs]
+safe = "error"
+true = "error"
+obvious = "warn"
+alone = "warn"
+
+[thresholds]
+function_lines = 40
+nesting_depth = 3
+params = 4
+complexity = 10
+
+[exclude]
+paths = ["vendor/", "generated/"]
+rules = ["scripts/legacy-parser.js:obvious/complexity"]
+
+[baseline]
+file = ".procoder-baseline.json"</code></pre>
+
+<p>
+  <strong><code>[rungs]</code></strong> sets each rung's severity.
+  <code>error</code> findings are reported as must-fix, <code>warn</code> findings
+  as advisory, and the active level modulates that: at <code>pragmatic</code> the
+  judgment rungs are flagged without blocking language, while SAFE and TRUE always
+  demand a fix. The keys are the four rung names verbatim, <code>true</code>
+  included — it is a bare key, not a boolean.
+</p>
+
+<p>
+  <strong><code>[exclude] paths</code></strong> takes directory prefixes and
+  excludes them from every check. <strong><code>[exclude] rules</code></strong> is
+  the narrow form: each entry is <code>path:rule-id</code>, and the path must match
+  a file exactly — no directory prefixes, no globs. Because the match is exact
+  rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
+  files added later under the same directory. Narrowing enforcement always takes a
+  second, deliberate edit.
+</p>
+
+<div class="note">
+  <p>
+    The TOML parser is a documented subset, not a full implementation. A line it
+    cannot recognise is warned on stderr and skipped, never silently dropped — but
+    an unsupported <em>value</em> on a well-formed line is not warned, and loads as
+    raw text. Keep this file to the shapes above, and read stderr after editing it.
+    The exact boundaries are in
+    <a href="{{ site.repo }}/blob/main/docs/known-limitations.md">known limitations</a>.
+  </p>
+</div>
+
+<h2><code>.procoderignore</code></h2>
+
+<p>
+  A <code>.procoderignore</code> may sit in <strong>any</strong> directory and
+  excludes paths in that directory and everything beneath it — so a large
+  generated subtree is excluded by one file next to it, rather than by a central
+  list that grows stale far from what it describes.
+</p>
+
+<pre><code>*.gen.ts        # any depth below this directory
+/vendor/        # only this directory's vendor/, not a nested one
+build/          # a directory of that name, at any depth
+!keep.gen.ts    # ...except this one</code></pre>
+
+<p>
+  The syntax is a <strong>subset</strong> of <code>.gitignore</code>, and this
+  list is exhaustive — anything not on it is not supported:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Supported</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap">comments, blank lines</td><td>Skipped. Leading and trailing whitespace is trimmed.</td></tr>
+    <tr><td class="nowrap"><code>name</code></td><td>Matches <code>name</code> — and everything under it if it is a directory — at any depth below the ignore file.</td></tr>
+    <tr><td class="nowrap"><code>a/b.ts</code></td><td>A slash anywhere anchors the pattern to the ignore file's own directory.</td></tr>
+    <tr><td class="nowrap"><code>/vendor</code></td><td>A leading slash anchors it too.</td></tr>
+    <tr><td class="nowrap"><code>build/</code></td><td>A trailing slash matches only a directory's contents, never a file of that name.</td></tr>
+    <tr><td class="nowrap"><code>*</code></td><td>Any run of characters within one path segment.</td></tr>
+    <tr><td class="nowrap"><code>**</code></td><td>Any run of characters across segments; <code>**/</code> also matches zero directories.</td></tr>
+    <tr><td class="nowrap"><code>!pattern</code></td><td>Negation — puts a path back into the gate.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <strong>Not supported</strong>, and treated as literal characters rather than
+  silently doing something else: <code>?</code>, character classes, and backslash
+  escapes. A line that cannot be compiled is dropped and matches nothing; an ignore
+  file that cannot be read, or is full of nonsense, ignores nothing and never fails
+  a hook.
+</p>
+
+<p>Precedence, in order:</p>
+
+<ol>
+  <li>
+    <code>.procoder.toml</code>'s <code>[exclude] paths</code> is decided first
+    and its verdict is final. A negation in a <code>.procoderignore</code> cannot
+    re-include what the root config excluded — a subdirectory may narrow further,
+    never contradict.
+  </li>
+  <li>
+    Otherwise the last matching pattern wins, and a deeper ignore file's patterns
+    are applied after a shallower one's, so the deepest file decides — as in git.
+  </li>
+  <li>
+    Only ignore files in a path's own ancestor directories are read, so an ignore
+    file cannot reach above its own directory. A pattern naming a parent is
+    dropped.
+  </li>
+</ol>
+
+<p>
+  <strong><code>.gitignore</code> is deliberately not read.</strong> A file being
+  untracked says something about version control, not about whether it should
+  ship — and the in-session hook fires on files git has never seen. Inheriting
+  those patterns would narrow the gate by reusing a file written for another
+  purpose, silently. Ignoring a path from procoder takes a line in a file whose
+  name says so.
+</p>
+
+<p>
+  Because an ignore file narrows enforcement, every run reports one line on stderr
+  per ignore file that actually skipped something — per ignore file, not per file,
+  so the notice cannot bury the findings it was meant to make room for. To check
+  an ignored file anyway, pass <code>--no-ignore</code>, which turns off every
+  <code>.procoderignore</code> for that run and nothing else.
+</p>
+
+<h2>The literal marker</h2>
+
+<p>
+  The narrowest form of all, and the only one not written in a config file. It is
+  for text that <em>describes</em> a violation rather than committing one: a
+  detection pattern, a doctrine paragraph, a fixture, a rule id quoted in config.
+  This page uses one.
+</p>
+
+<!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
+<pre><code>&lt;comment syntax&gt; procoder: literal &lt;rule-id&gt;[, &lt;rule-id&gt;…] &lt;reason&gt;</code></pre>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Rule</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>It must name its rules, comma-separated. There is no bare form and no wildcard.</td>
+      <td>An unnamed suppression is a rung-4 violation by this project's own doctrine, and is reported as one.</td>
+    </tr>
+    <tr>
+      <td>It must state a reason of at least two words.</td>
+      <td>A marker with no reason does not parse, silences nothing, and is itself reported.</td>
+    </tr>
+    <tr>
+      <td>The reason runs to end of line, so the marker is always last on its line.</td>
+      <td>That is what separates a trailing marker (this line only) from a standalone one (its own line and the next) — the widest scope offered. There is no block or file form.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  It can name any built-in rule, including the credential rule — a mechanism that
+  could not cover a credential could not cover the fixtures and doctrine pages
+  where the false positives actually are. What keeps it honest is that it names
+  the rule, states a reason, reaches at most two lines, and sits in the diff right
+  next to the value. A rule id it does not recognise is dropped from the marker
+  rather than silently honoured: the finding still reports and the unknown id is
+  named on stderr, so a typo fails loudly instead of quietly widening what the
+  marker covers.
+</p>
+
+<h2>The ratchet baseline</h2>
+
+<p>
+  <code>procoder baseline &lt;paths...&gt;</code> records every current finding as
+  accepted; <code>procoder verify &lt;paths...&gt;</code> fails when a finding
+  appears that is not in that record. Accepted debt may shrink, never grow.
+</p>
+
+<p>
+  Findings are fingerprinted from the rule id, the file path, the normalised text
+  of the line, and an occurrence ordinal — deliberately not the line number. So
+  reindenting a file or moving a suppressed line does not resurrect a suppressed
+  finding, and copy-pasting a suppressed line does not ride in for free. A
+  re-wrapping formatter, or code moved between files, does break the fingerprint;
+  <a href="limitations.html">what it misses</a> covers exactly which cases.
+</p>
+
+<p>
+  <code>verify --unused-exclusions</code> additionally fails when an
+  <code>[exclude] rules</code> entry suppressed nothing in the run — a stale
+  suppression left behind after the finding it silenced was fixed is itself rung-4
+  rot. Without the flag those entries are still reported, they just do not fail
+  the build.
+</p>
+
+<h2>Environment variables</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>PROCODER_DEFAULT_LEVEL</code></td><td>Overrides the default level (<code>strict</code>) for new sessions. One of <code>off</code>, <code>pragmatic</code>, <code>strict</code>, <code>paranoid</code>.</td></tr>
+    <tr><td class="nowrap"><code>PROCODER_NO_HOOK</code></td><td>Set to <code>1</code> to disable all procoder hooks — activation, level tracking, subagent propagation — without uninstalling the plugin.</td></tr>
+    <tr><td class="nowrap"><code>CLAUDE_CONFIG_DIR</code></td><td>Where procoder persists the active level, as <code>&lt;dir&gt;/.procoder-active</code>. Defaults to <code>~/.claude</code>.</td></tr>
+    <tr><td class="nowrap"><code>PROCODER_HOST</code></td><td>Selects the hook wire protocol for non-Claude-Code hosts: <code>codex</code>, <code>copilot</code>, or <code>qoder</code>. <code>codex</code> is also auto-detected via <code>CODEX_HOME</code>.</td></tr>
+    <tr><td class="nowrap"><code>PROCODER_NO_UPDATE_CHECK</code></td><td>Set to <code>1</code> to turn off the update notice, including its once-a-day background request. Nothing else changes.</td></tr>
+    <tr><td class="nowrap"><code>PROCODER_UPDATE_URL</code></td><td>Where the update check reads the published version from. Point it at a fork or an internal mirror if you install from one.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The update check is a single unauthenticated GET of a static file, at most once
+  a day, sending nothing about you or your code. Session start never waits on the
+  network: the hook reads a cached answer and refreshes in a detached process for
+  the <em>next</em> session, so the first session after a release is silent by
+  design and the one after it notifies.
+</p>

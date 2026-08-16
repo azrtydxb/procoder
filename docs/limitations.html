@@ -1,0 +1,175 @@
+---
+layout: page
+href: limitations.html
+title: What it misses
+pagetitle: What it misses — procoder
+description: procoder's own weaknesses, filed in procoder's own format, with a map into the verified known-limitations document.
+---
+
+<p class="eyebrow">Honesty</p>
+
+<h1>What it misses</h1>
+
+<p class="lede">
+  procoder gates other people's code. That obligates candour about where the gate
+  is weak — so here are the findings procoder would file against itself, in the
+  format it files everything else, against real paths in this repository.
+</p>
+
+<ul class="findings findings-display">
+  <li class="finding">
+    <span class="rung rung-soft">[3 OBVIOUS]</span>
+    <span class="msg"><span class="loc">hooks/checks/shape.js</span> brace and indent counter, not a parser <span class="arrow">→</span> a private class member erases the rest of its own line, rules and all</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/</span> regex spans stop at 500 characters <span class="arrow">→</span> a sink whose argument list runs past that is not matched</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">hooks/checks/resolve.js</span> clippy cannot be scoped to one file <span class="arrow">→</span> on a real crate it times out and the built-in Rust pack covers the file instead</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[4 ALONE]</span>
+    <span class="msg"><span class="loc">hooks/checks/baseline.js</span> fingerprint keys on the finding's own line text <span class="arrow">→</span> re-baseline after a formatter sweep, or accepted findings return as new</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[3 OBVIOUS]</span>
+    <span class="msg"><span class="loc">hooks/procoder-check.js</span> in-session findings are narrowed to the edited region <span class="arrow">→</span> run <code>procoder check</code> on the file for the whole-file picture</span>
+  </li>
+</ul>
+
+<p class="meta-line">
+  None of those are hypothetical, and none of them are the whole list.
+</p>
+
+<h2>The engine covers the smaller half</h2>
+
+<p>
+  The most important limitation is structural rather than a bug. procoder is two
+  things, and only one of them is deterministic.
+</p>
+
+<div class="tier tier-soft">
+  <p class="tier-label">Where a finding can come from</p>
+  <p>
+    <strong>The check engine</strong> is regex and counters over six languages. It
+    runs after every file write and from the CLI, it is reproducible, and it is
+    what CI gates on. It catches an interpolated query, a swallowed error, an
+    over-long function, an unexplained suppression.
+  </p>
+  <p>
+    <strong>The doctrine</strong> is text the agent reads. It catches the things no
+    regex can: an authorization decision made from a value the caller supplied, a
+    missing edge case, a name that lies, a replaced path nobody deleted. It is not
+    reproducible, and it is not a gate CI can run.
+  </p>
+</div>
+
+<p>
+  A worked instance of that split — the same file, one half caught by the engine
+  and the other only by the doctrine — is on
+  <a href="doctrine.html">the four rungs</a>.
+</p>
+
+<h2>What the self-scan proves, and what it does not</h2>
+
+<p>
+  <code>tests/dogfood.test.js</code> derives its file list from
+  <code>git ls-files</code>, so every tracked file is in the gate the day it lands,
+  this page and its stylesheet included. Running the tool over this repository
+  today, <code>node bin/procoder.js check .</code> reports no findings and exits 0.
+</p>
+
+<p>
+  What that does not prove: the scan is only as strong as the engine, and the
+  engine is the smaller half. A clean self-scan means procoder finds nothing wrong
+  with procoder — which is exactly the claim a heuristic tool is worst placed to
+  make about itself. It is evidence that the tool is not exempting itself, not
+  evidence that the code is correct.
+</p>
+
+<p>
+  Some paths are held out by a <code>.procoderignore</code> sitting next to what it
+  describes: historical planning documents that quote rule ids by the hundred, and
+  the <code>examples/*/before.*</code> files that violate a rung on purpose. The
+  latter are still proved on every run, through
+  <code>procoder check --no-ignore</code>. No ignore file has an expiry test, so
+  one covering a path that has since gone clean would not be reported — the
+  per-run stderr line naming each ignore file and its count is what keeps that
+  visible.
+</p>
+
+<h2>The full list</h2>
+
+<p>
+  <a href="{{ site.repo }}/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>
+  is the authoritative document. Every entry in it was verified against the source
+  cited next to it, or by running the tool, and it carries its own note saying when
+  that verification was done. Entries that were fixed are deleted rather than kept
+  as false modesty — a document that overstates weakness is as untrustworthy as one
+  that hides it.
+</p>
+
+<p>
+  This page does not restate it. Here is the map:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Section</th><th>What it covers</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
+      <td>The four verified cases where the brace and indent counter measures the wrong thing, or nothing.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>
+      <td>Four limits on the one mechanism for text that describes a violation — including the silent no-op when it names an external linter's rule id.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-self-scan-and-what-is-ignored">The self-scan, and what is ignored</a></td>
+      <td>Which paths are held out, by what, and why no mechanism reports one that has gone stale.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#cargo-clippy-cannot-be-scoped-to-one-file">clippy cannot be scoped to one file</a></td>
+      <td>Why Rust lints usually lose their timeout, and what covers the file instead.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-ratchet-baseline-what-it-guarantees-and-what-it-doesnt">The ratchet baseline</a></td>
+      <td>What the fingerprint survives — reindentation, line moves, copy-paste — and the three cases where it does not.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-baseline-format-is-versioned-and-old-baselines-are-not-migrated">The baseline format is versioned</a></td>
+      <td>Why an old baseline loads as empty rather than partial, and the distinct exit code that says so.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-toml-parser-is-a-documented-subset">The TOML parser is a subset</a></td>
+      <td>What parses, what is warned about, and the one case that loads a value the author did not intend.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#deliberate-narrowings-from-performance-work">Deliberate narrowings</a></td>
+      <td>Every ceiling the performance work left behind — span lengths, findings per line, per-line and per-file size guards, the time budget.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-only-reports-near-the-edit">The hook reports near the edit</a></td>
+      <td>Which findings the in-session hook narrows to the edited region, and which are exempt.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linter-deference">External linter deference</a></td>
+      <td>When your linter replaces procoder's readability rules, and why a broken linter degrades to less coverage rather than to silent passing.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p>
+    If you find something that belongs on that list, the useful thing to send is
+    the smallest file that reproduces it plus the command you ran.
+    <a href="{{ site.repo }}/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> says
+    where it goes, and
+    <a href="{{ site.repo }}/blob/main/SECURITY.md">SECURITY.md</a> covers the
+    cases that should not be filed in public.
+  </p>
+</div>

@@ -1,0 +1,295 @@
+---
+layout: page
+href: doctrine.html
+title: The four rungs
+pagetitle: The four rungs — procoder
+description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which two are non-negotiable, and what the deterministic engine catches versus what the doctrine catches.
+---
+
+<p class="eyebrow">The gate</p>
+
+<h1>The four rungs</h1>
+
+<p class="lede">
+  ponytail's ladder is <em>stop at the first rung that holds</em> — a search.
+  procoder's ladder is <strong>every rung must hold before it ships</strong> — a
+  gate. The order is not arbitrary: it descends by the cost of getting the rung
+  wrong, and the split after rung 2 is real.
+</p>
+
+<div class="tier tier-hard">
+  <p class="tier-label">Not negotiable — no level, no config, no marker relaxes these</p>
+  <ul class="findings">
+    <li class="finding">
+      <span class="rung rung-hard">[1 SAFE]</span>
+      <span class="msg">Does untrusted data reach a sink unvalidated?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-hard">[2 TRUE]</span>
+      <span class="msg">Are errors handled and edges covered, with one runnable check left behind?</span>
+    </li>
+  </ul>
+</div>
+
+<div class="tier tier-soft">
+  <p class="tier-label">Judgment — enforced at strict and above, flagged at pragmatic</p>
+  <ul class="findings">
+    <li class="finding">
+      <span class="rung rung-soft">[3 OBVIOUS]</span>
+      <span class="msg">Would the next reader get it in one pass?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-soft">[4 ALONE]</span>
+      <span class="msg">Did you leave a twin behind?</span>
+    </li>
+  </ul>
+</div>
+
+<h2>1 — SAFE</h2>
+
+<p>
+  <strong>Trust boundaries.</strong> Validate at the boundary, not downstream.
+  Every entry point is a boundary: HTTP handler, queue consumer, CLI argument,
+  file read, environment variable, IPC, deserialization. Schema-based where the
+  ecosystem offers it, allowlist rather than denylist, rejecting rather than
+  coercing.
+</p>
+
+<p>
+  <strong>Injection sinks.</strong> Parameterized queries only — never a
+  string-built query, shell command, LDAP filter or template. Output escaped for
+  its destination context. No <code>eval</code>, no dynamic import of a
+  user-controlled path, no unsafe deserialization of untrusted bytes.
+</p>
+
+<p>
+  <strong>Authorization.</strong> Enforced server-side, per request, on the
+  object being acted upon — never inferred from a client-supplied role, from
+  hidden UI, or from the fact that the caller reached the endpoint at all.
+</p>
+
+<p>
+  <strong>Secrets, logs and PII.</strong> No credential in source, in a committed
+  config, in a default value, or in a fixture. No token, key, cookie or
+  authorization header in log output; no stack trace or internal path returned to
+  a client — log the detail with a correlation id and return the id. PII is
+  redacted or hashed in logs, analytics and third-party telemetry.
+</p>
+
+<p>
+  <strong>Dependencies.</strong> A new dependency is a new trust boundary, so
+  adding one requires justification. Lockfile committed, no floating versions on
+  a production path, known-vulnerable and abandoned packages flagged with the
+  project's own tooling. Crypto uses platform primitives; TLS verification is
+  never disabled.
+</p>
+
+<h2>2 — TRUE</h2>
+
+<p>
+  <strong>Errors</strong> are handled wherever a failure can lose data or corrupt
+  state. No swallowed exception, no empty catch, no ignored error return.
+  Resources are released on every path.
+</p>
+
+<p>
+  <strong>Edges</strong> means empty, absent, zero, negative, overflow, unicode,
+  timezone and DST, concurrent access, partial failure, retry and idempotency.
+  Money is never a float.
+</p>
+
+<p>
+  <strong>Tests are judged on quality, not count.</strong> Non-trivial logic
+  leaves behind one runnable check, minimum. A test must fail if the code under
+  test is deleted or inverted; a test that passes against a stub is not a test.
+  Assert on observable behaviour, test the failure paths, and never treat a
+  coverage percentage as the target.
+</p>
+
+<h2>3 — OBVIOUS</h2>
+
+<p>
+  Shape thresholds, applied at <code>strict</code> and above — and superseded by
+  the project's own linter configuration wherever one exists:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Rule</th><th>Threshold</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap">One function, one job</td><td>~40 lines, one screen</td></tr>
+    <tr><td class="nowrap">Nesting depth</td><td>3 or less</td></tr>
+    <tr><td class="nowrap">Parameter count</td><td>4 or less, else an options object</td></tr>
+    <tr><td class="nowrap">Cyclomatic complexity</td><td>10 or less per function</td></tr>
+    <tr><td class="nowrap">File cohesion</td><td>one exported concept; split when describing it needs "and"</td></tr>
+    <tr><td class="nowrap">Nested ternaries</td><td>never</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Beyond shape: names say <em>what</em>, never <em>how</em> or the type. Booleans
+  read as assertions. Opposite operations mirror each other. One concept keeps
+  one name repo-wide. Guard clauses come first and the happy path last and
+  un-indented. A comment states the <em>why</em> — the constraint, the surprise,
+  the link to the ticket — and never restates the code.
+</p>
+
+<h2>4 — ALONE</h2>
+
+<p>
+  A change isn't done until the thing it replaced is gone. This is the rung
+  nobody ships and the reason the tool exists.
+</p>
+
+<ul>
+  <li>No dead exports, unreachable branches, or unused parameters left behind.</li>
+  <li>No commented-out code. Version control remembers; the file should not.</li>
+  <li>No superseded sibling living beside its replacement under a suffixed name.</li>
+  <li>No feature flag whose branch has been settled for a release.</li>
+  <li>
+    No sunsetting of an old path without a removal trigger — a date, a version,
+    or a measurable condition. A marker without one is itself a violation.
+  </li>
+  <li>Stale documentation, dead config keys, unused dependencies and orphaned fixtures are all rot.</li>
+  <li>
+    A suppression claims the tool is wrong, so it has to earn that: fix the code
+    first, scope it to the narrowest unit the tool allows, name the specific
+    rule, and state why in the suppression itself.
+  </li>
+</ul>
+
+<h2>Levels</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Level</th><th>Enforces</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>off</code></td><td>procoder is disabled entirely.</td></tr>
+    <tr><td class="nowrap"><code>pragmatic</code></td><td>SAFE and TRUE enforced. OBVIOUS and ALONE are flagged in one line, non-blocking.</td></tr>
+    <tr><td class="nowrap"><code>strict</code> (default)</td><td>All four rungs enforced on code touched this session.</td></tr>
+    <tr><td class="nowrap"><code>paranoid</code></td><td>strict, plus a threat-model note on every new trust boundary, and rung 4 applied to whole files touched rather than to the diff.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Switch mid-session with <code>/procoder:level &lt;level&gt;</code>, or say
+  "stop procoder" to deactivate. The choice is persisted, so it outlives the
+  session and survives restarts.
+</p>
+
+<h2>What the engine catches, and what the doctrine catches</h2>
+
+<p>
+  The two halves are not the same size, and the honest version of this page says
+  which is which. Here is the SAFE example that ships in the repository, wrapped
+  to this column's width. <code>tests/examples.test.js</code> asserts that every
+  <code>before.ts</code> trips its rung and every <code>after.ts</code> reports
+  nothing, so a pair that stopped teaching would fail the build.
+</p>
+
+<div class="pair">
+  <div>
+    <h3>examples/safe/before.ts</h3>
+<pre><code>export async function updateUserRole(
+  req: Request, res: Response,
+): Promise&lt;void&gt; {
+  const { userId, role } = req.body;
+
+  // trusts the caller's own claim of
+  // admin-ness instead of looking it
+  // up server-side
+  if (req.body.role === 'admin') {
+    await db.query(
+      `UPDATE users SET role = '${role}'
+       WHERE id = '${userId}'`);
+  }
+
+  res.sendStatus(204);
+}</code></pre>
+  </div>
+  <div>
+    <h3>examples/safe/after.ts</h3>
+<pre><code>export async function updateUserRole(
+  req: Request, res: Response,
+): Promise&lt;void&gt; {
+  const { targetId, role } =
+    parseRoleChange(req.body);
+  const actingRole =
+    await currentUserRole(req.auth.userId);
+
+  if (actingRole !== 'admin') {
+    res.sendStatus(403);
+    return;
+  }
+
+  await db.query(
+    'UPDATE users SET role = $1 WHERE id = $2',
+    [role, targetId]);
+  res.sendStatus(204);
+}</code></pre>
+  </div>
+</div>
+
+<p>What the engine reports on the first file, verbatim:</p>
+
+<pre><code>$ node bin/procoder.js check --no-ignore examples/safe/before.ts
+[1 SAFE]    examples/safe/before.ts:14 SQL built by interpolation or
+            concatenation &rarr; use a parameterized query with bound values
+
+procoder: 1 finding. Fix them, or run `procoder baseline &lt;paths&gt;` to
+accept pre-existing ones.</code></pre>
+
+<div class="note">
+  <p>
+    Note what the engine did <em>not</em> report: the authorization decision made
+    from a value the caller supplied. No regex can tell a role read from a
+    request body apart from any other property read. That half of the example is
+    caught by the doctrine the agent reads — rung 1, "validate at the boundary,
+    not downstream" — not by the deterministic check. The engine and the doctrine
+    cover different ground, and the engine covers the smaller half.
+  </p>
+</div>
+
+<p>The other three pairs, and what the engine reports on each today:</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Pair</th><th>Reported on <code>before.ts</code></th></tr></thead>
+  <tbody>
+    <tr>
+      <td class="nowrap"><a href="{{ site.repo }}/tree/main/examples/true">true/</a></td>
+      <td>An error swallowed by an empty catch — 1 finding. The unhandled empty-array edge in the same file is doctrine, not a rule.</td>
+    </tr>
+    <tr>
+      <td class="nowrap"><a href="{{ site.repo }}/tree/main/examples/obvious">obvious/</a></td>
+      <td>Nesting depth 4 over a limit of 3; a 56-line function over 40; 6 parameters over 4; cyclomatic complexity ~15 over 10; a nested ternary — 5 findings.</td>
+    </tr>
+    <tr>
+      <td class="nowrap"><a href="{{ site.repo }}/tree/main/examples/alone">alone/</a></td>
+      <td>Two removal markers with no trigger, and 3 lines of commented-out code — 3 findings.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>Run any of them from a clone:</p>
+
+<pre><code>node bin/procoder.js check --no-ignore examples/obvious/before.ts
+node bin/procoder.js check examples/obvious/after.ts</code></pre>
+
+<h2>It is held to its own gate</h2>
+
+<p>
+  <code>tests/dogfood.test.js</code> runs <code>procoder check</code> over every
+  file <code>git ls-files</code> reports, so a file is in the gate the day it
+  lands — this page included. It also plants a violation in a temporary directory
+  on each run, to prove the scan still fails on one. A tool that exempted itself
+  from its own doctrine would have already lost the argument.
+</p>
+
+<p>
+  <a href="limitations.html">What it misses</a> is the other half of that claim,
+  and it is not buried.
+</p>

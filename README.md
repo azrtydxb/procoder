@@ -8,10 +8,17 @@ code the change replaced was actually deleted. It pairs with the
 [`ponytail`](https://github.com/dietrichgebert/ponytail) plugin: ponytail decides **what to write** (the minimal, YAGNI-first
 solution); procoder decides **whether it may ship**.
 
-**<https://azrtydxb.github.io/procoder/>** — the same doctrine, install steps,
-commands and worked examples as one page, plus what the tool is known to miss.
-It is served from [`docs/index.html`](docs/index.html) with no build step; edit
-that file and the change is live on the next push to `main`.
+**<https://azrtydxb.github.io/procoder/>** — the doctrine, install steps,
+commands, configuration and worked examples as a documentation site, with what
+the tool is known to miss linked from every page rather than buried.
+
+It is served from [`docs/`](docs/) by GitHub Pages' own Jekyll build, so the
+masthead, navigation and footer live in exactly one file each —
+`docs/_layouts/page.html`, `docs/_includes/nav.html` and `docs/_data/nav.yml` —
+rather than being copied into every page, which is the duplication rung 4
+exists to catch. Nothing is added to this repository to make that work: no
+package, no lockfile, no build step of your own to run. Edit a page under
+`docs/` and the change is live on the next push to `main`.
 
 ## The ladder
 

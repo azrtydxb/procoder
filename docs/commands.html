@@ -1,0 +1,87 @@
+---
+layout: page
+href: commands.html
+title: Commands
+pagetitle: Commands — procoder
+description: The twelve /procoder slash commands — what each one does, grouped by whether it controls the gate, hunts for something, or measures progress.
+---
+
+<p class="eyebrow">Using it</p>
+
+<h1>Twelve commands</h1>
+
+<p class="lede">
+  Every command is a Claude Code slash command in the <code>procoder</code>
+  namespace, so they all read <code>/procoder:&lt;verb&gt;</code>. opencode and
+  openclaw get the same twelve, ported from the same source files by
+  <code>scripts/sync-rules.js</code>.
+</p>
+
+<h2>Control the gate</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:level</code></td><td>Set the intensity level: <code>pragmatic</code>, <code>strict</code>, <code>paranoid</code> — or <code>off</code>. Persisted across sessions.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:guard</code></td><td>Install procoder as a pre-commit hook and a CI check. It detects any hook manager and CI provider you already have and integrates with it rather than over it.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:statusline</code></td><td>Install, inspect, or remove the statusline badge. It reports a statusline that is not procoder's rather than replacing it.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:update</code></td><td>Update an installed procoder, and name what the update invalidates — a changed baseline format, or a doctrine change that makes a copied rule file stale.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:help</code></td><td>The rungs, the levels and the command list, in one screen.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Hunt for something</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:review</code></td><td>Review the current diff against the four rungs. Takes an optional commit range or path.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:audit</code></td><td>Audit the whole repository, ranked by rung severity. The deterministic engine runs over the scope before any judgment finding is formed.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:rot</code></td><td>Find dead, stale, and deprecated code left behind — rung 4, run deliberately rather than as a side effect of a diff.</td></tr> <!-- procoder: literal alone/deprecated-no-trigger this row names the pattern the command hunts, it is not an instance of it -->
+    <tr><td class="nowrap"><code>/procoder:threat</code></td><td>Map every trust boundary and what validates it: each entry point, what an attacker controls there, and where the validation actually sits.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:deps</code></td><td>Audit dependencies — vulnerable, abandoned, unpinned, unused — by running each ecosystem's own auditor, not a second opinion of its own.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <code>/procoder:rot</code> and <code>/procoder:threat</code> are the two with
+  no equivalent in comparable tools: one hunts what previous changes left behind,
+  the other maps where untrusted data enters and what stops it.
+</p>
+
+<h2>Measure</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:debt</code></td><td>A ledger of every <code>procoder:</code> marker in the repository, classified as dated, undated or overdue, flagging any without a removal trigger.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:gain</code></td><td>Measured progress since a reference point: rot removed, boundaries hardened, baseline shrinkage. Every number comes from git or the baseline file, with the command that produced it.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p>
+    The commands that report numbers are held to the same standard as this site:
+    <code>/procoder:gain</code> is instructed to derive every figure from git or
+    the baseline file and to show the command behind it, rather than estimating.
+    A progress report that cannot be re-run is a marketing document.
+  </p>
+</div>
+
+<h2>Where they live</h2>
+
+<p>
+  Each command is one file under
+  <a href="{{ site.repo }}/tree/main/commands">commands/</a>, and most of them
+  invoke a skill of the same name that carries the actual method. The ports to
+  <code>.opencode/command/</code> and <code>.openclaw/commands/</code> are
+  generated from those files, and <code>npm run sync:check</code> fails the build
+  if any port has drifted — so there is exactly one place to edit a command, and
+  no copy that can quietly disagree with it.
+</p>
