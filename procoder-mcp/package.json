@@ -1,0 +1,8 @@
+{
+  "name": "procoder-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing procoder's four-rung ship gate.",
+  "license": "MIT",
+  "bin": { "procoder-mcp": "./server.js" },
+  "files": ["server.js"]
+}
