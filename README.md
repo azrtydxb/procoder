@@ -197,14 +197,27 @@ file = ".procoder-baseline.json"
 findings advisory — and the active level modulates it. The keys are the four
 rung names verbatim, `true` included: it is a bare key, not a boolean. A line
 the parser cannot recognize is warned about on stderr and skipped, never
-silently dropped.
+silently dropped, and so is a value it cannot read exactly. A key written
+**twice** has *both* values dropped and the key left unset, with a warning
+naming the file and line — a duplicate says two things and TOML permits
+neither, so keeping either one would be a guess. A repeated `[table]` header
+and a dotted key colliding with a table are refused the same way.
+
+`[exclude] paths` reports what it costs: one stderr line per pattern per run
+with the count it held back, and the pattern named — and if you name an
+excluded file on the command line, that file by name. `procoder verify` also
+reports a configured path exclusion whose path no longer exists, and fails on
+it under `--unused-exclusions`.
 
 `[limits] max_file_bytes` is the largest file the engine will open — anything
 above it is skipped and said so on stderr, never counted clean. 2 MB is a
 measured ceiling, not a preference: past it the checks miss the hook's 2 s
 budget. The key clamps **downward only**. A smaller value is honoured; a larger
 one is refused with a warning naming file and line, and the built-in ceiling is
-used instead.
+used instead — as are zero, a negative, and anything that is not a positive
+number of bytes. Set it too low to admit any file and `procoder verify` says
+how many files it could not check and exits **2**, "cannot verify", rather than
+declaring a ratchet over a run that read nothing.
 
 Two narrower instruments sit under it. A `.procoderignore` file may sit in
 **any** directory and excludes paths beneath it, using a documented subset of
@@ -212,8 +225,9 @@ Two narrower instruments sit under it. A `.procoderignore` file may sit in
 marker covers text that *describes* a violation rather than committing one:
 <!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
 `<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>`
-It must name its rules and give a reason, and it reaches one line, or two in
-its standalone form.
+It must name its rules and give a reason, and it reaches the line it sits on —
+or that line and the next, standing alone. For a finding reported at one line
+but built at another, a marker on either of the two lines it names covers it.
 
 Six environment variables tune the rest, `PROCODER_DEFAULT_LEVEL` and
 `PROCODER_NO_HOOK` among them.

@@ -69,6 +69,28 @@ file = ".procoder-baseline.json"</code></pre>
 </p>
 
 <p>
+  <strong>A path exclusion reports what it costs.</strong> Every run prints one
+  stderr line per pattern that actually held something back, naming the pattern
+  and its count — <code>2 files skipped by [exclude] paths "sub/" in
+  .procoder.toml — not checked.</code> — and one line per pattern rather than one
+  per file, so the notice cannot bury the findings it was meant to make room for.
+  Name an excluded file on the command line and it is answered by name instead:
+  <code>skipped sub/x.js ([exclude] paths "sub/" in .procoder.toml)</code>. A
+  direct question deserves better than silence, and coverage lost is news however
+  deliberate it was.
+</p>
+
+<p>
+  It is judged for staleness too. <code>verify</code> reports a configured path
+  exclusion whose path no longer exists, and fails on it under
+  <code>--unused-exclusions</code>. Only the project's own entries, never the
+  built-in <code>node_modules/</code>, <code>vendor/</code>, <code>dist/</code>
+  defaults, and only patterns with no <code>*</code> in them: what a glob would
+  have matched depends on a tree the run may not have covered, so those are left
+  alone rather than guessed at.
+</p>
+
+<p>
   <strong><code>[limits] max_file_bytes</code></strong> is the largest file the
   engine will open. A file above it is skipped — and said so on stderr by the
   hook and by every subcommand, because "too large to check" and "nothing wrong"
@@ -86,13 +108,27 @@ file = ".procoder-baseline.json"</code></pre>
   measurement supports.
 </p>
 
+<p>
+  Set it <em>below</em> what any file in the tree measures and nothing can be
+  checked at all. That case used to pass CI in silence. It does not now:
+  <code>procoder verify</code> names every file it could not read, prints how many
+  there were, and exits <strong>2</strong> — "cannot verify", distinct from the
+  <strong>1</strong> that means the ratchet grew — naming both remedies, raise or
+  remove the limit, or exclude the path deliberately. A genuine file over the
+  2&nbsp;MB ceiling produces the same exit for the same reason.
+</p>
+
 <div class="note">
   <p>
-    The TOML parser is a documented subset, not a full implementation. A line it
-    cannot recognise is warned on stderr and skipped, never silently dropped — but
-    an unsupported <em>value</em> on a well-formed line is not warned, and loads as
-    raw text. Keep this file to the shapes above, and read stderr after editing it.
-    The exact boundaries are in
+    The TOML parser is a documented subset, not a full implementation. Everything
+    it cannot read exactly is warned on stderr with file and line, and the key is
+    left unset — an unrecognised line, and an unsupported <em>value</em> on a
+    well-formed line alike. A key written <strong>twice</strong> has both values
+    dropped and the key left unset: a duplicate states two things and TOML permits
+    neither, so keeping either would be a guess, and an unset key here falls back
+    to its strict default. A repeated <code>[table]</code> header and a dotted key
+    colliding with a table are refused the same way. Keep this file to the shapes
+    above, and read stderr after editing it. The exact boundaries are in
     <a href="{{ site.repo }}/blob/main/docs/known-limitations.md">known limitations</a>.
   </p>
 </div>
@@ -177,6 +213,17 @@ build/          # a directory of that name, at any depth
   <code>.procoderignore</code> for that run and nothing else.
 </p>
 
+<p>
+  <strong><code>--no-ignore</code> deliberately does not re-include a
+  <code>[exclude] paths</code> entry.</strong> The flag reaches ignore files and
+  stops there. <code>[exclude] paths</code> is the project-wide contract — written
+  once at the root, reviewable in one place, and carrying the built-in
+  <code>node_modules/</code>, <code>vendor/</code>, <code>dist/</code> defaults —
+  so a flag that reached it would be a back door into <code>node_modules</code>
+  rather than a diagnostic. The excluded files are still reported by count, and by
+  name if you named one, so the flag's question is answered either way.
+</p>
+
 <h2>The literal marker</h2>
 
 <p>
@@ -203,7 +250,11 @@ build/          # a directory of that name, at any depth
     </tr>
     <tr>
       <td>The reason runs to end of line, so the marker is always last on its line.</td>
-      <td>That is what separates a trailing marker (this line only) from a standalone one (its own line and the next) — the widest scope offered. There is no block or file form.</td>
+      <td>That is what separates a trailing marker (this line only) from a standalone one (its own line and the next). There is no block or file form.</td>
+    </tr>
+    <tr>
+      <td>A finding reported at one line but <em>built</em> at another is covered by a marker on either of the two lines it names.</td>
+      <td>The taint scan reports at the sink and carries the build line as a structured field. An author who reads the message, goes to the line it names and marks it there gets the effect they expected — which marking the build line used to fail to give, silently. No new syntax: the reach is still the finding's own lines.</td>
     </tr>
   </tbody>
 </table>
@@ -239,10 +290,20 @@ build/          # a directory of that name, at any depth
 
 <p>
   <code>verify --unused-exclusions</code> additionally fails when an
-  <code>[exclude] rules</code> entry suppressed nothing in the run — a stale
+  <code>[exclude] rules</code> entry suppressed nothing in the run, or an
+  <code>[exclude] paths</code> entry names a path that no longer exists — a stale
   suppression left behind after the finding it silenced was fixed is itself rung-4
   rot. Without the flag those entries are still reported, they just do not fail
   the build.
+</p>
+
+<p>
+  <code>verify</code> has three exit codes, and the third is the one worth
+  knowing: <strong>0</strong> the ratchet holds, <strong>1</strong> findings
+  appeared that are not in the baseline, <strong>2</strong> <em>cannot verify</em>
+  — either the baseline is from an incompatible format version, or some file in
+  scope could not be read at all and a ratchet cannot be claimed over it. Exit 2
+  is never "you added findings"; the stderr line says which of the two it is.
 </p>
 
 <h2>Environment variables</h2>

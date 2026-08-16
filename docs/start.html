@@ -73,13 +73,24 @@ procoder statusline uninstall          # remove it, restore what it composed wit
 
 procoder check &lt;paths...&gt;     # exit 1 if a finding blocks at the active level
 procoder baseline &lt;paths...&gt;  # record current findings as accepted
-procoder verify &lt;paths...&gt;    # exit 1 if a finding is not in the baseline</code></pre>
+procoder verify &lt;paths...&gt;    # exit 1 if a finding is not in the baseline
+                              # exit 2 if it cannot verify at all</code></pre>
 
 <p>
   <code>verify</code> is the CI ratchet: accepted debt may shrink, never grow. It
   takes one extra flag, <code>--unused-exclusions</code>, which also fails when an
-  exclusion stopped suppressing anything — a suppression left behind after the
-  finding it silenced was fixed is itself rung-4 rot.
+  exclusion stopped suppressing anything, or names a path that no longer exists —
+  a suppression left behind after the finding it silenced was fixed is itself
+  rung-4 rot.
+</p>
+
+<p>
+  Exit <strong>2</strong> is <em>cannot verify</em>, never "you added findings":
+  the baseline is from an incompatible format version, or some file in scope
+  could not be read at all — over the 2&nbsp;MB ceiling, unreadable, or shut out
+  by a <code>[limits] max_file_bytes</code> set too low. A ratchet is a claim
+  about what was looked at, so a run that read nothing fails rather than passing
+  green.
 </p>
 
 <p>

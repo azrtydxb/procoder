@@ -230,16 +230,30 @@ CLI directly:
 procoder check <paths...>     # exit 1 if any non-baselined finding blocks at the active level
 procoder baseline <paths...>  # record current findings as accepted
 procoder verify <paths...>    # exit 1 if any finding isn't in the baseline — the CI ratchet
+                              # exit 2 if it cannot verify at all (see below)
 ```
 
 At `pragmatic`, `check` reports OBVIOUS and ALONE findings but does not exit 1
 on them; every other level gates all four rungs, and so does CI, which has no
 level file and therefore resolves to the default `strict`.
 
+`verify`'s exit codes are **0** the ratchet holds, **1** findings appeared that
+are not in the baseline, and **2** *cannot verify* — either the baseline is from
+an incompatible format version, or some file in scope could not be read at all,
+which a ratchet cannot honestly cover. Exit 2 never means "you added findings".
+
 `verify` takes one extra flag, `--unused-exclusions`: it also fails if an
-`[exclude] rules` entry suppressed nothing in this run — a stale suppression
-left behind after the finding it silenced was fixed. Without the flag the stale
-entries are still reported, they just do not fail the build.
+`[exclude] rules` entry suppressed nothing in this run, or an `[exclude] paths`
+entry names a path that no longer exists — a stale suppression left behind after
+the finding it silenced was fixed. Without the flag the stale entries are still
+reported, they just do not fail the build.
+
+`check` takes `--no-ignore`, which answers "why is this file not being checked?"
+by turning off every `.procoderignore` for the run. It reaches ignore files and
+nothing else: `[exclude] paths` in `.procoder.toml` is the project-wide contract
+and stays in force, so the flag cannot become a back door into `node_modules`.
+Every file a path exclusion holds back is reported anyway — by count per pattern,
+or by name if you named that file on the command line.
 
 ## Troubleshooting
 
@@ -294,7 +308,10 @@ thing they talk about. Mark the line instead of excluding the file:
 `<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>` <!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
 
 Trailing on a line it covers that line; standing on its own line it covers that
-line and the next. It must name its rules and give a reason, or it silences
+line and the next. A finding reported at one line but *built* at another — the
+taint scan reports at the sink and says "built at line N" — is covered by a
+marker on **either** of the two lines it names, so marking the line the message
+points you at works. It must name its rules and give a reason, or it silences
 nothing and is itself reported. See the README's Configuration section for the
 full rules, and [Known limitations](known-limitations.md) for what it cannot
 reach — notably external linter rule ids such as `true/eslint:no-eval`.
@@ -330,13 +347,24 @@ If it never appears at all:
 
 **`procoder verify` exits 2 instead of 0 or 1.**
 
-Exit 2 means "cannot verify," not "the ratchet grew." It happens when the
-baseline file (`.procoder-baseline.json` by default) was written by an older,
-incompatible version of procoder — the fingerprint format changed between
-baseline format versions and old entries cannot be migrated, so nothing in
-the stale file is honored. The fix is exactly what the stderr message says:
+Exit 2 means "cannot verify," not "the ratchet grew." It has two causes, and
+the stderr line says which.
+
+The first is a baseline file (`.procoder-baseline.json` by default) written by
+an older, incompatible version of procoder — the fingerprint format changed
+between baseline format versions and old entries cannot be migrated, so nothing
+in the stale file is honored. The fix is exactly what the stderr message says:
 run `procoder baseline <paths...>` to write a current-format baseline, then
 re-run `verify`.
+
+The second is a file in scope that could not be read at all — over the 2 MB
+ceiling, unreadable, or excluded from being read by a `[limits] max_file_bytes`
+set too low to admit anything. `verify` prints how many such files there were,
+having already named each one, and stops at 2 rather than declaring a ratchet
+over a run that looked at nothing. Raise or remove `[limits] max_file_bytes`,
+or exclude the path deliberately with `[exclude] paths` — an excluded path is a
+decision about scope and does not trigger this; an unread one is a hole in the
+scope itself.
 
 ## Host reference
 
