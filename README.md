@@ -8,6 +8,11 @@ code the change replaced was actually deleted. It pairs with the
 [`ponytail`](https://github.com/dietrichgebert/ponytail) plugin: ponytail decides **what to write** (the minimal, YAGNI-first
 solution); procoder decides **whether it may ship**.
 
+**<https://azrtydxb.github.io/procoder/>** — the same doctrine, install steps,
+commands and worked examples as one page, plus what the tool is known to miss.
+It is served from [`docs/index.html`](docs/index.html) with no build step; edit
+that file and the change is live on the next push to `main`.
+
 ## The ladder
 
 Ponytail's ladder is *stop at the first rung that holds* — a search. procoder's
@@ -391,7 +396,7 @@ source — so hand-editing one of these is not an option.
 | `.agents/rules/procoder.md` | Generic `.agents`-convention tooling |
 | `.openclaw/skills/procoder/SKILL.md` | OpenClaw |
 
-`scripts/sync-rules.js` also ports each of the ten `commands/*.toml` files to
+`scripts/sync-rules.js` also ports each of the twelve `commands/*.toml` files to
 `.opencode/command/<name>.md` and `.openclaw/commands/<name>.md` — opencode
 reads `AGENTS.md` for the doctrine itself and these for the slash commands.
 
