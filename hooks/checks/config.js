@@ -6,12 +6,9 @@ const path = require('path');
 const { parseToml } = require('./toml');
 
 const DEFAULTS = {
-  level: 'strict',
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
   thresholds: { function_lines: 40, nesting_depth: 3, params: 4, complexity: 10 },
-  // true_ avoids the TOML boolean literal; it is rung 2, TRUE.
-  rungs: { safe: 'error', true_: 'error', obvious: 'warn', alone: 'warn' },
-  baseline: { file: '.procoder-baseline.json', enforce_no_growth: true },
+  baseline: { file: '.procoder-baseline.json' },
 };
 
 function findRepoRoot(startDir) {
@@ -49,7 +46,6 @@ function loadConfig(repoRoot) {
 
   return {
     root: repoRoot,
-    level: typeof raw.level === 'string' ? raw.level : DEFAULTS.level,
     exclude: {
       paths: Array.isArray(raw.exclude && raw.exclude.paths)
         ? DEFAULTS.exclude.paths.concat(raw.exclude.paths)
@@ -57,7 +53,6 @@ function loadConfig(repoRoot) {
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
-    rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
   };
 }

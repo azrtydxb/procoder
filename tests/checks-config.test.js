@@ -18,22 +18,20 @@ function tempRepo(files = {}) {
 
 test('absent config yields the documented defaults', () => {
   const cfg = loadConfig(tempRepo());
-  assert.strictEqual(cfg.level, DEFAULTS.level);
   assert.strictEqual(cfg.thresholds.function_lines, 40);
   assert.strictEqual(cfg.thresholds.nesting_depth, 3);
   assert.strictEqual(cfg.thresholds.params, 4);
   assert.strictEqual(cfg.thresholds.complexity, 10);
-  assert.strictEqual(cfg.rungs.safe, 'error');
-  assert.strictEqual(cfg.rungs.obvious, 'warn');
+  assert.strictEqual(cfg.baseline.file, DEFAULTS.baseline.file);
 });
 
 test('config values override defaults, unset keys keep them', () => {
   const cfg = loadConfig(tempRepo({
-    '.procoder.toml': '[thresholds]\nfunction_lines = 80\n\n[rungs]\nobvious = "error"\n',
+    '.procoder.toml': '[thresholds]\nfunction_lines = 80\n\n[baseline]\nfile = "b.json"\n',
   }));
   assert.strictEqual(cfg.thresholds.function_lines, 80);
   assert.strictEqual(cfg.thresholds.nesting_depth, 3);
-  assert.strictEqual(cfg.rungs.obvious, 'error');
+  assert.strictEqual(cfg.baseline.file, 'b.json');
 });
 
 test('malformed config falls back to defaults without throwing', () => {
