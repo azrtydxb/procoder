@@ -29,6 +29,23 @@ function golangciMajorVersion() {
   return golangciMajor;
 }
 
+// Picking the right flag was only half of it: golangci-lint v2 writes the JSON
+// document to stdout and then appends a human-readable tally to the SAME
+// stream ("1 issues:\n* typecheck: 1"), so JSON.parse over the whole stream
+// throws and every v2 finding is dropped. v1 wrote nothing but the document.
+// Both encode it with Go's json.Encoder, which emits exactly one line, so the
+// first line that opens an object is the whole report. Output carrying no
+// JSON document at all rethrows — unreadable must not read as clean.
+function golangciReport(stdout) {
+  try {
+    return JSON.parse(stdout);
+  } catch (e) {
+    const document = String(stdout).split('\n').find((line) => line.startsWith('{'));
+    if (document === undefined) throw e;
+    return JSON.parse(document);
+  }
+}
+
 const ts = require('./lang/ts');
 const py = require('./lang/py');
 const go = require('./lang/go');
@@ -81,7 +98,7 @@ const TOOLS = {
     argv: (file) => golangciMajorVersion() >= 2
       ? ['run', '--output.json.path', 'stdout', file]
       : ['run', '--out-format', 'json', file],
-    parse: (stdout) => (JSON.parse(stdout).Issues || []).map((issue) =>
+    parse: (stdout) => (golangciReport(stdout).Issues || []).map((issue) =>
       externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter)),
   },
   // There is no standalone `clippy` binary on a normal PATH — only

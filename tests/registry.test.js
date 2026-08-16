@@ -88,6 +88,26 @@ test('the clippy entry declares that it reports on stderr', () => {
   assert.strictEqual(toolFor('a.go').stream, undefined);
 });
 
+test('golangci-lint v2 output is parsed despite the summary it appends to stdout', () => {
+  // Verified against golangci-lint 2.12.2: `run --output.json.path stdout`
+  // writes the JSON document AND then a human-readable tally to stdout, so
+  // JSON.parse over the whole stream throws and every finding is dropped.
+  const golangci = toolFor('a.go');
+  const v2 = `${JSON.stringify({
+    Issues: [{ Pos: { Filename: 'main.go', Line: 6, Column: 2 }, FromLinter: 'typecheck', Text: 'declared and not used: x' }],
+    Report: { Linters: [{ Name: 'govet', Enabled: true }] },
+  })}\n1 issues:\n* typecheck: 1\n`;
+  const parsed = golangci.parse(v2);
+  assert.strictEqual(parsed.length, 1);
+  assert.strictEqual(parsed[0].line, 6);
+  assert.strictEqual(parsed[0].id, 'true/golangci-lint:typecheck');
+});
+
+test('golangci-lint v2 output with no issues parses to no findings, not to an error', () => {
+  const empty = `${JSON.stringify({ Issues: [], Report: { Linters: [] } })}\n0 issues.\n`;
+  assert.deepStrictEqual(toolFor('a.go').parse(empty), []);
+});
+
 test('golangci-lint v1 pure-JSON output still parses', () => {
   const parsed = toolFor('a.go').parse(JSON.stringify({
     Issues: [{ Pos: { Line: 12 }, FromLinter: 'govet', Text: 'nilness' }],
