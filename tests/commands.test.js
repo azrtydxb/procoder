@@ -33,6 +33,7 @@ function extractPrompt(raw) {
 const EXPECTATIONS = {
   'procoder.toml': { descriptionContains: 'intensity level', promptContains: '/procoder' },
   'procoder-help.toml': { descriptionContains: 'rungs', promptContains: 'procoder-help skill' },
+  'procoder-review.toml': { descriptionContains: 'diff', promptContains: 'procoder-review skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {
