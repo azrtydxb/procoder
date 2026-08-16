@@ -15,8 +15,9 @@ Review the diff. Every rung must hold before it ships.
 2. **Run the engine first.** `node <plugin>/bin/procoder.js check <changed files>`.
    These findings are deterministic — report them verbatim, in the order given.
    Do not re-derive by eye what the engine already computed, and do not omit a
-   finding because it looks minor. The engine's exit code is 1 when it found
-   anything; that alone blocks the ship.
+   finding because it looks minor. The engine exits 1 when a finding blocks at
+   the active level; that alone blocks the ship. It exits 0 at `pragmatic` when
+   only OBVIOUS and ALONE findings remain — still report them, as advisory.
 3. **Read the diff for what the engine cannot see**, in rung order:
 
    | Rung | Look for |

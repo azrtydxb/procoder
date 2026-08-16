@@ -3,7 +3,7 @@
 // hook, so what fails locally fails in CI for the same reason.
 //
 // Usage:
-//   procoder check <paths...>     exit 1 if any non-baselined finding exists
+//   procoder check <paths...>     exit 1 if any non-baselined blocking finding exists
 //   procoder baseline <paths...>  record current findings as accepted
 //   procoder verify <paths...>    exit 1 if any finding is not in the baseline
 
@@ -12,13 +12,16 @@ const path = require('path');
 const { loadConfig, findRepoRoot } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
+const { readLevel } = require('../hooks/procoder-runtime');
 const {
   fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <paths...>
 
-  check     report findings not present in the baseline; exit 1 if any
+  check     report findings not present in the baseline; exit 1 if any of them
+            blocks at the active level (at pragmatic, OBVIOUS and ALONE are
+            reported but do not block; every other level gates all four rungs)
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
 
@@ -155,19 +158,42 @@ function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
   return reportUnusedExclusions(files, repoRoot, config, unusedExclusions);
 }
 
+// Same rule the PostToolUse hook applies: at `pragmatic` the judgment rungs
+// (OBVIOUS, ALONE — the ones the severity map marks `warn`) are flagged but do
+// not gate. Every other level enforces all four, and so does a missing level
+// file, which readLevel resolves to the default `strict` — CI, which has no
+// user-level config at all, therefore stays strict.
+function isBlocking(finding, level, config) {
+  if (level !== 'pragmatic') return true;
+  return config.rungs[finding.rung.toLowerCase()] !== 'warn';
+}
+
+function summarize(blocking, advisory, level) {
+  const total = blocking + advisory;
+  const counts = `${total} finding${total === 1 ? '' : 's'}` +
+    (advisory > 0 ? ` — ${blocking} blocking, ${advisory} advisory at [${level}]` : '');
+  return blocking > 0
+    ? `\nprocoder: ${counts}. Fix them, or run \`procoder baseline <paths>\` ` +
+      'to accept pre-existing ones.\n'
+    : `\nprocoder: ${counts} — advisory only at this level, not failing the run.\n`;
+}
+
 function runCheck(files, repoRoot, config) {
-  let total = 0;
+  const level = readLevel();
+  let blocking = 0;
+  let advisory = 0;
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
     if (skipped || findings.length === 0) continue;
-    total += findings.length;
+    const gating = findings.filter((f) => isBlocking(f, level, config)).length;
+    blocking += gating;
+    advisory += findings.length - gating;
     process.stdout.write(formatFindings(findings, relPath) + '\n');
   }
 
-  if (total === 0) return 0;
-  process.stdout.write(`\nprocoder: ${total} finding${total === 1 ? '' : 's'}. ` +
-    'Fix them, or run `procoder baseline <paths>` to accept pre-existing ones.\n');
-  return 1;
+  if (blocking + advisory === 0) return 0;
+  process.stdout.write(summarize(blocking, advisory, level));
+  return blocking > 0 ? 1 : 0;
 }
 
 // A Map, not an object literal: argv is user input, and `procoder constructor`
