@@ -102,7 +102,7 @@ ul.plain li { margin: .35rem 0; }
   </p>
   <ul class="badges">
     <li>Zero runtime dependencies</li>
-    <li>MIT</li>
+    <li>Apache-2.0</li>
     <li>Node &ge; 18</li>
   </ul>
 </header>
@@ -473,9 +473,11 @@ build/          # a directory of that name, at any depth
     between files, resurrects accepted findings as new ones.
   </li>
   <li>
-    <strong>The line marker cannot name an external linter's rule id</strong>
-    (<code>true/eslint:no-eval</code>) &mdash; the marker still parses, and
-    silences nothing. Use <code>[exclude] rules</code> for those.
+    <strong>Shape rules do not see lines over 4KB.</strong> The security and
+    rot checks read minified and generated lines in full, but function length,
+    nesting depth and complexity are skipped there &mdash; those metrics are
+    meaningless on a bundled line, and measuring them is what used to blow the
+    time budget.
   </li>
   <li>
     <strong><code>cargo clippy</code> cannot be scoped to one file</strong>, so
@@ -509,7 +511,7 @@ build/          # a directory of that name, at any depth
     <li><a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known limitations</a></li>
     <li><a href="https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md">Changelog</a></li>
   </ul>
-  <p>procoder v0.2.0 &middot; MIT &middot; no analytics, no fonts, no scripts &mdash; this page makes no external request.</p>
+  <p>procoder v0.2.0 &middot; Apache-2.0 &middot; no analytics, no fonts, no scripts &mdash; this page makes no external request.</p>
 </footer>
 
 </main>
