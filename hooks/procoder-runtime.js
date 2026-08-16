@@ -11,10 +11,16 @@ const isCodex = !!process.env.CODEX_HOME || process.env.PROCODER_HOST === 'codex
 const isCopilot = process.env.PROCODER_HOST === 'copilot';
 const isQoder = process.env.PROCODER_HOST === 'qoder';
 
-// A closed stdout (the host exiting first) surfaces as an async 'error' event,
-// not a synchronous throw — try/catch alone cannot catch it, and an uncaught
-// EPIPE would crash the hook. Both guards are needed.
-try { process.stdout.on('error', () => {}); } catch (e) { /* best-effort */ }
+// A closed stdout surfaces as an async 'error' event, not a synchronous throw —
+// try/catch alone cannot catch it, and an uncaught EPIPE would crash the hook.
+// Marked on the stream because tests re-require this module, and an unguarded
+// listener per load would cross Node's maxListeners and print a warning.
+try {
+  if (!process.stdout.__procoderEpipeGuarded) {
+    process.stdout.__procoderEpipeGuarded = true;
+    process.stdout.on('error', () => {});
+  }
+} catch (e) { /* best-effort */ }
 
 function readLevel() {
   try {

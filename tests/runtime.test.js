@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 function withTempClaudeDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
@@ -186,8 +187,9 @@ test('Qoder host emits hookSpecificOutput only when context is non-empty', () =>
       process.stdout.write = original;
     }
     const parsed1 = JSON.parse(chunks[0]);
-    assert.strictEqual(parsed1.hookSpecificOutput.hookEventName, 'SessionStart');
-    assert.strictEqual(parsed1.hookSpecificOutput.additionalContext, 'CONTEXT');
+    assert.deepStrictEqual(parsed1, {
+      hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'CONTEXT' },
+    });
     const parsed2 = JSON.parse(chunks[1]);
     assert.deepStrictEqual(parsed2, {});
   } finally {
@@ -195,6 +197,41 @@ test('Qoder host emits hookSpecificOutput only when context is non-empty', () =>
     else process.env.CLAUDE_CONFIG_DIR = saved;
     if (savedHost === undefined) delete process.env.PROCODER_HOST;
     else process.env.PROCODER_HOST = savedHost;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeHookOutput survives a closed stdout without crashing', () => {
+  const script =
+    "const rt = require(" + JSON.stringify(require.resolve('../hooks/procoder-runtime')) + ");" +
+    "rt.writeHookOutput('SessionStart', 'strict', 'X'.repeat(200000));";
+  const child = spawnSync('node', ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  // Reader closes immediately; a large write guarantees the pipe is still open-and-broken.
+  assert.strictEqual(child.status, 0, `exited ${child.status}: ${child.stderr}`);
+  assert.ok(!/EPIPE/.test(String(child.stderr)), 'EPIPE surfaced on stderr');
+});
+
+test('error listener count does not grow across re-requires', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  try {
+    // First require establishes the listener count
+    delete require.cache[require.resolve('../hooks/procoder-runtime')];
+    delete require.cache[require.resolve('../hooks/procoder-config')];
+    require('../hooks/procoder-runtime');
+    const count1 = process.stdout.listenerCount('error');
+
+    // Second require should not add another listener
+    delete require.cache[require.resolve('../hooks/procoder-runtime')];
+    delete require.cache[require.resolve('../hooks/procoder-config')];
+    require('../hooks/procoder-runtime');
+    const count2 = process.stdout.listenerCount('error');
+
+    assert.strictEqual(count2, count1, 'listener count grew on re-require');
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
