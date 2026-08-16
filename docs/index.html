@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>procoder — a ship gate for AI-written code</title>
+<meta name="description" content="procoder is a Claude Code plugin that decides whether AI-written code is allowed to ship: four rungs — SAFE, TRUE, OBVIOUS, ALONE — checked on every response.">
+<style>
+/* Colours are literal rgb(), not custom properties and not hex, because this
+   file is scanned by the tool it documents: a line starting "--" reads as a
+   comment to the scanner (SQL/Lua syntax) and a "#" blanks the rest of its
+   line, so a palette written either way is reported as commented-out code.
+   Two themes' worth of literals is the honest cost of living inside the
+   documented limitation instead of suppressing it. */
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: rgb(251, 250, 248);
+  color: rgb(27, 26, 24);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+main { max-width: 46rem; margin: 0 auto; padding: 0 1.15rem 5rem; }
+a { color: rgb(138, 59, 18); }
+h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2.2rem, 9vw, 3.2rem); margin: 0 0 .4rem; }
+h2 { font-size: 1.45rem; margin: 3.2rem 0 .8rem; padding-top: 1.6rem; border-top: 1px solid rgb(226, 221, 212); }
+h3 { font-size: 1.05rem; margin: 1.8rem 0 .5rem; }
+.lede { font-size: 1.12rem; color: rgb(92, 88, 82); }
+header { padding: 3.2rem 0 .5rem; }
+.tag { font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; color: rgb(92, 88, 82); }
+.badges { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.2rem 0 0; padding: 0; list-style: none; }
+.badges li {
+  font-size: .78rem; letter-spacing: .04em; color: rgb(92, 88, 82);
+  border: 1px solid rgb(226, 221, 212); border-radius: 999px; padding: .16rem .7rem;
+  background: rgb(255, 255, 255);
+}
+pre {
+  background: rgb(243, 239, 232); border: 1px solid rgb(226, 221, 212); border-radius: 6px;
+  padding: .85rem 1rem; overflow-x: auto; font-size: .85rem; line-height: 1.55;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .88em;
+}
+p code, li code, td code { background: rgb(243, 239, 232); border-radius: 4px; padding: .08em .32em; }
+pre code { background: none; padding: 0; }
+.scroll { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid rgb(226, 221, 212); vertical-align: top; }
+th { font-size: .76rem; text-transform: uppercase; letter-spacing: .07em; color: rgb(92, 88, 82); font-weight: 600; }
+td:first-child { white-space: nowrap; }
+td.wrap:first-child { white-space: normal; }
+.note {
+  background: rgb(255, 255, 255); border: 1px solid rgb(226, 221, 212);
+  border-left: 3px solid rgb(138, 59, 18); border-radius: 4px;
+  padding: .9rem 1.1rem; margin: 1.2rem 0;
+}
+.note p:first-child { margin-top: 0; }
+.note p:last-child { margin-bottom: 0; }
+.pair { display: grid; gap: 1rem; }
+@media (min-width: 46rem) { .pair { grid-template-columns: 1fr 1fr; } }
+.pair h3 { margin-top: 0; }
+.before h3 { color: rgb(154, 32, 32); }
+.after h3 { color: rgb(31, 96, 52); }
+footer {
+  border-top: 1px solid rgb(226, 221, 212); margin-top: 3.5rem; padding-top: 1.2rem;
+  font-size: .88rem; color: rgb(92, 88, 82);
+}
+ul.plain { list-style: none; padding: 0; }
+ul.plain li { margin: .35rem 0; }
+
+@media (prefers-color-scheme: dark) {
+  body { background: rgb(22, 21, 19); color: rgb(236, 232, 225); }
+  a { color: rgb(232, 146, 92); }
+  h2, footer { border-top-color: rgb(51, 48, 41); }
+  .lede, .tag, th, footer, .badges li { color: rgb(160, 154, 144); }
+  .badges li { border-color: rgb(51, 48, 41); background: rgb(30, 29, 26); }
+  pre { background: rgb(34, 31, 27); border-color: rgb(51, 48, 41); }
+  p code, li code, td code { background: rgb(34, 31, 27); }
+  th, td { border-bottom-color: rgb(51, 48, 41); }
+  .note {
+    background: rgb(30, 29, 26); border-color: rgb(51, 48, 41);
+    border-left-color: rgb(232, 146, 92);
+  }
+  .before h3 { color: rgb(229, 139, 139); }
+  .after h3 { color: rgb(143, 208, 164); }
+}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="tag">Claude Code plugin &middot; v0.2.0</p>
+  <h1>procoder</h1>
+  <p class="lede">
+    An AI writes the change in seconds. What it rarely does is delete the thing
+    the change replaced &mdash; so the old path survives, still exported, still
+    called, still wrong. procoder is the gate that refuses to call that done.
+  </p>
+  <ul class="badges">
+    <li>Zero runtime dependencies</li>
+    <li>MIT</li>
+    <li>Node &ge; 18</li>
+  </ul>
+</header>
+
+<p>
+  procoder is a <a href="https://claude.com/claude-code">Claude Code</a> plugin
+  that governs whether AI-written code is allowed to ship. Every response is
+  checked against four rungs, in order, and a deterministic check engine runs
+  over each file the session touches. It pairs with the
+  <a href="https://github.com/dietrichgebert/ponytail">ponytail</a> plugin:
+  ponytail decides <strong>what to write</strong> (the minimal solution),
+  procoder decides <strong>whether it may ship</strong>.
+</p>
+
+<div class="note">
+  <p>
+    <strong>This is v0.2.0.</strong> The check engine is a set of heuristics, not
+    a parser &mdash; it will miss things, and the ones it is known to miss are
+    written down in
+    <a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known&nbsp;limitations</a>.
+    Read that page before you rely on this to keep anything out.
+  </p>
+</div>
+
+<h2 id="rungs">The four rungs</h2>
+
+<p>
+  ponytail's ladder is <em>stop at the first rung that holds</em> &mdash; a
+  search. procoder's ladder is <strong>every rung must hold before it
+  ships</strong> &mdash; a gate. Checked in this order because the cost of
+  getting it wrong descends.
+</p>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>#</th><th>Rung</th><th>Question</th><th>Negotiable</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td><strong>SAFE</strong></td><td class="wrap">Does untrusted data reach a sink unvalidated?</td><td>No</td></tr>
+    <tr><td>2</td><td><strong>TRUE</strong></td><td class="wrap">Are errors handled and edges covered, with one runnable check left behind?</td><td>No</td></tr>
+    <tr><td>3</td><td><strong>OBVIOUS</strong></td><td class="wrap">Would the next reader get it in one pass?</td><td>Judgment</td></tr>
+    <tr><td>4</td><td><strong>ALONE</strong></td><td class="wrap">Did you leave a twin behind?</td><td>Judgment</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Rung 4 is the rung nobody ships, and the reason procoder exists:
+  <strong>a change isn't done until the thing it replaced is gone.</strong>
+</p>
+
+<h3>Levels</h3>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Level</th><th>Enforces</th></tr></thead>
+  <tbody>
+    <tr><td><code>off</code></td><td class="wrap">procoder is disabled entirely.</td></tr>
+    <tr><td><code>pragmatic</code></td><td class="wrap">SAFE and TRUE enforced; OBVIOUS and ALONE flagged only, non-blocking.</td></tr>
+    <tr><td><code>strict</code> (default)</td><td class="wrap">All four rungs enforced on code touched this session.</td></tr>
+    <tr><td><code>paranoid</code></td><td class="wrap">strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Switch mid-session with <code>/procoder:level &lt;level&gt;</code>. The choice
+  is persisted, so it outlives the session and survives restarts.
+</p>
+
+<h2 id="install">Install</h2>
+
+<p>In Claude Code:</p>
+
+<pre><code>claude plugin marketplace add azrtydxb/procoder
+claude plugin install procoder</code></pre>
+
+<p>
+  Installing from a clone instead? Point the marketplace at the path:
+  <code>claude plugin marketplace add ./procoder</code>.
+</p>
+
+<p>To see the active level in your status line:</p>
+
+<pre><code>procoder statusline install</code></pre>
+
+<p>For a pre-commit hook, a CI job, or a plain terminal with no agent in it:</p>
+
+<pre><code>npm install -g procoder
+
+procoder check &lt;paths...&gt;     # exit 1 if a non-baselined finding blocks
+procoder baseline &lt;paths...&gt;  # record current findings as accepted
+procoder verify &lt;paths...&gt;    # exit 1 if a finding isn't in the baseline</code></pre>
+
+<p>
+  Cursor, Windsurf, Cline, Kiro, Qoder, opencode, openclaw, Codex/Copilot, pi
+  and MCP each read a rule file generated from the same doctrine source. The
+  exact commands per host are in
+  <a href="https://github.com/azrtydxb/procoder/blob/main/docs/install.md">docs/install.md</a>.
+</p>
+
+<h2 id="commands">Commands</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/procoder:level</code></td><td class="wrap">Set the intensity level: pragmatic, strict, or paranoid.</td></tr>
+    <tr><td><code>/procoder:review</code></td><td class="wrap">Review the current diff against the four rungs.</td></tr>
+    <tr><td><code>/procoder:audit</code></td><td class="wrap">Audit the whole repository, ranked by rung severity.</td></tr>
+    <tr><td><code>/procoder:rot</code></td><td class="wrap">Find dead, stale, and superseded code left behind.</td></tr>
+    <tr><td><code>/procoder:threat</code></td><td class="wrap">Map every trust boundary and what validates it.</td></tr>
+    <tr><td><code>/procoder:deps</code></td><td class="wrap">Audit dependencies: vulnerable, abandoned, unpinned, unused.</td></tr>
+    <tr><td><code>/procoder:debt</code></td><td class="wrap">Ledger of <code>procoder:</code> markers, flagging any without a removal trigger.</td></tr>
+    <tr><td><code>/procoder:gain</code></td><td class="wrap">Measured progress: rot removed, boundaries hardened, baseline shrinkage.</td></tr>
+    <tr><td><code>/procoder:guard</code></td><td class="wrap">Install procoder as a pre-commit hook and CI check.</td></tr>
+    <tr><td><code>/procoder:statusline</code></td><td class="wrap">Install, inspect, or remove the statusline badge.</td></tr>
+    <tr><td><code>/procoder:update</code></td><td class="wrap">Update procoder, and name what the update invalidates.</td></tr>
+    <tr><td><code>/procoder:help</code></td><td class="wrap">Show procoder's rungs, levels, and commands.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <code>/procoder:rot</code> and <code>/procoder:threat</code> have no
+  equivalent in comparable tools: one hunts what previous changes left behind,
+  the other maps where untrusted data enters and what validates it.
+</p>
+
+<h2 id="example">A worked example</h2>
+
+<p>
+  The repository carries one before/after pair per rung under
+  <a href="https://github.com/azrtydxb/procoder/tree/main/examples">examples/</a>.
+  They are not illustrations: <code>tests/examples.test.js</code> asserts that
+  every <code>before.ts</code> trips its rung and every <code>after.ts</code>
+  reports nothing, so a pair that stopped teaching would fail the build. Here is
+  the SAFE pair, quoted from the real files.
+</p>
+
+<div class="pair">
+  <div class="before">
+    <h3>examples/safe/before.ts</h3>
+<pre><code>export async function updateUserRole(
+  req: Request, res: Response,
+): Promise&lt;void&gt; {
+  const { userId, role } = req.body;
+
+  // trusts the caller's own claim of
+  // admin-ness instead of looking it
+  // up server-side
+  if (req.body.role === 'admin') {
+    await db.query(
+      `UPDATE users SET role = '${role}'
+       WHERE id = '${userId}'`);
+  }
+
+  res.sendStatus(204);
+}</code></pre>
+  </div>
+  <div class="after">
+    <h3>examples/safe/after.ts</h3>
+<pre><code>export async function updateUserRole(
+  req: Request, res: Response,
+): Promise&lt;void&gt; {
+  const { targetId, role } =
+    parseRoleChange(req.body);
+  const actingRole =
+    await currentUserRole(req.auth.userId);
+
+  if (actingRole !== 'admin') {
+    res.sendStatus(403);
+    return;
+  }
+
+  await db.query(
+    'UPDATE users SET role = $1 WHERE id = $2',
+    [role, targetId]);
+  res.sendStatus(204);
+}</code></pre>
+  </div>
+</div>
+
+<p>What the engine says about each, verbatim:</p>
+
+<pre><code>$ node bin/procoder.js check --no-ignore examples/safe/before.ts
+[1 SAFE]    examples/safe/before.ts:14 SQL built by interpolation or
+            concatenation &rarr; use a parameterized query with bound values
+
+procoder: 1 finding. Fix them, or run `procoder baseline &lt;paths&gt;` to
+accept pre-existing ones.
+
+$ node bin/procoder.js check examples/safe/after.ts
+$ echo $?
+0</code></pre>
+
+<div class="note">
+  <p>
+    Note what the engine did <em>not</em> report: the authorization decision made
+    from <code>req.body.role</code>. No regex can tell a role read from a request
+    body apart from any other property read. That half of the example is caught
+    by the doctrine the agent reads &mdash; rung 1, "validate at the boundary,
+    not downstream" &mdash; not by the deterministic check. The engine and the
+    doctrine cover different ground, and the engine covers the smaller half.
+  </p>
+</div>
+
+<p>The other three pairs, and what each reports today:</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Pair</th><th>Reported on <code>before.ts</code></th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a href="https://github.com/azrtydxb/procoder/tree/main/examples/true">true/</a></td>
+      <td class="wrap">an error swallowed by an empty <code>catch</code> (1 finding). The unhandled empty-array edge in the same file is doctrine, not a rule.</td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/azrtydxb/procoder/tree/main/examples/obvious">obvious/</a></td>
+      <td class="wrap">nesting depth 4 over a limit of 3; a 56-line function over 40; 6 parameters over 4; cyclomatic complexity ~15 over 10; a nested ternary (5 findings).</td>
+    </tr>
+    <tr>
+      <td><a href="https://github.com/azrtydxb/procoder/tree/main/examples/alone">alone/</a></td>
+      <td class="wrap">two deprecation marks with no removal trigger, and 3 lines of commented-out code (3 findings).</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>Run any of them yourself from a clone:</p>
+
+<pre><code>node bin/procoder.js check --no-ignore examples/obvious/before.ts
+node bin/procoder.js check examples/obvious/after.ts</code></pre>
+
+<h2 id="config">Configuration</h2>
+
+<h3><code>.procoder.toml</code></h3>
+
+<p>Configures the check engine: rung severities, thresholds, exclusions.</p>
+
+<pre><code>[rungs]
+safe = "error"
+true = "error"
+obvious = "warn"
+alone = "warn"
+
+[thresholds]
+function_lines = 40
+nesting_depth = 3
+params = 4
+complexity = 10
+
+[exclude]
+paths = ["vendor/", "generated/"]
+rules = ["scripts/legacy-parser.js:obvious/complexity"]
+
+[baseline]
+file = ".procoder-baseline.json"</code></pre>
+
+<p>
+  The <code>[thresholds]</code> and <code>[baseline]</code> values shown are the
+  defaults; every key is optional. The <code>[rungs]</code> keys are the four
+  rung names verbatim, <code>true</code> included &mdash; it is a bare key, not a
+  boolean. <code>[exclude] rules</code> is exact-path-only: no directory
+  prefixes, no globs, so a rule exclusion cannot silently widen to files added
+  later. A line the parser cannot recognize is warned on stderr and skipped,
+  never silently dropped &mdash; and the parser is
+  <a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">a documented subset of TOML</a>,
+  worth knowing before you write anything exotic in there.
+</p>
+
+<h3><code>.procoderignore</code></h3>
+
+<p>
+  A <code>.procoderignore</code> may sit in <strong>any</strong> directory and
+  excludes paths in that directory and everything beneath it, using a documented
+  <em>subset</em> of <code>.gitignore</code> syntax &mdash; <code>*</code>,
+  <code>**</code>, anchoring slashes, trailing-slash directories, and
+  <code>!</code> negation. <code>?</code>, character classes and backslash
+  escapes are <em>not</em> supported and are treated as literal characters.
+</p>
+
+<pre><code># gen/.procoderignore
+*.gen.ts        # any depth below gen/
+/vendor/        # only gen/vendor/, not gen/pkg/vendor/
+build/          # a directory of that name, at any depth
+!keep.gen.ts    # ...except this one</code></pre>
+
+<p>
+  <code>.gitignore</code> is deliberately <em>not</em> read: a file being
+  untracked says something about version control, not about whether it should
+  ship. Every run reports one line on stderr per ignore file that actually
+  skipped something, so a narrowed gate is visible rather than silent. To check
+  an ignored file anyway, pass <code>--no-ignore</code>.
+</p>
+
+<h3>The literal marker</h3>
+
+<p>
+  For text that <em>describes</em> a violation rather than committing one
+  &mdash; a detection pattern, a doctrine paragraph, a test fixture, a rule id
+  quoted in config &mdash; the suppression is written on the line itself:
+</p>
+
+<!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
+<pre><code>&lt;comment syntax&gt; procoder: literal &lt;rule-id&gt;[, &lt;rule-id&gt;…] &lt;reason&gt;</code></pre>
+
+<p>
+  It must name its rules (there is no bare form and no wildcard), and state a
+  reason of at least two words &mdash; a marker that does neither silences
+  nothing and is itself reported. Trailing on a line it covers that line;
+  standing on its own line it covers that line and the next. There is no block
+  or file form. An unrecognised rule id is dropped from the marker and named on
+  stderr, so a typo fails loudly instead of quietly widening what it covers.
+</p>
+
+<h3>Environment variables</h3>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>PROCODER_DEFAULT_LEVEL</code></td><td class="wrap">Overrides the default level (<code>strict</code>) for new sessions.</td></tr>
+    <tr><td><code>PROCODER_NO_HOOK</code></td><td class="wrap"><code>1</code> disables all procoder hooks without uninstalling the plugin.</td></tr>
+    <tr><td><code>CLAUDE_CONFIG_DIR</code></td><td class="wrap">Where the active level is persisted (<code>&lt;dir&gt;/.procoder-active</code>). Defaults to <code>~/.claude</code>.</td></tr>
+    <tr><td><code>PROCODER_HOST</code></td><td class="wrap">Hook wire protocol for non-Claude-Code hosts: <code>codex</code>, <code>copilot</code>, <code>qoder</code>.</td></tr>
+    <tr><td><code>PROCODER_NO_UPDATE_CHECK</code></td><td class="wrap"><code>1</code> turns off the update notice and its once-a-day background request.</td></tr>
+    <tr><td><code>PROCODER_UPDATE_URL</code></td><td class="wrap">Where the update check reads the published version from. Point it at a fork or mirror.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The update check is a single unauthenticated GET of a static file on
+  <code>raw.githubusercontent.com</code>, at most once a day, sending nothing
+  about you or your code. Session start never waits on it: the hook reads a
+  cached answer and refreshes in the background for the <em>next</em> session, so
+  the first session after a release is silent by design.
+</p>
+
+<h2 id="limitations">What it misses</h2>
+
+<p>
+  procoder gates other people's code. That obligates candour about where the
+  gate is weak, so the blind spots are written down and kept current rather than
+  left for you to discover:
+  <a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>.
+  The short version:
+</p>
+
+<ul>
+  <li>
+    <strong>It scans heuristically, it does not parse.</strong> The shape checks
+    are a brace and indent counter over six languages. A JS/TS private class
+    member (<code>#count</code>) blanks the rest of its own line, so a private
+    method can escape the length, parameter and complexity rules entirely.
+  </li>
+  <li>
+    <strong>Long things fall out of range.</strong> Regex spans stop at 500
+    characters (200 in the universal pack), a wrapped signature is given up on
+    after 10 lines, shape rules skip any line over 4KB, and files over 4MB are
+    not checked at all.
+  </li>
+  <li>
+    <strong>The ratchet baseline is fingerprint-based.</strong> It survives
+    reindentation and line moves, but a re-wrapping formatter, or code moved
+    between files, resurrects accepted findings as new ones.
+  </li>
+  <li>
+    <strong>The line marker cannot name an external linter's rule id</strong>
+    (<code>true/eslint:no-eval</code>) &mdash; the marker still parses, and
+    silences nothing. Use <code>[exclude] rules</code> for those.
+  </li>
+  <li>
+    <strong><code>cargo clippy</code> cannot be scoped to one file</strong>, so
+    on any non-trivial crate it usually exceeds its timeout and the built-in Rust
+    pack covers the file instead.
+  </li>
+  <li>
+    <strong>The in-session hook only reports near the edit</strong> (&plusmn;3
+    lines) for language-pack findings. Run <code>procoder check &lt;file&gt;</code>
+    or <code>/procoder:review</code> for the whole-file picture.
+  </li>
+</ul>
+
+<h2 id="dogfood">It is held to its own gate</h2>
+
+<p>
+  <code>tests/dogfood.test.js</code> runs <code>procoder check</code> over every
+  file <code>git ls-files</code> reports, so a file is in the gate the day it
+  lands, and it plants a violation in a temp directory each run to prove the scan
+  still fails on one. A tool that exempted itself from its own doctrine would
+  have already lost the argument. The suite is <strong>521 tests</strong>
+  (<code>npm test</code>, Node's built-in runner, no test framework) &mdash; that
+  counts assertions of the engine, hooks, CLI, config parsers and the self-scan,
+  not lines of the tool covered.
+</p>
+
+<footer>
+  <ul class="plain">
+    <li><a href="https://github.com/azrtydxb/procoder">Source on GitHub</a></li>
+    <li><a href="https://github.com/azrtydxb/procoder/blob/main/docs/install.md">Install guide, all hosts</a></li>
+    <li><a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known limitations</a></li>
+    <li><a href="https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md">Changelog</a></li>
+  </ul>
+  <p>procoder v0.2.0 &middot; MIT &middot; no analytics, no fonts, no scripts &mdash; this page makes no external request.</p>
+</footer>
+
+</main>
+</body>
+</html>
