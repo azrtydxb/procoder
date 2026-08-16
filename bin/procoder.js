@@ -12,7 +12,9 @@ const path = require('path');
 const { loadConfig, findRepoRoot } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
-const { fingerprintsFor, writeBaseline, loadBaseline, growthCheck } = require('../hooks/checks/baseline');
+const {
+  fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
+} = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> <paths...>
 
@@ -149,7 +151,22 @@ function main(argv) {
   if (files.length === 0) return 0;
 
   const repoRoot = findRepoRoot(path.dirname(files[0]));
-  return run(files, repoRoot, loadConfig(repoRoot));
+  const config = loadConfig(repoRoot);
+
+  // A baseline from an older procoder suppresses nothing, so a legacy repo would
+  // light up red with its whole backlog and no explanation. `verify` stops at 2
+  // — "cannot verify, re-baseline required" — rather than exiting 1 with a
+  // findings count, which would blame the user for debt they did not add.
+  const stale = loadBaseline(repoRoot, config).staleVersion;
+  if (stale !== undefined && command !== 'baseline') {
+    process.stderr.write(
+      `procoder: ${baselinePath(repoRoot, config)} is format v${stale}, this procoder writes ` +
+      `v${BASELINE_VERSION}. The fingerprint format changed and old entries cannot be migrated; ` +
+      'nothing is suppressed until you re-run `procoder baseline <paths>`.\n');
+    if (command === 'verify') return 2;
+  }
+
+  return run(files, repoRoot, config);
 }
 
 process.exit(main(process.argv.slice(2)));

@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  fingerprint, loadBaseline, writeBaseline, suppress, growthCheck,
+  fingerprint, loadBaseline, writeBaseline, suppress, growthCheck, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 const { finding } = require('../hooks/checks/finding');
 const { DEFAULTS } = require('../hooks/checks/config');
@@ -41,6 +41,28 @@ test('an absent or corrupt baseline file loads as empty, never throws', () => {
   assert.strictEqual(loadBaseline(repo, config).size, 0);
   fs.writeFileSync(path.join(repo, '.procoder-baseline.json'), 'not json');
   assert.strictEqual(loadBaseline(repo, config).size, 0);
+});
+
+// The ordinal changed every fingerprint, so v1 entries cannot be migrated —
+// they never recorded which occurrence they were. Loading them anyway would
+// suppress nothing and light up the user's whole backlog as if it were new.
+test('a baseline written in an older format loads empty and says so', () => {
+  const repo = tempRepo();
+  fs.writeFileSync(path.join(repo, '.procoder-baseline.json'),
+    JSON.stringify({ version: 1, fingerprints: ['aaa', 'bbb'] }));
+  const loaded = loadBaseline(repo, config);
+  assert.strictEqual(loaded.size, 0);
+  assert.strictEqual(loaded.staleVersion, 1);
+});
+
+test('a current-format baseline loads without a stale marker', () => {
+  const repo = tempRepo();
+  writeBaseline(repo, config, ['aaa']);
+  const loaded = loadBaseline(repo, config);
+  assert.strictEqual(loaded.staleVersion, undefined);
+  assert.strictEqual(
+    JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8')).version,
+    BASELINE_VERSION);
 });
 
 test('suppress removes baselined findings and keeps new ones', () => {
