@@ -172,8 +172,18 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 // linear: an empty `\w*` admits one attempt per offset, which is O(1) work
 // each — the quadratic shape was re-running a greedy `\w+` to the end of a
 // word run, and that is unchanged.
+// `(?:\w+\s*)?`, not `\w*\s*`: a match may not *begin* on whitespace. With
+// the old spelling an empty `\w*` let a match start at any offset of a
+// whitespace run and scan the rest of it looking for a `(` — one scan per
+// offset, which is quadratic, and comments.js blanks a comment to a run of
+// spaces exactly that wide. A terminated 64KB license header on one line cost
+// 1,611ms and 512KB cost 111,162ms, against 4ms and 28ms for the Python pack
+// on the same input. The two branches here reach every `(` the old one did:
+// with a word, the match starts at the word as before; without one, it starts
+// at the `(` itself rather than somewhere in the whitespace ahead of it, and
+// the parameter list it opens is the same list.
 const FUNCTION_SIGNATURE = {
-  head: /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)\w*\s*)\(/g,
+  head: /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)(?:\w+\s*)?)\(/g,
   tail: /\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/,
 };
 

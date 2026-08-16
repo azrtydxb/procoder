@@ -89,7 +89,16 @@ const TAINT = {
   ],
 };
 
-const UNSAFE_BLOCK = /^\s*(?:.*\s)?unsafe\s*\{/;
+// `unsafe {` at the start of a line or preceded by whitespace — which is what
+// `^\s*(?:.*\s)?unsafe\s*\{` said, at a cost that was quadratic in line
+// length: `^\s*` may end anywhere in a leading whitespace run and `.*\s` then
+// re-scans the rest of the line for each of those ends. comments.js blanks a
+// comment to a run of spaces, so a `/* … */` license header on one line is
+// exactly that input: a terminated 64KB header cost 1,935ms and 512KB cost
+// 124,363ms. Two alternatives with nothing to backtrack over match the same
+// lines: `}unsafe {` was excluded before, for want of the whitespace, and
+// still is.
+const UNSAFE_BLOCK = /(?:^|\s)unsafe\s*\{/;
 const SAFETY_COMMENT = /\/\/\s*SAFETY:|\/\/!\s*SAFETY:/i;
 // Head up to the parameter list's `(`, tail from where that list closes to the
 // block-opening `{`; shape.js counts the parameters in between without

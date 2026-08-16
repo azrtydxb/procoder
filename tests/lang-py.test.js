@@ -197,6 +197,7 @@ test('stays linear on a very long single line', () => {
     check,
     relPath: 'x.py',
     config,
+    comment: 'py',
     baseline: 'pass  ',
     units: [
       'yaml.load(',
