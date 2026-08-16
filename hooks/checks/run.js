@@ -19,9 +19,10 @@ const MAX_FINDINGS = 5;
 
 // Findings a single line may contribute, applied before the per-file cap above.
 // One minified line is thousands of statements sharing one line number: the ts
-// pack alone reports 2,702 findings on a 100KB line, 13,204 on 500KB and 26,931
-// on 1MB. Dumped into the hook's context or into `procoder check` output that is
-// not a report, it is a denial of service against the real finding.
+// pack reports 26,931 findings on a 1MB minified line, and 3,000 swallowed
+// errors on one line of 3,000 minified try/catch blocks. Dumped into the hook's
+// context, or into `procoder check` output, that is not a report — it is a
+// denial of service against the real finding.
 //
 // 20 is chosen to sit just above what an ordinary line can produce: a line rule
 // fires at most once per line, the widest language pack has 10 of them and the
@@ -42,35 +43,72 @@ const BUDGET_MS = 2000;
 // budget, and which threw away every finding on an ordinary large source.
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-// Line-length guard for the SHAPE path only.
+// Line-length guard for the SHAPE path only — function length, nesting depth
+// and complexity.
 //
-// Cost: the language packs do not see the content of a line this long, so their
-// shape and SAFE rules miss anything on it. Justification: analyzeBraces and
-// measureFunctions are still quadratic in line length — measured on one minified
-// line, 50KB costs 299ms, 100KB costs 1177ms, 200KB costs 4592ms and 400KB costs
-// 18337ms, four times the cost per doubling. 200KB alone is more than twice the
-// whole budget.
+// Cost: nothing real. Every function on a minified line starts and ends on that
+// one line, so "function is 1 line" and the brace depth of a whole bundle are
+// noise, not measurements of code a human wrote.
 //
-// The universal pack is deliberately NOT subject to this guard: it is the rung-1
-// path (secrets, PII in logs, rot), its rules are line-oriented regexes with no
-// length sensitivity, and it measures flat — 12ms on a 5MB single line. Blanking
-// long lines for it meant a hardcoded credential on a minified or generated line
-// was never reported at all, which is exactly where a leaked key hides.
+// It is no longer a performance guard: the paths that were quadratic in line
+// length are linear now, so the packs are cheap on a minified line — checkFile
+// end to end costs 7ms at 100KB, 23ms at 500KB and 42ms at 1MB against a 2s
+// budget, against 1ms/1ms/2ms when the guard blanked the line and found nothing.
+// That is why the language packs' line rules now read it: safe/sql-injection,
+// safe/xss-sink, safe/dynamic-eval,
+// safe/shell-injection and safe/tls-disabled were invisible on any line over
+// 4KB, and a minified bundle, a generated client or a vendored file is exactly
+// where an injection sink hides.
 //
-// procoder: guard, not a fix. Drop it when analyzeBraces/measureFunctions are
-// linear in line length — they slice the source per brace and per block.
+// The universal pack has never been subject to this guard and still is not: it
+// is the rung-1 path (secrets, PII in logs, rot) and measures flat — 12ms on a
+// 5MB single line.
 const MAX_LINE_BYTES = 4096;
+
+// One path is still not linear in line length, so one guard survives for the
+// packs' line rules too — a narrow one. FUNCTION_SIGNATURE, scanned by
+// signaturesFrom, backtracks over an unbroken run of word characters: measured
+// on a single such run, 8KB costs 54ms, 25KB 483ms, 50KB 2230ms and 100KB
+// 9041ms, four times the cost per doubling. Ordinary minified code never
+// triggers it — its identifiers are short and a `(` ends the run every few
+// characters, which is why a 1MB minified line costs 46ms — and a base64 blob
+// does not either, because stripNoise blanks string contents first. What does
+// is a file with a multi-KB unbroken token, and the packs must not stall on it.
+//
+// 4096 keeps the exposure exactly where it already was: before this guard
+// became shape-only, a line over 4KB was blanked outright, so no word run past
+// 4KB ever reached the scan. Lines under it are unaffected, as they always were.
+const MAX_WORD_RUN_BYTES = 4096;
+const RUNAWAY_WORD_RUN = new RegExp(`[A-Za-z0-9_$]{${MAX_WORD_RUN_BYTES + 1},}`);
+
+// What the shape guard covers: everything shapeFindings emits. The rest of a
+// pack's output is line-oriented and reads the raw source.
+const SHAPE_IDS = new Set([
+  'obvious/function-too-long',
+  'obvious/too-many-params',
+  'obvious/complexity',
+  'obvious/nesting-depth',
+]);
 
 // Findings this many lines either side of the touched region still belong to
 // the edit — a guard clause removed just above it, a brace it unbalanced.
 const CONTEXT_MARGIN = 3;
 
-// Minified content defeats the shape scanners' line-oriented assumptions and
-// costs more than the whole budget. Blanked rather than dropped: line numbers
-// on everything else must survive.
+// Minified content defeats the shape scanners' line-oriented assumptions.
+// Blanked rather than dropped: line numbers on everything else must survive.
 function blankLongLines(source) {
   if (source.length <= MAX_LINE_BYTES) return source;
   return source.split('\n').map((l) => (l.length > MAX_LINE_BYTES ? '' : l)).join('\n');
+}
+
+// The packs' line rules see every line except one a runaway word run would make
+// quadratic. See MAX_WORD_RUN_BYTES: the test itself costs 8ms on a 1MB
+// minified line and 13ms on a 4MB file, and only long lines are tested at all.
+function blankRunawayLines(source) {
+  if (source.length <= MAX_LINE_BYTES) return source;
+  return source.split('\n')
+    .map((l) => (l.length > MAX_LINE_BYTES && RUNAWAY_WORD_RUN.test(l) ? '' : l))
+    .join('\n');
 }
 
 // Keeps at most MAX_FINDINGS_PER_LINE findings per line, most severe first, and
@@ -78,9 +116,11 @@ function blankLongLines(source) {
 // repeatedly punished, so the overflow is reported as a finding of its own —
 // that is the only channel the hook renders.
 //
-// It composes with the per-file cap by running first and per line: a pathological
-// line contributes at most 21 findings to the pool the file cap then sorts, so
-// findings from every other line are still reachable.
+// It composes with the per-file cap by running first and per line: a
+// pathological line contributes at most 21 findings instead of thousands, so
+// what the file cap then sorts is a bounded pool where every other line is
+// represented. Which of that pool survives 5 slots is still the file cap's
+// rung ordering — SAFE first — not the order the packs happened to run in.
 function capFindingsPerLine(findings) {
   const byLine = new Map();
   for (const f of findings) {
@@ -143,8 +183,12 @@ function checkFile(absPath, {
     return { relPath, findings: [], skipped: 'unreadable' };
   }
 
-  // Only the shape path gets the blanked copy. See MAX_LINE_BYTES above.
+  // Two views of the source for the pack: `shaped` drops every long line for the
+  // shape rules (MAX_LINE_BYTES), `scanned` drops only the ones that would make
+  // the signature scan quadratic (MAX_WORD_RUN_BYTES). The universal pack below
+  // reads the raw source and neither of these.
   const shaped = blankLongLines(source);
+  const scanned = blankRunawayLines(source);
   const findings = [];
 
   // The universal pack runs first and on the raw source: no linter checks for
@@ -174,7 +218,15 @@ function checkFile(absPath, {
 
   const pack = packFor(relPath);
   if (pack && Date.now() < deadline) {
-    const packFindings = pack.check(shaped, { relPath, config });
+    // The pack's line rules see long lines. Only when the file actually has one
+    // is the pack run a second time over the shape copy, to take the shape
+    // findings from there — that pass is cheap precisely because the long line
+    // is gone from it.
+    let packFindings = pack.check(scanned, { relPath, config });
+    if (shaped !== scanned) {
+      packFindings = packFindings.filter((f) => !SHAPE_IDS.has(f.id))
+        .concat(pack.check(shaped, { relPath, config }).filter((f) => SHAPE_IDS.has(f.id)));
+    }
     // A linter that timed out or crashed answered nothing, so the pack covers
     // the whole file rather than leaving a hole where the shape rules were.
     local.push(...(toolAnswered

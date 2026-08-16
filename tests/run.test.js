@@ -263,6 +263,69 @@ test('a secret on a minified line is still reported', () => {
     'the long line was blanked before the universal pack saw it');
 });
 
+// A minified bundle, a generated API client and a vendored file are exactly
+// where an injection sink hides, and the line guard used to blank them before
+// the language pack ran. RED before the guard became shape-only: both of these
+// reported nothing.
+test('an injection sink on a minified line is reported', () => {
+  const filler = minifiedLine(20 * 1024);
+  const repo = repoWith({
+    'bundle.ts': `${filler}db.query(\`SELECT * FROM t WHERE id=\${id}\`);${filler}\n`,
+  });
+  const out = checkFile(path.join(repo, 'bundle.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
+    'the long line was blanked before the language pack saw it');
+});
+
+test('disabled TLS verification on a minified line is reported', () => {
+  const filler = minifiedLine(20 * 1024);
+  const repo = repoWith({
+    'bundle.ts': `${filler}https.get({rejectUnauthorized:false});${filler}\n`,
+  });
+  const out = checkFile(path.join(repo, 'bundle.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(out.findings.some((f) => f.id === 'safe/tls-disabled'),
+    'the long line was blanked before the language pack saw it');
+});
+
+// Shape metrics measured on a minified line are noise: every function on it
+// starts and ends on line 1, so "function is 1 line" and the depth of the whole
+// bundle say nothing about the code a human wrote. The guard stays there.
+test('the shape path still does not see a minified line', () => {
+  const repo = repoWith({ 'min.ts': `${minifiedLine(20 * 1024)}\n` });
+  const out = checkFile(path.join(repo, 'min.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(!out.findings.some((f) => f.id.startsWith('obvious/')),
+    'shape rules ran on a minified line');
+});
+
+// With the packs reading long lines, one minified line reports 3,000 swallowed
+// errors. The per-line cap is what keeps that a report rather than a flood.
+test('a minified line that matches thousands of times is capped, and says so', () => {
+  const repo = repoWith({ 'bundle.ts': `${'try{a();}catch(e){}'.repeat(3000)}\n` });
+  const started = Date.now();
+  const out = checkFile(path.join(repo, 'bundle.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(Date.now() - started < 2000, 'the minified line blew the budget');
+  assert.strictEqual(out.findings.length, MAX_FINDINGS_PER_LINE + 1);
+  assert.ok(out.findings.some((f) => f.id === 'true/findings-suppressed'));
+});
+
+// One path is still quadratic: FUNCTION_SIGNATURE backtracks over an unbroken
+// run of word characters, 9s on a 100KB one. Lines carrying such a run stay
+// blanked for the packs — see MAX_WORD_RUN_BYTES.
+test('a line with a runaway word run stays out of the packs', () => {
+  const repo = repoWith({ 'bundle.ts': `eval(a);\n${'x'.repeat(200 * 1024)}\n` });
+  const started = Date.now();
+  const out = checkFile(path.join(repo, 'bundle.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — a runaway word run reached the packs`);
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'),
+    'the rest of the file was dropped with it');
+});
+
 test('a long line stays cheap: the shape path never sees it', () => {
   const repo = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
   const started = Date.now();
