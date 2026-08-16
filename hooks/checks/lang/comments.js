@@ -30,43 +30,84 @@
 // A `/` in one of these positions opens a regex literal rather than dividing —
 // the same restriction shape.js uses, and what keeps `a / b / c` out.
 const REGEX_OPENS_AFTER = '(,=:[!&|?{};';
+const QUOTES = '"\'`';
 
 function blank(text) {
   return text.replace(/[^\n]/g, ' ');
 }
 
-// Index just past the string literal starting at `start`. A `'`/`"` literal
-// that never closes stops at the newline: a Rust lifetime (`&'a str`) and an
-// apostrophe in prose must not swallow the rest of the file. Triple quotes
-// (Python) and backticks (JS/Go) do span lines.
-function endOfString(text, start, triples) {
-  const quote = text[start];
-  const triple = triples && quote !== '`' && text.startsWith(quote.repeat(3), start);
-  const close = triple ? quote.repeat(3) : quote;
-  const spans = triple || quote === '`';
-  let i = start + close.length;
+function lineEnd(text, from) {
+  const at = text.indexOf('\n', from);
+  return at === -1 ? text.length : at;
+}
+
+// Index just past the comment starting at `i`, or -1 if none starts there.
+function commentEnd(text, i, py) {
+  if (py) return text[i] === '#' ? lineEnd(text, i) : -1;
+  if (text.startsWith('//', i)) return lineEnd(text, i);
+  if (!text.startsWith('/*', i)) return -1;
+  const close = text.indexOf('*/', i + 2);
+  return close === -1 ? text.length : close + 2;
+}
+
+// Index just past the string literal starting at `i`, or -1 if none starts
+// there. A `'`/`"` literal that never closes stops at the newline: a Rust
+// lifetime (`&'a str`) and an apostrophe in prose must not swallow the rest of
+// the file. Triple quotes (Python) and backticks (JS/Go) do span lines.
+function closingQuote(text, from, close, spans) {
+  let i = from;
   while (i < text.length) {
-    if (text[i] === '\\') { i += 2; continue; }
-    if (!spans && text[i] === '\n') return i;
-    if (text.startsWith(close, i)) return i + close.length;
+    if (text[i] === '\\') i += 1;
+    else if (!spans && text[i] === '\n') return i;
+    else if (text.startsWith(close, i)) return i + close.length;
     i += 1;
   }
   return text.length;
 }
 
-// Index of the closing `/` of a regex literal, or -1 if the line ends first —
-// in which case the `/` was division after all.
-function endOfRegex(text, start) {
+function stringEnd(text, start, py) {
+  const quote = text[start];
+  if (!QUOTES.includes(quote)) return -1;
+  const triple = py && quote !== '`' && text.startsWith(quote.repeat(3), start);
+  const close = triple ? quote.repeat(3) : quote;
+  return closingQuote(text, start + close.length, close, triple || quote === '`');
+}
+
+// Index of the closing `/` of a regex literal starting at `i`, or -1: not JS,
+// not a `/`, in a position where `/` can only divide, or the line ends first.
+function closingSlash(text, from) {
   let inClass = false;
-  for (let i = start + 1; i < text.length; i += 1) {
-    const ch = text[i];
-    if (ch === '\\') { i += 1; continue; }
-    if (ch === '\n') return -1;
-    if (ch === '[') inClass = true;
+  for (let j = from; j < text.length; j += 1) {
+    const ch = text[j];
+    if (ch === '\\') j += 1;
+    else if (ch === '\n') return -1;
+    else if (ch === '[') inClass = true;
     else if (ch === ']') inClass = false;
-    else if (ch === '/' && !inClass) return i;
+    else if (ch === '/' && !inClass) return j;
   }
   return -1;
+}
+
+function regexEnd(text, i, style, last) {
+  if (style !== 'js' || text[i] !== '/') return -1;
+  const opens = last === '' || REGEX_OPENS_AFTER.includes(last);
+  return opens ? closingSlash(text, i + 1) : -1;
+}
+
+// A Python triple-quoted string opening a statement is a docstring: a comment
+// that happens to be spelled as a literal, and the place a Python file
+// documents the practice it is warning against. One used as a value is data.
+function isDocstring(text, i, py, bareLine) {
+  return py && bareLine && text.startsWith(text[i].repeat(3), i);
+}
+
+// The scanner's memory of the line it is on: the last non-space code character
+// (which decides whether a `/` opens a regex) and whether the line is still
+// blank (which decides whether a triple quote opens a docstring).
+function afterCode(ch, last, bareLine) {
+  if (ch === '\n') return [last, true];
+  if (/\s/.test(ch)) return [last, bareLine];
+  return [ch, false];
 }
 
 // style: 'py' (# comments, statement-position docstrings), 'c' (// and /* */),
@@ -74,58 +115,31 @@ function endOfRegex(text, start) {
 function stripComments(source, style = 'c') {
   const text = String(source || '');
   const py = style === 'py';
-  const n = text.length;
-
   let out = '';
   let kept = 0; // start of the run not yet copied out
   let last = ''; // last non-space character of code, for the regex test
   let bareLine = true; // nothing but whitespace on this line so far
   let i = 0;
 
-  const eol = (from) => (text.indexOf('\n', from) === -1 ? n : text.indexOf('\n', from));
   const drop = (end) => {
     out += text.slice(kept, i) + blank(text.slice(i, end));
     kept = end;
     i = end;
   };
 
-  while (i < n) {
-    const ch = text[i];
+  while (i < text.length) {
+    const comment = commentEnd(text, i, py);
+    if (comment !== -1) { drop(comment); continue; }
 
-    if (py && ch === '#') { drop(eol(i)); continue; }
-    if (!py && ch === '/' && text[i + 1] === '/') { drop(eol(i)); continue; }
-    if (!py && ch === '/' && text[i + 1] === '*') {
-      const close = text.indexOf('*/', i + 2);
-      drop(close === -1 ? n : close + 2);
-      continue;
-    }
+    const string = stringEnd(text, i, py);
+    if (string !== -1 && isDocstring(text, i, py, bareLine)) { drop(string); continue; }
+    if (string !== -1) { last = text[i]; bareLine = false; i = string; continue; }
 
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const end = endOfString(text, i, py);
-      // A Python triple-quoted string opening a statement is a docstring: a
-      // comment that happens to be spelled as a literal, and the place a
-      // Python file documents the practice it is warning against.
-      if (py && bareLine && text.startsWith(ch.repeat(3), i)) { drop(end); continue; }
-      last = ch;
-      bareLine = false;
-      i = end;
-      continue;
-    }
+    const regex = regexEnd(text, i, style, last);
+    // The delimiters stay, only the pattern between them is blanked.
+    if (regex !== -1) { i += 1; drop(regex); last = '/'; bareLine = false; i = regex + 1; continue; }
 
-    if (style === 'js' && ch === '/' && (last === '' || REGEX_OPENS_AFTER.includes(last))) {
-      const end = endOfRegex(text, i);
-      if (end !== -1) {
-        out += text.slice(kept, i + 1) + blank(text.slice(i + 1, end));
-        kept = end;
-        i = end + 1;
-        last = '/';
-        bareLine = false;
-        continue;
-      }
-    }
-
-    if (ch === '\n') bareLine = true;
-    else if (!/\s/.test(ch)) { last = ch; bareLine = false; }
+    [last, bareLine] = afterCode(text[i], last, bareLine);
     i += 1;
   }
 
