@@ -28,7 +28,13 @@ test('a full session lifecycle: activate, switch level, deactivate', () => {
 
   execFileSync('node', [hook('procoder-mode-tracker.js')],
     { encoding: 'utf8', input: JSON.stringify({ prompt: 'stop procoder' }), env });
-  assert.ok(!fs.existsSync(levelFile));
+  // Deactivation persists the literal level 'off' rather than deleting the
+  // file: readLevel() treats a missing file as "use the default", so
+  // deleting it here would silently re-activate procoder at the default
+  // level on the next read (e.g. from a subagent hook).
+  assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off');
+  const offBadge = execFileSync('bash', [hook('procoder-statusline.sh')], { encoding: 'utf8', env });
+  assert.strictEqual(offBadge.trim(), '');
 
   fs.rmSync(dir, { recursive: true, force: true });
 });

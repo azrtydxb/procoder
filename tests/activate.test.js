@@ -8,6 +8,7 @@ const path = require('path');
 
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-activate.js');
 const SUBAGENT = path.join(__dirname, '..', 'hooks', 'procoder-subagent.js');
+const MODE_TRACKER = path.join(__dirname, '..', 'hooks', 'procoder-mode-tracker.js');
 
 function run(script, env = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
@@ -53,6 +54,39 @@ test('subagent hook wraps context in hookSpecificOutput', () => {
   const parsed = JSON.parse(stdout);
   assert.strictEqual(parsed.hookSpecificOutput.hookEventName, 'SubagentStart');
   assert.match(parsed.hookSpecificOutput.additionalContext, /SAFE/);
+});
+
+test('a persisted "off" level suppresses subagent doctrine injection', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  fs.writeFileSync(path.join(dir, '.procoder-active'), 'off\n');
+  const stdout = execFileSync('node', [SUBAGENT], {
+    encoding: 'utf8',
+    input: '{}',
+    env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+  });
+  assert.strictEqual(stdout, '');
+});
+
+test('saying "stop procoder" then launching a subagent injects no doctrine', () => {
+  // End-to-end: the mode tracker (Task 7) must persist the deactivation as
+  // the literal level 'off', not delete the level file, or the subagent
+  // hook's `readLevel()` falls back to the default and re-injects the
+  // doctrine right after the user turned procoder off.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+
+  execFileSync('node', [MODE_TRACKER], {
+    encoding: 'utf8',
+    input: JSON.stringify({ prompt: 'stop procoder' }),
+    env,
+  });
+
+  const stdout = execFileSync('node', [SUBAGENT], {
+    encoding: 'utf8',
+    input: '{}',
+    env,
+  });
+  assert.strictEqual(stdout, '');
 });
 
 test('hooks exit 0 even when the config dir is unwritable', () => {

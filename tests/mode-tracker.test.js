@@ -8,14 +8,15 @@ const path = require('path');
 
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-mode-tracker.js');
 
-function run(prompt) {
+function run(prompt, seedLevel) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const levelFile = path.join(dir, '.procoder-active');
+  if (seedLevel) fs.writeFileSync(levelFile, seedLevel + '\n');
   const stdout = execFileSync('node', [HOOK], {
     encoding: 'utf8',
     input: JSON.stringify({ prompt }),
     env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
   });
-  const levelFile = path.join(dir, '.procoder-active');
   return { stdout, level: fs.existsSync(levelFile) ? fs.readFileSync(levelFile, 'utf8').trim() : null };
 }
 
@@ -27,12 +28,18 @@ test('/procoder with no argument leaves the level alone', () => {
   assert.strictEqual(run('/procoder').level, null);
 });
 
-test('"stop procoder" clears the level', () => {
-  assert.strictEqual(run('stop procoder').level, null);
+test('"stop procoder" persists the level as off', () => {
+  assert.strictEqual(run('stop procoder').level, 'off');
 });
 
 test('an ordinary prompt mentioning the phrase does not deactivate', () => {
-  assert.strictEqual(run('add a normal mode toggle to the settings page').level, null);
+  // Seed a known level first: an empty level file is indistinguishable
+  // between "correctly left alone" and "wrongly deleted", so this must
+  // start from a non-empty, known state to be able to fail.
+  assert.strictEqual(
+    run('add a normal mode toggle to the settings page', 'paranoid').level,
+    'paranoid',
+  );
 });
 
 test('malformed stdin does not crash the hook', () => {
