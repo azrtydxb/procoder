@@ -367,3 +367,20 @@ test("an annotated binding still establishes taint", () => {
   assert.ok(!ids('def h(cur, user_id):\n    q: str = "SELECT * FROM t WHERE id = %s"\n    cur.execute(q, (user_id,))\n')
     .includes("safe/sql-injection"));
 });
+
+// Round 4. The file-level database gate was too coarse — see lang-ts.test.js.
+// A driver import is the file-level tie-break for a call whose receiver shape
+// and method form both say nothing.
+test("an injection in a file with no SQL vocabulary still reports", () => {
+  assert.ok(ids('import asyncpg\nfrom .statements import BASE\n\nasync def find(client, name):\n    text = BASE + "@" + name\n    return await client.execute(text)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('import peewee\n\ndef find(client, name):\n    text = BASE + name\n    return client.execute(text)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the executemany call form is database evidence on its own", () => {
+  assert.ok(ids('def find(client, name):\n    text = BASE + name\n    return client.executemany(text)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('def run(job, n):\n    label = BASE + n\n    return job.execute(label)\n')
+    .includes("safe/sql-injection"));
+});

@@ -229,3 +229,17 @@ test("concatenation where the literal holds the other quote is still seen", () =
   assert.ok(ids('rows, err := db.Query("SELECT * FROM u WHERE n = \x27" + name + "\x27")\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
     .includes("safe/sql-injection"));
 });
+
+// Round 4. The file-level database gate was too coarse — see lang-ts.test.js.
+// `QueryRowContext` is a database call form; a bare `Exec` is not.
+test("a database-only call form is evidence without any SQL vocabulary", () => {
+  assert.ok(ids('func find(h Handle, name string) error {\n\ttext := base + "@" + name\n\treturn h.QueryRowContext(ctx, text)\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('import "github.com/jackc/pgx/v5"\n\nfunc find(h Handle, name string) error {\n\ttext := base + "@" + name\n\treturn h.Exec(text)\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a generic Exec with no evidence anywhere stays silent", () => {
+  assert.ok(!ids('func run(s Step, n string) error {\n\tlabel := base + "@" + n\n\treturn s.Exec(label)\n}\n')
+    .includes("safe/sql-injection"));
+});

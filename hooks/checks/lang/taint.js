@@ -244,8 +244,75 @@ const DB_EVIDENCE = new RegExp([
   String.raw`|\b(?:db|cur|cursor|conn|connection|pool|session|stmt|statement|tx|trx|dao|repo)\s*\.`,
 ].join(''), 'i');
 
+// The gate above asks about the *file*, and that is too coarse in one
+// direction: a genuine injection in a file with no SQL vocabulary in it went
+// silent. The shape is ordinary — a thin data-access module whose query text
+// arrives as a parameter or as a constant imported from elsewhere, so the sink
+// is present and the vocabulary is not:
+//
+//   import { Client } from 'pg';
+//   import { BY_NAME } from './statements';
+//   export const find = (client, name) => client.execute(BY_NAME + "'" + name + "'");
+//
+// Nothing on those lines matches DB_EVIDENCE, and a missed rung-1 injection is
+// worse than the false positive the gate exists to prevent. So two further
+// pieces of evidence, both weighed *per call* where they can be, since evidence
+// about the call beats evidence about the file:
+//
+//   * DB_METHOD — the method's full call form, where that form is only ever a
+//     database call. `execute` and `query` are ordinary method names;
+//     `executeQuery`, `executeUpdate`, `rawQuery`, `QueryRowContext`,
+//     `executemany` and `CommandText` are not, and no Command pattern or job
+//     runner spells its entry point any of those ways. Read at the call, so it
+//     licenses that one call and no other line in the file.
+//   * DB_DRIVER — a database driver or ORM imported anywhere in the file. This
+//     one *is* file-level, and it is used only as the tie-break the per-call
+//     evidence cannot settle: a bare `x.execute(q)` on a receiver of unknown
+//     shape. A file that imports `pg`, `typeorm` or `gorm` and then calls
+//     `execute` on a concatenated string is doing SQL; a job runner is not
+//     importing a database driver. The names here are the ones DB_EVIDENCE's
+//     substring vocabulary does not already cover — `sql`, `postgres`,
+//     `sqlite`, `prisma`, `knex`, `sequelize`, `jdbc`, `psycopg` and the rest
+//     are matched there and are deliberately not repeated.
+//
+// What stays missed, on purpose: `handle.execute(base + name)` in a file with
+// no SQL text, no handle-shaped receiver, no database method form and no driver
+// import. Nothing in such a file distinguishes it from the Command pattern, and
+// guessing would give the false positive back.
+const DB_METHOD = new RegExp([
+  String.raw`\b(?:execute_?(?:query|update|batch|many)|executemany`,
+  String.raw`|raw_?query|query_?rows?|query_?(?:rows?_?)?context|query_?as|query_?scalar`,
+  String.raw`|exec_?context|prepare_?statement|create_?(?:native_?)?query|native_?query)\s*\(`,
+  String.raw`|\bCommandText\s*[(=]`,
+].join(''), 'i');
+
+// An import line naming a driver or ORM. Both halves must hold: the token is
+// short and generic on its own (`pg`, `gorm`), and requiring it to sit on a
+// line that imports something is what keeps a local variable called `pg` from
+// counting. Bounded by word edges for the same reason — `pg` must not match
+// `upgrade`. A `.` is a word edge here and not an exclusion, because a dotted
+// module path is how half the ecosystems spell an import: `org.hibernate`,
+// `psycopg2.pool`, `github.com/jackc/pgx/v5`.
+const IMPORT_LINE = /\b(?:import|require|from|use|using|include|extern|open)\b/;
+const DB_DRIVER = new RegExp([
+  String.raw`(?:^|[^\w$])(?:pg|pgx|pgtype|npgsql|oracledb|tedious|dapper`,
+  String.raw`|hibernate|mybatis|jooq|jdbi|typeorm|drizzle|objection|slonik`,
+  String.raw`|bookshelf|massive|gorm|diesel|rusqlite|asyncpg|peewee|alembic`,
+  String.raw`|duckdb|clickhouse|mariadb|cockroach|libsql|turso)(?:[^\w$]|$)`,
+].join(''), 'i');
+
 function hasSql(lines) {
-  return lines.some((line) => DB_EVIDENCE.test(line));
+  return lines.some((line) => DB_EVIDENCE.test(line))
+    || lines.some((line) => IMPORT_LINE.test(line) && DB_DRIVER.test(line));
+}
+
+// Is this one call a database call? The file-level answer where it is already
+// yes, and the per-call method form where it is not — so a vocabulary-free file
+// still reports at the call whose own form says "database", and stays silent at
+// the one whose form says nothing. Ordered so the per-call regex runs only on a
+// line a rule has already matched in a file the gate would otherwise close.
+function isDatabaseCall(line, ctx) {
+  return ctx.sql !== false || DB_METHOD.test(line);
 }
 
 // A sink whose argument is a name this scan has seen built from a non-literal.
@@ -679,7 +746,7 @@ function sqlArgument(line, re) {
 // packContext.
 function skipConstant(rule, line, ctx = {}) {
   if (rule.id === SQL_ID && rule.re) {
-    if (ctx.sql === false) return true;
+    if (!isDatabaseCall(line, ctx)) return true;
     const argument = sqlArgument(line, rule.re);
     if (argument.trim() && fragmentIsConstant(argument, ctx.consts)) return true;
   }
@@ -768,17 +835,23 @@ function collect(state, found) {
 // One forward pass. The sink is tested before the assignment on the same
 // statement, so `q = q + x` reports against the value q already held.
 //
-// A SQL sink in a file with no SQL anywhere in it is not a SQL sink at all —
-// `execute`, `query` and `Query` are ordinary method names, and a Command
-// pattern or a job runner spells its entry point exactly that way.
+// A SQL sink with no database evidence at the call and none in the file is not
+// a SQL sink at all — `execute`, `query` and `Query` are ordinary method names,
+// and a Command pattern or a job runner spells its entry point exactly that
+// way. See isDatabaseCall for what counts as evidence and in what order.
 function scan(spec, ctx) {
   const scope = { tainted: new Map(), open: [], consts: ctx.consts };
   const state = { findings: [], seen: new Set() };
-  const sinks = spec.sinks.filter((sink) => sink.id !== SQL_ID || ctx.sql !== false);
 
   for (const unit of ctx.units) {
     forget(scope.tainted, scope.open, unit.level);
-    for (const sink of sinks) collect(state, sinkFinding(sink, unit, scope.tainted));
+    for (const sink of spec.sinks) {
+      const found = sinkFinding(sink, unit, scope.tainted);
+      // The gate is asked only about a sink that actually matched, and only
+      // about the SQL id — the one whose verbs double as ordinary method names.
+      if (found && found.id === SQL_ID && !isDatabaseCall(unit.text, ctx)) continue;
+      collect(state, found);
+    }
     applyAssignment(spec, unit, scope);
     shadow(scope.tainted, scope.open, unit, paramsOf(spec, unit));
   }
