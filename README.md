@@ -186,11 +186,12 @@ pages where the false positives actually are. What keeps it honest is that it
 names the rule, states a reason, reaches at most two lines, and sits in the
 diff right next to the value.
 
-It cannot name an external linter's rule id (`true/eslint:no-eval`) — those
-carry colons and digits, which the marker's id syntax does not accept. Use
-`[exclude] rules` for those. See
-[`docs/known-limitations.md`](docs/known-limitations.md) for the rest of what
-it does not cover.
+It can also name an external linter's rule id — `true/eslint:no-eval` — which
+carries a colon of its own. A rule id it does not recognise is dropped from the
+marker rather than silently honoured: the finding still reports, and the unknown
+id is named on stderr, so a typo fails loudly instead of quietly widening what
+the marker covers. See [`docs/known-limitations.md`](docs/known-limitations.md)
+for what it does not cover.
 ### `.procoderignore`
 
 A `.procoderignore` file may sit in **any** directory and excludes paths in that
