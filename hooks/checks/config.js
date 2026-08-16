@@ -6,12 +6,9 @@ const path = require('path');
 const { parseToml } = require('./toml');
 
 const DEFAULTS = {
-  level: 'strict',
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
   thresholds: { function_lines: 40, nesting_depth: 3, params: 4, complexity: 10 },
-  // true_ avoids the TOML boolean literal; it is rung 2, TRUE.
-  rungs: { safe: 'error', true_: 'error', obvious: 'warn', alone: 'warn' },
-  baseline: { file: '.procoder-baseline.json', enforce_no_growth: true },
+  baseline: { file: '.procoder-baseline.json' },
 };
 
 function findRepoRoot(startDir) {
@@ -49,7 +46,6 @@ function loadConfig(repoRoot) {
 
   return {
     root: repoRoot,
-    level: typeof raw.level === 'string' ? raw.level : DEFAULTS.level,
     exclude: {
       paths: Array.isArray(raw.exclude && raw.exclude.paths)
         ? DEFAULTS.exclude.paths.concat(raw.exclude.paths)
@@ -57,7 +53,6 @@ function loadConfig(repoRoot) {
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
-    rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
   };
 }
@@ -94,7 +89,9 @@ function isExcluded(config, relPath) {
 // `rules = ["path/pattern:check/id"]` — the narrow form of exclusion. A path
 // exclusion silences every rung at once and forever; this one silences a single
 // named check in a single place, which is the only shape the doctrine allows.
-// Entries without both halves are dropped rather than widened to a whole file.
+// Entries without both halves are dropped rather than widened to a whole file,
+// and so are directory ("hooks/") or glob ("**/*.js") paths: a mechanism whose
+// justification is that it is narrow must not be quietly widenable to a tree.
 function parseRuleExclusions(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -104,13 +101,14 @@ function parseRuleExclusions(raw) {
       if (split === -1) return { path: '', id: '' };
       return { path: entry.slice(0, split), id: entry.slice(split + 1) };
     })
-    .filter((rule) => rule.path && rule.id);
+    .filter((rule) => rule.path && rule.id
+      && !rule.path.endsWith('/') && !rule.path.includes('*'));
 }
 
 function isRuleExcluded(config, relPath, id) {
   const normalized = String(relPath).replace(/\\/g, '/');
   return config.exclude.rules.some(
-    (rule) => rule.id === id && matchesPattern(rule.path, normalized));
+    (rule) => rule.id === id && rule.path === normalized);
 }
 
 module.exports = { DEFAULTS, loadConfig, isExcluded, isRuleExcluded, findRepoRoot };

@@ -1,5 +1,3 @@
-level = "strict"
-
 [exclude]
 paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
 
@@ -10,6 +8,3 @@ paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/
 # no other file is exempt for these rules — the logic that uses the table lives
 # in hooks/checks/universal.js and is checked in full.
 rules = ["hooks/checks/patterns/markers.js:alone/orphan-todo", "hooks/checks/patterns/markers.js:alone/blanket-suppression", "hooks/checks/patterns/markers.js:alone/deprecated-no-trigger"]
-
-[baseline]
-enforce_no_growth = true

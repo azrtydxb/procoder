@@ -18,22 +18,20 @@ function tempRepo(files = {}) {
 
 test('absent config yields the documented defaults', () => {
   const cfg = loadConfig(tempRepo());
-  assert.strictEqual(cfg.level, DEFAULTS.level);
   assert.strictEqual(cfg.thresholds.function_lines, 40);
   assert.strictEqual(cfg.thresholds.nesting_depth, 3);
   assert.strictEqual(cfg.thresholds.params, 4);
   assert.strictEqual(cfg.thresholds.complexity, 10);
-  assert.strictEqual(cfg.rungs.safe, 'error');
-  assert.strictEqual(cfg.rungs.obvious, 'warn');
+  assert.strictEqual(cfg.baseline.file, DEFAULTS.baseline.file);
 });
 
 test('config values override defaults, unset keys keep them', () => {
   const cfg = loadConfig(tempRepo({
-    '.procoder.toml': '[thresholds]\nfunction_lines = 80\n\n[rungs]\nobvious = "error"\n',
+    '.procoder.toml': '[thresholds]\nfunction_lines = 80\n\n[baseline]\nfile = "b.json"\n',
   }));
   assert.strictEqual(cfg.thresholds.function_lines, 80);
   assert.strictEqual(cfg.thresholds.nesting_depth, 3);
-  assert.strictEqual(cfg.rungs.obvious, 'error');
+  assert.strictEqual(cfg.baseline.file, 'b.json');
 });
 
 test('malformed config falls back to defaults without throwing', () => {
@@ -98,6 +96,58 @@ test('a rule exclusion silences only the named check in the named file', () => {
   assert.ok(!isRuleExcluded(cfg, 'a/patterns.js', 'alone/commented-code'));
   assert.ok(!isRuleExcluded(cfg, 'a/other.js', 'alone/orphan-todo'));
   assert.ok(!isExcluded(cfg, 'a/patterns.js'));
+});
+
+// The reported kill switch: two lines of config that read as noise and turn
+// the entire gate off by writing `paths` onto Object.prototype.
+test('a [exclude.__proto__] table cannot switch the gate off', () => {
+  delete Object.prototype.paths;
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude.__proto__]\npaths = ["**/*"]\n',
+  }));
+  assert.ok(!cfg.exclude.paths.includes('**/*'));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+  assert.strictEqual(Object.prototype.paths, undefined);
+  delete Object.prototype.paths;
+});
+
+// The narrow form must stay narrow: a directory or glob path half would let one
+// entry silence a rule across a whole tree, which is the thing path exclusions
+// already do and rule exclusions exist to avoid.
+test('a rule exclusion with a directory path is dropped, not applied to the tree', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["hooks/:alone/orphan-todo"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, []);
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/a.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/', 'alone/orphan-todo'));
+});
+
+test('a rule exclusion with a glob path is dropped, not applied to matches', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["**/*.js:alone/orphan-todo", "hooks/*.js:safe/eval"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, []);
+  assert.ok(!isRuleExcluded(cfg, 'hooks/a.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/a.js', 'safe/eval'));
+});
+
+test('an exact rule exclusion path still works, and only for that path', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["hooks/checks/patterns/markers.js:alone/orphan-todo"]\n',
+  }));
+  assert.ok(isRuleExcluded(cfg, 'hooks/checks/patterns/markers.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/patterns/markers.js.bak', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/patterns/other.js', 'alone/orphan-todo'));
+});
+
+test("procoder's own rule exclusions survive the exact-path rule", () => {
+  const cfg = loadConfig(path.resolve(__dirname, '..'));
+  assert.strictEqual(cfg.exclude.rules.length, 3);
+  for (const rule of cfg.exclude.rules) {
+    assert.strictEqual(rule.path, 'hooks/checks/patterns/markers.js');
+    assert.ok(isRuleExcluded(cfg, rule.path, rule.id));
+  }
 });
 
 test('a rule exclusion missing either half is dropped, never widened', () => {
