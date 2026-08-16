@@ -1,6 +1,6 @@
 {
   "name": "procoder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ship gate for AI-written code: security, correctness, readability, and nothing stale left behind.",
   "license": "MIT",
   "engines": { "node": ">=18" },

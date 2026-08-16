@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0
+
+Slash commands are namespaced as `/procoder:<verb>`. **Breaking:** the old
+`/procoder-<verb>` names are gone — Claude Code prefixes a plugin's commands
+with the plugin name automatically, so the old files produced
+`/procoder:procoder-audit`.
+
+- `/procoder:statusline` installs, removes, and reports the statusline, so the
+  settings file no longer has to be hand-edited. It refuses to replace a
+  statusline it did not write without `--force`, backs up first, and writes
+  atomically.
+- `/procoder:update` updates an installed plugin, reporting the version delta
+  before acting. It warns when the baseline fingerprint format changed (a
+  re-baseline is required) and when the doctrine changed (platform users who
+  copied a rule file need to re-copy it).
+- A startup notice when a newer version is on GitHub. It reads a cached result
+  so session start pays no network cost — +1.4 ms — and refreshes detached for
+  the next session, so the first session after a release is silent by design.
+  Disable with `PROCODER_NO_UPDATE_CHECK=1`.
+- `.procoderignore` files may sit in any directory and exclude that directory
+  and everything beneath it, using a documented subset of `.gitignore` syntax.
+  `.gitignore` itself is deliberately not read.
+- `/procoder:level` replaces the bare `/procoder <level>` form, which still
+  works.
+
 ## 0.1.0
 
 Initial release.
