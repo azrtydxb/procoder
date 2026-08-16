@@ -41,7 +41,6 @@ const EVIDENCE = {
   'pyproject.toml': /^\s*\[tool\.ruff\b/m,
   'setup.cfg': /^\s*\[(?:ruff|flake8)\]/m,
   'Cargo.toml': /^\s*\[(?:lints\.clippy|workspace\.lints\.clippy|package\.metadata\.clippy)\b/m,
-  'package.json': /"eslintConfig"\s*:/,
 };
 
 const MAX_CONFIG_BYTES = 512 * 1024;

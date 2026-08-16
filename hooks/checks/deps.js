@@ -57,7 +57,7 @@ const CONCRETE = /^\^?\d+\.\d+\.\d+$/;
 // Line lookup by declaration text: package.json is often minified onto one
 // line, so a line-by-line scan finds nothing. JSON.parse gives the truth; this
 // only decorates it with a location.
-function lineOf(lines, name, spec) {
+function lineOf(lines, name) {
   const needle = new RegExp(`"${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:\\s*"`);
   const index = lines.findIndex((line) => needle.test(line));
   return index >= 0 ? index + 1 : 1;
@@ -79,7 +79,7 @@ function checkNpmDeps(source, findings) {
       if (typeof spec !== 'string') continue;
       if (!FLOATING.test(spec) || CONCRETE.test(spec)) continue;
       findings.push(finding({
-        rung: 'SAFE', id: 'safe/floating-version', line: lineOf(lines, name, spec),
+        rung: 'SAFE', id: 'safe/floating-version', line: lineOf(lines, name),
         message: `${name} declared as ${spec}`,
         fix: 'pin to an exact version; the lockfile alone does not protect consumers',
       }));
