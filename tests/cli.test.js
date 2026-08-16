@@ -320,3 +320,164 @@ test('check says nothing about ignore files when none matched', () => {
   const repo = repoWith({ 'src/b.ts': 'const x = 1;\n' });
   assert.doesNotMatch(cli(repo, ['check', '.']).out, /procoderignore/);
 });
+
+// `procoder statusline` — writes the statusLine block into the user's Claude
+// Code settings so nobody has to hand-edit JSON and guess an install path.
+//
+// CLAUDE_CONFIG_DIR points at the throwaway repo in every one of these, which
+// is what keeps the real ~/.claude/settings.json out of the suite: the CLI
+// resolves the settings file through the same helper the rest of the project
+// uses, so the redirect covers reads, writes, backups and the temp file alike.
+
+const settingsIn = (repo) => path.join(repo, 'settings.json');
+const readSettings = (repo) => JSON.parse(fs.readFileSync(settingsIn(repo), 'utf8'));
+
+function withSettings(settings) {
+  return repoWith({ 'settings.json': JSON.stringify(settings, null, 2) + '\n' });
+}
+
+test('statusline install writes a statusLine into a settings file that did not exist', () => {
+  const repo = repoWith({});
+  const result = cli(repo, ['statusline', 'install']);
+  assert.strictEqual(result.code, 0, result.out);
+  const written = readSettings(repo);
+  assert.strictEqual(written.statusLine.type, 'command');
+  assert.match(written.statusLine.command, /procoder-statusline\.(sh|ps1)/);
+  assert.match(result.out, /settings\.json/);
+});
+
+// The whole risk of this command: it edits a file the user did not ask us to
+// touch beyond one key. Anything else in there has to come out identical.
+test('statusline install leaves every unrelated key untouched', () => {
+  const others = {
+    model: 'opus',
+    env: { FOO: 'bar' },
+    permissions: { allow: ['Bash(ls:*)'] },
+    someKeyProcoderHasNeverHeardOf: [1, 2, 3],
+  };
+  const repo = withSettings(others);
+  assert.strictEqual(cli(repo, ['statusline', 'install']).code, 0);
+  const written = readSettings(repo);
+  for (const [key, value] of Object.entries(others)) {
+    assert.deepStrictEqual(written[key], value, `${key} was not preserved`);
+  }
+});
+
+test('statusline install twice is a no-op the second time', () => {
+  const repo = repoWith({});
+  assert.strictEqual(cli(repo, ['statusline', 'install']).code, 0);
+  const first = fs.readFileSync(settingsIn(repo), 'utf8');
+
+  const again = cli(repo, ['statusline', 'install']);
+  assert.strictEqual(again.code, 0, again.out);
+  assert.match(again.out, /already/i);
+  assert.strictEqual(fs.readFileSync(settingsIn(repo), 'utf8'), first);
+  assert.strictEqual(fs.readdirSync(repo).filter((f) => f.includes('bak')).length, 0,
+    'a no-op must not leave a backup behind either');
+});
+
+const FOREIGN = { type: 'command', command: 'echo my-own-statusline' };
+
+test('statusline install refuses to clobber somebody else’s statusLine', () => {
+  const repo = withSettings({ statusLine: FOREIGN });
+  const result = cli(repo, ['statusline', 'install']);
+  assert.strictEqual(result.code, 1);
+  assert.match(result.out, /echo my-own-statusline/, 'it must say what is already there');
+  assert.match(result.out, /procoder-statusline/, 'and what it would have set');
+  assert.match(result.out, /--force/);
+  assert.deepStrictEqual(readSettings(repo).statusLine, FOREIGN);
+});
+
+test('statusline install --force replaces a foreign statusLine', () => {
+  const repo = withSettings({ statusLine: FOREIGN, model: 'opus' });
+  const result = cli(repo, ['statusline', 'install', '--force']);
+  assert.strictEqual(result.code, 0, result.out);
+  assert.match(readSettings(repo).statusLine.command, /procoder-statusline/);
+  assert.strictEqual(readSettings(repo).model, 'opus');
+  const backups = fs.readdirSync(repo).filter((f) => f.startsWith('settings.json.'));
+  assert.strictEqual(backups.length, 1, 'the overwritten settings must be recoverable');
+  assert.deepStrictEqual(
+    JSON.parse(fs.readFileSync(path.join(repo, backups[0]), 'utf8')).statusLine, FOREIGN);
+  assert.match(result.out, new RegExp(backups[0].replace(/\./g, '\\.')),
+    'the backup path has to be printed, or it is not a backup anyone can use');
+});
+
+// Overwriting a settings file we could not parse would destroy configuration
+// the user cannot get back — a far worse outcome than no statusline.
+test('statusline install reports invalid JSON and leaves the file alone', () => {
+  const broken = '{ "model": "opus",\n';
+  const repo = repoWith({ 'settings.json': broken });
+  const result = cli(repo, ['statusline', 'install']);
+  assert.notStrictEqual(result.code, 0);
+  assert.match(result.out, /JSON/i);
+  assert.strictEqual(fs.readFileSync(settingsIn(repo), 'utf8'), broken);
+});
+
+test('statusline uninstall removes procoder’s entry and nothing else', () => {
+  const repo = withSettings({ model: 'opus' });
+  assert.strictEqual(cli(repo, ['statusline', 'install']).code, 0);
+
+  const result = cli(repo, ['statusline', 'uninstall']);
+  assert.strictEqual(result.code, 0, result.out);
+  const written = readSettings(repo);
+  assert.strictEqual(written.statusLine, undefined);
+  assert.strictEqual(written.model, 'opus');
+});
+
+test('statusline uninstall leaves a statusLine that is not procoder’s', () => {
+  const repo = withSettings({ statusLine: FOREIGN });
+  const result = cli(repo, ['statusline', 'uninstall']);
+  assert.notStrictEqual(result.code, 0);
+  assert.match(result.out, /echo my-own-statusline/);
+  assert.deepStrictEqual(readSettings(repo).statusLine, FOREIGN);
+});
+
+test('statusline uninstall with nothing installed is a clean no-op', () => {
+  const repo = repoWith({});
+  const result = cli(repo, ['statusline', 'uninstall']);
+  assert.strictEqual(result.code, 0, result.out);
+});
+
+test('statusline status reports what is configured', () => {
+  const repo = repoWith({});
+  assert.match(cli(repo, ['statusline', 'status']).out, /not installed|no statusLine/i);
+  cli(repo, ['statusline', 'install']);
+  assert.match(cli(repo, ['statusline', 'status']).out, /procoder-statusline/);
+  assert.strictEqual(cli(repo, ['statusline', 'status']).code, 0);
+});
+
+// The failure mode this command exists to avoid is writing a plausible-looking
+// command that does not actually run. So run the exact string it wrote.
+test('the command statusline install writes really does print the badge', { skip: process.platform === 'win32' && 'POSIX shell only' }, () => {
+  const repo = repoWith({});
+  assert.strictEqual(cli(repo, ['statusline', 'install']).code, 0);
+  fs.writeFileSync(path.join(repo, '.procoder-active'), 'strict\n');
+
+  const { command } = readSettings(repo).statusLine;
+  const r = spawnSync('bash', ['-c', command], {
+    encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  });
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.strictEqual(String(r.stdout).trim(), '[PROCODER:STRICT]');
+});
+
+// A path holding shell metacharacters cannot be made safe by quoting alone, so
+// the installer must decline and hand over the snippet instead of writing a
+// command that would execute part of its own path.
+test('an install path with shell metacharacters is refused, with the manual snippet', { skip: process.platform === 'win32' && 'POSIX paths only' }, () => {
+  const root = path.join(__dirname, '..');
+  const odd = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-odd-')), 'pro$(whoami)');
+  tempDirs.push(path.dirname(odd));
+  for (const dir of ['bin', 'hooks']) {
+    fs.cpSync(path.join(root, dir), path.join(odd, dir), { recursive: true });
+  }
+
+  const repo = repoWith({});
+  const r = spawnSync('node', [path.join(odd, 'bin', 'procoder.js'), 'statusline', 'install'], {
+    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  });
+  assert.notStrictEqual(r.status, 0);
+  const out = String(r.stdout) + String(r.stderr);
+  assert.match(out, /statusLine/, 'the manual snippet is the fallback');
+  assert.strictEqual(fs.existsSync(settingsIn(repo)), false, 'nothing may be written');
+});

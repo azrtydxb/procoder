@@ -13,11 +13,13 @@ const { loadConfig, findRepoRoot } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
 const { readLevel } = require('../hooks/procoder-runtime');
+const { getClaudeDir } = require('../hooks/procoder-config');
 const {
   fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <paths...>
+       procoder statusline <install|uninstall|status> [--force]
 
   check     report findings not present in the baseline; exit 1 if any of them
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
@@ -28,6 +30,12 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <pa
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
                         suppressed nothing in this run — a stale suppression
                         left behind after the finding it silenced was fixed
+
+  statusline install    add procoder's statusLine to your Claude Code settings
+  statusline uninstall  remove it again, leaving any other statusLine alone
+  statusline status     print what statusLine is configured today
+
+  --force  (statusline install only) replace a statusLine that is not procoder's
 `;
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -229,6 +237,166 @@ function runCheck(files, repoRoot, config) {
   return blocking > 0 ? 1 : 0;
 }
 
+// --- statusline ------------------------------------------------------------
+//
+// Wiring the statusline used to mean hand-editing ~/.claude/settings.json with
+// an absolute path the user had to work out for themselves. These subcommands
+// do it instead, and treat settings.json throughout as a file that belongs to
+// somebody else: parsed rather than re-authored, backed up before any write,
+// and replaced by rename so an interrupted run cannot truncate it.
+
+const isWindows = process.platform === 'win32';
+
+// Inside double quotes only these characters keep their meaning, so quoting is
+// enough for the spaces and parentheses a real install path is full of — and is
+// not enough for these. A path containing one is refused, never embedded.
+const UNSAFE_IN_QUOTES = isWindows ? /["`$\r\n]/ : /["`$\\\r\n]/;
+
+// __dirname, never a guess or a hardcoded path: the point of the command is
+// that the user should not have to know where the plugin landed.
+function statuslineScript() {
+  return path.join(__dirname, '..', 'hooks',
+    isWindows ? 'procoder-statusline.ps1' : 'procoder-statusline.sh');
+}
+
+function statuslineCommand(script) {
+  return isWindows ? `powershell -NoProfile -File "${script}"` : `bash "${script}"`;
+}
+
+const settingsPath = () => path.join(getClaudeDir(), 'settings.json');
+
+// Ours is any statusLine whose command names our script, at whatever path: an
+// install that moved is still ours to update, and anything else is not ours to
+// touch at all.
+const isOurs = (entry) => !!entry && typeof entry === 'object'
+  && String(entry.command || '').includes('procoder-statusline');
+
+// Throws on anything this command will not write to. Callers run under
+// runStatusline's catch, which turns the message into a clean non-zero exit.
+function readSettings(file) {
+  if (!fs.existsSync(file)) return {};
+  const raw = fs.readFileSync(file, 'utf8');
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${file} is not valid JSON (${e.message}). Left untouched — fix it by ` +
+      'hand and re-run. Overwriting it would destroy settings you cannot get back.');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`${file} does not hold a JSON object. Left untouched.`);
+  }
+  return data;
+}
+
+// Temp file then rename: rename is atomic within a directory, so a run killed
+// mid-write leaves either the old settings or the new ones and never half a
+// file. A truncated settings.json breaks the user's whole Claude Code setup,
+// which is a far worse outcome than a statusline that did not get installed.
+function saveSettings(file, data) {
+  const backup = fs.existsSync(file) ? `${file}.backup-${Date.now()}` : null;
+  if (backup) fs.copyFileSync(file, backup);
+
+  const tmp = `${file}.procoder-tmp-${process.pid}`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
+  fs.renameSync(tmp, file);
+
+  process.stdout.write(`procoder: wrote ${file}\n`
+    + (backup ? `procoder: previous settings backed up to ${backup}\n` : ''));
+}
+
+const describe = (entry) => String(entry.command || JSON.stringify(entry));
+
+function refuseClobber(current, desired) {
+  process.stderr.write(
+    'procoder: a statusLine is already configured, and it is not procoder\'s:\n'
+    + `  ${describe(current)}\nprocoder would set:\n  ${desired.command}\n`
+    + 'Left as it is. Re-run with --force to replace it.\n');
+  return 1;
+}
+
+// Quoting cannot make these paths safe, and a command built around one would
+// execute part of its own path. The snippet still gets printed: the user knows
+// their own shell and can escape it, which is more than this command can do.
+function refuseUnsafePath(script, file) {
+  process.stderr.write(
+    `procoder: this install path contains characters a shell would interpret:\n  ${script}\n`
+    + `Refusing to build a command around it. Add this to ${file} by hand instead, with the\n`
+    + 'path quoted or escaped to suit your shell:\n'
+    + `  "statusLine": { "type": "command", "command": ${JSON.stringify(statuslineCommand(script))} }\n`);
+  return 1;
+}
+
+function runInstall(force) {
+  const script = statuslineScript();
+  const file = settingsPath();
+  if (UNSAFE_IN_QUOTES.test(script)) return refuseUnsafePath(script, file);
+
+  const data = readSettings(file);
+  const desired = { type: 'command', command: statuslineCommand(script) };
+  const current = data.statusLine;
+  if (current && !isOurs(current) && !force) return refuseClobber(current, desired);
+  if (current && current.type === desired.type && current.command === desired.command) {
+    process.stdout.write(`procoder: statusline already installed in ${file} — nothing to do.\n`);
+    return 0;
+  }
+
+  // Spread, so an existing statusLine keeps its position in the file and every
+  // other key keeps its value and its order.
+  saveSettings(file, { ...data, statusLine: desired });
+  return 0;
+}
+
+function runUninstall() {
+  const file = settingsPath();
+  const data = readSettings(file);
+  const current = data.statusLine;
+  if (!current) {
+    process.stdout.write(`procoder: no statusLine configured in ${file} — nothing to remove.\n`);
+    return 0;
+  }
+  if (!isOurs(current)) {
+    process.stderr.write('procoder: the configured statusLine is not procoder\'s:\n'
+      + `  ${describe(current)}\nLeft as it is.\n`);
+    return 1;
+  }
+
+  delete data.statusLine;
+  saveSettings(file, data);
+  return 0;
+}
+
+function runStatus() {
+  const file = settingsPath();
+  const current = readSettings(file).statusLine;
+  const state = !current ? 'no statusLine configured — not installed'
+    : `${isOurs(current) ? 'installed' : 'a statusLine that is not procoder\'s'}: ${describe(current)}`;
+  process.stdout.write(`procoder: ${file}\nprocoder: ${state}\n`);
+  return 0;
+}
+
+const STATUSLINE = new Map([
+  ['install', runInstall], ['uninstall', runUninstall], ['status', runStatus],
+]);
+
+// Every failure here is a message and a non-zero exit, never a stack trace:
+// this command's whole job is editing a file the user cares about, and an
+// unhandled throw would leave them guessing how far it got.
+function runStatusline(args) {
+  const run = STATUSLINE.get(args.find((a) => !a.startsWith('--')));
+  if (!run) {
+    process.stderr.write(USAGE);
+    return 2;
+  }
+  try {
+    return run(args.includes('--force'));
+  } catch (e) {
+    process.stderr.write(`procoder: ${e.message}\n`);
+    return 1;
+  }
+}
+
 // A Map, not an object literal: argv is user input, and `procoder constructor`
 // must not find a method on Object.prototype and try to run it.
 const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['verify', runVerify]]);
@@ -241,9 +409,28 @@ function parseFlags(argv) {
   return { unusedExclusions, rest };
 }
 
+// A baseline from an older procoder suppresses nothing, so a legacy repo would
+// light up red with its whole backlog and no explanation. `verify` stops at 2
+// — "cannot verify, re-baseline required" — rather than exiting 1 with a
+// findings count, which would blame the user for debt they did not add.
+// Returns an exit code to stop on, or null to carry on.
+function reportStaleBaseline(command, repoRoot, config) {
+  const stale = loadBaseline(repoRoot, config).staleVersion;
+  if (stale === undefined || command === 'baseline') return null;
+  process.stderr.write(
+    `procoder: ${baselinePath(repoRoot, config)} is format v${stale}, this procoder writes ` +
+    `v${BASELINE_VERSION}. The fingerprint format changed and old entries cannot be migrated; ` +
+    'nothing is suppressed until you re-run `procoder baseline <paths>`.\n');
+  return command === 'verify' ? 2 : null;
+}
+
 function main(argv) {
   const { unusedExclusions, rest } = parseFlags(argv);
   const [command, ...targets] = rest;
+  // Its arguments are subcommands, not paths, so it branches off before the
+  // path handling below.
+  if (command === 'statusline') return runStatusline(targets);
+
   const run = COMMANDS.get(command);
   if (!run || targets.length === 0) {
     process.stderr.write(USAGE);
@@ -266,18 +453,8 @@ function main(argv) {
   const repoRoot = findRepoRoot(path.dirname(files[0]));
   const config = loadConfig(repoRoot);
 
-  // A baseline from an older procoder suppresses nothing, so a legacy repo would
-  // light up red with its whole backlog and no explanation. `verify` stops at 2
-  // — "cannot verify, re-baseline required" — rather than exiting 1 with a
-  // findings count, which would blame the user for debt they did not add.
-  const stale = loadBaseline(repoRoot, config).staleVersion;
-  if (stale !== undefined && command !== 'baseline') {
-    process.stderr.write(
-      `procoder: ${baselinePath(repoRoot, config)} is format v${stale}, this procoder writes ` +
-      `v${BASELINE_VERSION}. The fingerprint format changed and old entries cannot be migrated; ` +
-      'nothing is suppressed until you re-run `procoder baseline <paths>`.\n');
-    if (command === 'verify') return 2;
-  }
+  const halt = reportStaleBaseline(command, repoRoot, config);
+  if (halt !== null) return halt;
 
   return run(files, repoRoot, config, { unusedExclusions });
 }
