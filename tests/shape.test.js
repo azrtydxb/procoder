@@ -492,6 +492,11 @@ test('a wrapped def opens its block at the def line', () => {
 // The lookback must not turn every brace into a function. An `else` brace is
 // preceded by an `if` whose parameter list closed long before it, and the
 // signature has to be the one this very brace opens.
+//
+// The `if` itself is no longer measured either — a control-flow head is not a
+// signature, see the keyword sweep at the foot of this file — so the only
+// function here is `outer`. This used to assert [1, 2]: the `if` block was
+// measured as a function of its own, which is the duplicate-report defect.
 test('the lookback does not attribute an else block to the if above it', () => {
   const src = [
     'function outer(a) {',
@@ -506,7 +511,7 @@ test('the lookback does not attribute an else block to the if above it', () => {
   const { blocks } = analyzeBraces(src);
   const measured = measureFunctions(
     src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
-  assert.deepStrictEqual(measured.map((b) => b.startLine).sort(), [1, 2]);
+  assert.deepStrictEqual(measured.map((b) => b.startLine).sort(), [1]);
 });
 
 // The lookback used to be bounded at ten lines, which is the same inverted
@@ -765,4 +770,198 @@ test('stripNoise blanks # comments for the languages that have them', () => {
   assert.strictEqual(stripNoise('x = 1  # note\n', 'py'), 'x = 1        \n');
   // JS/TS: it does not.
   assert.strictEqual(stripNoise('this.#n = go(1);'), 'this.#n = go(1);');
+});
+
+// --- a control-flow head is not a function signature -------------------------
+//
+// `switch (kind) {`, `if (ok) {`, `while (more) {` — every control-flow keyword
+// that takes a parenthesised head has exactly the shape the packs' signature
+// heads look for, `<name>(args) {`. A function whose body opened with one was
+// measured twice: once at its real signature line, once at the keyword on the
+// line below, so obvious/complexity reported the same function at two lines.
+// Found by an adversarial false-positive hunt on a `switch`; every sibling
+// keyword had it too.
+const CONTROL_BODIES = {
+  switch: ['  switch (kind) {', "    case 'a': return 1;", '    default: return 0;', '  }'],
+  if: ['  if (kind) {', '    return 1;', '  }'],
+  while: ['  while (kind) {', '    kind = next(kind);', '  }'],
+  for: ['  for (let i = 0; i < 3; i += 1) {', '    go(i);', '  }'],
+  catch: ['  try {', '    go();', '  } catch (err) {', '    report(err);', '  }'],
+  'do…while': ['  do {', '    kind = next(kind);', '  } while (kind);'],
+};
+
+// The ts pack's own pair, because an arrow's `=>` sits between the parameter
+// list and the brace and the simplified pattern the older tests use cannot
+// reach past it.
+const measureTs = (src) => {
+  const re = {
+    head: /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)(?:\w+\s*)?)\(/g,
+    tail: /\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/,
+  };
+  const { blocks } = analyzeBraces(src);
+  return measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
+};
+
+test('a body opening with a control-flow keyword is measured once, at its own line', () => {
+  for (const [keyword, body] of Object.entries(CONTROL_BODIES)) {
+    const src = ['function route(kind) {', ...body, '  return 0;', '}'].join('\n');
+    assert.deepStrictEqual(measureTs(src).map((b) => b.startLine), [1],
+      `${keyword}: measured as a function of its own`);
+  }
+});
+
+// The same defect end to end, on the input the hunt reported: one function, one
+// finding, at line 1.
+test('a switch-bodied function reports complexity once, at the signature', () => {
+  const cases = Array.from({ length: 14 }, (unused, i) => `    case '${i}': return ${i};`);
+  const src = ['function route(kind) {', '  switch (kind) {', ...cases,
+    '    default: return 0;', '  }', '}'].join('\n');
+  const found = findings('ts', src, 'a.ts').filter((f) => f.id === 'obvious/complexity');
+  assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
+  assert.strictEqual(found[0].line, 1);
+});
+
+// `else if (…) {` is the same shape to the line-anchored heads, which want two
+// identifiers before the parens and find `else` and `if`.
+test('an else-if branch is not measured as a method', () => {
+  const jvm = ['class X {', '    public int route(int k) {', '        if (k == 0) {',
+    '            return 0;', '        }', '        else if (k == 1) {', '            return 1;',
+    '        }', '        return 2;', '    }', '}'].join('\n');
+  const { blocks } = analyzeBraces(jvm);
+  const measured = measureFunctions(jvm.split('\n'), blocks,
+    signaturesFrom(stripNoise(jvm), {
+      head: /^\s*(?:(?:public|private|protected|static|final)\s+)*[\w<>[\],.]+(?:\s*<[\w\s<>[\],.]*>)?\s+\w+\s*\(/,
+      tail: /\s*(?:throws\s+[\w,.\s]+)?\{\s*$/,
+    }));
+  assert.deepStrictEqual(measured.map((b) => b.startLine), [2]);
+});
+
+// Coverage the sweep must not take with it: a keyword after `.` is a method,
+// and the callback it takes is a function like any other.
+test('a .catch callback is still measured', () => {
+  const src = ['run().catch((err, ctx, a, b, c, d) => {', '  report(err);', '});'].join('\n');
+  const measured = measureTs(src);
+  assert.strictEqual(measured.length, 1);
+  assert.strictEqual(measured[0].params, 6);
+});
+
+// A genuinely over-threshold function still reports, once, at its own line.
+test('a genuinely complex function still reports once at its signature', () => {
+  const src = ['function tangle(a, b) {',
+    ...Array.from({ length: 12 }, (unused, i) => `  if (a === ${i} && b) return ${i};`),
+    '  return 0;', '}'].join('\n');
+  const found = findings('ts', src, 'a.ts').filter((f) => f.id === 'obvious/complexity');
+  assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
+  assert.strictEqual(found[0].line, 1);
+});
+
+// --- one measurement per function, structurally ------------------------------
+//
+// The keyword sweep removes one way for a function to be measured twice; it
+// does not remove the last. A block is attributed to a signature by the line
+// its brace opens on, and more than one block can open on that line: `function
+// outer(a) { if (a) {` gives the signature two blocks, and both reported. Any
+// future head that matches something extra on a signature's own line does the
+// same. Two measurements of one function must not be able to reach output at
+// all, so measureFunctions keeps one span per signature line — the widest,
+// which is the function's own block rather than something nested inside it.
+test('two blocks opening on one signature line are measured once', () => {
+  const body = Array.from({ length: 45 }, (unused, i) => `    step${i}();`);
+  const src = ['function outer(a) { if (a) {', ...body, '  }', '}'].join('\n');
+
+  const measured = measureTs(src);
+  assert.strictEqual(measured.length, 1, 'the same function was measured twice');
+  assert.strictEqual(measured[0].startLine, 1);
+  assert.strictEqual(measured[0].length, 48, 'kept the inner block over the function');
+
+  const found = findings('ts', src, 'a.ts').filter((f) => f.id === 'obvious/function-too-long');
+  assert.strictEqual(found.length, 1, `reported ${found.length} times for one function`);
+});
+
+// Removing the `if` signature is not enough on its own: a bare parenthesised
+// expression is a head to the ts pattern, and that pattern's tail — a return
+// type of up to 500 characters, newlines included — reaches down to the brace
+// of an `if` four lines below it. The `if`'s own signature used to mask that;
+// with the sweep above it surfaces, and the finding moves from the `if` to an
+// expression that is not a function at all. A tail is a return type, a
+// `throws`, a `where` clause — never a statement — so a control-flow keyword
+// inside one says the brace belongs to the keyword. Found in the differential
+// against a 486-file TypeScript tree, not by unit test.
+test('a tail does not reach past a control-flow keyword to its brace', () => {
+  const src = ['export function render(obj: Payload) {',
+    '  const message = typeof obj === "object"',
+    '    ? (obj.a || obj.b || obj.c || obj.d || JSON.stringify(obj, null, 2))',
+    '    : String(obj)',
+    '',
+    '  if (message.startsWith("task.")) {',
+    '    return 1;',
+    '  }',
+    '  return 0;',
+    '}'].join('\n');
+  assert.deepStrictEqual(measureTs(src).map((b) => b.startLine), [1]);
+});
+
+// --- a body on the signature's own line is still a body ----------------------
+//
+// The other half of the same assumption: the recogniser expected the block to
+// open at the end of the signature's line and the body to follow below it, so a
+// declaration that opened and closed on one line fell out of the scan entirely.
+// Java's and C#'s tails are `$`-anchored, which is exactly that assumption
+// written down, and `public int size() { return n; }` matched no tail, got no
+// signature, and was measured for nothing at all — length, nesting, parameters
+// and complexity alike. braceLineAfter cuts its window at the brace now instead
+// of at the line end.
+const SAME_LINE = [
+  ['jvm', 'X.java', (n) => ['class X {',
+    `    public int wide(${Array.from({ length: n }, (u, i) => `int p${i}`).join(', ')}) { return 1; }`,
+    '}']],
+  ['dotnet', 'X.cs', (n) => ['class X {',
+    `    public int Wide(${Array.from({ length: n }, (u, i) => `int p${i}`).join(', ')}) { return 1; }`,
+    '}']],
+  ['ts', 'a.ts', (n) => [
+    `function wide(${Array.from({ length: n }, (u, i) => `p${i}`).join(', ')}) { return 1; }`]],
+  ['go', 'a.go', (n) => [
+    `func wide(${Array.from({ length: n }, (u, i) => `p${i} int`).join(', ')}) int { return 1 }`]],
+  ['rust', 'a.rs', (n) => [
+    `fn wide(${Array.from({ length: n }, (u, i) => `p${i}: usize`).join(', ')}) -> usize { 1 }`]],
+];
+
+test('a method whose body opens on its own line is measured', () => {
+  for (const [pack, relPath, shape] of SAME_LINE) {
+    const lines = shape(6);
+    const found = paramFinding(pack, lines.join('\n'), relPath);
+    assert.ok(found, `${pack}: a same-line body was not measured at all`);
+    assert.strictEqual(found.message, '6 parameters (limit 4)', pack);
+    assert.strictEqual(found.line, lines.findIndex((l) => l.includes('(')) + 1, pack);
+  }
+});
+
+test('an empty same-line body is measured too', () => {
+  const src = ['class X {', '    public void noop(int a, int b, int c, int d, int e, int f) {}', '}'];
+  const found = paramFinding('jvm', src.join('\n'), 'X.java');
+  assert.ok(found, 'an empty same-line body was not measured');
+  assert.strictEqual(found.line, 2);
+});
+
+// An expression body has no brace at all, so analyzeBraces hands it nothing:
+// measured directly, a C# method with 300 parameters reported nothing.
+test('an expression-bodied method is measured for its parameters', () => {
+  const params = Array.from({ length: 300 }, (unused, i) => `int p${i}`).join(', ');
+  const src = ['class X', '{', `    public int Wide(${params}) => n;`, '}'].join('\n');
+  const found = paramFinding('dotnet', src, 'X.cs');
+  assert.ok(found, 'an expression-bodied method was not measured at all');
+  assert.strictEqual(found.message, '300 parameters (limit 4)');
+  assert.strictEqual(found.line, 3);
+});
+
+// The synthesised span must not turn every callback into a function. A `=>`
+// after a parameter list is an arrow anywhere in an expression, and hanging a
+// one-line function on one would put the whole line's complexity on it — the
+// false positive this pass exists to remove. So only a declaration that starts
+// its line and ends the statement on it counts.
+test('an arrow inside an expression is not a declaration', () => {
+  const src = ['const totals = rows.map((row) => row.a && row.b ? row.a : row.b)',
+    '  .filter((row) => row.a && row.b && row.c && row.d && row.e && row.f && row.g);'].join('\n');
+  assert.deepStrictEqual(measureTs(src), []);
+  assert.deepStrictEqual(findings('ts', src, 'a.ts'), []);
 });

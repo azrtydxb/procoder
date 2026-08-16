@@ -497,21 +497,69 @@ function lineAtOffset(starts, offset) {
 
 // The line of the `{` a signature's tail reaches, or 0. The tail is re-applied
 // to the text from the parameter list's `)` to the end of each candidate line
-// in turn, newlines flattened to spaces and the brace required to be the last
-// thing in the window — which is what lets a pack's own tail work here
-// unchanged, `$` anchors (Java, C#) and `[^{\n]` spans (Go, Rust) alike. Every
-// pack writes its tail against a single line, because that is the only shape it
-// ever saw before a signature was allowed to wrap.
+// in turn, newlines flattened to spaces and the window cut at its first `{` —
+// which is what lets a pack's own tail work here unchanged, `$` anchors (Java,
+// C#) and `[^{\n]` spans (Go, Rust) alike. Every pack writes its tail against a
+// single line, because that is the only shape it ever saw before a signature
+// was allowed to wrap.
+//
+// The cut used to be end of line, with the brace required to be the last thing
+// in the window. That is the same line the `$` in Java's and C#'s tails is
+// anchored to, so a method whose body opens and closes on the signature's own
+// line — `public int size() { return n; }`, `public void noop() {}` — matched
+// no tail at all, got no signature, and was dropped from measurement entirely:
+// length, nesting, parameters and complexity all skipped it. Cutting at the
+// brace instead asks the tail what it was always meant to ask — "does this
+// reach the block-opening brace" — rather than "does the line end there". No
+// pack's tail can cross a `{` (they are `[^{\n]`, `[^{=]` or literal keyword
+// spans), so the first brace in the window is the only one any of them could
+// ever have reached, and a brace that did end its line is matched exactly as
+// before.
 function braceLineAfter(text, starts, tail, from) {
   const first = lineAtOffset(starts, from);
   for (let line = first; line <= starts.length && line - first <= TAIL_LOOKAHEAD_LINES; line += 1) {
     const end = starts[line] === undefined ? text.length : starts[line] - 1;
     if (end - from > TAIL_MAX_CHARS) return 0;
-    const window = text.slice(from, Math.max(from, end)).replace(/\n/g, ' ').trimEnd();
+    const span = text.slice(from, Math.max(from, end)).replace(/\n/g, ' ');
+    const brace = span.indexOf('{');
+    const window = brace === -1 ? span.trimEnd() : span.slice(0, brace + 1);
     tail.lastIndex = 0;
-    if (tail.exec(window) && tail.lastIndex === window.length) return line;
+    if (tail.exec(window) && tail.lastIndex === window.length
+      && !CONTROL_IN_TAIL.test(window)) return line;
   }
   return 0;
+}
+
+// `public int Size() => n;` — an expression-bodied declaration has no block at
+// all, so analyzeBraces has nothing to hand it and every shape rule skipped it:
+// measured directly, a C# method with 300 parameters reported nothing. It is
+// one line by construction, so it is measured as a one-line block at its own
+// line. Same family as the same-line body above — a declaration the recogniser
+// dropped because it assumed a block on a later line — and the same answer.
+//
+// Only where the declaration starts its line and the statement ends on it. The
+// packs whose head is scanned over the whole file match calls as readily as
+// declarations — `arr.map((x) => x * 2)` is a head, a parameter list and an
+// arrow — and synthesising a function there would hang the whole line's
+// complexity on a callback, which is the false positive this pass exists to
+// remove. A statement that begins at the margin and ends in `;` is a
+// declaration in the languages that have this form.
+const EXPRESSION_BODY = /^\s*(?:=>|->)\s*[^;]*;\s*$/;
+
+// Nothing but indentation before `at` on its line. Bounded by the same budget
+// as the tail, so a minified line — where a head can sit half a megabyte into
+// its only line — costs one subtraction rather than a scan of the file.
+function atMargin(text, lineStart, at) {
+  if (at - lineStart > TAIL_MAX_CHARS) return false;
+  for (let i = at - 1; i >= lineStart; i -= 1) if (!/\s/.test(text[i])) return false;
+  return true;
+}
+
+function isExpressionBody(text, starts, { startLine, headAt }, from) {
+  if (!atMargin(text, starts[startLine - 1], headAt)) return false;
+  const end = starts[startLine] === undefined ? text.length : starts[startLine] - 1;
+  if (end - from > TAIL_MAX_CHARS) return false;
+  return EXPRESSION_BODY.test(text.slice(from, Math.max(from, end)));
 }
 
 // A pack's signature pattern, applied at one offset: the head match locates
@@ -524,7 +572,11 @@ function signatureAt(text, spans, tail, match) {
   const span = spans.get(match.index + match[0].length - 1);
   if (!span) return null;
   tail.lastIndex = span.end + 1;
-  return tail.exec(text) ? { params: span.params, end: tail.lastIndex } : null;
+  if (!tail.exec(text)) return null;
+  // What the tail crossed to get to the brace has to be a tail and not a
+  // statement — see CONTROL_IN_TAIL.
+  if (CONTROL_IN_TAIL.test(text.slice(span.end + 1, tail.lastIndex))) return null;
+  return { params: span.params, end: tail.lastIndex };
 }
 
 // Signature line number → its parameter count. Packs supply a `{ head, tail }`
@@ -546,26 +598,78 @@ function signatureAt(text, spans, tail, match) {
 // forward from the head instead needs no search: the parameter list's `)` is
 // already known from the paramSpans pass, whatever line it landed on, and only
 // the short tail after it has to be re-read.
-// Every head in the file, as { startLine, parenAt, params, braceLine }, with
-// braceLine 0 where the pack's own tail did not reach a brace. A global head is
-// scanned over the whole source and its tail may cross lines; a line-anchored
-// one is exec'd per line — at most one match per line, as before — and its tail
-// is read on that line alone, so a brace it reaches is on that line.
-function headMatch(startLine, parenAt, found, braceLine) {
+// Every head in the file, as { startLine, headAt, parenAt, params, braceLine },
+// with braceLine 0 where the pack's own tail did not reach a brace. A global
+// head is scanned over the whole source and its tail may cross lines; a
+// line-anchored one is exec'd per line — at most one match per line, as before
+// — and its tail is read on that line alone, so a brace it reaches is on that
+// line. `headAt` is where the head itself starts, which is what says whether a
+// declaration begins at the margin.
+function headMatch(where, found, braceLine) {
   return {
-    startLine,
-    parenAt,
+    ...where,
     params: found ? found.params : 0,
     braceLine: found ? braceLine : 0,
   };
 }
 
+// `switch (kind) {`, `if (ok) {`, `while (more) {`, `} catch (err) {` — every
+// control-flow keyword that takes a parenthesised head has exactly the shape a
+// pack's signature head looks for, `<name>(args) {`. A function whose body
+// opened with one was measured a second time at the keyword's own line, so one
+// function reported at two line numbers; `switch` is the one an adversarial
+// false-positive hunt caught, and every sibling keyword had it too. The
+// line-anchored heads (Java, C#) want two identifiers before the parens and
+// find them in `else if (…) {`.
+//
+// Swept here, in the one scan every pack routes through, rather than in six
+// heads that would each have to grow the same negative lookahead — and this is
+// the only place that holds both the head's text and the character before it.
+//
+// Statement position only. A keyword reached through a member access is a
+// method: `p.catch(err => { … })`, `s.match(re)`, `list.for(…)` are ordinary
+// code and are still measured. `.`, `?.`, `::` and `->` all end in one of these.
+const CONTROL_HEAD = /(?:^|[^\w$])(if|else|elif|elsif|for|foreach|while|until|unless|switch|case|when|match|catch|except|rescue|using|lock|synchronized|with)\s*\($/;
+const MEMBER_ACCESS = /[.:>]/;
+
+// The same keywords again, anywhere in the text a tail crossed to reach its
+// brace. A tail is a return type, a `throws`, a `where` clause — never a
+// statement — so a control-flow keyword in it means the brace belongs to that
+// keyword's block and not to the signature. Without this the sweep above only
+// moves the finding: a bare parenthesised expression is a head to the ts
+// pattern, and its tail (`: <return type>` for up to 500 characters, newlines
+// included) reaches down to the `{` of an `if` four lines below, which the
+// `if`'s own signature used to mask. Reported at the expression's line, which
+// is not a function at all. Go's `(int, error)` tail, Rust's `where`, Java's
+// `throws` and C#'s `: base(…)` all pass it unchanged.
+const CONTROL_IN_TAIL = /(?:^|[^\w$.])(?:if|else|elif|elsif|for|foreach|while|until|unless|switch|case|when|match|catch|except|rescue|do|try|using|lock|synchronized|with)\s*[({]/;
+
+// The character that reaches a name, spaces skipped. Bounded, so a minified
+// line — where the run before a token can be the whole file — costs one look:
+// no formatter puts four spaces between `.` and a method name.
+function reachedBy(text, at) {
+  for (let i = at - 1; i >= 0 && at - i <= 4; i -= 1) {
+    if (!/\s/.test(text[i])) return text[i];
+  }
+  return '';
+}
+
+function isControlHead(text, at, headText) {
+  const keyword = CONTROL_HEAD.exec(headText);
+  if (!keyword) return false;
+  return !MEMBER_ACCESS.test(reachedBy(text, at + keyword.index + keyword[0].indexOf(keyword[1])));
+}
+
 function* headMatches(stripped, head, { spans, starts, after }) {
   if (head.global) {
     for (const match of stripped.matchAll(head)) {
+      if (isControlHead(stripped, match.index, match[0])) continue;
       const found = signatureAt(stripped, spans, after, match);
-      yield headMatch(lineAtOffset(starts, match.index), match.index + match[0].length - 1,
-        found, found && lineAtOffset(starts, found.end - 1));
+      yield headMatch({
+        startLine: lineAtOffset(starts, match.index),
+        headAt: match.index,
+        parenAt: match.index + match[0].length - 1,
+      }, found, found && lineAtOffset(starts, found.end - 1));
     }
     return;
   }
@@ -573,8 +677,12 @@ function* headMatches(stripped, head, { spans, starts, after }) {
   for (let index = 0; index < lines.length; index += 1) {
     const match = head.exec(lines[index]);
     if (!match) continue;
-    yield headMatch(index + 1, starts[index] + match.index + match[0].length - 1,
-      signatureAt(lines[index], paramSpans(lines[index]), after, match), index + 1);
+    if (isControlHead(lines[index], match.index, match[0])) continue;
+    yield headMatch({
+      startLine: index + 1,
+      headAt: starts[index] + match.index,
+      parenAt: starts[index] + match.index + match[0].length - 1,
+    }, signatureAt(lines[index], paramSpans(lines[index]), after, match), index + 1);
   }
 }
 
@@ -587,9 +695,30 @@ function attribute(wrapped, braceLine, startLine, params) {
   }
 }
 
+// One head, once the pack's own tail has had its say. The tail stopped at a
+// line end (Java, C#) or refused to cross one (Go, Rust); where the parameter
+// list closed is known whatever it spanned, so only the short tail after it has
+// to be re-read.
+function recordHead(maps, stripped, at, found) {
+  const span = at.spans.get(found.parenAt);
+  if (!span) return;
+  const reached = braceLineAfter(stripped, at.starts, at.after, span.end + 1);
+  // A brace on the signature's own line opens that signature's own block — the
+  // same-line body — and is not a wrap at all; `attribute` deliberately keeps
+  // only braces below the signature, so it would drop this one.
+  if (reached === found.startLine) maps.signatures.set(found.startLine, span.params);
+  else if (reached) attribute(maps.wrapped, reached, found.startLine, span.params);
+  else if (isExpressionBody(stripped, at.starts, found, span.end + 1)) {
+    maps.bodyless.set(found.startLine, span.params);
+  }
+}
+
 function signaturesFrom(stripped, { head, tail }) {
   const signatures = new Map();
-  const wrapped = new Map();
+  // Declarations with no block at all — an expression body — keyed by their
+  // line. measureFunctions gives each a one-line span, because there is no
+  // brace for analyzeBraces to have found one.
+  const maps = { signatures, wrapped: new Map(), bodyless: new Map() };
   const at = {
     spans: paramSpans(stripped),
     starts: lineStarts(stripped),
@@ -598,22 +727,14 @@ function signaturesFrom(stripped, { head, tail }) {
     after: new RegExp(tail.source, tail.flags.includes('y') ? tail.flags : tail.flags + 'y'),
   };
 
-  for (const { startLine, parenAt, params, braceLine } of headMatches(stripped, head, at)) {
-    if (braceLine) {
-      signatures.set(startLine, params);
-      attribute(wrapped, braceLine, startLine, params);
-      continue;
-    }
-    // The tail stopped at a line end (Java, C#) or refused to cross one (Go,
-    // Rust). Where the parameter list closed is known whatever it spanned, so
-    // only the short tail after it has to be re-read.
-    const span = at.spans.get(parenAt);
-    if (span) {
-      attribute(wrapped, braceLineAfter(stripped, at.starts, at.after, span.end + 1),
-        startLine, span.params);
-    }
+  for (const found of headMatches(stripped, head, at)) {
+    if (found.braceLine) {
+      signatures.set(found.startLine, found.params);
+      attribute(maps.wrapped, found.braceLine, found.startLine, found.params);
+    } else recordHead(maps, stripped, at, found);
   }
-  signatures.wrapped = wrapped;
+  signatures.wrapped = maps.wrapped;
+  signatures.bodyless = maps.bodyless;
   return signatures;
 }
 
@@ -629,18 +750,16 @@ function signatureOf(block, signatures) {
   return (signatures.wrapped && signatures.wrapped.get(block.startLine)) || null;
 }
 
-// Attaches params and complexity to the blocks that start on a signature line,
-// dropping the blocks that are not functions at all.
-function measureFunctions(lines, blocks, signatures) {
-  // One complexity scan per distinct line range, not per block. Every function
-  // on a single minified line spans the same range, so N blocks over an L-byte
-  // line cost one scan of L rather than N — the quadratic term, since scanning
-  // a block costs its whole span. Counting branches per line over one strip of
-  // the file would also be linear, but it moves the `?:` alternative's window
-  // and changes reported complexity on ordinary multi-line code, so the scan
-  // stays exactly the one it was.
+// One complexity scan per distinct line range, not per block. Every function on
+// a single minified line spans the same range, so N blocks over an L-byte line
+// cost one scan of L rather than N — the quadratic term, since scanning a block
+// costs its whole span. Counting branches per line over one strip of the file
+// would also be linear, but it moves the `?:` alternative's window and changes
+// reported complexity on ordinary multi-line code, so the scan stays exactly
+// the one it was.
+function complexityScanner(lines) {
   const scanned = new Map();
-  const complexityOf = (block) => {
+  return (block) => {
     const span = block.startLine + ':' + block.endLine;
     if (!scanned.has(span)) {
       scanned.set(span, estimateComplexity(
@@ -648,19 +767,49 @@ function measureFunctions(lines, blocks, signatures) {
     }
     return scanned.get(span);
   };
+}
 
-  const measured = [];
+// Attaches params and complexity to the blocks that start on a signature line,
+// dropping the blocks that are not functions at all.
+//
+// One span per signature, keyed by its line, and the widest of them wins.
+//
+// A block is attributed to a signature by the line its brace opens on, and more
+// than one block can open on that line: `function outer(a) { if (a) {` hands the
+// same signature two blocks, and both reported — one function,
+// obvious/function-too-long twice, at one line. A `switch` opening a body did
+// the same at two different lines, and any head that ever matches something
+// extra on a signature's own line will do it again. There is only ever one
+// function per signature line — `signatures` is keyed by line and holds one
+// parameter count for it — so a second measurement of that line is a duplicate
+// by construction, and this is where it stops being able to reach shapeFindings
+// at all, rather than being filtered downstream where the next caller would
+// have to remember to filter too. The widest span is the function's own block;
+// a narrower one is something nested inside it.
+function measureFunctions(lines, blocks, signatures) {
+  const complexityOf = complexityScanner(lines);
+  const measured = new Map();
+  const keep = (span, params) => {
+    const held = measured.get(span.startLine);
+    if (held && held.length >= span.length) return;
+    measured.set(span.startLine, { ...span, params, complexity: complexityOf(span) });
+  };
+
   for (const block of blocks) {
     const signature = signatureOf(block, signatures);
     if (!signature) continue;
-    const span = {
+    keep({
       ...block,
       startLine: signature.startLine,
       length: block.endLine - signature.startLine + 1,
-    };
-    measured.push({ ...span, params: signature.params, complexity: complexityOf(span) });
+    }, signature.params);
   }
-  return measured;
+  // An expression body has no brace, so analyzeBraces found no block for it at
+  // all: it is one line, at its own line.
+  for (const [line, params] of signatures.bodyless || []) {
+    if (!measured.has(line)) keep({ startLine: line, endLine: line, length: 1 }, params);
+  }
+  return [...measured.values()];
 }
 
 // A catch block whose body is nothing but whitespace or comments. The caller
