@@ -113,17 +113,39 @@ function indentBlock(open, endLine) {
   return { ...open, endLine, length: endLine - open.startLine + 1 };
 }
 
+// A line inside an unclosed bracket continues the line above rather than
+// starting a statement, and its indentation says nothing about nesting.
+// Without that distinction a `def` whose parameters wrap ends its block on the
+// `):` line — back at the def's own column — so every wrapped def measures as
+// short as its signature, however long the body is. This is the indentation
+// half of the brace languages' wrapped-signature gap.
+function bracketBalance(line) {
+  let balance = 0;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '(' || ch === '[' || ch === '{') balance += 1;
+    else if (ch === ')' || ch === ']' || ch === '}') balance -= 1;
+  }
+  return balance;
+}
+
 function analyzeIndent(source, { tabWidth = 4 } = {}) {
   const lines = stripNoise(source).split(/\r?\n/);
   const blocks = [];
   let maxDepth = 0;
   let openBlock = null;
+  let open = 0;
 
   lines.forEach((line, index) => {
     if (!line.trim()) return;
     const leading = /^[ \t]*/.exec(line)[0];
-    const depth = Math.floor(leading.replace(/\t/g, ' '.repeat(tabWidth)).length / tabWidth);
+    const column = leading.replace(/\t/g, ' '.repeat(tabWidth)).length;
+    const depth = Math.floor(column / tabWidth);
     maxDepth = Math.max(maxDepth, depth);
+
+    const continuation = open > 0;
+    open = Math.max(0, open + bracketBalance(line));
+    if (continuation) return;
 
     if (DEF_OR_CLASS.test(line)) {
       if (openBlock) blocks.push(indentBlock(openBlock, index));
@@ -141,8 +163,13 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
   return { maxDepth, blocks };
 }
 
+// A wrapped signature almost always carries a trailing comma — prettier,
+// black, gofmt and rustfmt all add one — so it is dropped before counting,
+// or every wrapped signature reports one parameter more than it has.
 function countParams(signatureText) {
-  const inner = String(signatureText || '').replace(/^\s*\(|\)\s*$/g, '');
+  const inner = String(signatureText || '')
+    .replace(/^\s*\(|\)\s*$/g, '')
+    .replace(/,\s*$/, '');
   if (!inner.trim()) return 0;
 
   let depth = 0;
@@ -237,9 +264,63 @@ function lineCounter(text) {
   };
 }
 
+// How far back a block-opening `{` may look for the signature it belongs to.
+// Prevailing formatters (prettier, black, gofmt, rustfmt) wrap one parameter
+// per line once a signature exceeds the line width, so the span from the
+// signature's first line to its brace costs one line per parameter plus the
+// opening line, at most one line for a return type / `throws` / `where`, and
+// the brace line. Ten reaches a seven-parameter wrap — already well past every
+// params threshold worth setting (the default is 4), so the functions this
+// exists to catch are inside the bound. A signature wrapped further stays
+// unmeasured, exactly as every wrapped signature was before.
+const SIGNATURE_LOOKBACK = 10;
+
+// The most text a rescan may look at. The lookback is attempted for every
+// block whose own line is not a signature — most blocks in a file — so its
+// cost has to be constant per block, and one line may be the whole file.
+// Capping the span keeps it constant; the packs already bound their parameter
+// text to 500 characters, so no real signature is excluded.
+const SIGNATURE_MAX_CHARS = 1000;
+
+// Re-runs the pack's own signature pattern over a candidate line span,
+// flattened to a single line. Flattening is the whole trick: every pack's
+// pattern wants the parameter list and the brace on one line, which is why a
+// wrapped signature matches none of them. The match must start at the span's
+// first line and end at its brace, so a block is attributed only to a
+// signature that actually begins there and is opened by that very brace —
+// without the end anchor an `} else {` would match the `if` above it. The
+// start test allows text before the match on that line, because a pack's
+// pattern starts at `function`/`fn`/`func` and leaves `export`, `pub` or a
+// decorator to its left.
+function rescanner(stripped, re) {
+  // A copy, because the pack's pattern is a module-level global regex shared
+  // by every file: exec'ing it here would leave `lastIndex` mid-source, and
+  // matchAll seeds its own copy from it — the next file scanned would start
+  // partway in and lose the signatures before that point.
+  const scan = new RegExp(re.source, re.flags);
+  let lines = null;
+  return (from, to) => {
+    if (!lines) lines = stripped.split(/\r?\n/);
+    const span = lines.slice(from - 1, to);
+    let size = 0;
+    for (const line of span) size += line.length + 1;
+    if (size > SIGNATURE_MAX_CHARS) return null;
+
+    const flat = span.join(' ');
+    scan.lastIndex = 0;
+    const match = scan.exec(flat);
+    if (!match || match.index >= span[0].length) return null;
+    return match.index + match[0].length === flat.trimEnd().length ? match[1] : null;
+  };
+}
+
 // Signature line number → its parameter text. Packs supply either a global
 // regex scanned across the whole stripped source, or a line-anchored one that
 // must be exec'd per line to stay clear of catastrophic backtracking.
+//
+// `rescan` rides along on the map because the packs pass this straight into
+// measureFunctions and nowhere else: it is the one place that still holds both
+// the stripped source and the pattern, and adding it here changes no pack.
 function signaturesFrom(stripped, re) {
   const signatures = new Map();
   if (re.global) {
@@ -247,13 +328,33 @@ function signaturesFrom(stripped, re) {
     for (const match of stripped.matchAll(re)) {
       signatures.set(lineAt(match.index), match[1]);
     }
-    return signatures;
+  } else {
+    stripped.split(/\r?\n/).forEach((line, index) => {
+      const match = re.exec(line);
+      if (match) signatures.set(index + 1, match[1]);
+    });
   }
-  stripped.split(/\r?\n/).forEach((line, index) => {
-    const match = re.exec(line);
-    if (match) signatures.set(index + 1, match[1]);
-  });
+  signatures.rescan = rescanner(stripped, re);
   return signatures;
+}
+
+// The signature a block belongs to: the one on its own opening line, or — when
+// the signature wrapped — the nearest one starting within SIGNATURE_LOOKBACK
+// lines above whose parameter list is still open at this brace. Reported at
+// the signature's first line, so a finding points at the function rather than
+// at its brace.
+function signatureOf(block, signatures) {
+  if (signatures.has(block.startLine)) {
+    return { startLine: block.startLine, params: signatures.get(block.startLine) };
+  }
+  if (!signatures.rescan) return null;
+
+  const stop = Math.max(1, block.startLine - SIGNATURE_LOOKBACK);
+  for (let from = block.startLine - 1; from >= stop; from -= 1) {
+    const params = signatures.rescan(from, block.startLine);
+    if (params !== null) return { startLine: from, params };
+  }
+  return null;
 }
 
 // Attaches params and complexity to the blocks that start on a signature line,
@@ -276,13 +377,22 @@ function measureFunctions(lines, blocks, signatures) {
     return scanned.get(span);
   };
 
-  return blocks
-    .filter((block) => signatures.has(block.startLine))
-    .map((block) => ({
+  const measured = [];
+  for (const block of blocks) {
+    const signature = signatureOf(block, signatures);
+    if (!signature) continue;
+    const span = {
       ...block,
-      params: countParams('(' + signatures.get(block.startLine) + ')'),
-      complexity: complexityOf(block),
-    }));
+      startLine: signature.startLine,
+      length: block.endLine - signature.startLine + 1,
+    };
+    measured.push({
+      ...span,
+      params: countParams('(' + signature.params + ')'),
+      complexity: complexityOf(span),
+    });
+  }
+  return measured;
 }
 
 // A catch block whose body is nothing but whitespace or comments. The caller

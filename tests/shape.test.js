@@ -150,6 +150,233 @@ test('analyzeBraces and measureFunctions stay linear in line length', () => {
   assert.ok(Date.now() - start < 500, 'shape analysis scaled worse than linearly');
 });
 
+// --- signatures that wrap across lines -------------------------------------
+//
+// A brace block was only measured when its opening line matched the pack's
+// signature pattern, so a signature wrapped over several lines — what every
+// prevailing formatter produces once the line width is exceeded — dropped the
+// function out of measurement entirely. The parameter count is what suffers
+// most: a wrapped signature usually means many parameters, so the functions
+// obvious/too-many-params exists to catch were the ones it could not see.
+// These go through the packs themselves, because the shapes are the packs'
+// patterns applied to real formatter output.
+const packs = {
+  ts: require('../hooks/checks/lang/ts'),
+  py: require('../hooks/checks/lang/py'),
+  go: require('../hooks/checks/lang/go'),
+  rust: require('../hooks/checks/lang/rust'),
+  jvm: require('../hooks/checks/lang/jvm'),
+  dotnet: require('../hooks/checks/lang/dotnet'),
+};
+
+function findings(pack, src, relPath) {
+  return packs[pack].check(src, { relPath, config: { thresholds: DEFAULTS.thresholds } });
+}
+
+function paramFinding(pack, src, relPath) {
+  return findings(pack, src, relPath).find((f) => f.id === 'obvious/too-many-params');
+}
+
+test('a wrapped six-parameter function is measured, and reported at its first line', () => {
+  const src = [
+    'export async function processUserRecords(',  // 1
+    '  records: UserRecord[],',
+    '  options: ProcessOptions,',
+    '  logger: Logger,',
+    '  clock: Clock,',
+    '  retries: number,',
+    '  tag: string,',
+    '): Promise<Result> {',                       // 8
+    '  return records.length;',
+    '}',
+  ].join('\n');
+
+  const found = paramFinding('ts', src, 'a.ts');
+  assert.ok(found, 'a wrapped signature was not measured at all');
+  assert.strictEqual(found.message, '6 parameters (limit 4)');
+  assert.strictEqual(found.line, 1, 'reported at the brace instead of the signature');
+});
+
+// One five-parameter function per shape a formatter actually produces, keyed
+// by pack, path and a name for the failure message.
+const WRAPPED_SHAPES = [
+    ['ts', 'a.ts', 'arrow function assigned to a const', [
+      'const buildReport = (',
+      '  rows: Row[], header: string, footer: string, width: number, height: number,',
+      ') => {',
+      '  return rows.length;',
+      '};',
+    ]],
+    ['ts', 'a.ts', 'object-literal method', [
+      'const api = {',
+      '  fetchEverything(',
+      '    url: string, token: string, timeout: number, retries: number, signal: Signal,',
+      '  ) {',
+      '    return url;',
+      '  },',
+      '};',
+    ]],
+    ['jvm', 'X.java', 'annotation above, throws clause after', [
+      'class X {',
+      '    @Override',
+      '    public Result process(',
+      '            List<Record> records,',
+      '            Options options,',
+      '            Logger logger,',
+      '            Clock clock,',
+      '            int retries) throws IOException {',
+      '        return null;',
+      '    }',
+      '}',
+    ]],
+    ['dotnet', 'X.cs', 'attribute above, brace on its own line', [
+      'class X',
+      '{',
+      '    [Obsolete]',
+      '    public async Task<Result> Process(',
+      '        List<Record> records,',
+      '        Options options,',
+      '        ILogger logger,',
+      '        IClock clock,',
+      '        int retries)',
+      '    {',
+      '        return null;',
+      '    }',
+      '}',
+    ]],
+    ['go', 'a.go', 'multi-line params with named returns', [
+      'func process(',
+      '\trecords []Record,',
+      '\toptions Options,',
+      '\tlogger Logger,',
+      '\tclock Clock,',
+      '\tretries int,',
+      ') (out int, err error) {',
+      '\treturn len(records), nil',
+      '}',
+    ]],
+    ['go', 'a.go', 'method with a receiver', [
+      'func (s *Store) save(',
+      '\tctx context.Context,',
+      '\tid string,',
+      '\tbody []byte,',
+      '\ttags []string,',
+      '\tforce bool,',
+      ') error {',
+      '\treturn nil',
+      '}',
+    ]],
+    ['rust', 'a.rs', 'where clause on its own line', [
+      'fn process<T>(',
+      '    records: Vec<T>,',
+      '    options: Options,',
+      '    logger: Logger,',
+      '    clock: Clock,',
+      '    retries: usize,',
+      ') -> usize',
+      'where',
+      '    T: Clone,',
+      '{',
+      '    records.len()',
+      '}',
+    ]],
+];
+
+test('wrapped signatures are measured in every shape the packs meet', () => {
+  for (const [pack, relPath, shape, lines] of WRAPPED_SHAPES) {
+    const found = paramFinding(pack, lines.join('\n'), relPath);
+    assert.ok(found, `not measured: ${shape}`);
+    assert.strictEqual(found.message, '5 parameters (limit 4)', shape);
+    assert.strictEqual(found.line, lines.findIndex((l) => l.includes('(')) + 1, shape);
+  }
+});
+
+// A wrapped signature carries a trailing comma under every formatter that
+// wraps it, and counting that comma as a parameter would report one too many —
+// turning a five-parameter function into a six-parameter finding.
+test('a trailing comma is not a parameter', () => {
+  assert.strictEqual(countParams('(a, b, c,)'), 3);
+  assert.strictEqual(countParams('(a, b, c, )'), 3);
+  assert.strictEqual(countParams('(,)'), 0);
+});
+
+// Python's blocks come from indentation, and a wrapped `def` already starts its
+// block on the `def` line: the continuation lines are indented past it and the
+// body closes it as usual. So analyzeIndent has no equivalent gap to close.
+// (Counting the wrapped def's parameters is py.js's DEF_LINE, not shape.js.)
+test('a wrapped def opens its block at the def line', () => {
+  const src = [
+    'def process(',
+    '    records,',
+    '    options,',
+    '):',
+    '    if records:',
+    '        return 1',
+    '    return 0',
+  ].join('\n');
+  const { blocks } = analyzeIndent(src, { tabWidth: 4 });
+  assert.ok(blocks.some((b) => b.startLine === 1 && b.endLine === 7));
+});
+
+// The lookback must not turn every brace into a function. An `else` brace is
+// preceded by an `if` whose parameter list closed long before it, and the
+// signature has to be the one this very brace opens.
+test('the lookback does not attribute an else block to the if above it', () => {
+  const src = [
+    'function outer(a) {',
+    '  if (a) {',
+    '    go();',
+    '  } else {',
+    '    stop();',
+    '  }',
+    '}',
+  ].join('\n');
+  const re = /(?:function\s+\w*|(?<!\w)\w+\s*)\(([^)]{0,500})\)\s*\{/g;
+  const { blocks } = analyzeBraces(src);
+  const measured = measureFunctions(
+    src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
+  assert.deepStrictEqual(measured.map((b) => b.startLine).sort(), [1, 2]);
+});
+
+// The bound is what keeps the work per unmeasured block constant. A signature
+// wrapped further than it stays unmeasured — the same false negative as before,
+// now confined to a shape no formatter produces under a sane params limit.
+test('the signature lookback is bounded', () => {
+  const wrap = (count) => [
+    'function wide(',
+    ...Array.from({ length: count }, (unused, i) => `  p${i},`),
+    ') {',
+    '  return 1;',
+    '}',
+  ].join('\n');
+
+  assert.ok(paramFinding('ts', wrap(8), 'a.ts'), 'an 8-line wrap should be measured');
+  assert.strictEqual(paramFinding('ts', wrap(40), 'a.ts'), undefined);
+});
+
+// The lookback runs for every block that is not itself a signature — most
+// blocks in a file — so it has to cost the same whatever the lines around it
+// weigh. 100KB and 400KB of a single line, and a file of 20k unmeasurable
+// blocks, all stay far inside the 2s whole-file hook budget.
+test('the signature lookback stays linear in line length and block count', () => {
+  const re = /function\s+\w*\(([^)]{0,500})\)\s*\{/g;
+  for (const size of [100, 400]) {
+    const unit = 'if(a&&b){return a+b}else{return 0}';
+    const line = unit.repeat(Math.ceil((size * 1024) / unit.length));
+    const src = 'const x = 1;\n' + line;
+    const start = Date.now();
+    const { blocks } = analyzeBraces(src);
+    measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
+    assert.ok(Date.now() - start < 500, `${size}KB single line scaled worse than linearly`);
+  }
+
+  const many = Array.from({ length: 20000 }, () => 'while (a) {\n}').join('\n');
+  const start = Date.now();
+  const { blocks } = analyzeBraces(many);
+  measureFunctions(many.split('\n'), blocks, signaturesFrom(stripNoise(many), re));
+  assert.ok(Date.now() - start < 1000, 'the lookback scaled worse than linearly in blocks');
+});
+
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'function a() { ' + 'x'.repeat(20000) + ' }';
   const start = Date.now();

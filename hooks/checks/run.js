@@ -136,87 +136,53 @@ function touchedRanges(source, texts) {
   return ranges.length ? ranges : null;
 }
 
-function checkFile(absPath, {
-  repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
-  touched = null, budgetMs = BUDGET_MS,
-} = {}) {
-  const deadline = Date.now() + budgetMs;
-  const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
-
-  if (isExcluded(config, relPath)) {
-    return { relPath, findings: [], skipped: 'excluded' };
-  }
-
-  let source;
+// The source, or the reason there is none. Each `skipped` value is reported
+// verbatim by the caller.
+function readSource(absPath, relPath, config) {
+  if (isExcluded(config, relPath)) return { skipped: 'excluded' };
   try {
-    if (fs.statSync(absPath).size > MAX_FILE_BYTES) {
-      return { relPath, findings: [], skipped: 'too-large' };
-    }
-    source = fs.readFileSync(absPath, 'utf8');
+    if (fs.statSync(absPath).size > MAX_FILE_BYTES) return { skipped: 'too-large' };
+    return { source: fs.readFileSync(absPath, 'utf8') };
   } catch (e) {
-    return { relPath, findings: [], skipped: 'unreadable' };
+    return { skipped: 'unreadable' };
   }
+}
 
-  // Two views of the source for the pack: `shaped` drops every long line for the
-  // shape rules (MAX_LINE_BYTES); the line rules and the universal pack read the
-  // source as written, unguarded, because every path over a long line is linear.
-  const shaped = blankLongLines(source);
-  const findings = [];
-
-  // The universal pack runs first and on the raw source: no linter checks for
-  // credentials in source, PII in logs, or a deprecation with no removal
-  // trigger, and rung 1 must not be the stage that loses its budget to a slow
-  // linter subprocess further down.
-  findings.push(...checkUniversal(source, { relPath, config }));
-
-  // Narrowed to the touched region when the caller could identify one. The
-  // universal pack above is deliberately excluded: a credential committed
-  // anywhere in the file is a leak regardless of which line was edited.
-  const local = [];
-
-  // The project's own linter defines this project's shape thresholds, so its
-  // findings replace the pack's obvious/* rules. They never replace the pack's
-  // SAFE rules: rung 1 is non-negotiable, and eslint/ruff do not check for SQL
-  // injection, shell injection or disabled TLS verification by default.
+// The project's own linter defines this project's shape thresholds, so its
+// findings replace the pack's obvious/* rules. They never replace the pack's
+// SAFE rules: rung 1 is non-negotiable, and eslint/ruff do not check for SQL
+// injection, shell injection or disabled TLS verification by default.
+// `answered` is false for a linter that timed out or crashed, and for no
+// linter at all — both leave the pack covering the whole file.
+function toolResults(relPath, { repoRoot, absPath, deadline, budgetMs }) {
   const tool = resolveFor(relPath, { repoRoot });
-  let toolAnswered = false;
-  if (tool && Date.now() < deadline) {
-    const result = runToolResult(tool, {
-      repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
-    });
-    local.push(...result.findings);
-    toolAnswered = result.ok;
-  }
+  if (!tool || Date.now() >= deadline) return { findings: [], answered: false };
+  const result = runToolResult(tool, {
+    repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
+  });
+  return { findings: result.findings, answered: result.ok };
+}
 
-  const pack = packFor(relPath);
-  if (pack && Date.now() < deadline) {
-    // The pack's line rules see long lines. Only when the file actually has one
-    // is the pack run a second time over the shape copy, to take the shape
-    // findings from there — that pass is cheap precisely because the long line
-    // is gone from it.
-    let packFindings = pack.check(source, { relPath, config });
-    if (shaped !== source) {
-      packFindings = packFindings.filter((f) => !SHAPE_IDS.has(f.id))
-        .concat(pack.check(shaped, { relPath, config }).filter((f) => SHAPE_IDS.has(f.id)));
-    }
-    // A linter that timed out or crashed answered nothing, so the pack covers
-    // the whole file rather than leaving a hole where the shape rules were.
-    local.push(...(toolAnswered
-      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
-      : packFindings));
-  }
+// The pack's line rules see long lines. Only when the file actually has one is
+// the pack run a second time over the shape copy, and the shape findings taken
+// out of that second pass — which is cheap precisely because the long line is
+// no longer in it.
+function packResults(pack, source, shaped, options) {
+  const findings = pack.check(source, options);
+  if (shaped === source) return findings;
+  return findings.filter((f) => !SHAPE_IDS.has(f.id))
+    .concat(pack.check(shaped, options).filter((f) => SHAPE_IDS.has(f.id)));
+}
 
+// Narrowed to the touched region when the caller could identify one.
+function withinTouched(findings, source, touched) {
   const ranges = touched && touchedRanges(source, touched);
-  findings.push(...(ranges
-    ? local.filter((f) => ranges.some(([lo, hi]) => f.line >= lo && f.line <= hi))
-    : local));
+  if (!ranges) return findings;
+  return findings.filter((f) => ranges.some(([lo, hi]) => f.line >= lo && f.line <= hi));
+}
 
-  // Dependency manifests get one extra pass: a floating range or an absent
-  // lockfile is a rung-1 finding no language pack looks for.
-  if (MANIFEST_FILES.has(path.basename(relPath)) && Date.now() < deadline) {
-    findings.push(...checkManifest(absPath, source));
-  }
-
+// Rule exclusions, the per-line cap and the baseline, applied in that order.
+function reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings }) {
   const scoped = capFindingsPerLine(findings)
     .filter((f) => !isRuleExcluded(config, relPath, f.id));
 
@@ -233,6 +199,47 @@ function checkFile(absPath, {
     // notice; the hook uses this one.
     staleBaseline: (baseline && baseline.staleVersion) || null,
   };
+}
+
+function checkFile(absPath, {
+  repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
+  touched = null, budgetMs = BUDGET_MS,
+} = {}) {
+  const deadline = Date.now() + budgetMs;
+  const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
+  const { source, skipped } = readSource(absPath, relPath, config);
+  if (skipped) return { relPath, findings: [], skipped };
+
+  // Two views for the pack: `shaped` drops every long line for the shape rules
+  // (MAX_LINE_BYTES); the line rules and the universal pack read the source as
+  // written, unguarded, because every path over a long line is linear.
+  const shaped = blankLongLines(source);
+
+  // The universal pack runs first and on the raw source: no linter checks for
+  // credentials in source or PII in logs, and rung 1 must not lose its budget
+  // to a slow linter subprocess further down. It is also the one pack exempt
+  // from the narrowing below — a credential is a leak wherever it sits.
+  const findings = checkUniversal(source, { relPath, config });
+
+  const tool = toolResults(relPath, { repoRoot, absPath, deadline, budgetMs });
+  const local = [...tool.findings];
+
+  const pack = packFor(relPath);
+  if (pack && Date.now() < deadline) {
+    const packFindings = packResults(pack, source, shaped, { relPath, config });
+    local.push(...(tool.answered
+      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
+      : packFindings));
+  }
+  findings.push(...withinTouched(local, source, touched));
+
+  // Dependency manifests get one extra pass: a floating range or an absent
+  // lockfile is a rung-1 finding no language pack looks for.
+  if (MANIFEST_FILES.has(path.basename(relPath)) && Date.now() < deadline) {
+    findings.push(...checkManifest(absPath, source));
+  }
+
+  return reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings });
 }
 
 module.exports = {
