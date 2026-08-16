@@ -185,6 +185,20 @@ refuses('a bare unquoted value refuses', 'level = strict\n', 'level');
 refuses('an unsupported item inside an array refuses the whole key',
   'paths = ["a/", {b=1}]\n', 'paths');
 
+test('a multi-line string warns once, on its opening line, and loads nothing', () => {
+  const { out, captured } = parseCapturing('s = """line one\nline two"""\nk = 1\n', 'my.toml');
+  assert.strictEqual(out.s, undefined);
+  assert.strictEqual(out.k, 1, 'parsing did not resume after the multi-line string');
+  assert.match(captured, /my\.toml:1:/);
+  assert.strictEqual(captured.trim().split('\n').length, 1, `expected one warning: ${captured}`);
+});
+
+test('an unterminated multi-line string does not hang and warns', () => {
+  const { out, captured } = parseCapturing('s = """line one\nline two\n', 'my.toml');
+  assert.deepStrictEqual({ ...out }, {});
+  assert.match(captured, /my\.toml:1:/);
+});
+
 test('a dotted key writes into the table it names', () => {
   const out = parseToml('thresholds.params = 4\n[exclude]\npaths = ["a/"]\n');
   assert.strictEqual(out.thresholds.params, 4);
@@ -194,4 +208,15 @@ test('a dotted key writes into the table it names', () => {
 canary('a dotted key cannot pollute Object.prototype', '__proto__.polluted = "yes"\n');
 canary('a nested dotted key cannot pollute Object.prototype',
   'a.constructor.prototype.polluted = "yes"\n');
+
+test('an array of tables warns and puts nothing at the top level', () => {
+  const { out, captured } = parseCapturing('[[x]]\ny = 1\n', 'my.toml');
+  assert.strictEqual(out.y, undefined, 'a [[x]] key leaked to the top level');
+  assert.match(captured, /my\.toml:1:/);
+});
+
+test('a bad table header does not send its keys to the previous table', () => {
+  const { out } = parseCapturing('[exclude]\npaths = ["a/"]\n[[oops]]\npaths = ["b/"]\n', 'my.toml');
+  assert.deepStrictEqual(out.exclude.paths, ['a/']);
+});
 

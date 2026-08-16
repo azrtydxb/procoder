@@ -13,15 +13,15 @@
 //
 // Deliberately unsupported, because this config's schema (see config.js:
 // exclude.paths, exclude.rules, thresholds, rungs, baseline.file) has no place
-// to put them: inline tables and dates. Those, and every value this parser
-// cannot read exactly — an unknown escape, an unterminated string, a bare
-// unquoted word — are warned to stderr with file and line, and the key is left
-// unset. Nothing is ever guessed at: a config that silently loads a value the
-// file does not say would enforce something other than what its author wrote,
-// which is worse than a default.
+// to put them: inline tables, dates, arrays of tables, and multi-line strings.
+// Each of those, and every value this parser cannot read exactly — an unknown
+// escape, an unterminated string, a bare unquoted word — is warned to stderr
+// with file and line and the key is left unset. Nothing is ever guessed at:
+// a config that silently loads a value the file does not say would enforce
+// something other than what its author wrote, which is worse than a default.
 //
 // procoder: subset parser, swap for a real TOML library if the config ever
-// grows a schema needing inline tables or dates.
+// grows a schema needing inline tables, dates, or arrays of tables.
 
 // A value the parser refuses to guess at. Carries the reason for the warning;
 // `reasonOf` recognizes it, and no supported value is a plain object.
@@ -189,6 +189,7 @@ const TABLE_HEADER = /^\[([A-Za-z0-9_.\-]+)\]$/;
 // Dotted keys included: `thresholds.params = 4` says the same as a [thresholds]
 // section with one key, and a user who writes it means it.
 const KEY_VALUE = /^([A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-]+)*)\s*=\s*(.+)$/;
+const MULTILINE_STRING = /^("""|''')/;
 
 // A config file is untrusted input. These names are never real config, and
 // walking them turns `[exclude.__proto__]` into a two-line kill switch for the
@@ -252,10 +253,29 @@ function collectArray(lines, i, firstValue) {
   return { valueText: parts.join('\n'), endLine: last, closed: true };
 }
 
+// Consumes the lines a """ or ''' string spans, so its content is not then
+// read as config in its own right. Returns the last line index consumed — the
+// file's end if the string never terminates, so an unterminated one can't hang
+// or leak its body into the table.
+function skipMultilineString(lines, i, firstValue) {
+  const delimiter = firstValue.slice(0, 3);
+  if (firstValue.slice(3).includes(delimiter)) return i;
+  for (let n = i + 1; n < lines.length; n += 1) {
+    if (lines[n].includes(delimiter)) return n;
+  }
+  return lines.length - 1;
+}
+
 // One value, and the last line it occupies. A non-array resolves on the spot.
 // An array reads forward through `lines` until it closes, or until the file
-// ends.
+// ends. A multi-line string is skipped whole and refused.
 function resolveValue(lines, i, firstValue) {
+  if (MULTILINE_STRING.test(firstValue)) {
+    return {
+      value: invalid('multi-line strings are not supported, ignored'),
+      endLine: skipMultilineString(lines, i, firstValue),
+    };
+  }
   if (!firstValue.startsWith('[')) return { value: parseValue(firstValue), endLine: i };
   const array = collectArray(lines, i, firstValue);
   return {
@@ -263,6 +283,18 @@ function resolveValue(lines, i, firstValue) {
       : invalid('array is never closed with "]", ignored'),
     endLine: array.endLine,
   };
+}
+
+// A bracket line that is not a header this parser understands — `[[x]]` above
+// all. Its keys must not land in the previous table, or an unrelated section
+// could quietly add paths to [exclude], so warn and hand back a detached
+// table: everything under the bad header goes nowhere, until the next header
+// this parser does understand.
+function detachBadHeader(name, lineNumber, line) {
+  warn(name, lineNumber, line.startsWith('[[')
+    ? `arrays of tables are not supported, section ignored: ${line}`
+    : `unrecognized table header, section ignored: ${line}`);
+  return Object.create(null);
 }
 
 // procoder — .procoder.toml is the only file this parser ever reads (see
@@ -279,6 +311,8 @@ function parseToml(text, fileName) {
 
     const header = TABLE_HEADER.exec(line);
     if (header) { table = tableAt(result, header[1]); continue; }
+
+    if (line[0] === '[') { table = detachBadHeader(name, i + 1, line); continue; }
 
     const pair = KEY_VALUE.exec(line);
     if (!pair) {
