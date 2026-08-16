@@ -5,9 +5,13 @@
 const { parseLevelCommand, isDeactivationCommand } = require('./procoder-config');
 const { readHookInput, readLevel, setLevel, writeHookOutput } = require('./procoder-runtime');
 
+// Read first, exit second: PROCODER_NO_HOOK used to exit with the payload still
+// in the pipe, which fails the host's write with EPIPE. See procoder-runtime.js.
+const input = readHookInput();
+
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 
-readHookInput().then((input) => {
+function trackMode() {
   const prompt = input.prompt || '';
 
   // Deactivation must be PERSISTED as the literal level 'off', not deleted:
@@ -35,4 +39,12 @@ readHookInput().then((input) => {
   // Ordinary prompt: nothing changes, but hosts that render the level from
   // hook output (Codex) must be told the real one, not a hardcoded guess.
   writeHookOutput('UserPromptSubmit', readLevel(), '');
-}).catch(() => process.exit(0));
+}
+
+// A hook that throws is a hook that breaks the user's session, whatever the
+// payload said.
+try {
+  trackMode();
+} catch (e) {
+  process.exit(0);
+}

@@ -11,6 +11,10 @@ const { checkFile } = require('./checks/run');
 const { formatFindings } = require('./checks/finding');
 const { readHookInput, writeHookOutput, readLevel } = require('./procoder-runtime');
 
+// Read first, exit second: PROCODER_NO_HOOK used to exit with the payload still
+// in the pipe, which fails the host's write with EPIPE. See procoder-runtime.js.
+const input = readHookInput();
+
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 
 // Spec §3.2: keep only findings inside the region the tool call touched. An
@@ -54,7 +58,7 @@ function buildMessage({ level, config, relPath, findings, staleBaseline }) {
   return lines.join('\n');
 }
 
-readHookInput().then((input) => {
+function checkWrittenFile() {
   const level = readLevel();
   if (level === 'off') return;
 
@@ -89,4 +93,12 @@ readHookInput().then((input) => {
 
   writeHookOutput('PostToolUse', level,
     buildMessage({ level, config, relPath, findings, staleBaseline }));
-}).catch(() => process.exit(0));
+}
+
+// A hook that throws is a hook that breaks the user's session, whatever the
+// payload said or the file under it contained.
+try {
+  checkWrittenFile();
+} catch (e) {
+  process.exit(0);
+}

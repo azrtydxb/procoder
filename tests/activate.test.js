@@ -5,10 +5,16 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// Neither procoder-activate.js nor procoder-subagent.js reads stdin, so every
-// call below hands them a file-backed one rather than a piped `input:` the
-// parent has to win a race to write. See tests/hook-stdin.js.
-const { execHook } = require('./hook-stdin');
+// Claude Code writes a JSON payload to every hook's stdin, so the tests do too:
+// `input:` makes THIS process write those bytes into the child's pipe while it
+// runs, which fails with EPIPE unless the hook actually drains stdin. That is
+// the point — a hook that stops reading fails here rather than in a session.
+const SESSION_START_PAYLOAD = JSON.stringify({
+  session_id: 'test-session', transcript_path: '/tmp/procoder-test.jsonl',
+  cwd: process.cwd(), hook_event_name: 'SessionStart', source: 'startup',
+});
+const execHook = (script, options = {}, payload = SESSION_START_PAYLOAD) =>
+  execFileSync('node', [script], { encoding: 'utf8', input: payload, ...options });
 
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-activate.js');
 const SUBAGENT = path.join(__dirname, '..', 'hooks', 'procoder-subagent.js');
@@ -128,6 +134,79 @@ test('hooks exit 0 even when the config dir is unwritable', () => {
   assert.doesNotThrow(() => execHook(HOOK, {
     env: { ...process.env, CLAUDE_CONFIG_DIR: '/proc/nope-procoder' },
   }));
+});
+
+// ---------------------------------------------------------------------------
+// stdin. Claude Code writes a JSON payload to every hook, and a hook that
+// exits without consuming it closes the read end under the host mid-write.
+// Four states have to end the same way: output as usual, exit 0, no throw.
+// ---------------------------------------------------------------------------
+
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX shell only' };
+const CHECK = path.join(__dirname, '..', 'hooks', 'procoder-check.js');
+const ALL_HOOKS = [HOOK, SUBAGENT, MODE_TRACKER, CHECK];
+
+test('a payload larger than the pipe buffer does not fail the writer', () => {
+  // 64KiB is where a pipe stops accepting the whole payload in one write, so
+  // above it the parent is guaranteed to still be writing when the child
+  // exits. Before the hooks read stdin this failed 10/10 with EPIPE.
+  const big = JSON.stringify({
+    hook_event_name: 'SessionStart', source: 'startup', pad: 'x'.repeat(70000),
+  });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  try {
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    for (const script of ALL_HOOKS) {
+      assert.doesNotThrow(() => execHook(script, { env }, big),
+        `${path.basename(script)} did not consume a 70KB payload`);
+    }
+    assert.match(execHook(HOOK, { env }, big), /SAFE/,
+      'reading stdin cost the session its doctrine');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('every hook survives an empty stdin', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  try {
+    for (const script of ALL_HOOKS) {
+      assert.doesNotThrow(() => execFileSync('node', [script], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+      }), `${path.basename(script)} threw on an empty stdin`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('every hook survives a CLOSED stdin', POSIX_ONLY, () => {
+  // Closed is not empty: fd 0 does not exist at all, and a reader that does not
+  // expect it gets EBADF rather than EOF. `0<&-` is the only way to express it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  try {
+    for (const script of ALL_HOOKS) {
+      assert.doesNotThrow(() => execFileSync('bash', ['-c', `node "${script}" 0<&-`], {
+        encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+      }), `${path.basename(script)} threw on a closed stdin`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an interactive tty on stdin is not read at all', () => {
+  // A real tty cannot be allocated portably from a test, but the branch that
+  // matters can: isatty is the whole decision, and reading a tty would block
+  // the session for the hook's entire timeout instead of returning {}.
+  const runtime = path.join(__dirname, '..', 'hooks', 'procoder-runtime.js');
+  const out = execFileSync('node', ['-e', `
+    require('tty').isatty = () => true;
+    const { readHookInput } = require(${JSON.stringify(runtime)});
+    process.stdout.write(JSON.stringify(readHookInput()));
+  `], { encoding: 'utf8', input: JSON.stringify({ prompt: 'never read' }) });
+  assert.strictEqual(out, '{}');
 });
 
 // ---------------------------------------------------------------------------
