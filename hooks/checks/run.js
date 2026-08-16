@@ -123,14 +123,17 @@ function checkFile(absPath, {
   const scoped = findings.filter((f) => !isRuleExcluded(config, relPath, f.id));
 
   const lines = source.split(/\r?\n/);
-  const kept = applyBaseline
-    ? suppress(scoped, { baseline: loadBaseline(repoRoot, config), relPath, lines })
-    : scoped;
+  const baseline = applyBaseline ? loadBaseline(repoRoot, config) : null;
+  const kept = baseline ? suppress(scoped, { baseline, relPath, lines }) : scoped;
 
   return {
     relPath,
     findings: capFindings(sortFindings(kept), maxFindings),
     skipped: null,
+    // A baseline too old to match suppresses nothing, so every caller reporting
+    // these findings needs to say why the backlog appeared. The CLI has its own
+    // notice; the hook uses this one.
+    staleBaseline: (baseline && baseline.staleVersion) || null,
   };
 }
 

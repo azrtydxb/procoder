@@ -35,7 +35,7 @@ function isBlocking(finding, level, config) {
   return config.rungs[finding.rung.toLowerCase()] !== 'warn';
 }
 
-function buildMessage({ level, config, relPath, findings }) {
+function buildMessage({ level, config, relPath, findings, staleBaseline }) {
   const blocking = findings.filter((f) => isBlocking(f, level, config));
   const advisory = findings.filter((f) => !isBlocking(f, level, config));
 
@@ -47,6 +47,9 @@ function buildMessage({ level, config, relPath, findings }) {
   if (advisory.length) {
     lines.push('Flagged, not blocking:');
     lines.push(formatFindings(advisory, relPath));
+  }
+  if (staleBaseline) {
+    lines.push(`Baseline format changed (v${staleBaseline}) — pre-existing findings are no longer suppressed; run \`procoder baseline ${relPath}\` to restore it.`);
   }
   return lines.join('\n');
 }
@@ -65,10 +68,13 @@ readHookInput().then((input) => {
   const repoRoot = findRepoRoot(path.dirname(absPath));
   const config = loadConfig(repoRoot);
 
-  const { relPath, findings, skipped } = checkFile(absPath, {
+  const { relPath, findings, skipped, staleBaseline } = checkFile(absPath, {
     repoRoot, config, touched: touchedTexts(input.tool_input),
   });
+  // Findings are the only trigger for output, which also keeps the stale-baseline
+  // notice off clean writes instead of on every write forever.
   if (skipped || findings.length === 0) return;
 
-  writeHookOutput('PostToolUse', level, buildMessage({ level, config, relPath, findings }));
+  writeHookOutput('PostToolUse', level,
+    buildMessage({ level, config, relPath, findings, staleBaseline }));
 }).catch(() => process.exit(0));
