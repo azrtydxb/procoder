@@ -38,37 +38,54 @@ function stripNoise(source) {
 // — still count, so callback pyramids are reported as before.
 const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
 
+// Every brace on one line, in order, each tagged with whether it opens a block
+// rather than a data literal.
+function bracesInLine(line, lineNo) {
+  const braces = [];
+  for (let i = 0; i < line.length; i += 1) {
+    if (line[i] === '{') {
+      braces.push({
+        open: true,
+        lineNo,
+        isBlock: !LITERAL_BRACE.test(line.slice(0, i).replace(/\s+$/, '')),
+      });
+    } else if (line[i] === '}') {
+      braces.push({ open: false, lineNo });
+    }
+  }
+  return braces;
+}
+
 function analyzeBraces(source) {
-  const lines = stripNoise(source).split(/\r?\n/);
+  const braces = stripNoise(source).split(/\r?\n/)
+    .flatMap((line, index) => bracesInLine(line, index + 1));
   const stack = [];
   const blocks = [];
   let depth = 0;
   let maxDepth = 0;
 
-  lines.forEach((line, index) => {
-    for (let i = 0; i < line.length; i += 1) {
-      const ch = line[i];
-      if (ch === '{') {
-        const isBlock = !LITERAL_BRACE.test(line.slice(0, i).replace(/\s+$/, ''));
-        if (isBlock) {
-          depth += 1;
-          maxDepth = Math.max(maxDepth, depth);
-        }
-        stack.push({ startLine: index + 1, isBlock });
-      } else if (ch === '}') {
-        const open = stack.pop();
-        if (open === undefined) continue;
-        if (open.isBlock) depth = Math.max(0, depth - 1);
-        blocks.push({
-          startLine: open.startLine,
-          endLine: index + 1,
-          length: index + 1 - open.startLine + 1,
-        });
-      }
+  for (const brace of braces) {
+    if (brace.open) {
+      if (brace.isBlock) maxDepth = Math.max(maxDepth, (depth += 1));
+      stack.push(brace);
+    } else if (stack.length) {
+      const opened = stack.pop();
+      if (opened.isBlock) depth = Math.max(0, depth - 1);
+      blocks.push({
+        startLine: opened.lineNo,
+        endLine: brace.lineNo,
+        length: brace.lineNo - opened.lineNo + 1,
+      });
     }
-  });
+  }
 
   return { maxDepth, blocks };
+}
+
+const DEF_OR_CLASS = /^\s*(?:def|class|async def)\s/;
+
+function indentBlock(open, endLine) {
+  return { ...open, endLine, length: endLine - open.startLine + 1 };
 }
 
 function analyzeIndent(source, { tabWidth = 4 } = {}) {
@@ -80,24 +97,21 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
   lines.forEach((line, index) => {
     if (!line.trim()) return;
     const leading = /^[ \t]*/.exec(line)[0];
-    const width = leading.replace(/\t/g, ' '.repeat(tabWidth)).length;
-    const depth = Math.floor(width / tabWidth);
+    const depth = Math.floor(leading.replace(/\t/g, ' '.repeat(tabWidth)).length / tabWidth);
     maxDepth = Math.max(maxDepth, depth);
 
-    if (/^\s*(?:def|class|async def)\s/.test(line)) {
-      if (openBlock) {
-        blocks.push({ ...openBlock, endLine: index, length: index - openBlock.startLine + 1 });
-      }
+    if (DEF_OR_CLASS.test(line)) {
+      if (openBlock) blocks.push(indentBlock(openBlock, index));
       openBlock = { startLine: index + 1, baseDepth: depth };
-    } else if (openBlock && depth <= openBlock.baseDepth) {
-      blocks.push({ ...openBlock, endLine: index, length: index - openBlock.startLine + 1 });
+      return;
+    }
+    if (openBlock && depth <= openBlock.baseDepth) {
+      blocks.push(indentBlock(openBlock, index));
       openBlock = null;
     }
   });
 
-  if (openBlock) {
-    blocks.push({ ...openBlock, endLine: lines.length, length: lines.length - openBlock.startLine + 1 });
-  }
+  if (openBlock) blocks.push(indentBlock(openBlock, lines.length));
 
   return { maxDepth, blocks };
 }

@@ -21,27 +21,89 @@ const USAGE = `usage: procoder <check|baseline|verify> <paths...>
   verify    exit 1 only if total findings exceed the baseline — the CI ratchet
 `;
 
+const SKIP_DIRS = new Set(['.git', 'node_modules']);
+
+function expandDirectory(abs) {
+  return fs.readdirSync(abs)
+    .filter((entry) => !SKIP_DIRS.has(entry))
+    .flatMap((entry) => expand([path.join(abs, entry)]));
+}
+
 function expand(targets) {
   const files = [];
   for (const target of targets) {
     const abs = path.resolve(target);
-    let stat;
-    try { stat = fs.statSync(abs); } catch (e) { continue; }
-    if (stat.isDirectory()) {
-      for (const entry of fs.readdirSync(abs)) {
-        if (entry === '.git' || entry === 'node_modules') continue;
-        files.push(...expand([path.join(abs, entry)]));
-      }
-    } else {
-      files.push(abs);
-    }
+    let stat = null;
+    try { stat = fs.statSync(abs); } catch (e) { stat = null; }
+    if (stat === null) continue;
+    files.push(...(stat.isDirectory() ? expandDirectory(abs) : [abs]));
   }
   return files;
 }
 
+// maxFindings Infinity throughout: the CLI reports and records everything,
+// unlike the hook, which shows a top-5 sample inside its time budget.
+function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
+  return checkFile(absPath, { repoRoot, config, maxFindings: Infinity, applyBaseline });
+}
+
+function runBaseline(files, repoRoot, config) {
+  const entries = Array.from(loadBaseline(repoRoot, config));
+  for (const absPath of files) {
+    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
+    if (skipped) continue;
+    const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
+    for (const f of findings) entries.push(fingerprint(f, relPath, lines[f.line - 1]));
+  }
+  writeBaseline(repoRoot, config, entries);
+  process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
+  return 0;
+}
+
+// The ratchet: accepted debt may shrink, never grow. Counts findings BEFORE
+// baseline suppression, so a fix and a fresh violation do not cancel out.
+function runVerify(files, repoRoot, config) {
+  const baseline = loadBaseline(repoRoot, config);
+  const total = files.reduce((sum, absPath) => {
+    const { findings, skipped } = findingsFor(absPath, repoRoot, config, false);
+    return skipped ? sum : sum + findings.length;
+  }, 0);
+
+  const { ok, delta } = growthCheck(baseline, total);
+  if (!ok) {
+    process.stdout.write(
+      `procoder: findings grew by ${delta} beyond the baseline (${baseline.size} accepted, ${total} present).\n` +
+      'Fix the new findings, or run `procoder baseline <paths>` only if they are genuinely pre-existing.\n');
+    return 1;
+  }
+  process.stdout.write(
+    `procoder: ${total} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
+  return 0;
+}
+
+function runCheck(files, repoRoot, config) {
+  let total = 0;
+  for (const absPath of files) {
+    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
+    if (skipped || findings.length === 0) continue;
+    total += findings.length;
+    process.stdout.write(formatFindings(findings, relPath) + '\n');
+  }
+
+  if (total === 0) return 0;
+  process.stdout.write(`\nprocoder: ${total} finding${total === 1 ? '' : 's'}. ` +
+    'Fix them, or run `procoder baseline <paths>` to accept pre-existing ones.\n');
+  return 1;
+}
+
+// A Map, not an object literal: argv is user input, and `procoder constructor`
+// must not find a method on Object.prototype and try to run it.
+const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['verify', runVerify]]);
+
 function main(argv) {
   const [command, ...targets] = argv;
-  if (!['check', 'baseline', 'verify'].includes(command) || targets.length === 0) {
+  const run = COMMANDS.get(command);
+  if (!run || targets.length === 0) {
     process.stderr.write(USAGE);
     return 2;
   }
@@ -50,63 +112,7 @@ function main(argv) {
   if (files.length === 0) return 0;
 
   const repoRoot = findRepoRoot(path.dirname(files[0]));
-  const config = loadConfig(repoRoot);
-
-  if (command === 'baseline') {
-    const entries = Array.from(loadBaseline(repoRoot, config));
-    for (const absPath of files) {
-      // maxFindings Infinity: a baseline must record everything, not a top-5 sample.
-      const { relPath, findings, skipped } = checkFile(absPath, {
-        repoRoot, config, maxFindings: Infinity,
-      });
-      if (skipped) continue;
-      const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
-      for (const f of findings) entries.push(fingerprint(f, relPath, lines[f.line - 1]));
-    }
-    writeBaseline(repoRoot, config, entries);
-    process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
-    return 0;
-  }
-
-  if (command === 'verify') {
-    // The ratchet: accepted debt may shrink, never grow. Counts findings BEFORE
-    // baseline suppression, so a fix and a fresh violation do not cancel out.
-    const baseline = loadBaseline(repoRoot, config);
-    let total = 0;
-    for (const absPath of files) {
-      const { findings, skipped } = checkFile(absPath, {
-        repoRoot, config, maxFindings: Infinity, applyBaseline: false,
-      });
-      if (!skipped) total += findings.length;
-    }
-    const { ok, delta } = growthCheck(baseline, total);
-    if (!ok) {
-      process.stdout.write(
-        `procoder: findings grew by ${delta} beyond the baseline (${baseline.size} accepted, ${total} present).\n` +
-        'Fix the new findings, or run `procoder baseline <paths>` only if they are genuinely pre-existing.\n');
-      return 1;
-    }
-    process.stdout.write(
-      `procoder: ${total} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
-    return 0;
-  }
-
-  let total = 0;
-  for (const absPath of files) {
-    const { relPath, findings, skipped } = checkFile(absPath, {
-      repoRoot, config, maxFindings: Infinity,
-    });
-    if (skipped || findings.length === 0) continue;
-    total += findings.length;
-    process.stdout.write(formatFindings(findings, relPath) + '\n');
-  }
-
-  if (total > 0) {
-    process.stdout.write(`\nprocoder: ${total} finding${total === 1 ? '' : 's'}. ` +
-      'Fix them, or run `procoder baseline <paths>` to accept pre-existing ones.\n');
-    return 1;
-  }
-  return 0;
+  return run(files, repoRoot, loadConfig(repoRoot));
 }
 
 process.exit(main(process.argv.slice(2)));

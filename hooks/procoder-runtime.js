@@ -62,55 +62,63 @@ function clearLevel() {
   }
 }
 
+// A hook may be invoked with no stdin at all, or with a partial write. Neither
+// is worth failing the session over; callers treat {} as "no payload".
+function parseHookPayload(data) {
+  try {
+    return JSON.parse(data) || {};
+  } catch (e) {
+    debugWarn('unparseable hook payload', e);
+    return {};
+  }
+}
+
 // Reads the hook payload Claude Code writes to stdin. Any malformed or absent
 // input yields {} so callers can use plain property access without guards.
 function readHookInput() {
   return new Promise((resolve) => {
-    let data = '';
-    const done = (value) => resolve(value);
+    const chunks = [];
     try {
       process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => { data += chunk; });
-      process.stdin.on('end', () => {
-        try { done(JSON.parse(data) || {}); } catch (e) { done({}); }
-      });
-      process.stdin.on('error', () => done({}));
+      process.stdin.on('data', (chunk) => chunks.push(chunk));
+      process.stdin.on('end', () => resolve(parseHookPayload(chunks.join(''))));
+      process.stdin.on('error', () => resolve({}));
     } catch (e) {
-      done({});
+      debugWarn('could not read hook input', e);
+      resolve({});
     }
   });
 }
 
+const hookSpecificOutput = (event, context) =>
+  ({ hookEventName: event, additionalContext: context });
+
+const wrapped = (event, context) =>
+  ({ hookSpecificOutput: hookSpecificOutput(event, context) });
+
+function codexPayload(event, level, context) {
+  const output = { systemMessage: `PROCODER:${String(level).toUpperCase()}` };
+  if (context) output.hookSpecificOutput = hookSpecificOutput(event, context);
+  return output;
+}
+
+// Each host reads hook output differently. This picks the text; writeHookOutput
+// does the writing.
+function hookOutputText(event, level, context) {
+  if (isCopilot) {
+    return JSON.stringify(event === 'SessionStart' && context ? { additionalContext: context } : {});
+  }
+  if (isCodex) return JSON.stringify(codexPayload(event, level, context));
+  if (isQoder) return JSON.stringify(context ? wrapped(event, context) : {});
+  // Native Claude Code: SessionStart accepts raw stdout, but SubagentStart and
+  // PostToolUse drop the context unless it is wrapped in hookSpecificOutput.
+  if (event === 'SessionStart') return context;
+  return JSON.stringify(wrapped(event, context));
+}
+
 function writeHookOutput(event, level, context = '') {
   try {
-    if (isCopilot) {
-      process.stdout.write(JSON.stringify(
-        event === 'SessionStart' && context ? { additionalContext: context } : {}));
-      return;
-    }
-    if (isCodex) {
-      const output = { systemMessage: `PROCODER:${String(level).toUpperCase()}` };
-      if (context) {
-        output.hookSpecificOutput = { hookEventName: event, additionalContext: context };
-      }
-      process.stdout.write(JSON.stringify(output));
-      return;
-    }
-    if (isQoder) {
-      const output = context
-        ? { hookSpecificOutput: { hookEventName: event, additionalContext: context } }
-        : {};
-      process.stdout.write(JSON.stringify(output));
-      return;
-    }
-    // Native Claude Code: SessionStart accepts raw stdout, but SubagentStart and
-    // PostToolUse drop the context unless it is wrapped in hookSpecificOutput.
-    if (event === 'SessionStart') {
-      process.stdout.write(context);
-      return;
-    }
-    process.stdout.write(JSON.stringify(
-      { hookSpecificOutput: { hookEventName: event, additionalContext: context } }));
+    process.stdout.write(hookOutputText(event, level, context));
   } catch (e) {
     // EPIPE at hook exit must not surface as a hook failure: the host has
     // stopped listening, so there is no one left to deliver this to.

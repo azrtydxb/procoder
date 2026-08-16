@@ -9,26 +9,34 @@
 // procoder: subset parser, swap for a real TOML library if the config grows
 // multi-line arrays, dates, or inline tables.
 
+// The content of a quoted string, or null if this is not one.
+function unquote(text) {
+  const quote = text[0];
+  const quoted = (quote === '"' || quote === "'") && text.length >= 2 && text.endsWith(quote);
+  return quoted ? text.slice(1, -1) : null;
+}
+
+const BOOLEANS = new Map([['true', true], ['false', false]]);
+const INTEGER = /^-?\d+$/;
+const FLOAT = /^-?\d*\.\d+$/;
+
+function parseArray(text) {
+  const inner = text.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner.split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => parseValue(item));
+}
+
 function parseValue(raw) {
   const text = raw.trim();
-  if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
-    return text.slice(1, -1);
-  }
-  if (text.startsWith("'") && text.endsWith("'") && text.length >= 2) {
-    return text.slice(1, -1);
-  }
-  if (text === 'true') return true;
-  if (text === 'false') return false;
-  if (text.startsWith('[') && text.endsWith(']')) {
-    const inner = text.slice(1, -1).trim();
-    if (!inner) return [];
-    return inner.split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((item) => parseValue(item));
-  }
-  if (/^-?\d+$/.test(text)) return parseInt(text, 10);
-  if (/^-?\d*\.\d+$/.test(text)) return parseFloat(text);
+  const unquoted = unquote(text);
+  if (unquoted !== null) return unquoted;
+  if (BOOLEANS.has(text)) return BOOLEANS.get(text);
+  if (text.startsWith('[') && text.endsWith(']')) return parseArray(text);
+  if (INTEGER.test(text)) return parseInt(text, 10);
+  if (FLOAT.test(text)) return parseFloat(text);
   return text;
 }
 
@@ -45,29 +53,31 @@ function stripComment(line) {
   return line;
 }
 
+const TABLE_HEADER = /^\[([A-Za-z0-9_.\-]+)\]$/;
+const KEY_VALUE = /^([A-Za-z0-9_\-]+)\s*=\s*(.+)$/;
+
+// Walks (creating as needed) the table a [dotted.header] names.
+function tableAt(root, dottedName) {
+  let table = root;
+  for (const part of dottedName.split('.')) {
+    if (typeof table[part] !== 'object' || table[part] === null) table[part] = {};
+    table = table[part];
+  }
+  return table;
+}
+
 function parseToml(text) {
   const result = {};
   let table = result;
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
     const line = stripComment(rawLine).trim();
-    if (!line) continue;
+    const header = TABLE_HEADER.exec(line);
+    const pair = KEY_VALUE.exec(line);
 
-    const tableMatch = /^\[([A-Za-z0-9_.\-]+)\]$/.exec(line);
-    if (tableMatch) {
-      table = result;
-      for (const part of tableMatch[1].split('.')) {
-        if (typeof table[part] !== 'object' || table[part] === null) table[part] = {};
-        table = table[part];
-      }
-      continue;
-    }
-
-    const pairMatch = /^([A-Za-z0-9_\-]+)\s*=\s*(.+)$/.exec(line);
-    if (pairMatch) {
-      table[pairMatch[1]] = parseValue(pairMatch[2]);
-    }
     // Anything else is silently skipped: defaults beat a crash.
+    if (header) table = tableAt(result, header[1]);
+    else if (pair) table[pair[1]] = parseValue(pair[2]);
   }
 
   return result;
