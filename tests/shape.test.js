@@ -629,6 +629,83 @@ test('consistent indentation is read exactly as before', () => {
   assert.strictEqual(analyzeIndent(tabs, { tabWidth: 4 }).maxDepth, 3);
 });
 
+// --- indentation width read from the file ----------------------------------
+//
+// Depth was `column / tabWidth` with tabWidth fixed at 4, so a file indented
+// two spaces per level reported half its depth: seven real levels measured
+// three and passed a limit of three. Two-space Python is ordinary — black is
+// not universal, and plenty of code predates it — and under-reported depth is
+// the wrong direction of error, a nesting violation that passes.
+//
+// tabWidth keeps its own meaning, what a tab character is worth, so the packs
+// need no change: py.js still passes 4 and a tab still expands to four columns.
+// What one *level* is worth is read from the file instead.
+const nest = (unit, levels) => [
+  'def f():',
+  ...Array.from({ length: levels }, (unused, i) => `${unit.repeat(i + 1)}if a${i}:`),
+  `${unit.repeat(levels + 1)}go()`,
+].join('\n');
+
+test('a 2-space and a 4-space file with identical structure report one depth', () => {
+  for (const levels of [1, 2, 3, 5, 7]) {
+    const four = analyzeIndent(nest('    ', levels), { tabWidth: 4 }).maxDepth;
+    const two = analyzeIndent(nest('  ', levels), { tabWidth: 4 }).maxDepth;
+    const tabs = analyzeIndent(nest('\t', levels), { tabWidth: 4 }).maxDepth;
+    assert.strictEqual(four, levels + 1, `4-space, ${levels} levels`);
+    assert.strictEqual(two, four, `2-space read as ${two}, 4-space as ${four}`);
+    assert.strictEqual(tabs, four, `tabs read as ${tabs}, 4-space as ${four}`);
+  }
+});
+
+// The three files an inference can trip over: nothing to infer from, one
+// sample to infer from, and a first sample that is not the step.
+test('indent width inference survives the files with nothing to infer from', () => {
+  assert.strictEqual(analyzeIndent('x = 1\ny = 2\n', { tabWidth: 4 }).maxDepth, 0);
+  assert.strictEqual(analyzeIndent('', { tabWidth: 4 }).maxDepth, 0);
+  assert.strictEqual(analyzeIndent('def f():\n  return 1\n', { tabWidth: 4 }).maxDepth, 1);
+  assert.strictEqual(analyzeIndent('def f():\n        return 1\n', { tabWidth: 4 }).maxDepth, 1);
+
+  // First indent unusual — a hanging block, then the file's real step. The
+  // step is what the file does most, not what it did first.
+  const src = [
+    'if a:',
+    '        odd()',
+    'def f():',
+    '    if b:',
+    '        if c:',
+    '            go()',
+  ].join('\n');
+  assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 3);
+});
+
+// Inference adds a pass over the file, so it has to stay a pass: a ratio
+// between two input sizes, for the reason the guards above give.
+test('reading the indent width off the file stays linear', () => {
+  const body = ['def f(a):', '    if a:', '        for i in a:', '            go(i)', ''].join('\n');
+  const cost = (kb) => Math.max(1, bestOf(3, () => analyzeIndent(
+    body.repeat(Math.ceil((kb * 1024) / body.length)), { tabWidth: 4 })));
+  const ratio = cost(400) / cost(100);
+  assert.ok(ratio < 8, `4x the file cost ${ratio.toFixed(1)}x the time`);
+});
+
+// End to end through the pack that owns the caller, which passes tabWidth 4 and
+// is not this change's to edit: a genuinely over-nested two-space function has
+// to be reported like its four-space twin.
+test('an over-nested 2-space Python function is reported', () => {
+  const deep = (unit) => [
+    'def f():',
+    `${unit}if a:`,
+    `${unit.repeat(2)}if b:`,
+    `${unit.repeat(3)}if c:`,
+    `${unit.repeat(4)}go()`,
+  ].join('\n');
+  const depthFinding = (src) => findings('py', src, 'a.py')
+    .find((f) => f.id === 'obvious/nesting-depth');
+
+  assert.strictEqual(depthFinding(deep('    ')).message, 'nesting depth 4 (limit 3)');
+  assert.strictEqual(depthFinding(deep('  ')).message, 'nesting depth 4 (limit 3)');
+});
+
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'function a() { ' + 'x'.repeat(20000) + ' }';
   const ms = bestOf(3, () => {

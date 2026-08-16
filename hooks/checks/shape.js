@@ -185,29 +185,108 @@ function bracketBalance(line) {
   return balance;
 }
 
+// Indentation column of every line, with the lines that continue the line
+// above marked and blank lines left out. A continuation's indentation is a
+// hanging alignment under an open bracket: it says nothing about nesting, and
+// nothing about what one level is worth either.
+function indentRows(lines, tabWidth) {
+  const rows = [];
+  let open = 0;
+  for (const line of lines) {
+    if (!line.trim()) {
+      rows.push(null);
+      continue;
+    }
+    const leading = /^[ \t]*/.exec(line)[0];
+    rows.push({
+      column: leading.replace(/\t/g, ' '.repeat(tabWidth)).length,
+      continuation: open > 0,
+    });
+    open = Math.max(0, open + bracketBalance(line));
+  }
+  return rows;
+}
+
+// Wider than any indentation style in use — a tab stop is 8 at the widest — and
+// the point past which a step is an alignment rather than a level.
+const MAX_INDENT_STEP = 8;
+
+// What one level of indentation is worth in this file, in columns.
+//
+// Depth used to be `column / tabWidth` with tabWidth fixed at 4 by the caller,
+// which answers "how many tabWidths wide is this indent" — the nesting level
+// only when a level happens to be exactly four columns. A file indented two
+// spaces per level reported half its depth, so seven real levels measured three
+// and passed a limit of three: a genuine violation, silently green. Two-space
+// Python is ordinary — black is not universal, and plenty of code predates it.
+//
+// The file says what a level is worth: it is the step from one statement's
+// indentation to the next's. Taking the *commonest* step rather than the
+// smallest is what survives the odd line — a hanging block, a misaligned
+// continuation, a `# fmt: off` region — since one stray two-column step in a
+// four-space file would otherwise double every depth in it and put a nesting
+// finding on correct code. Steps are read between statements only, and an
+// alignment wider than any indentation style is not a candidate at all.
+//
+// tabWidth keeps its own, narrower meaning: what a tab character expands to.
+// The two are independent — a tab-indented file is 4, 4, 4 columns and steps of
+// 4 — so the packs need no change, and a caller that passes tabWidth: 4 (py.js
+// does) gets four-column tabs and the file's own step.
+function indentSteps(rows) {
+  const seen = new Map();
+  let previous = 0;
+  for (const row of rows) {
+    if (!row || row.continuation) continue;
+    const step = row.column - previous;
+    if (step > 0 && step <= MAX_INDENT_STEP) seen.set(step, (seen.get(step) || 0) + 1);
+    previous = row.column;
+  }
+  return seen;
+}
+
+function indentStep(rows, tabWidth) {
+  const seen = indentSteps(rows);
+  let width = 0;
+  let commonest = 0;
+  for (const [step, count] of seen) {
+    if (count > commonest || (count === commonest && step < width)) {
+      width = step;
+      commonest = count;
+    }
+  }
+  // A file with no indentation at all, or none this can read: nothing is nested
+  // in it, so any width answers 0, and tabWidth is the caller's own guess.
+  return width || tabWidth;
+}
+
 // Indentation *is* the block structure, so this runs only for the indentation
 // pack — Python — and says so: `#` opens a comment there, and a docstring is a
 // comment spelled as a literal. The brace packs never reach it; they go through
 // analyzeBraces and stripNoise, which keep the 'js' default.
 function analyzeIndent(source, { tabWidth = 4 } = {}) {
   const lines = stripNoise(source, 'py').split(/\r?\n/);
+  const rows = indentRows(lines, tabWidth);
   const blocks = [];
   const columns = [];
+  // Inference reads one step off the file, so it needs the file to have one.
+  // A file that mixes tabs and spaces has none by construction, and is counted
+  // by changes of indentation instead — see changeDepth.
   const mixed = mixesTabsAndSpaces(lines);
+  const step = mixed ? tabWidth : indentStep(rows, tabWidth);
   let maxDepth = 0;
   let openBlock = null;
-  let open = 0;
 
   lines.forEach((line, index) => {
-    if (!line.trim()) return;
-    const leading = /^[ \t]*/.exec(line)[0];
-    const column = leading.replace(/\t/g, ' '.repeat(tabWidth)).length;
-    const depth = mixed ? changeDepth(columns, column) : Math.floor(column / tabWidth);
+    const row = rows[index];
+    // A continuation's column is an alignment under an open bracket, not a
+    // level — `compute(a,` aligns its second argument under the first, at
+    // whatever column that lands on. It used to count towards depth anyway,
+    // which a narrower step magnifies: the same aligned line that read as
+    // depth 4 at a fixed four columns reads as 9 at the two the file actually
+    // uses. Statements are what nest, so only statements are counted.
+    if (!row || row.continuation) return;
+    const depth = mixed ? changeDepth(columns, row.column) : Math.floor(row.column / step);
     maxDepth = Math.max(maxDepth, depth);
-
-    const continuation = open > 0;
-    open = Math.max(0, open + bracketBalance(line));
-    if (continuation) return;
 
     if (DEF_OR_CLASS.test(line)) {
       if (openBlock) blocks.push(indentBlock(openBlock, index));
