@@ -18,14 +18,12 @@
 #            "…stale, and deprecated code…", which alone/deprecated-no-trigger  # procoder: literal alone/deprecated-no-trigger this line quotes the text that trips the rule
 #            reads as a deprecation notice. The other 23 renders are gated.
 #            Delete these two the day the renderer or the .toml carries a marker.
-#   narrowed tests/fixtures/ (14 files) → the 7 dirty.* plus ts/clean.ts. The
-#            clean.* fixtures were excluded by association and are clean under
-#            the whole engine, so 6 of them are now gated for free. ts/clean.ts
-#            is the exception: its prose block of "never db.query(`…`)" lines
-#            reads to alone/commented-out-code as 12 lines of commented-out
-#            code. That is the one case the line marker is right for and it is
-#            not applied here only because the fixture belongs to the language
-#            pack's tests; delete this entry the moment it carries one.
+#   narrowed tests/fixtures/ (14 files) → the 7 dirty.* alone. The clean.*
+#            fixtures were excluded by association and are clean under the whole
+#            engine, so all 7 are now gated for free. ts/clean.ts was the one
+#            exception — its prose block of "never db.query(`…`)" lines read as
+#            commented-out code — and it now carries the line marker that is the
+#            right instrument for it, so it is gated too.
 #
 # The dirty.* fixtures stay: they are inputs whose whole purpose is to be
 # scanned by the tests, not by the scan. A marker in them would change the input
@@ -44,7 +42,6 @@
 # and the real `procoder check` still sees the files.
 paths = [
   "tests/fixtures/*/dirty.*",
-  "tests/fixtures/ts/clean.ts",
   ".opencode/command/rot.md",
   ".openclaw/commands/rot.md",
 ]

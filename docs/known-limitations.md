@@ -146,17 +146,17 @@ in the gate the day it lands. Both of its hold-out lists — `HELD_OUT` and
 the test at `tests/dogfood.test.js:73` fails if a `HELD_OUT` path matches no
 tracked file or has gone clean.
 
-Measured today over **202** tracked files, `procoder check .` reports **0**
-findings and exits 0, having skipped **19** of them and said so on stderr for
+Measured today over **201** tracked files, `procoder check .` reports **0**
+findings and exits 0, having skipped **18** of them and said so on stderr for
 every one:
 
-- **10 by `[exclude] paths` in `.procoder.toml`**, one line per pattern with
+- **9 by `[exclude] paths` in `.procoder.toml`**, one line per pattern with
   its count: 7 `tests/fixtures/*/dirty.*`, and one each for
-  `tests/fixtures/ts/clean.ts`, `.opencode/command/rot.md` and
-  `.openclaw/commands/rot.md`. The dirty fixtures exist to be scanned by the
-  tests rather than by the scan, and a line marker in one would change the
-  input the test reads. The other three carry exactly one finding each, named
-  in `.procoder.toml` next to the entry, with the source fix named too.
+  `.opencode/command/rot.md` and `.openclaw/commands/rot.md`. The dirty
+  fixtures exist to be scanned by the tests rather than by the scan, and a line
+  marker in one would change the input the test reads. The other two carry
+  exactly one finding each, named in `.procoder.toml` next to the entry, with
+  the source fix named too.
 - **9 by two `.procoderignore` files**: 5 under `docs/superpowers/` (1500-line
   planning documents for work already executed, quoting rule ids by the
   hundred — 56 findings under `--no-ignore`, all of them meta-text) and 4

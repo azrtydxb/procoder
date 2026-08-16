@@ -94,15 +94,15 @@ new trust boundary does not get to add one for convenience.
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **202** tracked files the scan
-reads **183** and skips **19** — 10 by `[exclude] paths` and 9 by two
+arithmetic is published instead of implied: of **201** tracked files the scan
+reads **183** and skips **18** — 9 by `[exclude] paths` and 9 by two
 `.procoderignore` files. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
 itself so they cannot drift from this paragraph, and every exclusion is
 re-judged on every `verify`: one whose path is gone, that matches no file, or
 whose files have all gone clean is reported, and fails under
 `--unused-exclusions`. The whole-repository finding count — currently 0 — and
-what each of the 19 buys is on
+what each of the 18 buys is on
 [what it misses](https://azrtydxb.github.io/procoder/limitations.html).
 
 ## Install

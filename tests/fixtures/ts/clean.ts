@@ -59,6 +59,7 @@ function runShell(dir: string) {
   spawn('ls', [dir]);
 }
 
+// procoder: literal alone/commented-code the block below is prose naming
 // Documentation that warns against a practice must not be flagged for the
 // practice: every rule ts.js has, named in prose, still silent.
 //
