@@ -16,16 +16,16 @@ const f = (line, id = 'alone/orphan-todo') =>
   finding({ rung: 'ALONE', id, line, message: 'm', fix: 'x' });
 
 test('fingerprint ignores line numbers and surrounding whitespace', () => {
-  const a = fingerprint(f(10), 'src/a.ts', '  // TODO: later');
-  const b = fingerprint(f(99), 'src/a.ts', '// TODO: later');
+  const a = fingerprint(f(10), 'src/a.ts', '  // TODO: later');  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+  const b = fingerprint(f(99), 'src/a.ts', '// TODO: later');  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   assert.strictEqual(a, b, 'a reformat must not change the fingerprint');
 });
 
 test('fingerprint distinguishes different files, ids, and content', () => {
-  const base = fingerprint(f(1), 'src/a.ts', '// TODO: later');
-  assert.notStrictEqual(base, fingerprint(f(1), 'src/b.ts', '// TODO: later'));
-  assert.notStrictEqual(base, fingerprint(f(1, 'alone/commented-code'), 'src/a.ts', '// TODO: later'));
-  assert.notStrictEqual(base, fingerprint(f(1), 'src/a.ts', '// TODO: something else'));
+  const base = fingerprint(f(1), 'src/a.ts', '// TODO: later');  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+  assert.notStrictEqual(base, fingerprint(f(1), 'src/b.ts', '// TODO: later'));  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+  assert.notStrictEqual(base, fingerprint(f(1, 'alone/commented-code'), 'src/a.ts', '// TODO: later'));  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+  assert.notStrictEqual(base, fingerprint(f(1), 'src/a.ts', '// TODO: something else'));  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
 });
 
 test('baseline round-trips through disk', () => {
@@ -66,7 +66,7 @@ test('a current-format baseline loads without a stale marker', () => {
 });
 
 test('suppress removes baselined findings and keeps new ones', () => {
-  const lines = ['// TODO: later', 'const x = 1;', '// TODO: other'];
+  const lines = ['// TODO: later', 'const x = 1;', '// TODO: other'];  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   const known = new Set([fingerprint(f(1), 'a.ts', lines[0])]);
   const out = suppress([f(1), f(3)], { baseline: known, relPath: 'a.ts', lines });
   assert.strictEqual(out.length, 1);
@@ -74,8 +74,8 @@ test('suppress removes baselined findings and keeps new ones', () => {
 });
 
 test('suppression survives the file being reformatted', () => {
-  const before = ['// TODO: later'];
-  const after = ['    // TODO: later'];
+  const before = ['// TODO: later'];  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+  const after = ['    // TODO: later'];  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   const known = new Set([fingerprint(f(1), 'a.ts', before[0])]);
   assert.deepStrictEqual(
     suppress([f(1)], { baseline: known, relPath: 'a.ts', lines: after }), []);
@@ -84,7 +84,7 @@ test('suppression survives the file being reformatted', () => {
 // One accepted occurrence accepts one occurrence. A second identical line is a
 // new violation, even though id, path and normalized content are identical.
 test('suppress accepts only as many duplicates as the baseline recorded', () => {
-  const lines = ['// TODO: later', '// TODO: later', '// TODO: later'];
+  const lines = ['// TODO: later', '// TODO: later', '// TODO: later'];  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   const known = new Set([fingerprint(f(1), 'a.ts', lines[0])]);
   const out = suppress([f(1), f(2), f(3)], { baseline: known, relPath: 'a.ts', lines });
   assert.strictEqual(out.length, 2);

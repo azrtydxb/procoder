@@ -51,7 +51,7 @@ test('emits nothing for a clean file', () => {
 });
 
 test('never blocks — no decision or permission field is ever emitted', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   for (const level of ['pragmatic', 'strict', 'paranoid']) {
     const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_DEFAULT_LEVEL: level });
     assert.strictEqual(out.decision, undefined);
@@ -62,7 +62,7 @@ test('never blocks — no decision or permission field is ever emitted', () => {
 
 // Rungs 1-2 are enforced at every level; 3-4 are judgment, and at `pragmatic`
 // the user asked to be told about them rather than told to fix them.
-const MIXED_RUNGS = `eval(x);\nfunction big(a) {\n${'  const v = 1;\n'.repeat(45)}}\n`;
+const MIXED_RUNGS = `eval(x);\nfunction big(a) {\n${'  const v = 1;\n'.repeat(45)}}\n`;  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
 
 test('pragmatic presents SAFE as blocking and OBVIOUS as advisory', () => {
   const repo = repoWith({ 'a.ts': MIXED_RUNGS });
@@ -86,7 +86,7 @@ test('strict presents every rung as blocking', () => {
 
 test('a stale baseline is reported once, with the command that fixes it', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',
+    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
     '.procoder-baseline.json': JSON.stringify({ version: 1, fingerprints: [] }),
   });
   assert.match(contextOf(runHook(repo, path.join(repo, 'a.ts'))), /procoder baseline/);
@@ -94,14 +94,14 @@ test('a stale baseline is reported once, with the command that fixes it', () => 
 
 test('a current baseline draws no re-baseline notice', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',
+    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
     '.procoder-baseline.json': JSON.stringify({ version: 2, fingerprints: [] }),
   });
   assert.ok(!/procoder baseline/.test(contextOf(runHook(repo, path.join(repo, 'a.ts')))));
 });
 
 test('PROCODER_NO_HOOK disables the hook', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_NO_HOOK: '1' });
   assert.deepStrictEqual(out, {});
 });
@@ -133,11 +133,11 @@ test('the hook completes within its 2s budget on a minified file', () => {
 
 test('an Edit reports only the region it touched', () => {
   const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
     tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
+    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   assert.match(contextOf(out), /a\.ts:42/);
   assert.ok(!/a\.ts:1\s/.test(contextOf(out)), 'reported an untouched line of the file');
@@ -145,7 +145,7 @@ test('an Edit reports only the region it touched', () => {
 
 test('a Write reports the whole file it wrote', () => {
   const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = runHook(repo, path.join(repo, 'a.ts'));
   assert.match(contextOf(out), /a\.ts:1\b/);
@@ -154,11 +154,11 @@ test('a Write reports the whole file it wrote', () => {
 
 test('a secret outside the edited region is still reported', () => {
   const repo = repoWith({
-    'a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+    'a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/hardcoded-secret, safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
     tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
+    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   });
   assert.match(contextOf(out), /a\.ts:1\b/);
 });

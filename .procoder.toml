@@ -1,10 +1,14 @@
 [exclude]
+# tests/fixtures/ is the one path exclusion that is about meta-text: clean.txt
+# and dirty.txt are inputs whose whole purpose is to be scanned by the tests,
+# not by the scan. A marker in them would change the input and break the test
+# that reads them, so this is the one case the line marker cannot serve.
 paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
 
-# One file, three named rules. hooks/checks/patterns/markers.js is the pattern
-# table for the rung-4 marker checks: a list of regexes that match orphan TODOs,
-# blanket suppressions and stale deprecations is textually indistinguishable
-# from a file containing those things. Nothing else in that file is exempt, and
-# no other file is exempt for these rules — the logic that uses the table lives
-# in hooks/checks/universal.js and is checked in full.
-rules = ["hooks/checks/patterns/markers.js:alone/orphan-todo", "hooks/checks/patterns/markers.js:alone/blanket-suppression", "hooks/checks/patterns/markers.js:alone/deprecated-no-trigger"]
+# No rule exclusions. The three that used to exempt hooks/checks/patterns/
+# markers.js are gone: that file now carries a line marker on each of the eleven
+# lines that needed one, naming the single rule it describes. That says the same
+# thing per line instead of per file, is visible where the line is rather than
+# in config, and generalises — the same marker covers the skills, the tests and
+# this file, which a per-file exclusion could not.
+rules = []

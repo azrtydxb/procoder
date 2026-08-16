@@ -11,7 +11,7 @@ A deliberate shortcut is fine. An undated one is rot. This is the ledger.
 
 1. **Find the markers.**
    - Deliberate: `git grep -n "procoder:"`
-   - Informal: `git grep -nE "TODO|FIXME|HACK|XXX|@deprecated|@Deprecated|Obsolete\("`
+   - Informal: `git grep -nE "TODO|FIXME|HACK|XXX|@deprecated|@Deprecated|Obsolete\("`  <!-- procoder: literal alone/orphan-todo, alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
 2. **Age and author each one.**
    `git log -1 --format="%ar %an" -S "<marker text>" -- <file>`
    Fall back to `git blame -L <line>,<line> -- <file>` when `-S` finds nothing.
@@ -34,13 +34,13 @@ One table, oldest first:
 
 | age | file:line | marker | trigger | status |
 |---|---|---|---|---|
-| 14 months | api/users.ts:42 | HACK: skip authz in dev | — | undated |
+| 14 months | api/users.ts:42 | HACK: skip authz in dev | — | undated |  <!-- procoder: literal alone/orphan-todo the doctrine names this pattern, it is not an instance of it -->
 | 3 months | queue/worker.go:88 | procoder: single lock | throughput > 1k/s | dated |
 
 Then one line per undated and overdue marker, standard format:
 
 ```
-[4 ALONE]   api/users.ts:42   HACK with no removal trigger, 14 months old → add a trigger or remove the shortcut
+[4 ALONE]   api/users.ts:42   HACK with no removal trigger, 14 months old → add a trigger or remove the shortcut  <!-- procoder: literal alone/orphan-todo the doctrine names this pattern, it is not an instance of it -->
 ```
 
 Close with: `N markers: X dated, Y undated, Z overdue. Baseline holds W accepted findings.`

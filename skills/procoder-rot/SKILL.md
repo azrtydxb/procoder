@@ -1,5 +1,6 @@
 ---
 name: procoder-rot
+# procoder: literal alone/deprecated-no-trigger the line below names the rot skill
 description: Find dead, stale, and deprecated code left behind — rung 4, ALONE. Use when the user says "procoder rot", "find dead code", "what can I delete", "unused exports", "stale code", "deprecated code", "unused dependencies", "what's rotting in here", or invokes /procoder-rot. Reports deletions with reachability evidence; never deletes.
 ---
 
@@ -11,7 +12,7 @@ previous changes left behind.
 ## Procedure
 
 **Step 0 — run the engine.** `node <plugin>/bin/procoder.js check <scope>`.
-Its `alone/*` rules (`commented-code`, `deprecated-no-trigger`, `orphan-todo`,
+Its `alone/*` rules (`commented-code`, `deprecated-no-trigger`, `orphan-todo`,  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
 `debug-leftover`, `blanket-suppression`, `unexplained-suppression`) are
 deterministic. Report them as-is. Never re-derive them by reading files, and
 never drop one because it looks minor. Everything below is judgment the engine
@@ -24,7 +25,7 @@ Then one pass per category. Each row names the search that finds candidates.
 | 1 | **Dead exports** | List exported symbols (`git grep -nE '^export (const\|function\|class\|type)'`, `pub fn`, `public static`, `__all__`, …). For each: `git grep -nw "<symbol>"`. Zero hits outside the definition file = candidate. |
 | 2 | **Commented-out code** | From the engine's `alone/commented-code` findings. Do not re-scan by hand. |
 | 3 | **Settled feature flags** | Find flag reads (`git grep -nE 'featureFlag\|isEnabled\|FLAG_\|LaunchDarkly\|unleash'`). For each flag: `git log -S "<flag>" --oneline` — if its value hasn't moved in a release, it is settled. The dead branch goes. |
-| 4 | **Deprecations with no removal trigger** | Engine's `alone/deprecated-no-trigger`. Add age: `git log -1 --format=%ar -S "<marker>"`. A deprecation *with* a trigger (version, date, ticket) is doing its job — leave it. |
+| 4 | **Deprecations with no removal trigger** | Engine's `alone/deprecated-no-trigger`. Add age: `git log -1 --format=%ar -S "<marker>"`. A deprecation *with* a trigger (version, date, ticket) is doing its job — leave it. |  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
 | 5 | **Version twins** | `git grep -nlE '(_old\|_new\|_v[0-9]\|_final\|Legacy\|Copy)\b'` plus any `v2` living beside a `v1`. Both alive with callers split = migration stalled; name which side to finish. |
 | 6 | **Stale documentation** | For each doc block or README section describing behavior: `git log -1 --format=%at` on the doc vs. on the code file it describes. Code newer than the doc = read both and check the doc still tells the truth. |
 | 7 | **Unused dependencies** | Every entry in the manifest (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `*.csproj`): `git grep -nw "<name>"` in source. Zero import sites = candidate. Check build/config files and plugin-style deps (formatters, type plugins, test runners) before calling it. |

@@ -10,7 +10,7 @@ const path = require('path');
 const { isExcluded, isRuleExcluded } = require('./config');
 const { packFor } = require('./registry');
 const { resolveFor, runToolResult } = require('./resolve');
-const { checkUniversal } = require('./universal');
+const { checkUniversal, filterMarkedLiterals } = require('./universal');
 const { loadBaseline, suppress } = require('./baseline');
 const { finding, sortFindings, capFindings } = require('./finding');
 const { MANIFEST_FILES, checkManifest } = require('./deps');
@@ -217,7 +217,12 @@ function checkFile(absPath, {
     findings.push(...checkManifest(absPath, source));
   }
 
-  const scoped = capFindingsPerLine(findings)
+  // Lines the author marked as describing a pattern rather than instancing one
+  // drop out here, across every pack: a doctrine page quoting an injection sink
+  // and a test asserting on one are the same problem as a test asserting on a
+  // credential, and one mechanism has to cover all three. The marker names its
+  // rules and reaches at most two lines — see universal.js.
+  const scoped = capFindingsPerLine(filterMarkedLiterals(source, findings))
     .filter((f) => !isRuleExcluded(config, relPath, f.id));
 
   const lines = source.split(/\r?\n/);

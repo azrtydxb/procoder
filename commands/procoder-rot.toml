@@ -1,4 +1,4 @@
-description = "Find dead, stale, and deprecated code left behind."
+description = "Find dead, stale, and deprecated code left behind."  # procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it
 prompt = """
 Use the procoder-rot skill. Arguments (optional path scope; default the whole
 repository): $ARGUMENTS

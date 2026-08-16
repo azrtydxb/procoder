@@ -63,7 +63,7 @@ level) when you want procoder back.
 | `/procoder` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
 | `/procoder-review` | Review the current diff against the four rungs. |
 | `/procoder-audit` | Audit the whole repository, ranked by rung severity. |
-| `/procoder-rot` | Find dead, stale, and deprecated code left behind. |
+| `/procoder-rot` | Find dead, stale, and deprecated code left behind. |  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
 | `/procoder-threat` | Map every trust boundary and what validates it. |
 | `/procoder-deps` | Audit dependencies: vulnerable, abandoned, unpinned, unused. |
 | `/procoder-debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
