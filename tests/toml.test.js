@@ -67,3 +67,61 @@ test('a __proto__ key does not become an own key either', () => {
   const out = parseToml('__proto__ = "x"\n');
   assert.ok(!Object.prototype.hasOwnProperty.call(out, '__proto__'));
 });
+
+// Multi-line arrays are ordinary TOML — dropping them silently is the defect
+// this file fixes. Each shape must round-trip, not vanish.
+test('parses a multi-line array with a trailing comma', () => {
+  const out = parseToml('[exclude]\npaths = [\n  "vendor/",\n  "generated/",\n]\n');
+  assert.deepStrictEqual(out.exclude.paths, ['vendor/', 'generated/']);
+});
+
+test('parses a multi-line array split mid-item', () => {
+  const out = parseToml('key = ["one", "two",\n       "three"]\n');
+  assert.deepStrictEqual(out.key, ['one', 'two', 'three']);
+});
+
+test('ignores a comment inside a multi-line array', () => {
+  const out = parseToml('paths = [\n  "a/",\n  "b/",     # trailing comma is legal\n]\n');
+  assert.deepStrictEqual(out.paths, ['a/', 'b/']);
+});
+
+test('a quoted string containing "]" inside a multi-line array is not mis-split', () => {
+  const out = parseToml('paths = [\n  "weird]bracket/",\n  "b/",\n]\n');
+  assert.deepStrictEqual(out.paths, ['weird]bracket/', 'b/']);
+});
+
+test('a quoted string containing "," inside a multi-line array is not mis-split', () => {
+  const out = parseToml('paths = [\n  "a,b/",\n  "c/",\n]\n');
+  assert.deepStrictEqual(out.paths, ['a,b/', 'c/']);
+});
+
+test('unsupported syntax warns with file and line, but still returns defaults-friendly output', () => {
+  const originalWrite = process.stderr.write;
+  let captured = '';
+  process.stderr.write = (chunk) => { captured += chunk; return true; };
+  let out;
+  try {
+    out = parseToml('level = "strict"\n{inline = "table"}\n', 'my-config.toml');
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.strictEqual(out.level, 'strict');
+  assert.match(captured, /my-config\.toml/);
+  assert.match(captured, /\bline 2\b|:2:/);
+});
+
+test('an unterminated array does not throw, does not hang, and warns', () => {
+  const originalWrite = process.stderr.write;
+  let captured = '';
+  process.stderr.write = (chunk) => { captured += chunk; return true; };
+  let out;
+  try {
+    assert.doesNotThrow(() => { out = parseToml('paths = [\n  "a/",\n', 'weird.toml'); });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.deepStrictEqual({ ...out }, {});
+  assert.match(captured, /weird\.toml/);
+  assert.match(captured, /\bline 1\b|:1:/i);
+});
+
