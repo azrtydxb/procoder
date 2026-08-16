@@ -184,18 +184,38 @@ function summarize(blocking, advisory, level) {
 // silence makes that indistinguishable from a clean pass. Said on stderr so it
 // survives a piped stdout, and it does not fail the run — an unchecked file is
 // news, not a violation.
-function reportSkip(relPath, skipped) {
+//
+// A `.procoderignore` skip is also deliberate config, but unlike .procoder.toml
+// it can sit anywhere in the tree, so "which file did this and how much did it
+// cover" is not something the user can see at a glance. It is counted here and
+// reported once per ignore file rather than once per skipped file: the case the
+// feature exists for is a large generated subtree, and a line per file would
+// bury the findings it was supposed to make room for.
+function reportSkip(relPath, skipped, ignored) {
   if (skipped === 'excluded') return;
+  if (skipped.startsWith('ignored:')) {
+    const file = skipped.slice('ignored:'.length);
+    ignored.set(file, (ignored.get(file) || 0) + 1);
+    return;
+  }
   process.stderr.write(`procoder: skipped ${relPath} (${skipped}) — not checked.\n`);
+}
+
+function reportIgnored(ignored) {
+  for (const [file, count] of ignored) {
+    process.stderr.write(
+      `procoder: ${count} file${count === 1 ? '' : 's'} skipped by ${file} — not checked.\n`);
+  }
 }
 
 function runCheck(files, repoRoot, config) {
   const level = readLevel();
+  const ignored = new Map();
   let blocking = 0;
   let advisory = 0;
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
-    if (skipped) { reportSkip(relPath, skipped); continue; }
+    if (skipped) { reportSkip(relPath, skipped, ignored); continue; }
     if (findings.length === 0) continue;
     const gating = findings.filter((f) => isBlocking(f, level, config)).length;
     blocking += gating;
@@ -203,6 +223,7 @@ function runCheck(files, repoRoot, config) {
     process.stdout.write(formatFindings(findings, relPath) + '\n');
   }
 
+  reportIgnored(ignored);
   if (blocking + advisory === 0) return 0;
   process.stdout.write(summarize(blocking, advisory, level));
   return blocking > 0 ? 1 : 0;
