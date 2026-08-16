@@ -271,6 +271,35 @@ nothing and is itself reported. See the README's Configuration section for the
 full rules, and [Known limitations](known-limitations.md) for what it cannot
 reach — notably external linter rule ids such as `true/eslint:no-eval`.
 
+**A version was released, but the session said nothing about updating.**
+
+Working as designed, in the common case. The SessionStart hook never waits on
+the network: it reads a cached answer, and only when that answer is more than a
+day old does it spawn a detached background process to fetch a fresh one, which
+lands for the *next* session. So the first session after a release is silent and
+the next one carries the notice. The alternative — a blocking HTTPS request
+inside a hook with a 5 second timeout, on every session — puts a slow or captive
+network between you and the prompt in exchange for a cosmetic message.
+
+If it never appears at all:
+
+- The notice is only for plugin installs. It is skipped entirely unless
+  `CLAUDE_PLUGIN_ROOT` is set, which Claude Code sets when it runs the hook — a
+  source checkout or a hand-run hook neither notifies nor makes any request.
+- Check `PROCODER_NO_UPDATE_CHECK` and `PROCODER_NO_HOOK`. Either set to `1`
+  suppresses it, background request included.
+- Inspect the cache:
+  `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-update-check.json`. It holds
+  `checkedAt` and the last `latest` seen. Deleting it makes the next session
+  refresh. If `checkedAt` keeps moving but `latest` never does, the fetch is
+  failing — a proxy, a firewall, or no route to
+  `raw.githubusercontent.com`. Every such failure is deliberately silent; set
+  `PROCODER_UPDATE_URL` to an internal mirror if that host is unreachable
+  by policy.
+- procoder never notifies you downwards. If your installed version is *newer*
+  than the published one, or either version string is not `MAJOR.MINOR.PATCH`,
+  the notice is suppressed rather than guessed at.
+
 **`procoder verify` exits 2 instead of 0 or 1.**
 
 Exit 2 means "cannot verify," not "the ratchet grew." It happens when the

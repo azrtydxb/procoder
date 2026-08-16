@@ -120,6 +120,28 @@ Environment variables:
 | `PROCODER_NO_HOOK` | Set to `1` to disable all procoder hooks (activation, level tracking, subagent propagation) without uninstalling the plugin. |
 | `CLAUDE_CONFIG_DIR` | Overrides where procoder persists the active level (`<dir>/.procoder-active`). Defaults to `~/.claude`. |
 | `PROCODER_HOST` | Selects the hook wire protocol for non-Claude-Code hosts. One of `codex`, `copilot`, `qoder`. Unset (or any other value) uses the native Claude Code protocol. `codex` is also auto-detected via `CODEX_HOME`. |
+| `PROCODER_NO_UPDATE_CHECK` | Set to `1` to turn off the update notice below, including its once-a-day background request. Nothing else about procoder changes. |
+| `PROCODER_UPDATE_URL` | Where the update check reads the published version from. Defaults to procoder's `plugin.json` on GitHub; point it at a fork or an internal mirror if you install from one. |
+
+### Update notice
+
+When procoder is installed as a Claude Code plugin and a newer version has been
+published, the session starts with one line saying which version is out, which
+one you are running, and to run `/procoder:update`. It says nothing when you are
+up to date, and nothing when it cannot reach GitHub.
+
+Session start never waits on the network. The hook reads a cached answer and
+reports it; when that answer is more than a day old, it spawns a background
+process that fetches a new one and exits without waiting, so the answer lands
+for the *next* session. **This means the first session after a release is
+silent and the one after it notifies — that is the design, not a bug.** The
+measured cost at session start is about 1ms, against the hook's 5 second budget.
+
+The request is a single unauthenticated GET of a static file on
+`raw.githubusercontent.com`, at most once per day, and it sends nothing about
+you or your code. `PROCODER_NO_UPDATE_CHECK=1` disables it outright — no
+request, no background process, no notice — and `PROCODER_NO_HOOK=1` disables
+it along with everything else.
 
 `.procoder.toml` configures the check engine itself (rung severities,
 thresholds, and exclusions):
