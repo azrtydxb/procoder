@@ -7,6 +7,25 @@ const {
 } = require('../hooks/checks/shape');
 const { DEFAULTS } = require('../hooks/checks/config');
 
+// Milliseconds for the fastest of three runs. The perf guards below all sit
+// two orders of magnitude under their bound — the failure they exist to catch
+// costs seconds — so the only realistic way for them to fail on a healthy tree
+// is a single scheduler stall or a GC pause landing inside the measurement. A
+// stall hits one run of three, not all three, so the best of three keeps the
+// order-of-magnitude signal and drops the flake. It cannot help against
+// sustained load that slows every run alike; nothing in-process can, short of
+// asserting on a ratio between two input sizes, and these guards deliberately
+// assert absolute cost against the hook's 2s whole-file budget.
+function bestOf(runs, work) {
+  let best = Infinity;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    work();
+    best = Math.min(best, Date.now() - started);
+  }
+  return best;
+}
+
 test('analyzeBraces reports nesting depth and block spans', () => {
   const src = [
     'function a() {',      // 1
@@ -177,9 +196,8 @@ test('signaturesFrom stays linear on a huge single-line file', () => {
   const src = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
   const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
 
-  const start = Date.now();
-  signaturesFrom(stripNoise(src), re);
-  assert.ok(Date.now() - start < 500, 'signaturesFrom scaled worse than linearly');
+  const ms = bestOf(3, () => signaturesFrom(stripNoise(src), re));
+  assert.ok(ms < 500, `signaturesFrom scaled worse than linearly: ${ms}ms`);
 });
 
 // A 400KB minified line, the size at which the two used to cost 2.0s and 44.8s
@@ -192,10 +210,11 @@ test('analyzeBraces and measureFunctions stay linear in line length', () => {
   const line = unit.repeat(Math.ceil((400 * 1024) / unit.length));
   const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
 
-  const start = Date.now();
-  const { blocks } = analyzeBraces(line);
-  measureFunctions([line], blocks, signaturesFrom(stripNoise(line), re));
-  assert.ok(Date.now() - start < 500, 'shape analysis scaled worse than linearly');
+  const ms = bestOf(3, () => {
+    const { blocks } = analyzeBraces(line);
+    measureFunctions([line], blocks, signaturesFrom(stripNoise(line), re));
+  });
+  assert.ok(ms < 500, `shape analysis scaled worse than linearly: ${ms}ms`);
 });
 
 // --- signatures that wrap across lines -------------------------------------
@@ -412,17 +431,19 @@ test('the signature lookback stays linear in line length and block count', () =>
     const unit = 'if(a&&b){return a+b}else{return 0}';
     const line = unit.repeat(Math.ceil((size * 1024) / unit.length));
     const src = 'const x = 1;\n' + line;
-    const start = Date.now();
-    const { blocks } = analyzeBraces(src);
-    measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
-    assert.ok(Date.now() - start < 500, `${size}KB single line scaled worse than linearly`);
+    const ms = bestOf(3, () => {
+      const { blocks } = analyzeBraces(src);
+      measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
+    });
+    assert.ok(ms < 500, `${size}KB single line scaled worse than linearly: ${ms}ms`);
   }
 
   const many = Array.from({ length: 20000 }, () => 'while (a) {\n}').join('\n');
-  const start = Date.now();
-  const { blocks } = analyzeBraces(many);
-  measureFunctions(many.split('\n'), blocks, signaturesFrom(stripNoise(many), re));
-  assert.ok(Date.now() - start < 1000, 'the lookback scaled worse than linearly in blocks');
+  const ms = bestOf(3, () => {
+    const { blocks } = analyzeBraces(many);
+    measureFunctions(many.split('\n'), blocks, signaturesFrom(stripNoise(many), re));
+  });
+  assert.ok(ms < 1000, `the lookback scaled worse than linearly in blocks: ${ms}ms`);
 });
 
 // --- mixed tab/space indentation -------------------------------------------
@@ -450,8 +471,9 @@ test('consistent indentation is read exactly as before', () => {
 
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'function a() { ' + 'x'.repeat(20000) + ' }';
-  const start = Date.now();
-  analyzeBraces(long);
-  estimateComplexity(long);
-  assert.ok(Date.now() - start < 500, 'took too long on pathological input');
+  const ms = bestOf(3, () => {
+    analyzeBraces(long);
+    estimateComplexity(long);
+  });
+  assert.ok(ms < 500, `took too long on pathological input: ${ms}ms`);
 });

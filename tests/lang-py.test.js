@@ -165,7 +165,20 @@ test('self and cls do not count toward the parameter budget', () => {
 // re-scan to end of line from every offset, which is the quadratic shape that
 // took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
 // in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
-// a loaded CI machine; the hook's whole budget is 2s.
+// a loaded CI machine; the hook's whole budget is 2s. The bound is taken over
+// the fastest of three runs: at two orders of magnitude of headroom the only
+// realistic failure on a healthy tree is one scheduler stall landing inside the
+// measurement, and a stall hits one run of three, not all three.
+function bestOf(runs, work) {
+  let best = Infinity;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    work();
+    best = Math.min(best, Date.now() - started);
+  }
+  return best;
+}
+
 test('stays linear on a very long single line', () => {
   const units = [
     "yaml.load(",
@@ -175,9 +188,7 @@ test('stays linear on a very long single line', () => {
   ];
   for (const unit of units) {
     const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const started = Date.now();
-    check(line, { relPath: 'x.py', config });
-    const elapsed = Date.now() - started;
+    const elapsed = bestOf(3, () => check(line, { relPath: 'x.py', config }));
     assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
   }
 });

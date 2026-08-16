@@ -114,21 +114,53 @@ test('malformed input exits cleanly', () => {
   }));
 });
 
-test('the hook completes within its 2s budget on a large file', () => {
+// --- timing ----------------------------------------------------------------
+//
+// The budget is 2s and a real run costs ~65ms, so asserting against 2s asserts
+// almost nothing — except on a loaded machine, where the process spawn alone
+// can breach it, and then it asserts a flake. One already fired this session.
+//
+// So each run is compared against a baseline measured here and now: the same
+// hook, the same spawn, over a one-line file. Machine load moves baseline and
+// measurement together; work that stops being linear moves only the
+// measurement. Best of three on each side, because a scheduler stall hits one
+// run of three, not all three.
+//
+// Catches: any regression that makes analysing a large file an order of
+// magnitude dearer than the spawn it rides on — today ~34ms of analysis over a
+// ~31ms baseline, and the bound allows six times the baseline. Does not catch:
+// a uniform slowdown that costs the one-line run just as much (module load,
+// config parsing), or a regression smaller than that multiple.
+const SPAWN_MULTIPLE = 6;
+
+function bestOf(runs, work) {
+  let best = Infinity;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    work();
+    best = Math.min(best, Date.now() - started);
+  }
+  return best;
+}
+
+function assertNearBareHook(repo, file, what) {
+  const bare = repoWith({ 'bare.ts': 'const x = 1;\n' });
+  const baseline = bestOf(3, () => runHook(bare, path.join(bare, 'bare.ts')));
+  const elapsed = bestOf(3, () => runHook(repo, file));
+  assert.ok(elapsed <= baseline * SPAWN_MULTIPLE + 50,
+    `${what}: ${elapsed}ms against a ${baseline}ms one-line-file baseline`);
+}
+
+test('the hook stays inside its budget on a large file', () => {
   const repo = repoWith({ 'big.ts': 'const x = 1;\n'.repeat(20000) });
-  const started = Date.now();
-  runHook(repo, path.join(repo, 'big.ts'));
-  assert.ok(Date.now() - started < 2000, 'hook exceeded its budget');
+  assertNearBareHook(repo, path.join(repo, 'big.ts'), '20k lines');
 });
 
-test('the hook completes within its 2s budget on a minified file', () => {
+test('the hook stays inside its budget on a minified file', () => {
   let line = '';
   while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
   const repo = repoWith({ 'min.ts': line });
-  const started = Date.now();
-  runHook(repo, path.join(repo, 'min.ts'));
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed < 2000, `hook took ${elapsed}ms on a 200KB single-line file`);
+  assertNearBareHook(repo, path.join(repo, 'min.ts'), '200KB single line');
 });
 
 test('an Edit reports only the region it touched', () => {
