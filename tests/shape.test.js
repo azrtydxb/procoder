@@ -377,6 +377,29 @@ test('the signature lookback stays linear in line length and block count', () =>
   assert.ok(Date.now() - start < 1000, 'the lookback scaled worse than linearly in blocks');
 });
 
+// --- mixed tab/space indentation -------------------------------------------
+//
+// The tab-width conversion buckets an indent by width, so a two-space level and
+// a tab level land in the same bucket and two real levels report as one. Depth
+// under-reported is a nesting violation that passes.
+test('mixed tabs and spaces do not collapse two indentation levels into one', () => {
+  const src = [
+    'def f():',
+    '  if a:',
+    '\tif b:',
+    '\t  if c:',
+    '\t\tgo()',
+  ].join('\n');
+  assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 4);
+});
+
+test('consistent indentation is read exactly as before', () => {
+  const spaces = 'def f():\n    if a:\n        if b:\n            go()';
+  const tabs = 'def f():\n\tif a:\n\t\tif b:\n\t\t\tgo()';
+  assert.strictEqual(analyzeIndent(spaces, { tabWidth: 4 }).maxDepth, 3);
+  assert.strictEqual(analyzeIndent(tabs, { tabWidth: 4 }).maxDepth, 3);
+});
+
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'function a() { ' + 'x'.repeat(20000) + ' }';
   const start = Date.now();

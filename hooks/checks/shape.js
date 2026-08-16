@@ -113,6 +113,45 @@ function indentBlock(open, endLine) {
   return { ...open, endLine, length: endLine - open.startLine + 1 };
 }
 
+// True when the file indents some lines with tabs and others with spaces.
+function mixesTabsAndSpaces(lines) {
+  let tabs = false;
+  let spaces = false;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const leading = /^[ \t]*/.exec(line)[0];
+    tabs = tabs || leading.includes('\t');
+    spaces = spaces || leading.includes(' ');
+    if (tabs && spaces) return true;
+  }
+  return false;
+}
+
+// Depth for a file that mixes tabs and spaces, counted as changes of
+// indentation rather than as multiples of tabWidth.
+//
+// The tab-width conversion answers "how many tabWidths wide is this line's
+// indent", which is the nesting level only when every level is exactly one
+// tabWidth. Mix a two-space level with a tab level and two real levels land in
+// the same bucket: the file reports one level less than it has, and a function
+// nested past the limit passes. Under-reporting is the wrong direction of
+// error for a nesting check.
+//
+// Counting changes instead needs no guess at what a tab is worth — a line
+// indented wider than the one enclosing it is one level deeper, whatever the
+// indent is made of. Python 3 rejects such a file outright (TabError), so
+// there is no "correct" tab width to recover; the enclosing/enclosed ordering
+// is the only thing both readings agree on, and it is all a depth count needs.
+//
+// It runs only on mixed files. Consistent indentation — every real Python file
+// a formatter has touched — keeps the tabWidth arithmetic byte for byte, so
+// this can only change the reading of a file Python itself would refuse.
+function changeDepth(columns, column) {
+  while (columns.length && columns[columns.length - 1] >= column) columns.pop();
+  if (column > 0) columns.push(column);
+  return columns.length;
+}
+
 // A line inside an unclosed bracket continues the line above rather than
 // starting a statement, and its indentation says nothing about nesting.
 // Without that distinction a `def` whose parameters wrap ends its block on the
@@ -132,6 +171,8 @@ function bracketBalance(line) {
 function analyzeIndent(source, { tabWidth = 4 } = {}) {
   const lines = stripNoise(source).split(/\r?\n/);
   const blocks = [];
+  const columns = [];
+  const mixed = mixesTabsAndSpaces(lines);
   let maxDepth = 0;
   let openBlock = null;
   let open = 0;
@@ -140,7 +181,7 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
     if (!line.trim()) return;
     const leading = /^[ \t]*/.exec(line)[0];
     const column = leading.replace(/\t/g, ' '.repeat(tabWidth)).length;
-    const depth = Math.floor(column / tabWidth);
+    const depth = mixed ? changeDepth(columns, column) : Math.floor(column / tabWidth);
     maxDepth = Math.max(maxDepth, depth);
 
     const continuation = open > 0;
