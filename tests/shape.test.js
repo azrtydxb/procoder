@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   analyzeBraces, analyzeIndent, countParams, estimateComplexity, shapeFindings,
+  signaturesFrom, stripNoise,
 } = require('../hooks/checks/shape');
 const { DEFAULTS } = require('../hooks/checks/config');
 
@@ -66,6 +67,71 @@ test('shapeFindings fires only above the configured thresholds', () => {
   assert.ok(ids.includes('obvious/too-many-params'));
   assert.ok(ids.includes('obvious/complexity'));
   assert.ok(ids.includes('obvious/nesting-depth'));
+});
+
+test('a block-scoped switch case counts as a block, not a data literal', () => {
+  const src = [
+    'function a() {',        // 1
+    '  switch (x) {',        // 2
+    '    case 1: {',         // 3
+    '      if (y) {',        // 4
+    '        go();',
+    '      }',
+    '    }',
+    '    default: {',
+    '      stop();',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n');
+  assert.strictEqual(analyzeBraces(src).maxDepth, 4);
+});
+
+test('a pure data literal still does not count as nesting', () => {
+  const src = [
+    'const cfg = {',
+    '  a: {',
+    '    b: {',
+    '      c: {',
+    '        d: { e: 1 },',
+    '      },',
+    '    },',
+    '  },',
+    '};',
+  ].join('\n');
+  assert.strictEqual(analyzeBraces(src).maxDepth, 0);
+});
+
+test('a chain of control-flow blocks still counts as nesting', () => {
+  const src = [
+    'function a() {',
+    '  for (;;) {',
+    '    if (x) {',
+    '      while (y) {',
+    '        if (z) {',
+    '          go();',
+    '        }',
+    '      }',
+    '    }',
+    '  }',
+    '}',
+  ].join('\n');
+  assert.strictEqual(analyzeBraces(src).maxDepth, 5);
+});
+
+// A 2MB single-line minified file. Line numbering used to re-slice the whole
+// source per match, so cost was quadratic: ~1.3s here, over the 2s whole-file
+// hook budget on its own. Linear line indexing runs it in tens of ms; the
+// bound is set an order of magnitude above that so a loaded CI machine does
+// not flake, while a return to quadratic scaling still fails.
+test('signaturesFrom stays linear on a huge single-line file', () => {
+  const unit = 'function f(a,b){return a+b}';
+  const src = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
+  const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
+
+  const start = Date.now();
+  signaturesFrom(stripNoise(src), re);
+  assert.ok(Date.now() - start < 500, 'signaturesFrom scaled worse than linearly');
 });
 
 test('does not catastrophically backtrack on a long line', () => {

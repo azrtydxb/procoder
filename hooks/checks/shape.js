@@ -38,6 +38,18 @@ function stripNoise(source) {
 // — still count, so callback pyramids are reported as before.
 const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
 
+// `case 1: {` and `default: {` end in a colon too, but open a block. Without
+// this a switch nested to depth 4 reports 3, and switch-heavy C#, Java and
+// TypeScript under-report throughout. Plain `label:` statements are left
+// alone: a line reading `  key:` is an object key far more often than a label,
+// and treating it as a block would count data literals as nesting again.
+const CASE_LABEL = /^\s*(?:case\b[^:]*|default)\s*:$/;
+
+// The text before a `{`, already right-trimmed, decides what the brace opens.
+function opensBlock(before) {
+  return !LITERAL_BRACE.test(before) || CASE_LABEL.test(before);
+}
+
 // Every brace on one line, in order, each tagged with whether it opens a block
 // rather than a data literal.
 function bracesInLine(line, lineNo) {
@@ -47,7 +59,7 @@ function bracesInLine(line, lineNo) {
       braces.push({
         open: true,
         lineNo,
-        isBlock: !LITERAL_BRACE.test(line.slice(0, i).replace(/\s+$/, '')),
+        isBlock: opensBlock(line.slice(0, i).replace(/\s+$/, '')),
       });
     } else if (line[i] === '}') {
       braces.push({ open: false, lineNo });
@@ -195,14 +207,32 @@ function lineRuleFindings(rules, lines, { codeLines = lines, skip } = {}) {
   return findings;
 }
 
+// Line number for a match offset. A global regex yields matches in increasing
+// offset order, so one forward cursor over the newlines answers every call and
+// the whole scan stays linear. Slicing the source per match instead — the
+// obvious way — is quadratic, and a minified file is one long line where every
+// slice spans the entire file.
+function lineCounter(text) {
+  let line = 1;
+  let nextBreak = text.indexOf('\n');
+  return (offset) => {
+    while (nextBreak !== -1 && nextBreak < offset) {
+      line += 1;
+      nextBreak = text.indexOf('\n', nextBreak + 1);
+    }
+    return line;
+  };
+}
+
 // Signature line number → its parameter text. Packs supply either a global
 // regex scanned across the whole stripped source, or a line-anchored one that
 // must be exec'd per line to stay clear of catastrophic backtracking.
 function signaturesFrom(stripped, re) {
   const signatures = new Map();
   if (re.global) {
+    const lineAt = lineCounter(stripped);
     for (const match of stripped.matchAll(re)) {
-      signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
+      signatures.set(lineAt(match.index), match[1]);
     }
     return signatures;
   }
@@ -229,9 +259,10 @@ function measureFunctions(lines, blocks, signatures) {
 // chooses the text: stripped source where comments should not rescue it, raw
 // where the pattern spells out the comment forms itself.
 function emptyCatchFindings(text, re, message) {
+  const lineAt = lineCounter(text);
   return Array.from(text.matchAll(re), (match) => finding({
     rung: 'TRUE', id: 'true/swallowed-error',
-    line: text.slice(0, match.index).split('\n').length,
+    line: lineAt(match.index),
     message,
     fix: 'log with context and rethrow, or handle it explicitly',
   }));
