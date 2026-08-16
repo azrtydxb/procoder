@@ -78,6 +78,39 @@ test('each finding id carries the tool\'s own rule id, not just the tool name', 
   assert.strictEqual(golangciFinding.id, 'true/golangci-lint:govet');
 });
 
+test('the clippy entry declares that it reports on stderr', () => {
+  // cargo clippy writes every diagnostic to stderr and still exits 0. An entry
+  // that does not say so is read on stdout, where there is nothing — which the
+  // runner cannot tell from a clean crate, so the Rust pack is skipped too.
+  assert.strictEqual(toolFor('a.rs').stream, 'stderr');
+  assert.strictEqual(toolFor('a.py').stream, undefined);
+  assert.strictEqual(toolFor('a.ts').stream, undefined);
+  assert.strictEqual(toolFor('a.go').stream, undefined);
+});
+
+test('golangci-lint v1 pure-JSON output still parses', () => {
+  const parsed = toolFor('a.go').parse(JSON.stringify({
+    Issues: [{ Pos: { Line: 12 }, FromLinter: 'govet', Text: 'nilness' }],
+  }));
+  assert.strictEqual(parsed.length, 1);
+  assert.strictEqual(parsed[0].line, 12);
+});
+
+test('a parser that cannot read its input throws rather than reporting a clean file', () => {
+  // Returning [] for unreadable output is the defect in miniature: the runner
+  // reads it as "the tool answered, nothing found" and skips the pack. Every
+  // parser must instead signal that it could not read what it was given.
+  assert.throws(() => toolFor('a.py').parse('ruff: unrecognized subcommand\n'));
+  assert.throws(() => toolFor('a.ts').parse('<html>404</html>'));
+  assert.throws(() => toolFor('a.go').parse('golangci-lint: unknown flag --out-format\n'));
+  assert.throws(() => toolFor('a.rs').parse('error: could not compile `x` (lib)\n'));
+});
+
+test('a parser reading genuinely empty output reports no findings and does not throw', () => {
+  assert.deepStrictEqual(toolFor('a.rs').parse(''), []);
+  assert.deepStrictEqual(toolFor('a.py').parse('[]'), []);
+});
+
 test('two different eslint rules firing on the same line get distinct ids — a baselined finding must not silently swallow a different rule at the same location', () => {
   const eslint = toolFor('a.ts');
   const parsed = eslint.parse(JSON.stringify([

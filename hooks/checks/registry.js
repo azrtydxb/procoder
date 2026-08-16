@@ -60,28 +60,20 @@ const TOOLS = {
     name: 'ruff',
     configFiles: ['ruff.toml', '.ruff.toml', 'pyproject.toml', 'setup.cfg'],
     argv: (file) => ['check', '--output-format', 'json', '--force-exclude', file],
-    parse: (stdout) => {
-      try {
-        return JSON.parse(stdout).map((item) =>
-          externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff', item.code));
-      } catch (e) {
-        return [];
-      }
-    },
+    // parse() must THROW on output it cannot read, never return []. Returning
+    // [] tells resolve.js the tool answered and found nothing, which skips the
+    // built-in pack too — so a linter that printed a flag error would delete
+    // the rung instead of falling back to it. A genuinely empty result set is
+    // still `[]` on the wire and still parses to no findings.
+    parse: (stdout) => JSON.parse(stdout).map((item) =>
+      externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff', item.code)),
   },
   ts: {
     name: 'eslint',
     configFiles: ['eslint.config.js', 'eslint.config.mjs', '.eslintrc', '.eslintrc.json', '.eslintrc.cjs', '.eslintrc.js'],
     argv: (file) => ['--format', 'json', file],
-    parse: (stdout) => {
-      try {
-        const results = JSON.parse(stdout);
-        return results.flatMap((result) => (result.messages || []).map((m) =>
-          externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId)));
-      } catch (e) {
-        return [];
-      }
-    },
+    parse: (stdout) => JSON.parse(stdout).flatMap((result) => (result.messages || []).map((m) =>
+      externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId))),
   },
   go: {
     name: 'golangci-lint',
@@ -89,14 +81,8 @@ const TOOLS = {
     argv: (file) => golangciMajorVersion() >= 2
       ? ['run', '--output.json.path', 'stdout', file]
       : ['run', '--out-format', 'json', file],
-    parse: (stdout) => {
-      try {
-        return (JSON.parse(stdout).Issues || []).map((issue) =>
-          externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter));
-      } catch (e) {
-        return [];
-      }
-    },
+    parse: (stdout) => (JSON.parse(stdout).Issues || []).map((issue) =>
+      externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter)),
   },
   // There is no standalone `clippy` binary on a normal PATH — only
   // `cargo-clippy`, which `cargo clippy` dispatches to. The binary to
@@ -113,6 +99,7 @@ const TOOLS = {
   // fact about the file actually being written.
   rust: (() => {
     let rustTarget = null;
+    const DIAGNOSTIC = /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/;
     const sameFile = (reported, absPath) => {
       const norm = (s) => String(s).replace(/\\/g, '/');
       const r = norm(reported);
@@ -121,19 +108,31 @@ const TOOLS = {
     };
     return {
       name: 'cargo',
+      // cargo clippy writes its diagnostics to stderr, not stdout, and exits 0
+      // even when it found something. Read on stdout it looks like a clean
+      // crate, which would silently take the Rust pack's obvious/* rules down
+      // with it — see resolve.js.
+      stream: 'stderr',
       configFiles: ['clippy.toml', '.clippy.toml', 'Cargo.toml'],
       argv: (file) => {
         rustTarget = file;
         return ['clippy', '--message-format', 'short', '--quiet'];
       },
-      parse: (stdout) => String(stdout).split('\n')
-        .map((line) => /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/.exec(line))
-        .filter(Boolean)
-        .filter((m) => !rustTarget || sameFile(m[1], rustTarget))
-        .map((m) => {
-          const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
-          return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
-        }),
+      parse: (output) => {
+        const text = String(output);
+        const diagnostics = text.split('\n').map((line) => DIAGNOSTIC.exec(line)).filter(Boolean);
+        // `--quiet` means a clean crate prints nothing at all, so any non-empty
+        // output carrying no diagnostic is output we could not read: a compile
+        // error, a lock-wait notice, a panic. Throwing says so; returning []
+        // would claim the crate is clean and skip the pack.
+        if (!diagnostics.length && text.trim()) throw new Error('no clippy diagnostic in output');
+        return diagnostics
+          .filter((m) => !rustTarget || sameFile(m[1], rustTarget))
+          .map((m) => {
+            const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
+            return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
+          });
+      },
     };
   })(),
 };
