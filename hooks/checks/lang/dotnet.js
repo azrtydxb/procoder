@@ -53,12 +53,13 @@ const LINE_RULES = [
 ];
 
 const SWALLOWED = /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
-// Anchored to a single line, and with no `\s` inside the return-type
-// character class — see jvm.js for why: letting the type span newlines
+// Anchored to a single line, with `\s` allowed only inside a generic
+// argument list so `Dictionary<string, int>` is measured — see jvm.js for
+// why the class itself stays whitespace-free: letting the type span newlines
 // turns "no method here" into a catastrophic-backtracking search over every
 // blank line and brace in the class.
 const METHOD_SIGNATURE_LINE =
-  /^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|abstract|readonly)\s+)*[\w<>[\],.?]+\s+\w+\s*\(([^)]*)\)\s*\{\s*$/;
+  /^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|abstract|readonly)\s+)*[\w<>[\],.?]+(?:\s*<[\w\s<>[\],.?]*>)?\s+\w+\s*\(([^)]*)\)\s*\{\s*$/;
 
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');

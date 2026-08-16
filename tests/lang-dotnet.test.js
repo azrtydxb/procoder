@@ -69,3 +69,15 @@ test('the clean fixture is silent and the dirty one is not', () => {
   assert.ok(check(fs.readFileSync(path.join(dir, 'dirty.cs'), 'utf8'),
     { relPath: 'dirty.cs', config }).length >= 4);
 });
+
+// Dictionary<string, int> is idiomatic C#; the space after the comma must not
+// hide the method from shape measurement.
+test('measures methods whose generic return type contains a space', () => {
+  const method = (returnType) => [
+    `public ${returnType} Run(string a, string b, string c, string d, string e) {`,
+    '    return null;',
+    '}',
+  ].join('\n');
+  assert.ok(ids(method('Dictionary<string, int>')).includes('obvious/too-many-params'));
+  assert.ok(ids(method('Dictionary<string,int>')).includes('obvious/too-many-params'));
+});

@@ -96,3 +96,15 @@ test('the clean fixture is silent and the dirty one is not', () => {
   assert.ok(check(fs.readFileSync(path.join(dir, 'dirty.java'), 'utf8'),
     { relPath: 'dirty.java', config }).length >= 5);
 });
+
+// Multi-param generics are idiomatic Java; a space after the comma must not
+// hide the method from shape measurement.
+test('measures methods whose generic return type contains a space', () => {
+  const method = (returnType) => [
+    `public ${returnType} run(String a, String b, String c, String d, String e) {`,
+    '    return null;',
+    '}',
+  ].join('\n');
+  assert.ok(ids(method('Map<String, List<Integer>>')).includes('obvious/too-many-params'));
+  assert.ok(ids(method('Map<String,List<Integer>>')).includes('obvious/too-many-params'));
+});

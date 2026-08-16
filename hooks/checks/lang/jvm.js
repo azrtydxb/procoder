@@ -65,8 +65,11 @@ const XXE_HARDENED = /disallow-doctype-decl|setExpandEntityReferences\s*\(\s*fal
 const XXE_LOOKAHEAD = 4;
 
 const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
-// Anchored to a single line, and with no `\s` inside the return-type
-// character class: a signature must be TYPE, whitespace, NAME, params, then
+// Anchored to a single line, and with `\s` allowed only inside a generic
+// argument list — `Map<String, List<Integer>>` is idiomatic and must be
+// measured, while a bare `\s` in the return-type class would let
+// `else if (x) {` read as TYPE NAME(params). A signature must be TYPE,
+// whitespace, NAME, params, then
 // `{` all on one line, so a bare `if (...) {` or `catch (...) {` — which has
 // only one identifier ahead of the parens — can never match. This also
 // avoids the catastrophic backtracking a multi-line version of this pattern
@@ -74,7 +77,7 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 // newlines (via \s) turns "no method starts here" into an exponential
 // search over every blank-line/brace combination in the file.
 const METHOD_SIGNATURE_LINE =
-  /^\s*(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|strictfp|fun)\s+)*[\w<>[\],.]+\s+\w+\s*\(([^)]*)\)\s*(?:throws\s+[\w,.\s]+)?\{\s*$/;
+  /^\s*(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|strictfp|fun)\s+)*[\w<>[\],.]+(?:\s*<[\w\s<>[\],.]*>)?\s+\w+\s*\(([^)]*)\)\s*(?:throws\s+[\w,.\s]+)?\{\s*$/;
 
 // An XML factory is only a finding when nothing nearby hardens it.
 function xxeFindings(lines) {
