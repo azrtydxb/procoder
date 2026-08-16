@@ -19,15 +19,19 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 <ul class="findings findings-display">
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/</span> every rung-1 rule reads one line, inside the sink <span class="arrow">→</span> bind the query to a variable first and nothing is reported</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> taint follows one name in one file, forward only <span class="arrow">→</span> an alias, a field, a helper's return value or a branch reaches the sink unreported</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a parameter shadowing a tainted outer name is not a new variable <span class="arrow">→</span> <code>function f(q) { db.query(q); }</code> is reported against an unrelated <code>q</code> above it</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[2 TRUE]</span>
-    <span class="msg"><span class="loc">hooks/checks/resolve.js</span> clippy writes to stderr, the runner reads stdout <span class="arrow">→</span> a Rust crate with clippy configured gets fewer findings than one without</span>
+    <span class="msg"><span class="loc">hooks/checks/registry.js</span> cargo replays cached diagnostics in the format that compiled them <span class="arrow">→</span> run <code>cargo clippy</code> by hand and procoder reads none of its findings until something recompiles</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/py.js</span> depth is columns divided by a hard-coded tab width of 4 <span class="arrow">→</span> Python indented two spaces per level reports half its real nesting</span>
+    <span class="msg"><span class="loc">hooks/checks/shape.js</span> the indent step is the commonest one in the file, capped at 8 columns <span class="arrow">→</span> a wider indent over-reports nesting, and a file with two indent widths under-reports one of them</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[4 ALONE]</span>
@@ -35,12 +39,13 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   </li>
   <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/procoder-check.js</span> in-session findings are narrowed to the edited region <span class="arrow">→</span> run <code>procoder check</code> on the file for the whole-file picture</span>
+    <span class="msg"><span class="loc">hooks/procoder-check.js</span> in-session findings are narrowed to the edited region and truncated to five <span class="arrow">→</span> run <code>procoder check</code> on the file for the whole-file picture</span>
   </li>
 </ul>
 
 <p class="meta-line">
   None of those are hypothetical, and none of them are the whole list.
+  Each was produced by running the tool on a throwaway file at 0.2.0.
 </p>
 
 <div class="note">
@@ -50,8 +55,9 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <a href="{{ site.repo }}/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>,
     which is the only place a limitation is recorded, measured and dated. This
     page is a twin by rung 4's definition and has drifted from that document
-    before — twice, both times into claiming a defect that had already been
-    fixed. If the two disagree, the markdown is right and this page is stale.
+    before — three times now, every time into claiming a defect that had
+    already been fixed. If the two disagree, the markdown is right and this
+    page is stale.
   </p>
 </div>
 
@@ -132,8 +138,8 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <thead><tr><th>Section</th><th>What it covers</th></tr></thead>
   <tbody>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-safe-rules-read-one-line-and-only-inside-the-sink">The SAFE rules read one line</a></td>
-      <td>The same injection written two ways, in five languages: reported inside the sink call, invisible once it is bound to a variable first.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#taint-tracking-one-file-one-name-forward-only">Taint tracking</a></td>
+      <td>What binding a query to a variable now catches in all six languages, the thirteen shapes it still misses, and the four rung-1 false positives — each a file you can paste.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
@@ -141,15 +147,15 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>
-      <td>Four limits on the one mechanism for text that describes a violation — including the rule id that is accepted without being checked against anything.</td>
+      <td>Four limits on the one mechanism for text that describes a violation — including the half of a rule id that is still accepted without being checked against anything.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-self-scan-and-what-is-ignored">The self-scan, and what is ignored</a></td>
       <td>Which paths are held out, by what, and why no mechanism reports one that has gone stale.</td>
     </tr>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linters-two-of-the-four-report-nothing-at-all">External linters</a></td>
-      <td>Which of the four integrations report nothing, why, and the one case where configuring your linter leaves you with less coverage than not configuring it.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linters-deferring-costs-you-procoders-own-thresholds">External linters</a></td>
+      <td>The cargo cache that swallows clippy's findings, the cost of letting a linter's thresholds replace procoder's, and one whole-crate compile per Rust file scanned.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#cargo-clippy-cannot-be-scoped-to-one-file">clippy cannot be scoped to one file</a></td>
@@ -165,15 +171,15 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-toml-parser-is-a-documented-subset">The TOML parser is a subset</a></td>
-      <td>What parses, what is warned about, and the one case that loads a value the author did not intend.</td>
+      <td>What parses, the long list that is refused rather than guessed at, and the two constructs that still load a value the author did not write.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#deliberate-narrowings-from-performance-work">Deliberate narrowings</a></td>
-      <td>Every ceiling the performance work left behind — span lengths, findings per line, per-line and per-file size guards, the time budget.</td>
+      <td>Every ceiling the performance work left behind — the two span lengths that survive, findings per line, per-line and per-file size guards, the time budget.</td>
     </tr>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-only-reports-near-the-edit">The hook reports near the edit</a></td>
-      <td>Which findings the in-session hook narrows to the edited region, and which are exempt.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-reports-near-the-edit-and-at-most-five-findings">The hook reports near the edit</a></td>
+      <td>Which findings the in-session hook narrows to the edited region, which are exempt, and the five-finding cap it applies without saying so.</td>
     </tr>
   </tbody>
 </table>
