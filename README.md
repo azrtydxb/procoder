@@ -129,10 +129,23 @@ true = "error"
 obvious = "warn"
 alone = "warn"
 
+[thresholds]
+function_lines = 40
+nesting_depth = 3
+params = 4
+complexity = 10
+
 [exclude]
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
+
+[baseline]
+file = ".procoder-baseline.json"
 ```
+
+The values shown for `[thresholds]` and `[baseline]` are the defaults; every
+key is optional. Arrays may span multiple lines. A line the config parser
+cannot recognize is warned on stderr and skipped, never silently dropped.
 
 `[rungs]` sets each rung's severity. `error` findings are reported as must-fix;
 `warn` findings are reported as advisory. The active level modulates this: at
@@ -148,6 +161,36 @@ file, everywhere else that rule still applies. Because the match is exact
 rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
 new files added later under the same directory — narrowing enforcement always
 takes a second, deliberate edit per file.
+
+### The literal marker
+
+The third and narrowest suppression form is not in `.procoder.toml` at all: it
+is a marker written on the line itself, for text that *describes* a violation
+rather than committing one — a detection pattern, a doctrine paragraph, a test
+fixture, a rule id quoted in config.
+
+`<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>` <!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
+
+| Rule | Why |
+|---|---|
+| It must name its rules, comma-separated. There is no bare form and no wildcard. | An unnamed suppression is a rung-4 violation by this project's own doctrine; the bare form is reported as `alone/blanket-suppression`. |
+| It must state a reason of at least two words. | A marker with no reason does not parse, silences nothing, and is reported as `alone/unexplained-suppression`. |
+| The reason runs to end of line, so the marker is always last on its line. | That is what separates a *trailing* marker (this line only) from a *standalone* one (its own line and the next), which is the widest scope offered — there is no block or file form. |
+
+The standalone form exists for lines that cannot carry a comment of their own:
+YAML frontmatter, a markdown table row, a fenced example.
+
+It can name any built-in rule, `safe/hardcoded-secret` included — a mechanism
+that could not cover a credential could not cover the fixtures and doctrine
+pages where the false positives actually are. What keeps it honest is that it
+names the rule, states a reason, reaches at most two lines, and sits in the
+diff right next to the value.
+
+It cannot name an external linter's rule id (`true/eslint:no-eval`) — those
+carry colons and digits, which the marker's id syntax does not accept. Use
+`[exclude] rules` for those. See
+[`docs/known-limitations.md`](docs/known-limitations.md) for the rest of what
+it does not cover.
 
 ## Statusline
 

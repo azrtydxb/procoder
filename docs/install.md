@@ -166,10 +166,19 @@ installed, which writes the pre-commit hook and CI export for you, or wire the
 CLI directly:
 
 ```bash
-procoder check <paths...>     # exit 1 if any non-baselined finding exists
+procoder check <paths...>     # exit 1 if any non-baselined finding blocks at the active level
 procoder baseline <paths...>  # record current findings as accepted
 procoder verify <paths...>    # exit 1 if any finding isn't in the baseline — the CI ratchet
 ```
+
+At `pragmatic`, `check` reports OBVIOUS and ALONE findings but does not exit 1
+on them; every other level gates all four rungs, and so does CI, which has no
+level file and therefore resolves to the default `strict`.
+
+`verify` takes one extra flag, `--unused-exclusions`: it also fails if an
+`[exclude] rules` entry suppressed nothing in this run — a stale suppression
+left behind after the finding it silenced was fixed. Without the flag the stale
+entries are still reported, they just do not fail the build.
 
 ## Troubleshooting
 
@@ -211,6 +220,20 @@ baseline <paths...>` is for: it records every current finding as accepted, so
 only new and changed code is gated going forward. See [Known
 limitations](known-limitations.md) for what the baseline's fingerprinting
 does and doesn't protect against.
+
+**A finding on a line that only *describes* a violation.**
+
+Documentation quoting an injection sink, a test fixture holding a real-shaped
+credential, a rule id named in config — all read to a regex exactly like the
+thing they talk about. Mark the line instead of excluding the file:
+
+`<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>` <!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
+
+Trailing on a line it covers that line; standing on its own line it covers that
+line and the next. It must name its rules and give a reason, or it silences
+nothing and is itself reported. See the README's Configuration section for the
+full rules, and [Known limitations](known-limitations.md) for what it cannot
+reach — notably external linter rule ids such as `true/eslint:no-eval`.
 
 **`procoder verify` exits 2 instead of 0 or 1.**
 
