@@ -91,6 +91,75 @@ test('the clean fixture is silent and the dirty one is not', () => {
     { relPath: 'dirty.py', config }).length >= 6);
 });
 
+// --- wrapped `def` signatures ----------------------------------------------
+//
+// black wraps a signature one parameter per line as soon as it passes the line
+// width, so in formatted Python a many-parameter function is *always* wrapped —
+// exactly the shape obvious/too-many-params exists to catch. Reading the
+// parameters off the `def` line alone reported 0 for every one of them.
+const paramFinding = (src) => check(src, { relPath: 'x.py', config })
+  .find((f) => f.id === 'obvious/too-many-params');
+
+test('a wrapped def is measured, and reported at its def line', () => {
+  const src = [
+    'def process_user_records(',   // 1
+    '    records,',
+    '    options,',
+    '    logger,',
+    '    clock,',
+    '    store,',
+    '    ctx,',                    // trailing comma is not a parameter
+    '):',
+    '    return len(records)',
+    '',
+  ].join('\n');
+  const found = paramFinding(src);
+  assert.ok(found, 'a wrapped def was not measured at all');
+  assert.strictEqual(found.message, '6 parameters (limit 4)');
+  assert.strictEqual(found.line, 1);
+});
+
+test('async def, decorators above, and commas inside defaults and annotations', () => {
+  const wrapped = (params) => [
+    '@retry(times=3)',
+    '@traced',
+    'async def go(',
+    ...params.map((p) => `    ${p},`),
+    ') -> Dict[str, int]:',
+    '    return {}',
+    '',
+  ].join('\n');
+
+  // Five parameters, three of them carrying a comma of their own.
+  assert.strictEqual(
+    paramFinding(wrapped(['a', 'b=(1, 2)', 'seen: Dict[str, int]', '*args', '**kwargs'])).message,
+    '5 parameters (limit 4)');
+  // Four of the same: under the limit, and the inner commas must not inflate it.
+  assert.strictEqual(paramFinding(wrapped(['b=(1, 2)', 'seen: Dict[str, int]', '*args', '**kwargs'])),
+    undefined);
+});
+
+// `self`/`cls` is the receiver, not an argument the caller passes. A method
+// written with five callable parameters is the same burden as a function with
+// five, and counting the receiver would make the budget one tighter for methods
+// than for functions — and tighter than for the brace packs, where the receiver
+// is implicit `this` and was never counted.
+test('self and cls do not count toward the parameter budget', () => {
+  const method = (receiver, params) => [
+    'class Store:',
+    `    def save(${receiver}${params.map((p) => `, ${p}`).join('')}):`,
+    '        return 1',
+    '',
+  ].join('\n');
+  assert.strictEqual(paramFinding(method('self', ['a', 'b', 'c', 'd'])), undefined);
+  assert.strictEqual(paramFinding(method('cls', ['a', 'b', 'c', 'd'])), undefined);
+  assert.strictEqual(paramFinding(method('self', ['a', 'b', 'c', 'd', 'e'])).message,
+    '5 parameters (limit 4)');
+  // A plain function keeps counting all five.
+  assert.strictEqual(paramFinding('def save(a, b, c, d, e):\n    return 1\n').message,
+    '5 parameters (limit 4)');
+});
+
 // Perf guard: every rule here must stay linear in line length. Each unit below
 // is an adversarial prefix — repeated, it makes any unbounded span in a rule
 // re-scan to end of line from every offset, which is the quadratic shape that

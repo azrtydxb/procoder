@@ -450,6 +450,7 @@ function emptyCatchFindings(text, re, message) {
 }
 
 module.exports = {
+  SIGNATURE_LOOKBACK,
   stripNoise,
   analyzeBraces,
   analyzeIndent,
