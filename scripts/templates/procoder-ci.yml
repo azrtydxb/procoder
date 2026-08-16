@@ -1,0 +1,32 @@
+# procoder CI guard. Copy to .github/workflows/procoder.yml
+name: procoder
+on: [push, pull_request]
+
+jobs:
+  procoder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install procoder
+        run: npm install -g procoder
+
+      - name: Check changed files
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          files="$(git diff --name-only --diff-filter=ACM "$base" HEAD || true)"
+          if [ -n "$files" ]; then
+            # shellcheck disable=SC2086
+            procoder check $files
+          fi
+
+      # The ratchet compares fingerprints, not counts: fixing an old finding
+      # buys no room for a new one. Never replace this with a count comparison.
+      - name: Ratchet — accepted debt may shrink, never grow
+        if: hashFiles('.procoder-baseline.json') != ''
+        run: procoder verify .

@@ -37,6 +37,10 @@ const EXPECTATIONS = {
   'procoder-audit.toml': { descriptionContains: 'whole repository', promptContains: 'procoder-audit skill' },
   'procoder-rot.toml': { descriptionContains: 'dead, stale, and deprecated', promptContains: 'procoder-rot skill' },
   'procoder-threat.toml': { descriptionContains: 'trust boundary', promptContains: 'procoder-threat skill' },
+  'procoder-deps.toml': { descriptionContains: 'dependencies', promptContains: 'procoder-deps skill' },
+  'procoder-debt.toml': { descriptionContains: 'removal trigger', promptContains: 'procoder-debt skill' },
+  'procoder-gain.toml': { descriptionContains: 'measured progress', promptContains: 'procoder-gain skill' },
+  'procoder-guard.toml': { descriptionContains: 'pre-commit hook', promptContains: 'procoder-guard skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {
