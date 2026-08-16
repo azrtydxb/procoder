@@ -65,22 +65,6 @@ const MAX_FILE_BYTES = 4 * 1024 * 1024;
 // 5MB single line.
 const MAX_LINE_BYTES = 4096;
 
-// One path is still not linear in line length, so one guard survives for the
-// packs' line rules too — a narrow one. FUNCTION_SIGNATURE, scanned by
-// signaturesFrom, backtracks over an unbroken run of word characters: measured
-// on a single such run, 8KB costs 54ms, 25KB 483ms, 50KB 2230ms and 100KB
-// 9041ms, four times the cost per doubling. Ordinary minified code never
-// triggers it — its identifiers are short and a `(` ends the run every few
-// characters, which is why a 1MB minified line costs 46ms — and a base64 blob
-// does not either, because stripNoise blanks string contents first. What does
-// is a file with a multi-KB unbroken token, and the packs must not stall on it.
-//
-// 4096 keeps the exposure exactly where it already was: before this guard
-// became shape-only, a line over 4KB was blanked outright, so no word run past
-// 4KB ever reached the scan. Lines under it are unaffected, as they always were.
-const MAX_WORD_RUN_BYTES = 4096;
-const RUNAWAY_WORD_RUN = new RegExp(`[A-Za-z0-9_$]{${MAX_WORD_RUN_BYTES + 1},}`);
-
 // What the shape guard covers: everything shapeFindings emits. The rest of a
 // pack's output is line-oriented and reads the raw source.
 const SHAPE_IDS = new Set([
@@ -99,16 +83,6 @@ const CONTEXT_MARGIN = 3;
 function blankLongLines(source) {
   if (source.length <= MAX_LINE_BYTES) return source;
   return source.split('\n').map((l) => (l.length > MAX_LINE_BYTES ? '' : l)).join('\n');
-}
-
-// The packs' line rules see every line except one a runaway word run would make
-// quadratic. See MAX_WORD_RUN_BYTES: the test itself costs 8ms on a 1MB
-// minified line and 13ms on a 4MB file, and only long lines are tested at all.
-function blankRunawayLines(source) {
-  if (source.length <= MAX_LINE_BYTES) return source;
-  return source.split('\n')
-    .map((l) => (l.length > MAX_LINE_BYTES && RUNAWAY_WORD_RUN.test(l) ? '' : l))
-    .join('\n');
 }
 
 // Keeps at most MAX_FINDINGS_PER_LINE findings per line, most severe first, and
@@ -184,11 +158,9 @@ function checkFile(absPath, {
   }
 
   // Two views of the source for the pack: `shaped` drops every long line for the
-  // shape rules (MAX_LINE_BYTES), `scanned` drops only the ones that would make
-  // the signature scan quadratic (MAX_WORD_RUN_BYTES). The universal pack below
-  // reads the raw source and neither of these.
+  // shape rules (MAX_LINE_BYTES); the line rules and the universal pack read the
+  // source as written, unguarded, because every path over a long line is linear.
   const shaped = blankLongLines(source);
-  const scanned = blankRunawayLines(source);
   const findings = [];
 
   // The universal pack runs first and on the raw source: no linter checks for
@@ -222,8 +194,8 @@ function checkFile(absPath, {
     // is the pack run a second time over the shape copy, to take the shape
     // findings from there — that pass is cheap precisely because the long line
     // is gone from it.
-    let packFindings = pack.check(scanned, { relPath, config });
-    if (shaped !== scanned) {
+    let packFindings = pack.check(source, { relPath, config });
+    if (shaped !== source) {
       packFindings = packFindings.filter((f) => !SHAPE_IDS.has(f.id))
         .concat(pack.check(shaped, { relPath, config }).filter((f) => SHAPE_IDS.has(f.id)));
     }

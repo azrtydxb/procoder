@@ -312,18 +312,20 @@ test('a minified line that matches thousands of times is capped, and says so', (
   assert.ok(out.findings.some((f) => f.id === 'true/findings-suppressed'));
 });
 
-// One path is still quadratic: FUNCTION_SIGNATURE backtracks over an unbroken
-// run of word characters, 9s on a 100KB one. Lines carrying such a run stay
-// blanked for the packs — see MAX_WORD_RUN_BYTES.
-test('a line with a runaway word run stays out of the packs', () => {
-  const repo = repoWith({ 'bundle.ts': `eval(a);\n${'x'.repeat(200 * 1024)}\n` });
+// A word run used to make the ts signature scan quadratic, so the packs never
+// saw the line carrying it. The scan is linear now and the guard is gone, so a
+// sink sharing that line is reported — and 1MB stays far inside the budget.
+test('a sink on a line with a runaway word run is reported', () => {
+  const repo = repoWith({
+    'bundle.ts': `db.query(\`select * from t where id = \${id}\`);${'x'.repeat(1024 * 1024)}\n`,
+  });
   const started = Date.now();
   const out = checkFile(path.join(repo, 'bundle.ts'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   const elapsed = Date.now() - started;
-  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — a runaway word run reached the packs`);
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'),
-    'the rest of the file was dropped with it');
+  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms on a 1MB word run`);
+  assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
+    'the sink on the word-run line was invisible');
 });
 
 test('a long line stays cheap: the shape path never sees it', () => {
