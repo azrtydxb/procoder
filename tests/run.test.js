@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { checkFile } = require('../hooks/checks/run');
+const { checkFile, MAX_FINDINGS_PER_LINE } = require('../hooks/checks/run');
 const { loadConfig } = require('../hooks/checks/config');
 const { writeBaseline, fingerprint } = require('../hooks/checks/baseline');
 const { finding } = require('../hooks/checks/finding');
@@ -269,6 +269,45 @@ test('a long line stays cheap: the shape path never sees it', () => {
   checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
   const elapsed = Date.now() - started;
   assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — the shape path is quadratic in line length`);
+});
+
+// One line can match a rule thousands of times. The cap keeps that off the
+// report — and says where it cut, because a silently truncated result is worse
+// than a long one.
+const FLOODED_LINE = 'try{a();}catch(e){}'.repeat(30);
+
+test('one line cannot contribute more than the per-line cap', () => {
+  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\n` });
+  const out = checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const onLine1 = out.findings.filter((f) => f.line === 1 && f.id !== 'true/findings-suppressed');
+  assert.strictEqual(onLine1.length, MAX_FINDINGS_PER_LINE);
+});
+
+test('the suppressed overflow is reported, not silent', () => {
+  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\n` });
+  const out = checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const notice = out.findings.find((f) => f.id === 'true/findings-suppressed');
+  assert.ok(notice, 'findings were dropped without saying so');
+  assert.strictEqual(notice.line, 1);
+  assert.match(notice.message, /line 1: \d+ further findings suppressed/);
+});
+
+test('a line under the cap gets no suppression notice', () => {
+  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });
+  const out = checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(!out.findings.some((f) => f.id === 'true/findings-suppressed'));
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+});
+
+test('a flooded line does not crowd out findings from other lines', () => {
+  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\neval(fresh);\n` });
+  const out = checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo) });
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval' && f.line === 2),
+    'the per-file cap was spent on one line');
 });
 
 test('touched narrows the language pack to the edited region', () => {

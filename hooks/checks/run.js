@@ -12,10 +12,23 @@ const { packFor } = require('./registry');
 const { resolveFor, runToolResult } = require('./resolve');
 const { checkUniversal } = require('./universal');
 const { loadBaseline, suppress } = require('./baseline');
-const { sortFindings, capFindings } = require('./finding');
+const { finding, sortFindings, capFindings } = require('./finding');
 const { MANIFEST_FILES, checkManifest } = require('./deps');
 
 const MAX_FINDINGS = 5;
+
+// Findings a single line may contribute, applied before the per-file cap above.
+// One minified line is thousands of statements sharing one line number: the ts
+// pack alone reports 2,702 findings on a 100KB line, 13,204 on 500KB and 26,931
+// on 1MB. Dumped into the hook's context or into `procoder check` output that is
+// not a report, it is a denial of service against the real finding.
+//
+// 20 is chosen to sit just above what an ordinary line can produce: a line rule
+// fires at most once per line, the widest language pack has 10 of them and the
+// universal pack 5, plus the handful of shape findings that can share a start
+// line — under 20 in total, so no honest line is ever capped. Anything past it
+// is the same rule matching a minified line over and over.
+const MAX_FINDINGS_PER_LINE = 20;
 
 // The hook runs on every write and the harness kills it at 2s, so the budget is
 // real: past it the user gets a stall and no findings at all.
@@ -58,6 +71,40 @@ const CONTEXT_MARGIN = 3;
 function blankLongLines(source) {
   if (source.length <= MAX_LINE_BYTES) return source;
   return source.split('\n').map((l) => (l.length > MAX_LINE_BYTES ? '' : l)).join('\n');
+}
+
+// Keeps at most MAX_FINDINGS_PER_LINE findings per line, most severe first, and
+// says so where it cuts. Silent truncation is the failure mode this project has
+// repeatedly punished, so the overflow is reported as a finding of its own —
+// that is the only channel the hook renders.
+//
+// It composes with the per-file cap by running first and per line: a pathological
+// line contributes at most 21 findings to the pool the file cap then sorts, so
+// findings from every other line are still reachable.
+function capFindingsPerLine(findings) {
+  const byLine = new Map();
+  for (const f of findings) {
+    if (!byLine.has(f.line)) byLine.set(f.line, []);
+    byLine.get(f.line).push(f);
+  }
+
+  const kept = [];
+  for (const [line, group] of byLine) {
+    if (group.length <= MAX_FINDINGS_PER_LINE) {
+      kept.push(...group);
+      continue;
+    }
+    // Ranked before slicing: what survives a cap must be the rung-1 findings,
+    // never whichever pack happened to run first.
+    kept.push(...sortFindings(group).slice(0, MAX_FINDINGS_PER_LINE));
+    const suppressed = group.length - MAX_FINDINGS_PER_LINE;
+    kept.push(finding({
+      rung: 'TRUE', id: 'true/findings-suppressed', line,
+      message: `line ${line}: ${suppressed} further findings suppressed (cap ${MAX_FINDINGS_PER_LINE} per line)`,
+      fix: 'split the line, or exclude the file if it is generated',
+    }));
+  }
+  return kept;
 }
 
 // The line span of each touched text, located in the file as written. A text
@@ -146,7 +193,8 @@ function checkFile(absPath, {
     findings.push(...checkManifest(absPath, source));
   }
 
-  const scoped = findings.filter((f) => !isRuleExcluded(config, relPath, f.id));
+  const scoped = capFindingsPerLine(findings)
+    .filter((f) => !isRuleExcluded(config, relPath, f.id));
 
   const lines = source.split(/\r?\n/);
   const baseline = applyBaseline ? loadBaseline(repoRoot, config) : null;
@@ -163,4 +211,6 @@ function checkFile(absPath, {
   };
 }
 
-module.exports = { checkFile, MAX_FINDINGS, MAX_FILE_BYTES, MAX_LINE_BYTES };
+module.exports = {
+  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, MAX_LINE_BYTES,
+};
