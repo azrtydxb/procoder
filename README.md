@@ -123,10 +123,22 @@ Environment variables:
 exclusions):
 
 ```toml
+[rungs]
+safe = "error"
+true_ = "error"
+obvious = "warn"
+alone = "warn"
+
 [exclude]
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
 ```
+
+`[rungs]` sets each rung's severity. `error` findings are reported as must-fix;
+`warn` findings are reported as advisory. The active level modulates this: at
+`pragmatic`, the judgment rungs (OBVIOUS, ALONE) are flagged without blocking
+language, while SAFE and TRUE always demand a fix. The key is `true_` rather
+than `true`, since bare `true` is a TOML boolean.
 
 `[exclude] paths` excludes whole paths (directory prefixes) from every check.
 `[exclude] rules` is narrower and exact-path-only: each entry is
