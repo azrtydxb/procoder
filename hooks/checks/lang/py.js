@@ -4,6 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const {
+  SIGNATURE_LOOKBACK,
   analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings,
 } = require('../shape');
 
@@ -63,7 +64,59 @@ const LINE_RULES = [
 const BARE_EXCEPT = /^\s*except\s*:\s*$/;
 const BROAD_EXCEPT = /^\s*except\s+(?:Exception|BaseException)\b[^:]*:\s*$/;
 const SILENT_BODY = /^\s*(?:pass|\.\.\.)\s*$/;
-const DEF_LINE = /^\s*(?:async\s+)?def\s+\w+\s*\(([^)]*)\)/;
+const DEF_HEAD = /^\s*(?:async\s+)?def\s+\w+\s*\(/;
+
+// `self`/`cls` is the receiver, not an argument the caller supplies. Counting
+// it would make the parameter budget one tighter for methods than for
+// functions — and tighter than for the brace packs, where the receiver is an
+// implicit `this` that was never counted.
+const RECEIVER = /^\s*(?:self|cls)\s*(?:,|$)/;
+
+// The parameter text of a `def`, read across the lines its list wraps over.
+// black wraps one parameter per line past the line width, so in formatted
+// Python a many-parameter signature is always wrapped — reading only the `def`
+// line saw an empty list for exactly the functions the params check exists to
+// catch. Same shape as shape.js's rescanner for the brace packs: take the
+// signature's own line plus its continuations, bounded by the same lookback so
+// an unclosed paren cannot walk the file.
+//
+// One left-to-right scan tracking bracket depth, rather than a regex: `)` also
+// ends a default value or an annotation, and `[^)]*` stopped at the first of
+// them.
+const BRACKET = { '(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1 };
+
+// Index of the bracket that closes the signature within `text`, or -1. `state`
+// carries the depth across the lines a wrapped list spans.
+function closeIndex(text, state) {
+  for (let i = 0; i < text.length; i += 1) {
+    const step = BRACKET[text[i]] || 0;
+    if (step < 0 && state.depth === 0) return i;
+    state.depth += step;
+  }
+  return -1;
+}
+
+function defParams(lines, start) {
+  const head = DEF_HEAD.exec(lines[start] || '');
+  if (!head) return null;
+
+  const state = { depth: 0 };
+  let text = lines[start].slice(head[0].length);
+  let params = '';
+  for (let ln = start; ln - start < SIGNATURE_LOOKBACK; ln += 1) {
+    const close = closeIndex(text, state);
+    if (close !== -1) return params + text.slice(0, close);
+    params += text;
+    text = ' ' + (lines[ln + 1] === undefined ? '' : lines[ln + 1]);
+  }
+  return null;
+}
+
+function countDefParams(lines, start) {
+  const params = defParams(lines, start);
+  if (params === null) return 0;
+  return countParams('(' + params + ')') - (RECEIVER.test(params) ? 1 : 0);
+}
 
 function exceptFindings(lines) {
   const findings = [];
@@ -90,14 +143,11 @@ function exceptFindings(lines) {
 // Python has no signature-opening brace to key on, so every indent block is
 // measured and the def line, when there is one, supplies the parameters.
 function measureBlocks(lines, blocks) {
-  return blocks.map((block) => {
-    const signature = DEF_LINE.exec(lines[block.startLine - 1] || '');
-    return {
-      ...block,
-      params: signature ? countParams('(' + signature[1] + ')') : 0,
-      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
-    };
-  });
+  return blocks.map((block) => ({
+    ...block,
+    params: countDefParams(lines, block.startLine - 1),
+    complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
+  }));
 }
 
 // Every rule here matches code, never prose: `# never use eval(user_input)`
