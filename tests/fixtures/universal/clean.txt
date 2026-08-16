@@ -14,6 +14,25 @@ logger.warn("password reset requested for " + user.id)
 // It only happens on the legacy ingest path, not the new one.
 // See INFRA-4821 for the vendor ticket with the vendor's own team.
 // Remove once they ship the fix upstream.
+// Total-size skip. Cost of everything that survives the line guard below is
+// linear in file size: measured end to end on many-short-line files, 1MB = 34ms,
+// 4MB = 137ms, 8MB = 279ms. 4MB is ~7% of the budget and larger than any file a
+// human edits, so that is where the skip sits — not the old 256KB, which was
+// inherited from when a long line could blow the budget and threw away real
+// findings on ordinary large sources.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+// The ranking is deliberately linear, so a reviewer can predict it:
+// score = weight * signal, normalised so that 1.0 = perfect
+// Anything cleverer was impossible to explain in review.
+const rank = 1;
+// The shim exists only for the broken release window.
+// Upstream fixed this in v2.4 = 2025-11-03; remove the shim after
+// every consumer has moved past that release.
+const shim = true;
+// Ordinary prose, four lines of it, describing why the ingest path is the way
+// it is rather than what it does. There is no code shape here at all, only the
+// kind of explanation a reader needs six months from now when the reason has
+// been forgotten by everyone who was in the room.
 // eslint-disable-next-line no-eval -- sandboxed evaluator, input is a literal
 x = compute()  # noqa: E501 - URL cannot be wrapped
 //nolint:errcheck // Close() on a read-only handle cannot fail

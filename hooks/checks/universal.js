@@ -40,14 +40,29 @@ const INTERPOLATED = /\$\{[^}]*\}|%[sdv]|\{\}|\{[a-z_][\w.]*\}|["'`]\s*[+,]\s*\w
 
 const COMMENT_LINE = /^\s*(?:\/\/|#|--|\*(?!\/))\s?(.*)$/;
 // A commented line is CODE, not prose, when it ends in a code terminator or
-// contains an assignment/call/brace — prose sentences do not. Inline code spans
-// are removed first: prose that quotes a fragment of code is still prose.
+// contains a statement keyword, an assignment or a call — prose sentences do
+// not. Inline code spans are removed first: prose that quotes a fragment of
+// code is still prose.
+//
+// The assignment arm is anchored and demands an identifier or member
+// expression on the left, because the unanchored "= followed by non-=" it
+// replaced read measured prose as code: "1MB = 34ms" matched, so a why-comment
+// recording the numbers behind a threshold — exactly what rung 3 asks an
+// author to write — was reported as commented-out code by rung 4. Identifiers
+// cannot start with a digit, which is what separates a unit from a variable.
 const INLINE_CODE_SPAN = /`[^`]*`/g;
-const LOOKS_LIKE_CODE =
-  /[;{}]\s*$|^\s*(?:if|for|while|return|const|let|var|def|func|fn|class|import|from|public|private)\b|=\s*[^=]|\w+\([^)]*\)\s*[;{]?\s*$/;
+const IDENT = '[A-Za-z_$][\\w$]*';
+const ASSIGN_TARGET = `${IDENT}(?:\\s*\\.\\s*${IDENT}|\\s*\\[[^\\]]{0,40}\\])*`;
+const LOOKS_LIKE_CODE = new RegExp(
+  '[;{}]\\s*$' +
+  '|^\\s*(?:if|for|while|return|const|let|var|def|func|fn|class|import|from|public|private)\\b' +
+  `|^\\s*${ASSIGN_TARGET}\\s*(?:[-+*/%|&^]|\\?\\?|\\|\\||&&|<<|>>)?=[^=]` +
+  '|\\w+\\([^)]*\\)\\s*[;{]?\\s*$');
 
 // A run this long, mostly code-shaped, is a commented-out block rather than a
-// paragraph of explanation that happens to mention a symbol.
+// paragraph of explanation that happens to mention a symbol. "Mostly" is a
+// majority of the run, not a fixed two lines: a long explanation with one
+// code-shaped sentence in it is still an explanation.
 const COMMENT_RUN_MIN = 3;
 const CODE_COMMENTS_MIN = 2;
 
@@ -147,7 +162,7 @@ function commentedCodeFindings(lines) {
   let codeComments = 0;
 
   const close = () => {
-    if (run >= COMMENT_RUN_MIN && codeComments >= CODE_COMMENTS_MIN) {
+    if (run >= COMMENT_RUN_MIN && codeComments >= CODE_COMMENTS_MIN && codeComments * 2 >= run) {
       findings.push(finding({
         rung: 'ALONE', id: 'alone/commented-code', line: runStart,
         message: `${run} lines of commented-out code`,

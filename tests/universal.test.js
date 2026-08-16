@@ -59,6 +59,43 @@ test('flags a block of commented-out code but not prose comments', () => {
   assert.ok(!ids(prose).includes('alone/commented-code'));
 });
 
+test('still flags commented-out code that has no leading keyword', () => {
+  const commented = [
+    '// const q = `SELECT * FROM t`;',
+    '// db.query(q);',
+    '// return q;',
+  ].join('\n');
+  assert.ok(ids(commented).includes('alone/commented-code'));
+});
+
+test('reads measured explanations as prose, not commented-out code', () => {
+  // The exact comment procoder's own self-scan used to flag: a why-comment that
+  // records the measurements behind a threshold. Rung 3 asks for this.
+  const measured = [
+    '// Total-size skip. Cost of everything that survives the line guard below is',
+    '// linear in file size: measured end to end on many-short-line files, 1MB = 34ms,',
+    '// 4MB = 137ms, 8MB = 279ms. 4MB is ~7% of the budget and larger than any file a',
+    '// human edits, so that is where the skip sits — not the old 256KB, which was',
+    '// inherited from when a long line could blow the budget and threw away real',
+    '// findings on ordinary large sources.',
+  ].join('\n');
+  assert.deepStrictEqual(ids(measured), []);
+
+  const formula = [
+    '// The ranking is deliberately linear, so a reviewer can predict it:',
+    '// score = weight * signal, normalised so that 1.0 = perfect',
+    '// Anything cleverer was impossible to explain in review.',
+  ].join('\n');
+  assert.deepStrictEqual(ids(formula), []);
+
+  const versions = [
+    '// The shim exists only for the broken release window.',
+    '// Upstream fixed this in v2.4 = 2025-11-03; remove the shim after',
+    '// every consumer has moved past that release.',
+  ].join('\n');
+  assert.deepStrictEqual(ids(versions), []);
+});
+
 test('flags TODOs without an owner or ticket', () => {
   assert.ok(ids('// TODO: fix this later').includes('alone/orphan-todo'));
   assert.ok(!ids('// TODO(pascal): drop the shim').includes('alone/orphan-todo'));
@@ -115,6 +152,16 @@ test('every finding carries a line number and a fix', () => {
     assert.ok(f.line > 0, `${f.id} has no line`);
     assert.ok(f.fix.length > 0, `${f.id} has no fix`);
   }
+});
+
+test('stays cheap on a long comment run of long near-code lines', () => {
+  // Worst case for the assignment arm: every line starts with something that
+  // walks the member-expression loop before failing to reach an `=`.
+  const line = '// ' + 'a.b[0].c'.repeat(500) + ' measured at 1MB = 34ms';
+  const start = Date.now();
+  run(Array.from({ length: 2000 }, () => line).join('\n'));
+  const ms = Date.now() - start;
+  assert.ok(ms < 500, `took ${ms}ms on pathological comment run`);
 });
 
 test('does not catastrophically backtrack on a long line', () => {
