@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   analyzeBraces, analyzeIndent, countParams, estimateComplexity, shapeFindings,
-  signaturesFrom, stripNoise,
+  measureFunctions, signaturesFrom, stripNoise,
 } = require('../hooks/checks/shape');
 const { DEFAULTS } = require('../hooks/checks/config');
 
@@ -132,6 +132,22 @@ test('signaturesFrom stays linear on a huge single-line file', () => {
   const start = Date.now();
   signaturesFrom(stripNoise(src), re);
   assert.ok(Date.now() - start < 500, 'signaturesFrom scaled worse than linearly');
+});
+
+// A 400KB minified line, the size at which the two used to cost 2.0s and 44.8s
+// respectively — each on its own over the 2s whole-file hook budget. Both now
+// run in single-digit milliseconds. The bound is 500ms, two orders of magnitude
+// above that, so a loaded CI machine cannot flake it; a return to quadratic
+// scaling costs tens of seconds and fails it by a wide margin.
+test('analyzeBraces and measureFunctions stay linear in line length', () => {
+  const unit = 'function f(a,b){if(a&&b){return a+b}else{return 0}}';
+  const line = unit.repeat(Math.ceil((400 * 1024) / unit.length));
+  const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
+
+  const start = Date.now();
+  const { blocks } = analyzeBraces(line);
+  measureFunctions([line], blocks, signaturesFrom(stripNoise(line), re));
+  assert.ok(Date.now() - start < 500, 'shape analysis scaled worse than linearly');
 });
 
 test('does not catastrophically backtrack on a long line', () => {

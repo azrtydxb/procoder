@@ -43,27 +43,40 @@ const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
 // TypeScript under-report throughout. Plain `label:` statements are left
 // alone: a line reading `  key:` is an object key far more often than a label,
 // and treating it as a block would count data literals as nesting again.
-const CASE_LABEL = /^\s*(?:case\b[^:]*|default)\s*:$/;
-
-// The text before a `{`, already right-trimmed, decides what the brace opens.
-function opensBlock(before) {
-  return !LITERAL_BRACE.test(before) || CASE_LABEL.test(before);
-}
+const CASE_LABEL = /^\s*(?:case\b[^:]*|default)\s*:/;
 
 // Every brace on one line, in order, each tagged with whether it opens a block
 // rather than a data literal.
+//
+// Both tests above only ever look at a bounded window, so neither needs the
+// text before the brace materialised. LITERAL_BRACE is end-anchored and reaches
+// at most `return` plus the character that gives it a word boundary: seven
+// characters ending at the last non-space decide it. CASE_LABEL is start-
+// anchored and must cover the whole prefix, so at most one offset per line can
+// satisfy it — one exec finds that offset, lazily, and only for a brace whose
+// prefix ends in the colon a label would leave there. Slicing the prefix per
+// brace instead — the obvious way — is quadratic, and a minified file is one
+// long line where every slice spans the entire file.
 function bracesInLine(line, lineNo) {
   const braces = [];
-  for (let i = 0; i < line.length; i += 1) {
-    if (line[i] === '{') {
-      braces.push({
-        open: true,
-        lineNo,
-        isBlock: opensBlock(line.slice(0, i).replace(/\s+$/, '')),
-      });
-    } else if (line[i] === '}') {
-      braces.push({ open: false, lineNo });
+  let caseColon;
+  const labelOpensBlock = (at) => {
+    if (caseColon === undefined) {
+      const label = CASE_LABEL.exec(line);
+      caseColon = label ? label[0].length - 1 : -1;
     }
+    return at === caseColon;
+  };
+
+  let lastCode = -1;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '}') braces.push({ open: false, lineNo });
+    else if (ch === '{') {
+      const literal = LITERAL_BRACE.test(line.slice(Math.max(0, lastCode - 6), lastCode + 1));
+      braces.push({ open: true, lineNo, isBlock: !literal || labelOpensBlock(lastCode) });
+    }
+    if (!/\s/.test(ch)) lastCode = i;
   }
   return braces;
 }
@@ -246,12 +259,29 @@ function signaturesFrom(stripped, re) {
 // Attaches params and complexity to the blocks that start on a signature line,
 // dropping the blocks that are not functions at all.
 function measureFunctions(lines, blocks, signatures) {
+  // One complexity scan per distinct line range, not per block. Every function
+  // on a single minified line spans the same range, so N blocks over an L-byte
+  // line cost one scan of L rather than N — the quadratic term, since scanning
+  // a block costs its whole span. Counting branches per line over one strip of
+  // the file would also be linear, but it moves the `?:` alternative's window
+  // and changes reported complexity on ordinary multi-line code, so the scan
+  // stays exactly the one it was.
+  const scanned = new Map();
+  const complexityOf = (block) => {
+    const span = block.startLine + ':' + block.endLine;
+    if (!scanned.has(span)) {
+      scanned.set(span, estimateComplexity(
+        lines.slice(block.startLine - 1, block.endLine).join('\n')));
+    }
+    return scanned.get(span);
+  };
+
   return blocks
     .filter((block) => signatures.has(block.startLine))
     .map((block) => ({
       ...block,
       params: countParams('(' + signatures.get(block.startLine) + ')'),
-      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
+      complexity: complexityOf(block),
     }));
 }
 
