@@ -220,3 +220,69 @@ test('a bad table header does not send its keys to the previous table', () => {
   assert.deepStrictEqual(out.exclude.paths, ['a/']);
 });
 
+// --- duplicates ------------------------------------------------------------
+//
+// TOML forbids defining a key twice. Loading the last one silently is the
+// worst outcome available here: `paths = ["vendor/"]` followed by
+// `paths = ["dist/"]` un-excludes vendor/ while the author, reading their own
+// file, sees both. Every key this config has narrows enforcement when it is
+// set and falls back to a strict default when it is not, so the only choice
+// that cannot silently enforce less than the file says is to refuse BOTH
+// values and leave the key unset. Keeping either one would be a guess, and
+// this parser does not guess.
+
+test('a duplicate scalar key refuses both values and warns', () => {
+  const { out, captured } = parseCapturing('level = "strict"\nlevel = "pragmatic"\n', 'my.toml');
+  assert.strictEqual(out.level, undefined, 'a duplicated key must not load either value');
+  assert.match(captured, /my\.toml:2:/);
+  assert.match(captured, /duplicate/i);
+});
+
+test('a duplicate array key un-excludes nothing — neither list survives', () => {
+  const { out, captured } = parseCapturing(
+    '[exclude]\npaths = ["vendor/"]\npaths = ["dist/"]\n', 'my.toml');
+  assert.strictEqual(out.exclude.paths, undefined,
+    'the last-wins load silently un-excluded vendor/');
+  assert.match(captured, /my\.toml:3:/);
+});
+
+test('a third occurrence of the same key warns too, and still loads nothing', () => {
+  const { out, captured } = parseCapturing('k = 1\nk = 2\nk = 3\n', 'my.toml');
+  assert.strictEqual(out.k, undefined);
+  assert.strictEqual(captured.trim().split('\n').length, 2, `expected two warnings: ${captured}`);
+});
+
+test('a duplicate table header sends the repeated section nowhere, and warns', () => {
+  const { out, captured } = parseCapturing(
+    '[exclude]\npaths = ["a/"]\n[exclude]\nrules = ["obvious/long-function"]\n', 'my.toml');
+  assert.deepStrictEqual(out.exclude.paths, ['a/']);
+  assert.strictEqual(out.exclude.rules, undefined,
+    'keys under a repeated table header must not merge into the first section');
+  assert.match(captured, /my\.toml:3:/);
+  assert.match(captured, /duplicate/i);
+});
+
+test('a dotted key and a table cannot define the same key twice', () => {
+  const { out, captured } = parseCapturing(
+    'thresholds.params = 4\n[thresholds]\nparams = 12\n', 'my.toml');
+  assert.strictEqual(out.thresholds.params, undefined,
+    'a.b = 1 plus [a] / b = 2 defines a.b twice; neither value may load');
+  assert.match(captured, /my\.toml:3:/);
+});
+
+test('the same key name in two different tables is not a duplicate', () => {
+  const out = parseToml('[exclude]\npaths = ["a/"]\n[other]\npaths = ["b/"]\n');
+  assert.deepStrictEqual(out.exclude.paths, ['a/']);
+  assert.deepStrictEqual(out.other.paths, ['b/']);
+});
+
+test('a duplicated key whose second value spans lines still consumes those lines', () => {
+  const { out } = parseCapturing(
+    'paths = ["a/"]\npaths = [\n  "b/",\n]\nlevel = "strict"\n', 'my.toml');
+  assert.strictEqual(out.paths, undefined);
+  assert.strictEqual(out.level, 'strict', 'parsing did not resume after the duplicate array');
+});
+
+canary('a duplicated __proto__ key still cannot pollute Object.prototype',
+  '__proto__ = "x"\n__proto__ = "y"\npolluted = "yes"\n');
+

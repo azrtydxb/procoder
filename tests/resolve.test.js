@@ -396,6 +396,67 @@ test('ruff (real): a file ruff cannot parse is not a clean file', { skip: RUFF }
   assert.strictEqual(out.ok, false, 'a syntax error means ruff linted nothing else');
 });
 
+// --- cargo's cached replay --------------------------------------------------
+//
+// cargo replays a fresh unit's cached diagnostics in the format that compiled
+// it, so a hand-run `cargo clippy` leaves a cache procoder's `--message-format
+// short` run cannot read. Two ways that ends badly, both silent: the whole
+// output becomes unreadable and every clippy finding is dropped, or — when one
+// recompiled unit does emit a short line — the run reads as answered while the
+// replayed diagnostics for the file under inspection vanish, taking the Rust
+// pack's obvious/* rules with them. A tool that cannot be read must cost
+// coverage nowhere.
+
+test('a cached long-format replay is read, not silently dropped', () => {
+  const replay = {
+    name: 'node',
+    stream: 'stderr',
+    argv: () => ['-e', 'process.stderr.write("warning: unneeded `return` statement\\n --> src/lib.rs:2:5\\n  |\\n")'],
+    parse: TOOLS.rust.parse,
+  };
+  TOOLS.rust.argv('/repo/src/lib.rs');
+  const out = runToolResult(replay, { repoRoot: '/tmp', absPath: '/repo/src/lib.rs', timeoutMs: 2000 });
+  assert.strictEqual(out.findings.length, 1, 'the replayed diagnostic was dropped');
+  assert.strictEqual(out.findings[0].line, 2);
+  assert.strictEqual(out.ok, true);
+});
+
+test('a replay mixed with one recompiled unit never reads as a clean file', () => {
+  // The worst shape: the short line belongs to another file and is filtered
+  // out, so parse() succeeds with nothing left, exit 0 says clean, and the
+  // pack is skipped — while the file under inspection had a warning all along.
+  const mixed = {
+    name: 'node',
+    stream: 'stderr',
+    argv: () => ['-e', 'process.stderr.write("src/other.rs:9:1: warning: needless return\\nwarning: unneeded `return` statement\\n --> src/lib.rs:2:5\\n")'],
+    parse: TOOLS.rust.parse,
+  };
+  TOOLS.rust.argv('/repo/src/lib.rs');
+  const out = runToolResult(mixed, { repoRoot: '/tmp', absPath: '/repo/src/lib.rs', timeoutMs: 2000 });
+  assert.deepStrictEqual(out.findings.map((f) => f.line), [2],
+    'the replayed diagnostic for this file was reported as a clean run');
+});
+
+const CARGO = !shimmable ? 'shims unavailable on this platform'
+  : !hasTool('cargo') ? 'cargo is not on PATH' : false;
+
+test('cargo (real): a cache primed by a hand-run cargo clippy still answers', { skip: CARGO }, () => {
+  const repo = tempRepo({
+    'Cargo.toml': '[package]\nname = "cratea"\nversion = "0.1.0"\nedition = "2021"\n\n[lints.clippy]\nall = "warn"\n',
+    'src/lib.rs': 'pub fn f(x: i32) -> i32 {\n    return x + 1;\n}\n',
+  });
+  const primed = spawnSync('cargo', ['clippy'], { cwd: repo, encoding: 'utf8', timeout: REAL_TIMEOUT_MS });
+  assert.ok(!primed.error, `cargo did not run: ${primed.error && primed.error.message}`);
+  const tool = resolveFor('src/lib.rs', { repoRoot: repo });
+  assert.ok(tool, 'a configured cargo must resolve');
+  const out = runToolResult(tool, {
+    repoRoot: repo, absPath: path.join(repo, 'src/lib.rs'), timeoutMs: REAL_TIMEOUT_MS,
+  });
+  assert.ok(out.findings.length >= 1, 'running your own clippy made procoder blind');
+  assert.strictEqual(out.findings[0].line, 2);
+  assert.strictEqual(out.ok, true);
+});
+
 test('the SAFE rung is never deferred to an external tool', () => {
   // Every external finding lands on TRUE, so no tool run can ever stand in for
   // a safe/* rule — run.js keeps the pack's SAFE rules whatever the tool says.
