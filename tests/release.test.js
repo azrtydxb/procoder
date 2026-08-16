@@ -20,13 +20,13 @@ test('every skill has a matching command, and vice versa', () => {
   assert.deepStrictEqual(skills.sort(), commands.sort());
 });
 
-test('all eleven spec commands exist', () => {
+test('all twelve spec commands exist', () => {
   const commands = fs.readdirSync(path.join(root, 'commands'))
     .map((f) => path.basename(f, '.toml')).sort();
   assert.deepStrictEqual(commands, [
     'procoder', 'procoder-audit', 'procoder-debt', 'procoder-deps',
     'procoder-gain', 'procoder-guard', 'procoder-help', 'procoder-review',
-    'procoder-rot', 'procoder-statusline', 'procoder-threat',
+    'procoder-rot', 'procoder-statusline', 'procoder-threat', 'procoder-update',
   ]);
 });
 

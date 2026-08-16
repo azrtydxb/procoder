@@ -42,6 +42,7 @@ const EXPECTATIONS = {
   'procoder-gain.toml': { descriptionContains: 'measured progress', promptContains: 'procoder-gain skill' },
   'procoder-guard.toml': { descriptionContains: 'pre-commit hook', promptContains: 'procoder-guard skill' },
   'procoder-statusline.toml': { descriptionContains: 'statusline', promptContains: 'procoder-statusline skill' },
+  'procoder-update.toml': { descriptionContains: 'latest version', promptContains: 'procoder-update skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {

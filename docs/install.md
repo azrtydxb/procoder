@@ -1,7 +1,7 @@
 # Installing procoder
 
 procoder's doctrine lives in `skills/procoder/SKILL.md` and is generated into a
-rule file for every host below by `scripts/sync-rules.js`. Ten slash commands
+rule file for every host below by `scripts/sync-rules.js`. Twelve slash commands
 are ported the same way to `.opencode/command/` and `.openclaw/commands/`. CI
 fails if any generated file drifts from its source, so every path below reads
 the same doctrine.
@@ -62,7 +62,10 @@ the installer refuses to build a command around one and prints this instead:
 quoted or escaped to suit your shell. On Windows, the command is
 `powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
 
-In Claude Code, `/procoder-statusline` runs the installer for you.
+In Claude Code, `/procoder-statusline` runs the installer for you, and
+`/procoder-update` updates an installed procoder — the latter also names the
+copied rule files below that a doctrine change makes stale, and says whether the
+baseline format changed and needs `procoder baseline <paths>` re-run.
 
 ## Cursor
 
@@ -108,7 +111,7 @@ cp /path/to/procoder/.qoder/rules/procoder.md .qoder/rules/procoder.md
 ## opencode
 
 opencode reads `AGENTS.md` for the doctrine, and `.opencode/command/*.md` for
-the ten slash commands:
+the twelve slash commands:
 
 ```bash
 cp /path/to/procoder/AGENTS.md AGENTS.md
