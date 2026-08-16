@@ -48,18 +48,6 @@ const LINE_RULES = [
     fix: 'point at the proper CA bundle instead',
   },
   {
-    id: 'true/mutable-default', rung: 'TRUE',
-    // The parameter span is bounded: `[^)]*` is retried from every `def` on a
-    // line full of them, and with no `)` anywhere it runs to end of line each
-    // time — quadratic (653ms on a 100KB line, 2739ms at 200KB, the whole cost
-    // of this pack on that input). Bounding it makes it linear; the conjunction
-    // is unchanged, and 500 characters is the same bound go.js, rust.js and
-    // dotnet.js already put on their argument spans.
-    re: /\bdef\s+\w+\s*\([^)]{0,500}=\s*(?:\[\s*\]|\{\s*\}|set\s*\(\s*\))/,
-    message: 'mutable default argument — shared across calls',
-    fix: 'default to None and build the value inside the function',
-  },
-  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /^\s*print\s*\(|\bbreakpoint\s*\(\s*\)|\bpdb\.set_trace\s*\(/,
     message: 'leftover debugging statement',
@@ -118,6 +106,40 @@ function defParams(lines, start) {
   return null;
 }
 
+// `x=[]`, `x={}`, `x=set()` — a default built once at definition time and
+// then shared by every call that does not override it.
+const MUTABLE_DEFAULT = /=\s*(?:\[\s*\]|\{\s*\}|set\s*\(\s*\))/;
+
+// This used to be a line rule, `\bdef\s+\w+\s*\([^)]{0,500}=\s*…`, whose
+// parameter span was bounded to 500 characters because an unbounded `[^)]*` is
+// retried from every `def` on the line and, with no `)` anywhere, runs to end
+// of line each time — quadratic, 653ms on a 100KB line and 2739ms at 200KB.
+// The bound bought that back by giving up the finding on any `def` with more
+// than 500 characters of parameters ahead of the mutable one, and a signature
+// that long is exactly where a stray `[]` hides. It also never saw a wrapped
+// `def` at all, since a line rule tests one line and black puts each parameter
+// on its own.
+//
+// defParams already reads the whole list, across its continuations, by
+// tracking bracket depth rather than by matching a span — so the rule costs
+// one forward scan per `def` line with no ceiling on either. DEF_HEAD anchors
+// to the start of the line, which is where Python's grammar puts `def`
+// regardless.
+function mutableDefaultFindings(lines) {
+  const findings = [];
+  lines.forEach((line, index) => {
+    if (!DEF_HEAD.test(line)) return;
+    const params = defParams(lines, index);
+    if (params === null || !MUTABLE_DEFAULT.test(params)) return;
+    findings.push(finding({
+      rung: 'TRUE', id: 'true/mutable-default', line: index + 1,
+      message: 'mutable default argument — shared across calls',
+      fix: 'default to None and build the value inside the function',
+    }));
+  });
+  return findings;
+}
+
 function countDefParams(lines, start) {
   const params = defParams(lines, start);
   if (params === null) return 0;
@@ -166,6 +188,7 @@ function check(source, { relPath, config } = {}) {
 
   return [
     ...lineRuleFindings(LINE_RULES, lines),
+    ...mutableDefaultFindings(lines),
     ...exceptFindings(lines),
     ...shapeFindings({
       blocks: measureBlocks(lines, blocks),

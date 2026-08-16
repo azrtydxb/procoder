@@ -45,6 +45,24 @@ test('flags mutable default arguments', () => {
   assert.ok(!ids('def add(item, into=None):').includes('true/mutable-default'));
 });
 
+// The rule used to be a line pattern whose parameter span was bounded to 500
+// characters, so a `def` with more parameters than that ahead of the mutable
+// one produced nothing — and a long signature is exactly where a stray `[]`
+// hides. Being a *line* pattern, it also never saw a wrapped `def`, which is
+// what black produces for a signature that long.
+test('a mutable default is found however long the parameter list is', () => {
+  // Past 500 characters of parameters, which is where the old span gave up.
+  const wide = Array.from({ length: 60 }, (unused, i) => `parameter_number_${i}`).join(', ');
+  assert.ok(ids(`def add(${wide}, into=[]):\n    return into\n`)
+    .includes('true/mutable-default'), 'lost past the old 500-character span');
+  assert.ok(!ids(`def add(${wide}, into=None):\n    return into\n`)
+    .includes('true/mutable-default'), 'a sound default must stay sound');
+
+  const wrapped = ['def add(', '    item,', '    into=[],', '):', '    return into'];
+  assert.ok(ids(wrapped.join('\n')).includes('true/mutable-default'),
+    'a wrapped def was never read past its first line');
+});
+
 test('flags leftover debugging', () => {
   assert.ok(ids('print("here")').includes('alone/debug-leftover'));
   assert.ok(ids('breakpoint()').includes('alone/debug-leftover'));
