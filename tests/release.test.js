@@ -37,6 +37,12 @@ test('versions agree across every manifest', () => {
   assert.strictEqual(readJson('gemini-extension.json').version, version);
 });
 
+test('the MCP server reports the version from its own manifest, not a hardcoded literal', () => {
+  const server = fs.readFileSync(path.join(root, 'procoder-mcp/server.js'), 'utf8');
+  assert.ok(!/version:\s*['"]\d+\.\d+\.\d+['"]/.test(server),
+    'server.js hardcodes a version literal instead of reading procoder-mcp/package.json');
+});
+
 test('the package ships every directory and manifest a host needs', () => {
   const files = readJson('package.json').files;
 
