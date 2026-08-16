@@ -1,36 +1,100 @@
 #!/usr/bin/env node
 // procoder — TOML subset parser.
 //
-// Supports exactly what .procoder.toml needs: [tables], [dotted.tables],
-// key = "string" | int | float | true/false, and arrays of strings — either
-// single-line or spanning multiple lines (trailing commas and comments inside
-// the array are fine). Everything else — inline tables, multi-line strings,
-// dates, arrays of tables — is unsupported, and a line the parser can't
-// handle is never silently dropped: it's warned to stderr with file and line,
-// then skipped, because a malformed config must degrade to defaults, never
-// break a session, but the user must be able to see why a setting is missing.
+// Supports what a .procoder.toml plausibly contains, and nothing else:
 //
-// procoder: subset parser, swap for a real TOML library if the config grows
-// inline tables, multi-line strings, dates, or arrays of tables.
+//   [tables], [dotted.tables], and dotted keys (a.b = 1);
+//   basic strings with escapes ("a\"b", "C:\\src\\", \n \t \r \b \f \uXXXX
+//   \UXXXXXXXX) — an exclusion is a path or a regex, so escapes are load-bearing;
+//   literal strings ('C:\src\'), TOML's backslash-free answer to Windows paths;
+//   int, float, true/false;
+//   arrays of those, single-line or spanning lines (trailing commas and
+//   comments inside the array are fine).
+//
+// Deliberately unsupported, because this config's schema (see config.js:
+// exclude.paths, exclude.rules, thresholds, rungs, baseline.file) has no place
+// to put them: inline tables and dates. Those, and every value this parser
+// cannot read exactly — an unknown escape, an unterminated string, a bare
+// unquoted word — are warned to stderr with file and line, and the key is left
+// unset. Nothing is ever guessed at: a config that silently loads a value the
+// file does not say would enforce something other than what its author wrote,
+// which is worse than a default.
+//
+// procoder: subset parser, swap for a real TOML library if the config ever
+// grows a schema needing inline tables or dates.
 
-// The content of a quoted string, or null if this is not one.
-function unquote(text) {
-  const quote = text[0];
-  const quoted = (quote === '"' || quote === "'") && text.length >= 2 && text.endsWith(quote);
-  return quoted ? text.slice(1, -1) : null;
-}
+// A value the parser refuses to guess at. Carries the reason for the warning;
+// `reasonOf` recognizes it, and no supported value is a plain object.
+const INVALID = Symbol('procoder.toml.invalid');
+const invalid = (reason) => ({ [INVALID]: reason });
+const reasonOf = (value) =>
+  (value !== null && typeof value === 'object' && !Array.isArray(value) ? value[INVALID] : undefined);
 
 const BOOLEANS = new Map([['true', true], ['false', false]]);
 const INTEGER = /^-?\d+$/;
 const FLOAT = /^-?\d*\.\d+$/;
 
-// Updates `state` ({single, double}) for one character of quote-tracking and
-// returns whether that character sits inside a "..." or '...' string. Shared
-// by every scanner below so each stays a one-branch-per-concern loop.
+// Updates `state` ({single, double, escape}) for one character of
+// quote-tracking and returns whether that character sits inside a "..." or
+// '...' string. Shared by every scanner below so each stays a
+// one-branch-per-concern loop. A backslash inside a basic string escapes the
+// next character, so `"a\"b"` is one string and the `#` in `"a\"#b"` is not a
+// comment; literal strings have no escapes, which is their whole point.
 function trackQuote(ch, state) {
+  if (state.escape) { state.escape = false; return true; }
+  if (state.double && ch === '\\') { state.escape = true; return true; }
   if (ch === '"' && !state.single) state.double = !state.double;
   else if (ch === "'" && !state.double) state.single = !state.single;
   return state.single || state.double;
+}
+
+const SIMPLE_ESCAPES = new Map([
+  ['b', '\b'], ['t', '\t'], ['n', '\n'], ['f', '\f'], ['r', '\r'], ['"', '"'], ['\\', '\\'],
+]);
+
+// One \uXXXX / \UXXXXXXXX escape at `body[i]` (the 'u'), or null if it is not
+// a well-formed scalar value — a lone surrogate or a past-max code point would
+// make String.fromCodePoint throw, and this parser never throws.
+function decodeUnicode(body, i) {
+  const width = body[i] === 'u' ? 4 : 8;
+  const hex = body.slice(i + 1, i + 1 + width);
+  if (hex.length !== width || !/^[0-9a-fA-F]+$/.test(hex)) return null;
+  const code = parseInt(hex, 16);
+  if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return null;
+  return { text: String.fromCodePoint(code), width };
+}
+
+// The body of a basic string with its escapes applied, or null if it contains
+// an escape TOML does not define — which the caller refuses rather than
+// loading `\q` verbatim and calling it the user's intent.
+function decodeEscapes(body) {
+  if (!body.includes('\\')) return body;
+  let out = '';
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] !== '\\') { out += body[i]; continue; }
+    const code = body[i + 1];
+    const simple = SIMPLE_ESCAPES.get(code);
+    if (simple !== undefined) { out += simple; i += 1; continue; }
+    if (code !== 'u' && code !== 'U') return null;
+    const unicode = decodeUnicode(body, i + 1);
+    if (!unicode) return null;
+    out += unicode.text;
+    i += 1 + unicode.width;
+  }
+  return out;
+}
+
+// `text` as exactly one quoted string: {quote, body}, or null if it is not one
+// (unquoted, unterminated, or with anything trailing the closing quote — all
+// of which the caller refuses rather than half-reading).
+function readQuoted(text) {
+  const quote = text[0];
+  if (quote !== '"' && quote !== "'") return null;
+  for (let i = 1; i < text.length; i += 1) {
+    if (quote === '"' && text[i] === '\\') { i += 1; continue; }
+    if (text[i] === quote) return i === text.length - 1 ? { quote, body: text.slice(1, -1) } : null;
+  }
+  return null;
 }
 
 // Splits array contents on top-level commas, respecting quotes so an item
@@ -51,13 +115,21 @@ function splitArrayItems(inner) {
   return items;
 }
 
+// One unreadable item poisons the whole array: half an exclusion list is a
+// wrong value, and a wrong value is the thing this parser must never load.
 function parseArray(text) {
   const inner = text.slice(1, -1).trim();
   if (!inner) return [];
-  return splitArrayItems(inner)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => parseValue(item));
+  const items = [];
+  for (const raw of splitArrayItems(inner)) {
+    const item = raw.trim();
+    if (!item) continue;
+    const value = parseValue(item);
+    const reason = reasonOf(value);
+    if (reason) return invalid(`${reason} (in array item ${item})`);
+    items.push(value);
+  }
+  return items;
 }
 
 // Scans one line of array content, carrying bracket depth and quote state
@@ -78,15 +150,28 @@ function scanArrayLine(line, depth, state) {
   return { depth, closedAt: -1 };
 }
 
+// A value that opens with a quote — so anything that is not one string,
+// exactly, is an error rather than some other kind of value.
+function parseString(text) {
+  const quoted = readQuoted(text);
+  if (!quoted) return invalid(`unterminated or malformed string, ignored: ${text}`);
+  // Literal strings are verbatim by definition — that is why they exist.
+  if (quoted.quote === "'") return quoted.body;
+  const decoded = decodeEscapes(quoted.body);
+  return decoded === null ? invalid(`unknown escape in string, ignored: ${text}`) : decoded;
+}
+
 function parseValue(raw) {
   const text = raw.trim();
-  const unquoted = unquote(text);
-  if (unquoted !== null) return unquoted;
+  if (text[0] === '"' || text[0] === "'") return parseString(text);
   if (BOOLEANS.has(text)) return BOOLEANS.get(text);
   if (text.startsWith('[') && text.endsWith(']')) return parseArray(text);
   if (INTEGER.test(text)) return parseInt(text, 10);
   if (FLOAT.test(text)) return parseFloat(text);
-  return text;
+  if (text.startsWith('{')) return invalid(`inline tables are not supported, ignored: ${text}`);
+  // Dates, times, and bare words alike: unreadable, so unread. Quote it if it
+  // was meant as a string.
+  return invalid(`unsupported value, ignored: ${text}`);
 }
 
 // Strips a trailing comment, respecting quotes so "abc#def" survives.
@@ -101,7 +186,9 @@ function stripComment(line) {
 }
 
 const TABLE_HEADER = /^\[([A-Za-z0-9_.\-]+)\]$/;
-const KEY_VALUE = /^([A-Za-z0-9_\-]+)\s*=\s*(.+)$/;
+// Dotted keys included: `thresholds.params = 4` says the same as a [thresholds]
+// section with one key, and a user who writes it means it.
+const KEY_VALUE = /^([A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-]+)*)\s*=\s*(.+)$/;
 
 // A config file is untrusted input. These names are never real config, and
 // walking them turns `[exclude.__proto__]` into a two-line kill switch for the
@@ -120,6 +207,17 @@ function tableAt(root, dottedName) {
     table = table[part];
   }
   return table;
+}
+
+// Stores one key — bare or dotted — in `table`. A forbidden name anywhere in
+// the path drops the assignment entirely: tableAt hands back a detached table
+// for a forbidden part, and the final part is checked here.
+function assign(table, dottedKey, value) {
+  const parts = dottedKey.split('.');
+  const key = parts.pop();
+  if (FORBIDDEN_KEYS.has(key)) return;
+  const target = parts.length ? tableAt(table, parts.join('.')) : table;
+  target[key] = value;
 }
 
 // Config syntax this parser can't handle must never vanish quietly — see the
@@ -154,12 +252,17 @@ function collectArray(lines, i, firstValue) {
   return { valueText: parts.join('\n'), endLine: last, closed: true };
 }
 
-// A value that may open a multi-line array. Non-arrays resolve on the spot;
-// arrays read forward through `lines` until they close (or the file ends).
+// One value, and the last line it occupies. A non-array resolves on the spot.
+// An array reads forward through `lines` until it closes, or until the file
+// ends.
 function resolveValue(lines, i, firstValue) {
-  if (!firstValue.startsWith('[')) return { valueText: firstValue, endLine: i, closed: true };
+  if (!firstValue.startsWith('[')) return { value: parseValue(firstValue), endLine: i };
   const array = collectArray(lines, i, firstValue);
-  return { valueText: array.valueText, endLine: array.endLine, closed: array.closed };
+  return {
+    value: array.closed ? parseValue(array.valueText)
+      : invalid('array is never closed with "]", ignored'),
+    endLine: array.endLine,
+  };
 }
 
 // procoder — .procoder.toml is the only file this parser ever reads (see
@@ -186,12 +289,13 @@ function parseToml(text, fileName) {
     const startLine = i + 1;
     const resolved = resolveValue(lines, i, pair[2].trim());
     i = resolved.endLine;
-    if (!resolved.closed) {
-      warn(name, startLine, 'array is never closed with "]", ignored');
+    const refusal = reasonOf(resolved.value);
+    if (refusal) {
+      warn(name, startLine, refusal);
       continue;
     }
 
-    if (!FORBIDDEN_KEYS.has(pair[1])) table[pair[1]] = parseValue(resolved.valueText);
+    assign(table, pair[1], resolved.value);
   }
 
   return result;

@@ -125,3 +125,73 @@ test('an unterminated array does not throw, does not hang, and warns', () => {
   assert.match(captured, /\bline 1\b|:1:/i);
 });
 
+// --- what a .procoder.toml plausibly contains ------------------------------
+//
+// Escapes and literal strings are here because an exclusion pattern is a path
+// or a regex: "C:\\src\\" and 'C:\src\' are both things a Windows user writes.
+// Everything below either round-trips exactly or refuses loudly — what must
+// never happen is a value loading as something the file does not say.
+
+// Captures stderr for one parse, so a warning can be asserted on.
+function parseCapturing(text, fileName) {
+  const originalWrite = process.stderr.write;
+  let captured = '';
+  process.stderr.write = (chunk) => { captured += chunk; return true; };
+  let out;
+  try {
+    assert.doesNotThrow(() => { out = parseToml(text, fileName); });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  return { out, captured };
+}
+
+// A key that must not load: absent, with a warning naming file and line.
+function refuses(name, toml, key) {
+  test(name, () => {
+    const { out, captured } = parseCapturing(toml, 'my.toml');
+    assert.strictEqual(out[key], undefined, `${key} loaded a value anyway`);
+    assert.match(captured, /my\.toml:\d+:/);
+  });
+}
+
+test('decodes escapes in a basic string', () => {
+  assert.strictEqual(parseToml('s = "a\\"b"\n').s, 'a"b');
+  assert.strictEqual(parseToml('s = "a\\\\b"\n').s, 'a\\b');
+  assert.strictEqual(parseToml('s = "a\\nb\\tc"\n').s, 'a\nb\tc');
+  assert.strictEqual(parseToml('s = "\\u00e9\\U0001F600"\n').s, '\u00e9\u{1F600}');
+});
+
+test('a Windows path round-trips in both string forms', () => {
+  assert.strictEqual(parseToml('p = "C:\\\\src\\\\gen\\\\"\n').p, 'C:\\src\\gen\\');
+  assert.strictEqual(parseToml("p = 'C:\\src\\gen\\'\n").p, 'C:\\src\\gen\\');
+});
+
+test('an escaped quote does not start a comment or end the string', () => {
+  assert.strictEqual(parseToml('s = "a\\"#b" # trailing\n').s, 'a"#b');
+});
+
+test('escapes decode inside array items', () => {
+  assert.deepStrictEqual(parseToml('paths = ["a\\tb", "c\\\\d"]\n').paths, ['a\tb', 'c\\d']);
+});
+
+refuses('an unknown escape refuses rather than guessing', 's = "a\\qb"\n', 's');
+refuses('an unterminated basic string refuses', 's = "abc\n', 's');
+refuses('a string with trailing junk refuses', 's = "abc" oops\n', 's');
+refuses('a literal string with trailing junk refuses', "s = 'a'b'\n", 's');
+refuses('an inline table refuses', 't = {a=1}\n', 't');
+refuses('a date refuses', 'd = 1979-05-27\n', 'd');
+refuses('a bare unquoted value refuses', 'level = strict\n', 'level');
+refuses('an unsupported item inside an array refuses the whole key',
+  'paths = ["a/", {b=1}]\n', 'paths');
+
+test('a dotted key writes into the table it names', () => {
+  const out = parseToml('thresholds.params = 4\n[exclude]\npaths = ["a/"]\n');
+  assert.strictEqual(out.thresholds.params, 4);
+  assert.deepStrictEqual(out.exclude.paths, ['a/']);
+});
+
+canary('a dotted key cannot pollute Object.prototype', '__proto__.polluted = "yes"\n');
+canary('a nested dotted key cannot pollute Object.prototype',
+  'a.constructor.prototype.polluted = "yes"\n');
+
