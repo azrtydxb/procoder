@@ -1,0 +1,7 @@
+# Planning documents for work already executed: historical by nature, and they
+# quote rule ids and sample violations by the hundred, which is what a scanner
+# that cannot tell a document describing a violation from a file committing one
+# reports as findings. The line marker is the right tool for one such line in a
+# live document; it is the wrong tool for a 1500-line plan nobody will edit
+# again. Everything else under docs/ stays in the gate.
+**

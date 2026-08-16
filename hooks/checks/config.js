@@ -178,8 +178,12 @@ function ignoreRulesFor(config, relDir) {
 // deeper file's patterns come later — so the deepest .procoderignore decides,
 // as in git. Only ancestors of the path are ever consulted, which is why a
 // subdirectory's file cannot affect anything above it.
+// `config.noIgnore` is the escape hatch behind `procoder check --no-ignore`:
+// ignore files stop applying, and nothing else changes — [exclude] paths is the
+// project-wide contract and stays in force, so the flag cannot be a back door
+// into node_modules.
 function ignoredBy(config, relPath) {
-  if (!config.root || relPath.split('/').includes('..')) return null;
+  if (!config.root || config.noIgnore || relPath.split('/').includes('..')) return null;
   const cut = relPath.lastIndexOf('/');
   let winner = null;
   for (const rule of ignoreRulesFor(config, cut === -1 ? '' : relPath.slice(0, cut))) {

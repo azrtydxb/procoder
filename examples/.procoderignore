@@ -1,0 +1,10 @@
+# before.* violates a rung on purpose — that is its entire job — paired with an
+# after.* that does not. They are instances, not descriptions, so a line marker
+# would change the very thing the file demonstrates.
+#
+# Only before.* is ignored. after.* is ordinary source and stays gated: it is
+# the "this is what clean looks like" half, and a regression there is a real
+# regression. tests/examples.test.js checks the before.* files with
+# `procoder check --no-ignore`, so the detection each one documents is still
+# proved on every run.
+before.*

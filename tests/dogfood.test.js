@@ -17,25 +17,17 @@ const CLI = path.join(root, 'bin', 'procoder.js');
 // it. The list comes from `git ls-files` now, so a file is in the gate the day
 // it lands.  // procoder: literal alone/blanket-suppression this paragraph names the marker mechanism in prose
 //
-// Two categories are held out, and only these two. Each says why, next to the
-// path, because an exclusion without a reason is the thing this project spends
-// four rungs arguing against.
-const HELD_OUT = [
-  {
-    path: 'docs/superpowers/',
-    why: 'planning documents for work already executed — historical by nature, '
-      + 'and they quote rule ids and sample violations by the hundred',
-  },
-  {
-    path: 'examples/',
-    match: (file) => /\/before\.[^/]+$/.test(file),
-    why: 'examples/*/before.* violate a rung on purpose, paired with an after.* '
-      + 'that does not. They are instances, not descriptions, so the line marker '
-      + 'is the wrong tool — and a .procoder.toml path exclusion is worse, '
-      + 'because checkFile() applies it and tests/examples.test.js asserts these '
-      + 'files still trip. after.* and the README stay in the scan',
-  },
-];
+// Nothing is held out here any more. The two categories that used to be —
+// docs/superpowers/ (planning documents for work already executed) and
+// examples/*/before.* (files that violate a rung on purpose) — are covered by
+// a .procoderignore next to each, which is the sanctioned instrument and,
+// unlike this list, is honoured by the real `procoder check` a user runs. A
+// hold-out that duplicated an ignore file would be exactly the stale
+// suppression rung 4 forbids, so both were deleted rather than kept "just in
+// case"; the test below fails on any entry that has stopped holding anything
+// out. The list stays because the next one will be argued for here, with its
+// reason next to the path.
+const HELD_OUT = [];
 
 // Findings that belong to a file another change owns right now. Unlike
 // HELD_OUT, these are temporary, and the test below fails once they go green —

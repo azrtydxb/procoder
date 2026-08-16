@@ -316,6 +316,29 @@ test('check reports how many files each .procoderignore skipped', () => {
   assert.match(result.out, /1 file skipped by gen\/\.procoderignore/);
 });
 
+// The escape hatch. An ignore file is the sanctioned way to narrow the gate,
+// which makes "why is this file not being checked?" a question the tool has to
+// be able to answer directly — and it is what lets a test assert that a file a
+// .procoderignore covers still trips the rung it is there to demonstrate.
+test('--no-ignore checks a file every .procoderignore covers', () => {
+  const repo = repoWith(IGNORED_TREE);
+  assert.strictEqual(cli(repo, ['check', '.']).code, 0);
+  const result = cli(repo, ['check', '--no-ignore', '.']);
+  assert.notStrictEqual(result.code, 0);
+  assert.match(result.out, /gen\/a\.ts/);
+});
+
+// --no-ignore reaches the ignore files only. A [exclude] paths entry is the
+// project-wide contract and stays in force, or the flag would become a way to
+// scan vendor/ and node_modules by accident.
+test('--no-ignore does not re-include a [exclude] paths exclusion', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["gen/"]\n',
+    'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  assert.strictEqual(cli(repo, ['check', '--no-ignore', '.']).code, 0);
+});
+
 test('check says nothing about ignore files when none matched', () => {
   const repo = repoWith({ 'src/b.ts': 'const x = 1;\n' });
   assert.doesNotMatch(cli(repo, ['check', '.']).out, /procoderignore/);

@@ -18,7 +18,7 @@ const {
   fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 
-const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <paths...>
+const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--no-ignore] <paths...>
        procoder statusline <install|uninstall|status> [--append] [--force]
 
   check     report findings not present in the baseline; exit 1 if any of them
@@ -30,6 +30,9 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <pa
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
                         suppressed nothing in this run — a stale suppression
                         left behind after the finding it silenced was fixed
+  --no-ignore           check files a .procoderignore covers anyway — answers
+                        "why is this file not being checked?". [exclude] paths
+                        in .procoder.toml still applies.
 
   statusline install    add procoder's statusLine to your Claude Code settings
   statusline uninstall  remove it again, restoring any statusLine it composed with
@@ -528,10 +531,14 @@ const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['veri
 
 // Isolated so main() can pull the flag out of argv without pushing the
 // function that dispatches commands over the line-count threshold.
+const FLAGS = ['--unused-exclusions', '--no-ignore'];
+
 function parseFlags(argv) {
-  const unusedExclusions = argv.includes('--unused-exclusions');
-  const rest = unusedExclusions ? argv.filter((a) => a !== '--unused-exclusions') : argv;
-  return { unusedExclusions, rest };
+  return {
+    unusedExclusions: argv.includes('--unused-exclusions'),
+    noIgnore: argv.includes('--no-ignore'),
+    rest: argv.filter((a) => !FLAGS.includes(a)),
+  };
 }
 
 // A baseline from an older procoder suppresses nothing, so a legacy repo would
@@ -550,7 +557,7 @@ function reportStaleBaseline(command, repoRoot, config) {
 }
 
 function main(argv) {
-  const { unusedExclusions, rest } = parseFlags(argv);
+  const { unusedExclusions, noIgnore, rest } = parseFlags(argv);
   const [command, ...targets] = rest;
   // Its arguments are subcommands, not paths, so it branches off before the
   // path handling below.
@@ -576,7 +583,7 @@ function main(argv) {
   if (files.length === 0) return 0;
 
   const repoRoot = findRepoRoot(path.dirname(files[0]));
-  const config = loadConfig(repoRoot);
+  const config = { ...loadConfig(repoRoot), noIgnore };
 
   const halt = reportStaleBaseline(command, repoRoot, config);
   if (halt !== null) return halt;

@@ -228,6 +228,13 @@ test('excludeReason names the ignore file that skipped a path', () => {
   assert.strictEqual(excludeReason(cfg, 'src/a.ts'), null);
 });
 
+test('config.noIgnore turns every ignore file off, but not [exclude] paths', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  const off = { ...cfg, noIgnore: true };
+  assert.strictEqual(excludeReason(off, 'gen/a.ts'), null);
+  assert.strictEqual(excludeReason(off, 'node_modules/a.ts'), 'excluded');
+});
+
 test('blank lines and # comments are skipped, not matched literally', () => {
   const cfg = loadConfig(tempRepo({
     '.procoderignore': '# a comment\n\n   \n*.gen.ts\n',
