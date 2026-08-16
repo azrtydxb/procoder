@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // procoder — C# / .NET pack.
 
+const { stripComments } = require('./comments');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -80,15 +81,20 @@ const SWALLOWED = /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*
 const METHOD_SIGNATURE_LINE =
   /^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|abstract|readonly)\s+)*[\w<>[\],.?]+(?:\s*<[\w\s<>[\],.?]*>)?\s+\w+\s*\(([^)]*)\)\s*\{\s*$/;
 
+// Every rule here matches code, never prose: a comment naming
+// `FromSqlRaw($"...")` documents the hole, it does not open one. String
+// literals stay — the `$"..."` handed to the sink *is* the SQL, and blanking
+// it would blind the rule. See comments.js for the shared principle.
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
-  const lines = text.split(/\r?\n/);
+  const code = stripComments(text, 'c');
+  const lines = code.split(/\r?\n/);
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
   return [
     ...lineRuleFindings(LINE_RULES, lines),
-    ...emptyCatchFindings(text, SWALLOWED, 'exception swallowed by an empty catch'),
+    ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, METHOD_SIGNATURE_LINE)),
       maxDepth,

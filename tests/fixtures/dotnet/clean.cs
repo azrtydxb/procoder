@@ -94,4 +94,19 @@ class CleanExamples
     void Go()
     {
     }
+
+    // Documentation that warns against a practice must not be flagged for the
+    // practice: every rule dotnet.js has, named in prose, still silent.
+    //
+    //   never context.Users.FromSqlRaw($"SELECT * FROM Users WHERE Id = {id}")
+    //   never cmd.CommandText = "SELECT * FROM t WHERE id = " + id
+    //   never new BinaryFormatter() or TypeNameHandling = TypeNameHandling.All
+    //   never MD5.Create() for a password, never var token = new Random().Next()
+    //   never ServerCertificateValidationCallback = (a, b, c, d) => true
+    //   never Process.Start($"git log {branch}")
+    //   never catch (Exception) { } — log it and rethrow
+    //   no leftover Console.WriteLine("here")
+    void Documented()
+    {
+    }
 }
