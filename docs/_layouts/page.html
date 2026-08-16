@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ page.pagetitle }}</title>
+<meta name="description" content="{{ page.description }}">
+<link rel="stylesheet" href="assets/procoder.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  {% include nav.html %}
+  <main class="content" id="main" tabindex="-1">
+    {{ content }}
+    <footer class="foot">
+      <p>procoder v{{ site.version }} · Apache-2.0 · Node ≥ 18 · no runtime dependencies</p>
+      <p>No fonts, no analytics, no scripts. This page makes no external request.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

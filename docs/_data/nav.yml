@@ -1,0 +1,18 @@
+- group: The gate
+  items:
+    - href: index.html
+      label: Overview
+    - href: doctrine.html
+      label: The four rungs
+- group: Using it
+  items:
+    - href: start.html
+      label: Get started
+    - href: commands.html
+      label: Commands
+    - href: configuration.html
+      label: Configuration
+- group: Honesty
+  items:
+    - href: limitations.html
+      label: What it misses
