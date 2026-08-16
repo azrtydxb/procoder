@@ -4,7 +4,9 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadConfig, isExcluded, isRuleExcluded, DEFAULTS, findRepoRoot } = require('../hooks/checks/config');
+const {
+  loadConfig, isExcluded, isRuleExcluded, excludeReason, DEFAULTS, findRepoRoot,
+} = require('../hooks/checks/config');
 
 function tempRepo(files = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cfg-'));
@@ -203,4 +205,146 @@ test('every rung key the README documents actually changes a severity', () => {
     assert.strictEqual(cfg.rungs[key], 'warn', `documented key ${key} did nothing`);
     assert.deepStrictEqual(Object.keys(cfg.rungs).sort(), keys.slice().sort());
   }
+});
+
+// ---------------------------------------------------------------------------
+// .procoderignore — per-directory ignore files.
+//
+// The syntax subset is deliberately small and every line of it is tested here,
+// because the failure mode this project has already been bitten by is a config
+// parser that accepts valid-looking syntax and quietly does nothing with it.
+
+test('an ignore file excludes files beneath it, not siblings or parents', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  assert.ok(isExcluded(cfg, 'gen/a.ts'));
+  assert.ok(isExcluded(cfg, 'gen/deep/b.ts'));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+  assert.ok(!isExcluded(cfg, 'a.ts'));
+});
+
+test('excludeReason names the ignore file that skipped a path', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  assert.strictEqual(excludeReason(cfg, 'gen/a.ts'), 'ignored:gen/.procoderignore');
+  assert.strictEqual(excludeReason(cfg, 'src/a.ts'), null);
+});
+
+test('blank lines and # comments are skipped, not matched literally', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoderignore': '# a comment\n\n   \n*.gen.ts\n',
+  }));
+  assert.ok(isExcluded(cfg, 'src/a.gen.ts'));
+  assert.ok(!isExcluded(cfg, '# a comment'));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+});
+
+// "out", not "build": build/ is one of the built-in [exclude] paths defaults,
+// so a fixture using it would pass without the ignore file being read at all.
+test('a trailing slash matches a directory tree, never a file of that name', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': 'out/\n' }));
+  assert.ok(isExcluded(cfg, 'out/a.ts'));
+  assert.ok(isExcluded(cfg, 'src/out/a.ts'), 'a bare name matches at any depth');
+  assert.ok(!isExcluded(cfg, 'out'));
+});
+
+test('a leading slash anchors to the directory holding the ignore file', () => {
+  const cfg = loadConfig(tempRepo({ 'pkg/.procoderignore': '/vendor/\n' }));
+  assert.ok(isExcluded(cfg, 'pkg/vendor/a.ts'));
+  assert.ok(!isExcluded(cfg, 'pkg/src/vendor/a.ts'));
+});
+
+test('a pattern with an interior slash is anchored, one without matches at depth', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': 'src/gen/*.ts\nnotes.md\n' }));
+  assert.ok(isExcluded(cfg, 'src/gen/a.ts'));
+  assert.ok(!isExcluded(cfg, 'pkg/src/gen/a.ts'));
+  assert.ok(isExcluded(cfg, 'deep/down/notes.md'));
+});
+
+test('a star stops at a slash, a double star crosses one', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': 'a/*.ts\nb/**/*.ts\n' }));
+  assert.ok(isExcluded(cfg, 'a/x.ts'));
+  assert.ok(!isExcluded(cfg, 'a/deep/x.ts'));
+  assert.ok(isExcluded(cfg, 'b/x.ts'), 'double-star-slash also matches zero directories');
+  assert.ok(isExcluded(cfg, 'b/deep/down/x.ts'));
+});
+
+test('negation re-includes a file the same ignore file excluded', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n!keep.ts\n' }));
+  assert.ok(isExcluded(cfg, 'gen/drop.ts'));
+  assert.ok(!isExcluded(cfg, 'gen/keep.ts'));
+});
+
+test('order decides: a later pattern re-excludes what an earlier negation kept', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n!keep.ts\nkeep.ts\n' }));
+  assert.ok(isExcluded(cfg, 'gen/keep.ts'));
+});
+
+test('a nested ignore file wins over its parent, in both directions', () => {
+  const cfg = loadConfig(tempRepo({
+    'gen/.procoderignore': '*.ts\n',
+    'gen/keep/.procoderignore': '!*.ts\n',
+    'src/.procoderignore': '!*.ts\n',
+    'src/drop/.procoderignore': '*.ts\n',
+  }));
+  assert.ok(isExcluded(cfg, 'gen/a.ts'));
+  assert.ok(!isExcluded(cfg, 'gen/keep/a.ts'), 'the deeper file re-includes');
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+  assert.ok(isExcluded(cfg, 'src/drop/a.ts'), 'the deeper file excludes');
+});
+
+test('an ignore file cannot reach above its own directory', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n/../src/*.ts\n' }));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+  assert.ok(!isExcluded(cfg, 'a.ts'));
+  assert.ok(isExcluded(cfg, 'gen/a.ts'), 'the sane pattern in the same file still works');
+});
+
+test('a parent-directory segment in a pattern is dropped, so nothing above matches', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': '../**\n..\n' }));
+  assert.ok(!isExcluded(cfg, '../outside.ts'));
+  assert.ok(!isExcluded(cfg, 'src/a.ts'));
+});
+
+test('a malformed ignore file ignores nothing and never throws', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoderignore': '***???+++(((\n[unclosed\n!\n/\n binary\n',
+  }));
+  assert.doesNotThrow(() => isExcluded(cfg, 'src/a.ts'));
+  assert.strictEqual(isExcluded(cfg, 'src/a.ts'), false);
+});
+
+// A .procoder.toml exclusion is the project-wide contract; a subdirectory file
+// may narrow further but must never contradict it.
+test('a negation in .procoderignore cannot re-include what .procoder.toml excluded', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\npaths = ["vendor/"]\n',
+    'vendor/.procoderignore': '!*.ts\n',
+  }));
+  assert.strictEqual(excludeReason(cfg, 'vendor/a.ts'), 'excluded');
+});
+
+test('a .procoderignore adds to what .procoder.toml excludes', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\npaths = ["vendor/"]\n',
+    'gen/.procoderignore': '*.ts\n',
+  }));
+  assert.strictEqual(excludeReason(cfg, 'vendor/a.ts'), 'excluded');
+  assert.strictEqual(excludeReason(cfg, 'gen/a.ts'), 'ignored:gen/.procoderignore');
+  assert.strictEqual(excludeReason(cfg, 'src/a.ts'), null);
+});
+
+// The hook's whole budget is 2s per file. Resolution is cached per directory,
+// so a deep tree costs one chain walk per directory, not one per file.
+test('resolving a deep tree with several ignore files stays far inside the budget', () => {
+  const files = {};
+  let dir = '';
+  for (let depth = 0; depth < 12; depth += 1) {
+    dir = dir ? `${dir}/d${depth}` : 'd0';
+    if (depth % 3 === 0) files[`${dir}/.procoderignore`] = '*.gen.ts\n!keep.gen.ts\n';
+  }
+  const cfg = loadConfig(tempRepo(files));
+
+  const started = Date.now();
+  for (let i = 0; i < 2000; i += 1) isExcluded(cfg, `${dir}/f${i}.gen.ts`);
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 200, `2000 lookups took ${elapsed}ms`);
 });

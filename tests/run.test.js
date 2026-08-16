@@ -409,3 +409,36 @@ test('relPath is repo-relative and uses forward slashes', () => {
   const out = checkFile(path.join(repo, 'src/deep/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.strictEqual(out.relPath, 'src/deep/a.ts');
 });
+
+// A .procoderignore skip travels the same channel as an [exclude] paths skip,
+// so the hook and the MCP server honour it without knowing it exists — both
+// already stop on any `skipped` value.
+test('checkFile skips a file covered by a .procoderignore, naming the file', () => {
+  const repo = repoWith({
+    'gen/.procoderignore': '*.ts\n',
+    'gen/a.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const out = checkFile(path.join(repo, 'gen/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, 'ignored:gen/.procoderignore');
+  assert.deepStrictEqual(out.findings, []);
+});
+
+test('checkFile still gates a sibling directory the ignore file does not cover', () => {
+  const repo = repoWith({
+    'gen/.procoderignore': '*.ts\n',
+    'src/a.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, null);
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+});
+
+test('a negated pattern puts a file back in the gate', () => {
+  const repo = repoWith({
+    'gen/.procoderignore': '*.ts\n!keep.ts\n',
+    'gen/keep.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const out = checkFile(path.join(repo, 'gen/keep.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, null);
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+});

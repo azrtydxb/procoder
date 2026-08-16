@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isExcluded, isRuleExcluded } = require('./config');
+const { excludeReason, isRuleExcluded } = require('./config');
 const { packFor } = require('./registry');
 const { resolveFor, runToolResult } = require('./resolve');
 const { checkUniversal, filterMarkedLiterals } = require('./universal');
@@ -137,9 +137,11 @@ function touchedRanges(source, texts) {
 }
 
 // The source, or the reason there is none. Each `skipped` value is reported
-// verbatim by the caller.
+// verbatim by the caller — `excluded` for .procoder.toml, `ignored:<file>` for
+// the .procoderignore that did it, `too-large` and `unreadable` for the rest.
 function readSource(absPath, relPath, config) {
-  if (isExcluded(config, relPath)) return { skipped: 'excluded' };
+  const excluded = excludeReason(config, relPath);
+  if (excluded) return { skipped: excluded };
   try {
     if (fs.statSync(absPath).size > MAX_FILE_BYTES) return { skipped: 'too-large' };
     return { source: fs.readFileSync(absPath, 'utf8') };

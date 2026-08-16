@@ -283,3 +283,40 @@ test('check stays quiet about a deliberately excluded path', () => {
   assert.strictEqual(result.code, 0);
   assert.doesNotMatch(result.out, /skipped/i);
 });
+
+// The ratchet only holds if every subcommand agrees on which files exist. A
+// file check skips must be invisible to baseline and verify too, or `verify`
+// fails on findings `check` never printed.
+const IGNORED_TREE = {
+  'gen/.procoderignore': '*.ts\n',
+  'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  'src/b.ts': 'const x = 1;\n',
+};
+
+test('check, baseline and verify all honour a .procoderignore', () => {
+  const repo = repoWith(IGNORED_TREE);
+  assert.strictEqual(cli(repo, ['check', '.']).code, 0);
+  assert.strictEqual(cli(repo, ['baseline', '.']).code, 0);
+  const baseline = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
+  assert.strictEqual(JSON.stringify(baseline).includes('gen/a.ts'), false);
+  assert.strictEqual(cli(repo, ['verify', '.']).code, 0);
+});
+
+test('without the ignore file the same tree fails, so the test above proves something', () => {
+  const repo = repoWith({ ...IGNORED_TREE, 'gen/.procoderignore': '# nothing\n' });
+  assert.notStrictEqual(cli(repo, ['check', '.']).code, 0);
+});
+
+// Narrowing enforcement is never allowed to be silent. Reported once per
+// ignore file rather than once per file: the case this feature exists for is a
+// large generated subtree, and a line per file would bury the findings.
+test('check reports how many files each .procoderignore skipped', () => {
+  const repo = repoWith(IGNORED_TREE);
+  const result = cli(repo, ['check', '.']);
+  assert.match(result.out, /1 file skipped by gen\/\.procoderignore/);
+});
+
+test('check says nothing about ignore files when none matched', () => {
+  const repo = repoWith({ 'src/b.ts': 'const x = 1;\n' });
+  assert.doesNotMatch(cli(repo, ['check', '.']).out, /procoderignore/);
+});
