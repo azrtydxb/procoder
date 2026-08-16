@@ -81,6 +81,53 @@ test('flags nested ternaries', () => {
   assert.ok(!ids('const x = a ? 1 : 2;').includes('obvious/nested-ternary'));
 });
 
+// Both directions of the shared principle: a rule sees code, not prose or a
+// pattern that merely spells the sink, and string literals are code.
+test('ignores rules named in comments, not the code beside them', () => {
+  assert.ok(!ids('// never el.innerHTML = userInput;').includes('safe/xss-sink'));
+  assert.ok(!ids('// never eval(payload)').includes('safe/dynamic-eval'));
+  assert.ok(!ids('/* db.query(`SELECT ${id}`) is how not to do it */').includes('safe/sql-injection'));
+  assert.ok(!ids("// never exec('rm -rf ' + dir)").includes('safe/shell-injection'));
+  assert.ok(!ids('// rejectUnauthorized: false is never acceptable').includes('safe/tls-disabled'));
+  assert.ok(!ids('// const token = Math.random(); is not a secret').includes('safe/weak-random'));
+  assert.ok(!ids('// console.log("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('// const x = a ? b ? 1 : 2 : 3;').includes('obvious/nested-ternary'));
+
+  assert.ok(ids('el.innerHTML = userInput; // never do this').includes('safe/xss-sink'));
+  assert.ok(ids('eval(payload); // bad').includes('safe/dynamic-eval'));
+  assert.ok(ids('db.query(`SELECT ${id}`); // bad').includes('safe/sql-injection'));
+  assert.ok(ids("exec('rm -rf ' + dir); // bad").includes('safe/shell-injection'));
+  assert.ok(ids('rejectUnauthorized: false, // bad').includes('safe/tls-disabled'));
+  assert.ok(ids('const token = Math.random(); // bad').includes('safe/weak-random'));
+  assert.ok(ids('console.log("here"); // bad').includes('alone/debug-leftover'));
+  assert.ok(ids('const x = a ? b ? 1 : 2 : 3; // bad').includes('obvious/nested-ternary'));
+});
+
+// A regex spelling a sink is a matcher for it, not a call to it — the pattern
+// a linter, a WAF rule or a codemod is built from.
+test('a sink named inside a regex literal is not a sink', () => {
+  assert.ok(!ids('const re = /dangerouslySetInnerHTML|\\.innerHTML\\s*=/;').includes('safe/xss-sink'));
+  assert.ok(!ids('const re = /\\beval\\(/;').includes('safe/dynamic-eval'));
+  assert.ok(!ids('const re = /console\\.log\\(/;').includes('alone/debug-leftover'));
+  // Division is not a regex, and the code after it still counts.
+  assert.ok(ids('const r = a / b; eval(payload);').includes('safe/dynamic-eval'));
+});
+
+// The direction ts used to lose: build tooling and SSR assemble code as
+// strings, and a sink assembled there runs exactly as written.
+test('sees sinks assembled inside string and template literals', () => {
+  assert.ok(ids('render(`el.innerHTML = "${raw}"`)').includes('safe/xss-sink'));
+  assert.ok(ids('emit("document.write(" + payload + ")")').includes('safe/xss-sink'));
+  assert.ok(ids('db.query("SELECT * FROM t WHERE a = " + a)').includes('safe/sql-injection'));
+});
+
+// A ternary is an operator of the grammar: it cannot occur inside a literal,
+// so this rule alone keeps stripping strings as well as comments.
+test('a ternary-shaped string is not a nested ternary', () => {
+  assert.ok(!ids('const label = "a ? b ? 1 : 2 : 3";').includes('obvious/nested-ternary'));
+  assert.ok(ids('const x = a ? b ? 1 : 2 : 3;').includes('obvious/nested-ternary'));
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'ts');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.ts'), 'utf8'),

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // procoder — TypeScript / JavaScript pack.
 
+const { stripComments } = require('./comments');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -8,10 +9,13 @@ const {
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
-// `onCode` runs the rule against the noise-stripped line instead of the raw one.
-// Set it where the pattern describes code shape rather than string content, so a
-// regex literal or a string that merely quotes the pattern is not a hit. Rules
-// that must see literal text (SQL built inside a template string) leave it off.
+// Every rule matches comment- and regex-stripped code, as in the other five
+// packs; string literals stay, because build tooling and SSR assemble real
+// sinks inside them. `onCode` additionally strips strings, and is set on the
+// one rule whose pattern is an operator of the grammar rather than a sink: a
+// ternary cannot occur inside a literal, so a string that merely reads
+// `"a ? b ? 1 : 2 : 3"` is not one. See comments.js for the shared principle.
+//
 // A string literal followed by `+`, matching each quote style separately so a
 // literal may contain the *other* quote — `"rm '"` and `'rm "'` are exactly how
 // shell and SQL fragments get built, and a single `["'][^"']*["']` class misses
@@ -26,7 +30,7 @@ const LINE_RULES = [
     fix: 'use a parameterized query with bound values',
   },
   {
-    id: 'safe/xss-sink', rung: 'SAFE', onCode: true,
+    id: 'safe/xss-sink', rung: 'SAFE',
     re: /\.innerHTML\s*=|\.outerHTML\s*=|dangerouslySetInnerHTML|document\.write\s*\(/,
     message: 'raw HTML sink',
     fix: 'use textContent, or sanitize before assigning',
@@ -93,12 +97,13 @@ const FUNCTION_SIGNATURE =
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
+  const code = stripComments(text, 'js');
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
   return [
-    ...lineRuleFindings(LINE_RULES, lines, { codeLines: stripped.split(/\r?\n/) }),
-    ...emptyCatchFindings(stripped, SWALLOWED, 'error swallowed by an empty catch'),
+    ...lineRuleFindings(LINE_RULES, code.split(/\r?\n/), { codeLines: stripped.split(/\r?\n/) }),
+    ...emptyCatchFindings(code, SWALLOWED, 'error swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNCTION_SIGNATURE)),
       maxDepth,
