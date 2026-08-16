@@ -111,6 +111,45 @@ test('a [exclude.__proto__] table cannot switch the gate off', () => {
   delete Object.prototype.paths;
 });
 
+// The narrow form must stay narrow: a directory or glob path half would let one
+// entry silence a rule across a whole tree, which is the thing path exclusions
+// already do and rule exclusions exist to avoid.
+test('a rule exclusion with a directory path is dropped, not applied to the tree', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["hooks/:alone/orphan-todo"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, []);
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/a.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/', 'alone/orphan-todo'));
+});
+
+test('a rule exclusion with a glob path is dropped, not applied to matches', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["**/*.js:alone/orphan-todo", "hooks/*.js:safe/eval"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, []);
+  assert.ok(!isRuleExcluded(cfg, 'hooks/a.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/a.js', 'safe/eval'));
+});
+
+test('an exact rule exclusion path still works, and only for that path', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml': '[exclude]\nrules = ["hooks/checks/patterns/markers.js:alone/orphan-todo"]\n',
+  }));
+  assert.ok(isRuleExcluded(cfg, 'hooks/checks/patterns/markers.js', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/patterns/markers.js.bak', 'alone/orphan-todo'));
+  assert.ok(!isRuleExcluded(cfg, 'hooks/checks/patterns/other.js', 'alone/orphan-todo'));
+});
+
+test("procoder's own rule exclusions survive the exact-path rule", () => {
+  const cfg = loadConfig(path.resolve(__dirname, '..'));
+  assert.strictEqual(cfg.exclude.rules.length, 3);
+  for (const rule of cfg.exclude.rules) {
+    assert.strictEqual(rule.path, 'hooks/checks/patterns/markers.js');
+    assert.ok(isRuleExcluded(cfg, rule.path, rule.id));
+  }
+});
+
 test('a rule exclusion missing either half is dropped, never widened', () => {
   const cfg = loadConfig(tempRepo({
     '.procoder.toml': '[exclude]\nrules = ["a/patterns.js", "alone/orphan-todo", ":x", "y:"]\n',
