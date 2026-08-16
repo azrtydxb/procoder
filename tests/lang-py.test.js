@@ -165,12 +165,26 @@ test('self and cls do not count toward the parameter budget', () => {
 // Perf guard: every rule here must stay linear in line length. Each unit below
 // is an adversarial prefix — repeated, it makes any unbounded span in a rule
 // re-scan to end of line from every offset, which is the quadratic shape that
-// took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
-// in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
-// a loaded CI machine; the hook's whole budget is 2s. The bound is taken over
-// the fastest of three runs: at two orders of magnitude of headroom the only
-// realistic failure on a healthy tree is one scheduler stall landing inside the
-// measurement, and a stall hits one run of three, not all three.
+// took .NET's safe/shell-injection rule 4.7s on this input, and this pack's
+// true/mutable-default 653ms.
+//
+// The bound is relative, not an absolute millisecond count. An absolute one
+// measures the machine as much as the code: the old 1s bound was tripped at
+// 1958–2230ms by a rule that was merely slow, because a loaded runner scales
+// every number up at once. So the same 100KB of a benign unit is timed first,
+// which is what "linear on this line length, on this machine, right now" costs;
+// load moves that baseline and the bound with it. Every adversarial unit runs
+// within 4x of it today and quadratic ran at 146x, so 40x sits an order of
+// magnitude clear on both sides. The 5ms floor is for a fast machine where the
+// baseline rounds toward zero — it still leaves 200ms, well under the 586ms the
+// quadratic rule took here.
+//
+// Each timing is the fastest of three runs: a scheduler stall lands in one run
+// of three, not all three.
+const BASELINE_UNIT = 'pass  ';
+const PERF_MULTIPLE = 40;
+const PERF_FLOOR_MS = 5;
+
 function bestOf(runs, work) {
   let best = Infinity;
   for (let i = 0; i < runs; i += 1) {
@@ -182,6 +196,14 @@ function bestOf(runs, work) {
 }
 
 test('stays linear on a very long single line', () => {
+  const lineOf = (unit) =>
+    unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
+  const timeOf = (unit) => {
+    const line = lineOf(unit);
+    return bestOf(3, () => check(line, { relPath: 'x.py', config }));
+  };
+
+  const budget = Math.max(timeOf(BASELINE_UNIT), PERF_FLOOR_MS) * PERF_MULTIPLE;
   const units = [
     "yaml.load(",
     "execute(\"x\" ",
@@ -189,8 +211,8 @@ test('stays linear on a very long single line', () => {
     "x = f(a, b) + \"s\" + c; ",
   ];
   for (const unit of units) {
-    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const elapsed = bestOf(3, () => check(line, { relPath: 'x.py', config }));
-    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
+    const elapsed = timeOf(unit);
+    assert.ok(elapsed < budget,
+      `100KB line took ${elapsed}ms (budget ${budget}ms) for unit ${JSON.stringify(unit)}`);
   }
 });
