@@ -134,6 +134,31 @@ test('verify passes when a duplicate violation is deleted — shrinking is fine'
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
+// Running `prettier --write .` over a freshly baselined legacy repo used to
+// evaporate the baseline: every re-wrapped statement came back as a new
+// finding and CI went red on code the team never touched.
+const FLAT_EVAL = 'const r = eval(userInput + suffix);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+const WRAPPED_EVAL = 'const r = eval(\n  userInput + suffix,\n);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+
+test('verify passes after a formatter re-wraps a baselined statement', () => {
+  const repo = repoWith({ 'a.ts': FLAT_EVAL });
+  cli(repo, ['baseline', 'a.ts']);
+  fs.writeFileSync(path.join(repo, 'a.ts'), WRAPPED_EVAL);
+  const result = cli(repo, ['verify', 'a.ts']);
+  assert.strictEqual(result.code, 0, result.out);
+  assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
+});
+
+// Wrapping must not become a way to launder clones past the ratchet.
+test('verify fails when a re-wrapped baselined violation is cloned fifty times', () => {
+  const repo = repoWith({ 'a.ts': FLAT_EVAL });
+  cli(repo, ['baseline', 'a.ts']);
+  fs.writeFileSync(path.join(repo, 'a.ts'), WRAPPED_EVAL.repeat(51));
+  const result = cli(repo, ['verify', 'a.ts']);
+  assert.notStrictEqual(result.code, 0);
+  assert.match(result.out, /not in the baseline/i);
+});
+
 // A mistyped or renamed path used to exit 0, silently disabling the gate.
 test('a path that does not exist is an error, not a clean run', () => {
   const repo = repoWith({ 'a.ts': 'const x = 1;\n' });
@@ -172,7 +197,7 @@ test('re-baselining over a stale baseline replaces it with the current format', 
   const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   const written = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
-  assert.strictEqual(written.version, 2);
+  assert.strictEqual(written.version, 3);
   assert.ok(!written.fingerprints.includes('deadbeef'), 'stale entries must not survive');
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });

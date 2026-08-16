@@ -5,6 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { BASELINE_VERSION } = require('../hooks/checks/baseline');
+
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-check.js');
 
 function repoWith(files) {
@@ -95,7 +97,7 @@ test('a stale baseline is reported once, with the command that fixes it', () => 
 test('a current baseline draws no re-baseline notice', () => {
   const repo = repoWith({
     'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-    '.procoder-baseline.json': JSON.stringify({ version: 2, fingerprints: [] }),
+    '.procoder-baseline.json': JSON.stringify({ version: BASELINE_VERSION, fingerprints: [] }),
   });
   assert.ok(!/procoder baseline/.test(contextOf(runHook(repo, path.join(repo, 'a.ts')))));
 });
