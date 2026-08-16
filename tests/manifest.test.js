@@ -20,17 +20,15 @@ test('every hook command references a script that ships', () => {
     events.sort(),
     ['PostToolUse', 'SessionStart', 'SubagentStart', 'UserPromptSubmit']
   );
-  for (const event of events) {
-    for (const group of hooks.hooks[event]) {
-      for (const h of group.hooks) {
-        assert.match(h.command, /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/procoder-[a-z-]+\.js/);
-        assert.ok(h.timeout > 0 && h.timeout <= 5,
-          `${event} hook timeout ${h.timeout} exceeds its 5s budget`);
-        const script = /hooks\/(procoder-[a-z-]+\.js)/.exec(h.command)[1];
-        assert.ok(fs.existsSync(path.join(root, 'hooks', script)),
-          `${event} declares ${script}, which does not ship`);
-      }
-    }
+  const declared = events.flatMap((event) =>
+    hooks.hooks[event].flatMap((group) => group.hooks.map((h) => ({ event, ...h }))));
+  for (const h of declared) {
+    assert.match(h.command, /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/procoder-[a-z-]+\.js/);
+    assert.ok(h.timeout > 0 && h.timeout <= 5,
+      `${h.event} hook timeout ${h.timeout} exceeds its 5s budget`);
+    const script = /hooks\/(procoder-[a-z-]+\.js)/.exec(h.command)[1];
+    assert.ok(fs.existsSync(path.join(root, 'hooks', script)),
+      `${h.event} declares ${script}, which does not ship`);
   }
 });
 

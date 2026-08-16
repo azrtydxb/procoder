@@ -14,14 +14,18 @@ const { getProcoderInstructions } = require('../hooks/procoder-instructions');
 const { version: VERSION } = require('./package.json');
 
 // A closed stdout (the client disconnecting) surfaces as an async 'error'
-// event, not a synchronous throw — try/catch cannot catch it, and an uncaught
-// EPIPE would crash the server mid-session.
-try {
-  if (!process.stdout.__procoderEpipeGuarded) {
-    process.stdout.__procoderEpipeGuarded = true;
-    process.stdout.on('error', () => {});
-  }
-} catch (e) { /* best-effort */ }
+// event, not a synchronous throw, and an uncaught EPIPE would crash the server
+// mid-session. Dropping the event is the whole point: there is nowhere left to
+// report to once stdout is gone, and stderr belongs to the host.
+//
+// This used to sit inside a try/catch that swallowed whatever it caught. It
+// caught nothing: neither the property write nor `on()` throws on a real
+// stream, so the catch was a rung-2 swallowed error guarding an event that
+// cannot happen. Deleted rather than marked.
+if (!process.stdout.__procoderEpipeGuarded) {
+  process.stdout.__procoderEpipeGuarded = true;
+  process.stdout.on('error', () => {});
+}
 
 const PROTOCOL_VERSION = '2024-11-05';
 

@@ -7,6 +7,14 @@ const path = require('path');
 
 const SERVER = path.join(__dirname, '..', 'procoder-mcp', 'server.js');
 
+// The server speaks newline-delimited JSON, so a chunk may hold several
+// responses, one, or half of one. Splits off every complete line and hands back
+// the unterminated remainder.
+function takeLines(buffer) {
+  const parts = buffer.split('\n');
+  return { lines: parts.slice(0, -1).map((l) => l.trim()).filter(Boolean), rest: parts[parts.length - 1] };
+}
+
 // Sends a batch of requests, resolves with the parsed responses in order.
 function rpc(requests) {
   return new Promise((resolve, reject) => {
@@ -14,17 +22,12 @@ function rpc(requests) {
     let buffer = '';
     const responses = [];
     child.stdout.on('data', (chunk) => {
-      buffer += chunk;
-      let index;
-      while ((index = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, index).trim();
-        buffer = buffer.slice(index + 1);
-        if (line) responses.push(JSON.parse(line));
-        if (responses.length === requests.length) {
-          child.kill();
-          resolve(responses);
-        }
-      }
+      const taken = takeLines(buffer + chunk);
+      buffer = taken.rest;
+      responses.push(...taken.lines.map((line) => JSON.parse(line)));
+      if (responses.length < requests.length) return;
+      child.kill();
+      resolve(responses.slice(0, requests.length));
     });
     child.on('error', reject);
     setTimeout(() => { child.kill(); reject(new Error('MCP server timed out')); }, 5000);
@@ -79,30 +82,34 @@ test('malformed JSON on one line does not kill the server', async () => {
   assert.strictEqual(res.id, 6);
 });
 
-test('a broken stdout pipe does not crash the server (EPIPE guard)', async () => {
-  const child = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'ignore'] });
-  let buffer = '';
-  let exitCode = null;
-  let exitSignal = null;
-
-  child.on('exit', (code, signal) => { exitCode = code; exitSignal = signal; });
-
-  const firstResponse = new Promise((resolve, reject) => {
+// Resolves with the first complete response line, then stops listening — the
+// caller goes on to destroy stdout underneath the server.
+function firstResponse(child) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
     const onData = (chunk) => {
       buffer += chunk;
-      const index = buffer.indexOf('\n');
-      if (index >= 0) {
-        child.stdout.removeListener('data', onData);
-        resolve(JSON.parse(buffer.slice(0, index)));
-      }
+      const taken = takeLines(buffer);
+      if (!taken.lines.length) return;
+      child.stdout.removeListener('data', onData);
+      resolve(JSON.parse(taken.lines[0]));
     };
     child.stdout.on('data', onData);
     child.on('error', reject);
     setTimeout(() => reject(new Error('EPIPE-guard test timed out waiting for first response')), 5000);
   });
+}
 
+test('a broken stdout pipe does not crash the server (EPIPE guard)', async () => {
+  const child = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'ignore'] });
+  let exitCode = null;
+  let exitSignal = null;
+
+  child.on('exit', (code, signal) => { exitCode = code; exitSignal = signal; });
+
+  const first = firstResponse(child);
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) + '\n');
-  const res = await firstResponse;
+  const res = await first;
   assert.strictEqual(res.id, 1);
 
   // Destroy the parent's read end of the child's stdout: further writes by
