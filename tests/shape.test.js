@@ -509,45 +509,101 @@ test('the lookback does not attribute an else block to the if above it', () => {
   assert.deepStrictEqual(measured.map((b) => b.startLine).sort(), [1, 2]);
 });
 
-// The bound is what keeps the work per unmeasured block constant. A signature
-// wrapped further than it stays unmeasured — the same false negative as before,
-// now confined to a shape no formatter produces under a sane params limit.
-test('the signature lookback is bounded', () => {
-  const wrap = (count) => [
-    'function wide(',
-    ...Array.from({ length: count }, (unused, i) => `  p${i},`),
-    ') {',
-    '  return 1;',
-    '}',
-  ].join('\n');
+// The lookback used to be bounded at ten lines, which is the same inverted
+// failure the 500-character parameter span had: one parameter per line is what
+// every formatter produces, so the functions wrapped furthest are the ones with
+// the most parameters — exactly what obvious/too-many-params exists to report.
+// Nothing about the wrap is bounded any more: the parameter list's `(` is
+// matched to its `)` by the one paramSpans pass over the file, however many
+// lines apart they are.
+const wrapped = (count) => [
+  'function wide(',
+  ...Array.from({ length: count }, (unused, i) => `  p${i},`),
+  ') {',
+  '  return 1;',
+  '}',
+].join('\n');
 
-  assert.ok(paramFinding('ts', wrap(8), 'a.ts'), 'an 8-line wrap should be measured');
-  assert.strictEqual(paramFinding('ts', wrap(40), 'a.ts'), undefined);
+test('a signature wrapped over 25 lines is measured', () => {
+  for (const count of [8, 25, 40, 200]) {
+    const found = paramFinding('ts', wrapped(count), 'a.ts');
+    assert.ok(found, `a ${count}-line wrap was not measured at all`);
+    assert.strictEqual(found.message, `${count} parameters (limit 4)`);
+    assert.strictEqual(found.line, 1, 'reported at the brace instead of the signature');
+  }
 });
 
-// The lookback runs for every block that is not itself a signature — most
-// blocks in a file — so it has to cost the same whatever the lines around it
-// weigh. 100KB and 400KB of a single line, and a file of 20k unmeasurable
-// blocks, all stay far inside the 2s whole-file hook budget.
-test('the signature lookback stays linear in line length and block count', () => {
-  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
-  for (const size of [100, 400]) {
-    const unit = 'if(a&&b){return a+b}else{return 0}';
-    const line = unit.repeat(Math.ceil((size * 1024) / unit.length));
-    const src = 'const x = 1;\n' + line;
-    const ms = bestOf(3, () => {
-      const { blocks } = analyzeBraces(src);
-      measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
-    });
-    assert.ok(ms < 500, `${size}KB single line scaled worse than linearly: ${ms}ms`);
-  }
+// The other two shape rules ride on the same attribution, and the length is
+// counted from the signature's first line, not from its brace.
+test('a signature wrapped past the old bound is measured for length too', () => {
+  const long = findings('ts', wrapped(60), 'a.ts')
+    .find((f) => f.id === 'obvious/function-too-long');
+  assert.ok(long, 'a wrapped function was not measured for length');
+  assert.strictEqual(long.line, 1, 'length counted from the brace, not the signature');
+  assert.strictEqual(long.message, 'function is 64 lines (limit 40)');
+});
 
-  const many = Array.from({ length: 20000 }, () => 'while (a) {\n}').join('\n');
-  const ms = bestOf(3, () => {
-    const { blocks } = analyzeBraces(many);
-    measureFunctions(many.split('\n'), blocks, signaturesFrom(stripNoise(many), re));
-  });
-  assert.ok(ms < 1000, `the lookback scaled worse than linearly in blocks: ${ms}ms`);
+// Every pack that keys a function off its block-opening brace, on a wrap far
+// past the old ten-line bound: the two whose head is scanned over the whole
+// file (ts, go, rust) and the two whose head is anchored to the start of a line
+// and so must be met line by line (jvm, dotnet).
+const DEEP_WRAPS = [
+  ['ts', 'a.ts', (n) => ['function wide(',
+    ...Array.from({ length: n }, (unused, i) => `  p${i}: string,`), ') {', '  return 1;', '}']],
+  ['go', 'a.go', (n) => ['func wide(',
+    ...Array.from({ length: n }, (unused, i) => `\tp${i} string,`), ') error {', '\treturn nil', '}']],
+  ['rust', 'a.rs', (n) => ['fn wide(',
+    ...Array.from({ length: n }, (unused, i) => `    p${i}: String,`), ') -> usize', 'where', '    T: Clone,', '{', '    1', '}']],
+  ['jvm', 'X.java', (n) => ['class X {', '    public int wide(',
+    ...Array.from({ length: n }, (unused, i) => `            String p${i},`),
+    '            int last) throws IOException {', '        return 1;', '    }', '}']],
+  ['dotnet', 'X.cs', (n) => ['class X', '{', '    public int Wide(',
+    ...Array.from({ length: n }, (unused, i) => `        string p${i},`),
+    '        int last)', '    {', '        return 1;', '    }', '}']],
+];
+
+test('a wrap far past the old bound is measured in every brace pack', () => {
+  for (const [pack, relPath, shape] of DEEP_WRAPS) {
+    const lines = shape(25);
+    const found = paramFinding(pack, lines.join('\n'), relPath);
+    assert.ok(found, `${pack}: a 25-line wrap was not measured at all`);
+    // jvm and dotnet carry one more parameter on the closing line.
+    const expected = pack === 'jvm' || pack === 'dotnet' ? 26 : 25;
+    assert.strictEqual(found.message, `${expected} parameters (limit 4)`, pack);
+    assert.strictEqual(found.line, lines.findIndex((l) => l.includes('(')) + 1, pack);
+  }
+});
+
+// Removing the bound must not buy the quadratic scan back. Expressed as a ratio
+// between two input sizes rather than an absolute millisecond bound, for the
+// reason the parameter-counting guard above gives: load moves an absolute
+// bound, and cannot manufacture a ratio. The shapes are the ones the
+// attribution pass actually walks — a file of blocks that are not functions,
+// where every candidate has to be rejected, and a file of nothing but wrapped
+// signatures, where every candidate is accepted.
+test('signature attribution stays linear in line length and in signature count', () => {
+  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
+  const rawShape = (src) => {
+    const lines = src.split('\n');
+    const { blocks } = analyzeBraces(src);
+    measureFunctions(lines, blocks, signaturesFrom(stripNoise(src), re));
+  };
+
+  const oneLine = (kb) => {
+    const unit = 'if(a&&b){return a+b}else{return 0}';
+    const src = 'const x = 1;\n' + unit.repeat(Math.ceil((kb * 1024) / unit.length));
+    return Math.max(1, bestOf(3, () => rawShape(src)));
+  };
+  const ratio = oneLine(400) / oneLine(100);
+  assert.ok(ratio < 8, `4x the line length cost ${ratio.toFixed(1)}x the time`);
+
+  const manyWraps = (count) => {
+    const src = Array.from({ length: count }, (unused, i) =>
+      `function w${i}(\n  a,\n  b,\n  c,\n) {\n  return a;\n}`).join('\n');
+    return Math.max(1, bestOf(3, () => rawShape(src)));
+  };
+  const wrapRatio = manyWraps(4000) / manyWraps(1000);
+  assert.ok(wrapRatio < 8, `4x the signatures cost ${wrapRatio.toFixed(1)}x the time`);
 });
 
 // --- mixed tab/space indentation -------------------------------------------
@@ -571,6 +627,83 @@ test('consistent indentation is read exactly as before', () => {
   const tabs = 'def f():\n\tif a:\n\t\tif b:\n\t\t\tgo()';
   assert.strictEqual(analyzeIndent(spaces, { tabWidth: 4 }).maxDepth, 3);
   assert.strictEqual(analyzeIndent(tabs, { tabWidth: 4 }).maxDepth, 3);
+});
+
+// --- indentation width read from the file ----------------------------------
+//
+// Depth was `column / tabWidth` with tabWidth fixed at 4, so a file indented
+// two spaces per level reported half its depth: seven real levels measured
+// three and passed a limit of three. Two-space Python is ordinary — black is
+// not universal, and plenty of code predates it — and under-reported depth is
+// the wrong direction of error, a nesting violation that passes.
+//
+// tabWidth keeps its own meaning, what a tab character is worth, so the packs
+// need no change: py.js still passes 4 and a tab still expands to four columns.
+// What one *level* is worth is read from the file instead.
+const nest = (unit, levels) => [
+  'def f():',
+  ...Array.from({ length: levels }, (unused, i) => `${unit.repeat(i + 1)}if a${i}:`),
+  `${unit.repeat(levels + 1)}go()`,
+].join('\n');
+
+test('a 2-space and a 4-space file with identical structure report one depth', () => {
+  for (const levels of [1, 2, 3, 5, 7]) {
+    const four = analyzeIndent(nest('    ', levels), { tabWidth: 4 }).maxDepth;
+    const two = analyzeIndent(nest('  ', levels), { tabWidth: 4 }).maxDepth;
+    const tabs = analyzeIndent(nest('\t', levels), { tabWidth: 4 }).maxDepth;
+    assert.strictEqual(four, levels + 1, `4-space, ${levels} levels`);
+    assert.strictEqual(two, four, `2-space read as ${two}, 4-space as ${four}`);
+    assert.strictEqual(tabs, four, `tabs read as ${tabs}, 4-space as ${four}`);
+  }
+});
+
+// The three files an inference can trip over: nothing to infer from, one
+// sample to infer from, and a first sample that is not the step.
+test('indent width inference survives the files with nothing to infer from', () => {
+  assert.strictEqual(analyzeIndent('x = 1\ny = 2\n', { tabWidth: 4 }).maxDepth, 0);
+  assert.strictEqual(analyzeIndent('', { tabWidth: 4 }).maxDepth, 0);
+  assert.strictEqual(analyzeIndent('def f():\n  return 1\n', { tabWidth: 4 }).maxDepth, 1);
+  assert.strictEqual(analyzeIndent('def f():\n        return 1\n', { tabWidth: 4 }).maxDepth, 1);
+
+  // First indent unusual — a hanging block, then the file's real step. The
+  // step is what the file does most, not what it did first.
+  const src = [
+    'if a:',
+    '        odd()',
+    'def f():',
+    '    if b:',
+    '        if c:',
+    '            go()',
+  ].join('\n');
+  assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 3);
+});
+
+// Inference adds a pass over the file, so it has to stay a pass: a ratio
+// between two input sizes, for the reason the guards above give.
+test('reading the indent width off the file stays linear', () => {
+  const body = ['def f(a):', '    if a:', '        for i in a:', '            go(i)', ''].join('\n');
+  const cost = (kb) => Math.max(1, bestOf(3, () => analyzeIndent(
+    body.repeat(Math.ceil((kb * 1024) / body.length)), { tabWidth: 4 })));
+  const ratio = cost(400) / cost(100);
+  assert.ok(ratio < 8, `4x the file cost ${ratio.toFixed(1)}x the time`);
+});
+
+// End to end through the pack that owns the caller, which passes tabWidth 4 and
+// is not this change's to edit: a genuinely over-nested two-space function has
+// to be reported like its four-space twin.
+test('an over-nested 2-space Python function is reported', () => {
+  const deep = (unit) => [
+    'def f():',
+    `${unit}if a:`,
+    `${unit.repeat(2)}if b:`,
+    `${unit.repeat(3)}if c:`,
+    `${unit.repeat(4)}go()`,
+  ].join('\n');
+  const depthFinding = (src) => findings('py', src, 'a.py')
+    .find((f) => f.id === 'obvious/nesting-depth');
+
+  assert.strictEqual(depthFinding(deep('    ')).message, 'nesting depth 4 (limit 3)');
+  assert.strictEqual(depthFinding(deep('  ')).message, 'nesting depth 4 (limit 3)');
 });
 
 test('does not catastrophically backtrack on a long line', () => {
