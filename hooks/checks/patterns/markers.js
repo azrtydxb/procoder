@@ -50,8 +50,26 @@ const OWNED_MARKER = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}
 // repeated form is a nested quantifier, and on a 300KB minified line that
 // happens to contain the word it cost 1.8s — most of the hook's whole budget.
 // Two words then anything is the same requirement without the backtracking.
+// One check id, as it is spelled everywhere else in the engine: a rung, a
+// slash, then the rest. The tail is deliberately wider than `[a-z-]+`, because
+// a finding from a project's configured linter carries that tool's own rule id
+// — `true/eslint:no-eval`, `true/ruff:E501`, `true/eslint:@typescript-eslint/
+// no-explicit-any` — so an id may hold a colon, a digit, an uppercase letter,
+// an `@` and a second slash. Under the narrow form a marker naming one parsed
+// as a *bare* marker: it silenced nothing and was reported as a blanket
+// suppression, with nothing said about the id it actually named. That is the
+// same defect .procoder.toml's rule-scoped exclusions were fixed for, where
+// the parser split on the last colon instead of the first.
+//
+// The tail excludes whitespace and commas, which is what terminates an id and
+// keeps the list and the reason after it unambiguous — one way to split, so no
+// backtracking. Whether a named id exists at all is checked in universal.js;
+// shape is all a regex can answer.
+const RULE_ID = '[a-z]+\\/[\\w@][\\w.@:/-]*';
+const RULE_ID_LIST = `${RULE_ID}(?:\\s*,\\s*${RULE_ID})*`;
+
 const LITERAL_MARKER =
-  /procoder:\s*literal\s+([a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*)\s+\S+\s+\S[^\n]*$/;
+  new RegExp(`procoder:\\s*literal\\s+(${RULE_ID_LIST})\\s+\\S+\\s+\\S[^\\n]*$`);
 
 // What may precede a standalone marker: comment and markup punctuation only.
 // Anything else — code, prose, a table cell — makes it a trailing marker.
@@ -67,13 +85,19 @@ const LITERAL_MARKER_ALONE = /^[\s/#*<!;%-]*$/;
 const SUPPRESSION =
   /\beslint-disable(?:-next-line|-line)?\b|#\s*noqa\b|#\s*type:\s*ignore\b|\/\/\s*nolint\b|@SuppressWarnings\s*\(|#pragma\s+warning\s+disable\b|\/\/\s*@ts-(?:ignore|expect-error)\b|#\s*pylint:\s*disable\b|\/\/\s*deepcode\s+ignore\b|procoder:\s*literal\b/i;  // procoder: literal alone/blanket-suppression the table of suppression syntaxes
 
-// The rule identifier that scopes the suppression, per ecosystem.
-const SUPPRESSION_NAMED =
-  /eslint-disable(?:-next-line|-line)?\s+[\w@/-]+|#\s*noqa:\s*\w+|#\s*type:\s*ignore\[[^\]]+\]|\/\/\s*nolint:\s*[\w,-]+|@SuppressWarnings\s*\(\s*"(?!all")[^"]+"|#pragma\s+warning\s+disable\s+\w+|#\s*pylint:\s*disable=\s*[\w,-]+|procoder:\s*literal\s+[a-z]+\/[a-z-]+(?:\s*,\s*[a-z]+\/[a-z-]+)*/i;  // procoder: literal alone/blanket-suppression the table of rule-naming syntaxes
+// The rule identifier that scopes the suppression, per ecosystem. The marker's
+// arm is appended from RULE_ID_LIST rather than spelled out a second time, so
+// the three patterns cannot drift apart on what a check id may contain — which
+// is precisely how a marker naming `true/eslint:no-eval` came to be read as a
+// bare one.
+const SUPPRESSION_NAMED = new RegExp(
+  /eslint-disable(?:-next-line|-line)?\s+[\w@/-]+|#\s*noqa:\s*\w+|#\s*type:\s*ignore\[[^\]]+\]|\/\/\s*nolint:\s*[\w,-]+|@SuppressWarnings\s*\(\s*"(?!all")[^"]+"|#pragma\s+warning\s+disable\s+\w+|#\s*pylint:\s*disable=\s*[\w,-]+/.source  // procoder: literal alone/blanket-suppression the table of rule-naming syntaxes
+  + `|procoder:\\s*literal\\s+${RULE_ID_LIST}`, 'i');
 
 // A whole-file disable, or an explicit "everything" target.
-const SUPPRESSION_BLANKET =
-  /\/\*\s*eslint-disable\s*\*\/|@SuppressWarnings\s*\(\s*"all"\s*\)|\/\/\s*nolint\s*$|#\s*pylint:\s*skip-file\b|procoder:\s*literal\b(?!\s+[a-z]+\/[a-z-]+)/i;  // procoder: literal alone/blanket-suppression the table of blanket syntaxes
+const SUPPRESSION_BLANKET = new RegExp(
+  /\/\*\s*eslint-disable\s*\*\/|@SuppressWarnings\s*\(\s*"all"\s*\)|\/\/\s*nolint\s*$|#\s*pylint:\s*skip-file\b/.source  // procoder: literal alone/blanket-suppression the table of blanket syntaxes
+  + `|procoder:\\s*literal\\b(?!\\s+${RULE_ID})`, 'i');
 
 // The stated reason: substantive human text after the rule identifier.
 // Ecosystems spell the separator differently (`--`, `//`, `-`, `:`), or skip a

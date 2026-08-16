@@ -279,6 +279,30 @@ test('filterMarkedLiterals applies the same marker to findings from any pack', (
     ['safe/sql-injection:2', 'safe/xss-sink:1']);
 });
 
+// A configured linter's findings carry the tool's own rule id — `true/eslint:
+// no-eval`, `true/ruff:E501` — so a check id may contain a colon, an uppercase
+// letter, a digit, and (for a scoped eslint plugin) a second slash and an `@`.
+// The marker's rule-id list matched `[a-z]+/[a-z-]+` only, so a marker naming
+// one of those parsed as a *bare* marker: reported as a blanket suppression,
+// silencing nothing, which is the same defect .procoder.toml's rule exclusions
+// were already fixed for by splitting on the first colon rather than the last.
+test('a literal marker can name an external linter rule id', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `evil(); // ${MARK}true/eslint:no-eval the rule id above is documentation`;
+  assert.deepStrictEqual(
+    filterMarkedLiterals(source, [{ id: 'true/eslint:no-eval', line: 1 }]), []);
+
+  const scoped = `x(); // ${MARK}true/eslint:@typescript-eslint/no-explicit-any, true/ruff:E501 both described`;
+  assert.deepStrictEqual(
+    filterMarkedLiterals(scoped, [
+      { id: 'true/eslint:@typescript-eslint/no-explicit-any', line: 1 },
+      { id: 'true/ruff:E501', line: 1 },
+    ]), []);
+
+  // And it is a well-formed suppression, not a bare one.
+  assert.deepStrictEqual(ids(source), []);
+});
+
 test('marker scanning is cheap on a large marker-free file', () => {
   const { filterMarkedLiterals } = require('../hooks/checks/universal');
   const source = Array.from({ length: 20000 }, (_, i) => `const a${i} = compute(${i});`).join('\n');
