@@ -5,6 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const { MAX_FILE_BYTES } = require('../hooks/checks/run');
+
 const CLI = path.join(__dirname, '..', 'bin', 'procoder.js');
 
 // Every test builds its own throwaway repo under the OS temp dir; without
@@ -253,9 +255,18 @@ test('strict fails on a judgment finding', () => {
 });
 
 // A file over the size cap was never checked. Silence makes it identical to a
-// clean pass, which is how an unchecked 400KB file rides into main.
+// clean pass, which is how an unchecked oversized file rides into main.
+//
+// The threshold comes from MAX_FILE_BYTES rather than a literal: this test
+// previously hardcoded 300KB against a 256KB cap, and silently stopped testing
+// anything when the cap was raised to 4MB — the file was scanned, not skipped.
+//
+// The file is made sparse with truncateSync instead of written out, because the
+// cap is checked against statSync().size before the read: that is what genuinely
+// trips it, and it costs no I/O.
 test('check says a file was skipped for size instead of counting it clean', () => {
-  const repo = repoWith({ 'big.ts': `const x = 1;\n// ${'x'.repeat(300 * 1024)}\n` });
+  const repo = repoWith({ 'big.ts': 'const x = 1;\n' });
+  fs.truncateSync(path.join(repo, 'big.ts'), MAX_FILE_BYTES + 1);
   const result = cli(repo, ['check', 'big.ts']);
   assert.strictEqual(result.code, 0, 'a size skip reports, it does not fail the build');
   assert.match(result.out, /skipped/i);
