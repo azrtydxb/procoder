@@ -55,10 +55,3 @@ test('parseLevelCommand extracts the level from a slash command', () => {
   assert.strictEqual(cfg.parseLevelCommand('/procoder bogus'), null);
   assert.strictEqual(cfg.parseLevelCommand('tell me about /procoder strict'), null);
 });
-
-test('isShellSafe allows ordinary paths, rejects metacharacters', () => {
-  assert.ok(cfg.isShellSafe('/Users/pascal/.claude/plugins/procoder/hooks/x.sh'));
-  assert.ok(cfg.isShellSafe('C:\\Users\\pascal\\procoder\\x.ps1'));
-  assert.ok(!cfg.isShellSafe('/tmp/evil$(whoami)/x.sh'));
-  assert.ok(!cfg.isShellSafe('/tmp/a;rm -rf b/x.sh'));
-});

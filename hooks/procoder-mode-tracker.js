@@ -3,7 +3,7 @@
 // without needing a round-trip through the model.
 
 const { parseLevelCommand, isDeactivationCommand } = require('./procoder-config');
-const { readHookInput, setLevel, writeHookOutput } = require('./procoder-runtime');
+const { readHookInput, readLevel, setLevel, writeHookOutput } = require('./procoder-runtime');
 
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 
@@ -32,5 +32,7 @@ readHookInput().then((input) => {
     return;
   }
 
-  writeHookOutput('UserPromptSubmit', 'strict', '');
+  // Ordinary prompt: nothing changes, but hosts that render the level from
+  // hook output (Codex) must be told the real one, not a hardcoded guess.
+  writeHookOutput('UserPromptSubmit', readLevel(), '');
 }).catch(() => process.exit(0));

@@ -40,12 +40,6 @@ function parseLevelCommand(text) {
   return m ? normalizeLevel(m[1]) : null;
 }
 
-// Allowlist beats escaping every shell's metacharacters. A clone path with
-// quotes, $, backtick or ; falls back to manual statusline setup instead.
-function isShellSafe(p) {
-  return typeof p === 'string' && /^[A-Za-z0-9 _.\-:/\\~]+$/.test(p);
-}
-
 module.exports = {
   LEVELS,
   DEFAULT_LEVEL,
@@ -55,5 +49,4 @@ module.exports = {
   getLevelFilePath,
   isDeactivationCommand,
   parseLevelCommand,
-  isShellSafe,
 };

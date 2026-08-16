@@ -8,16 +8,23 @@ const path = require('path');
 
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-mode-tracker.js');
 
-function run(prompt, seedLevel) {
+function run(prompt, seedLevel, env = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
-  const levelFile = path.join(dir, '.procoder-active');
-  if (seedLevel) fs.writeFileSync(levelFile, seedLevel + '\n');
-  const stdout = execFileSync('node', [HOOK], {
-    encoding: 'utf8',
-    input: JSON.stringify({ prompt }),
-    env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
-  });
-  return { stdout, level: fs.existsSync(levelFile) ? fs.readFileSync(levelFile, 'utf8').trim() : null };
+  try {
+    const levelFile = path.join(dir, '.procoder-active');
+    if (seedLevel) fs.writeFileSync(levelFile, seedLevel + '\n');
+    const stdout = execFileSync('node', [HOOK], {
+      encoding: 'utf8',
+      input: JSON.stringify({ prompt }),
+      env: { ...process.env, CLAUDE_CONFIG_DIR: dir, ...env },
+    });
+    return {
+      stdout,
+      level: fs.existsSync(levelFile) ? fs.readFileSync(levelFile, 'utf8').trim() : null,
+    };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test('/procoder paranoid switches the level', () => {
@@ -42,11 +49,22 @@ test('an ordinary prompt mentioning the phrase does not deactivate', () => {
   );
 });
 
+test('an ordinary prompt reports the level that is actually active', () => {
+  // Codex renders the hook's level in its UI, so a hardcoded 'strict' here
+  // would contradict the statusline for every non-strict user.
+  const { stdout } = run('add a login form', 'paranoid', { PROCODER_HOST: 'codex' });
+  assert.strictEqual(JSON.parse(stdout).systemMessage, 'PROCODER:PARANOID');
+});
+
 test('malformed stdin does not crash the hook', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
-  assert.doesNotThrow(() => execFileSync('node', [HOOK], {
-    encoding: 'utf8',
-    input: 'not json at all',
-    env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
-  }));
+  try {
+    assert.doesNotThrow(() => execFileSync('node', [HOOK], {
+      encoding: 'utf8',
+      input: 'not json at all',
+      env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+    }));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

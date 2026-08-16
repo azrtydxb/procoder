@@ -28,7 +28,7 @@ function getProcoderInstructions(level) {
   }
 
   const body = doctrine.replace(/^---\n[\s\S]*?\n---\n/, '');
-  const activeRank = RANK[active] || RANK[DEFAULT_LEVEL];
+  const activeRank = RANK[active];
 
   return body
     .replace(BLOCK, (_match, blockLevel, content) =>
