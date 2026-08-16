@@ -10,50 +10,72 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const CLI = path.join(root, 'bin', 'procoder.js');
-// The scan used to be `hooks bin scripts` — the subset of the repo that had no
-// meta-text in it. That is cherry-picking away the tool's own worst weakness:
-// every other tracked directory failed only because it *describes* patterns,
-// and describing one reads to a regex exactly like committing one. The
-// `procoder: literal` line marker fixed that, so those directories are in now.
+
+// The scan is the whole tracked tree. It used to be a hand-written list of
+// directories, which is cherry-picking: whatever was left off never had to
+// pass, and a new directory was covered only when someone remembered to add
+// it. The list comes from `git ls-files` now, so a file is in the gate the day
+// it lands.  // procoder: literal alone/blanket-suppression this paragraph names the marker mechanism in prose
 //
-// What is still out, and why. Each is a specific finding, not a category:
-//
-// `skills/` — skills/procoder/SKILL.md:3 (alone/deprecated-no-trigger, the
-//   frontmatter description listing "deprecated" as a trigger word) and :202
-//   (alone/blanket-suppression, the paragraph teaching what a blanket
-//   suppression looks like). Both are meta-text and both are one line marker
-//   away; the change that added the marker was not allowed to edit the
-//   doctrine file. Add the two markers and add 'skills' here.
-//
-// `tests/` — four findings, none of them meta-text, all pre-dating the marker:
-//   tests/mcp.test.js:1 (nesting depth 5) and :82 (47-line function),
-//   tests/manifest.test.js:1 (nesting depth 4) are real rung-3 debt in test
-//   helpers and want refactoring, not marking. tests/checks-config.test.js:54
-//   reports an 88-line function that is 10 lines long: the file contains the
-//   glob "**/*.generated.ts" inside a string, and shape.js's comment stripper
-//   reads the `/*` in it as the start of a block comment and swallows 60 lines
-//   of braces. That is a second false-positive class, in the shape scanner
-//   rather than in the marker rules, and it is fixed there or not at all.
-//
-// `examples/` — examples/*/before.ts are violations on purpose, paired with an
-//   after.ts. They are instances, not descriptions, so the marker is the wrong
-//   tool and marking them would make the teaching material lie.
-//
-// `procoder-mcp/` — procoder-mcp/server.js:24 is a genuine true/swallowed-error
-//   and package.json a genuine safe/missing-lockfile. Real findings, out of
-//   scope for the change that widened this list.
-//
-// `docs/` — 57 findings, all meta-text: planning documents that quote the
-//   engine's own rule ids and sample violations. Marking them is mechanical and
-//   is the obvious next step; the change that added the marker did not own that
-//   tree.
-const TARGETS = ['hooks', 'bin', 'scripts', 'commands', '.procoder.toml', 'README.md', 'CHANGELOG.md'];
+// Two categories are held out, and only these two. Each says why, next to the
+// path, because an exclusion without a reason is the thing this project spends
+// four rungs arguing against.
+const HELD_OUT = [
+  {
+    path: 'docs/superpowers/',
+    why: 'planning documents for work already executed — historical by nature, '
+      + 'and they quote rule ids and sample violations by the hundred',
+  },
+  {
+    path: 'examples/',
+    match: (file) => /\/before\.[^/]+$/.test(file),
+    why: 'examples/*/before.* violate a rung on purpose, paired with an after.* '
+      + 'that does not. They are instances, not descriptions, so the line marker '
+      + 'is the wrong tool — and a .procoder.toml path exclusion is worse, '
+      + 'because checkFile() applies it and tests/examples.test.js asserts these '
+      + 'files still trip. after.* and the README stay in the scan',
+  },
+];
+
+// Findings that belong to a file another change owns right now. Unlike
+// HELD_OUT, these are temporary, and the test below fails once they go green —
+// a hold-out that has stopped holding anything out is exactly the stale
+// suppression rung 4 is about.
+const PENDING = [
+  {
+    path: 'tests/checks-config.test.js',
+    why: 'obvious/function-too-long reports an 88-line function that is 10 lines '
+      + 'long: the glob "**/*.generated.ts" inside a string reads to shape.js\'s '
+      + 'comment stripper as the start of a block comment. Fixed in shape.js',
+  },
+  {
+    path: 'tests/lang-comments.test.js',
+    why: 'obvious/nesting-depth 5 on a file whose deepest block is 2: the fixture '
+      + 'strings contain comment markers and unbalanced braces, and the same '
+      + 'shape.js stripper counts them as code. Fixed in shape.js',
+  },
+  {
+    path: 'tests/lang-py.test.js',
+    why: 'two safe/dynamic-eval findings on Python fixture strings, needing the '
+      + 'same literal markers the other pack tests now carry. The file is owned '
+      + 'by the concurrent py.js change, so the markers land there',
+  },
+];
+
+const excluded = (file) =>
+  HELD_OUT.some((h) => file.startsWith(h.path) && (!h.match || h.match(file)))
+  || PENDING.some((p) => file === p.path);
+
+function trackedFiles() {
+  return execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean).filter((file) => !excluded(file));
+}
 
 function selfScan(extraTargets = []) {
   try {
     return {
       code: 0,
-      out: execFileSync('node', [CLI, 'check', ...TARGETS, ...extraTargets], { cwd: root, encoding: 'utf8' }),
+      out: execFileSync('node', [CLI, 'check', ...trackedFiles(), ...extraTargets], { cwd: root, encoding: 'utf8' }),
     };
   } catch (e) {
     return { code: e.status, out: String(e.stdout || '') };
@@ -64,6 +86,18 @@ test('procoder reports no findings against its own source', () => {
   const { code, out } = selfScan();
   assert.strictEqual(code, 0,
     `procoder fails its own rungs:\n${out}\nFix the source, do not baseline it.`);
+});
+
+// A hold-out that no longer holds anything out is a stale suppression, and it
+// is how the previous list rotted: entries outlived the findings that put them
+// there. Every PENDING path must still report something, so the day the change
+// that owns it lands, this test says to delete the entry.
+test('every pending hold-out still has the finding that put it there', () => {
+  for (const p of PENDING) {
+    const { code } = selfScan([path.join(root, p.path)]);
+    assert.strictEqual(code, 1,
+      `${p.path} is clean now — delete its PENDING entry so the file is gated again`);
+  }
 });
 
 // The canary must prove the self-scan actually fails on a planted violation,

@@ -16,8 +16,10 @@ jobs:
       # some later step regenerated.
       - name: Generated rule files must match the doctrine
         run: npm run sync:check
+      # The gate applies to the gate — tests/dogfood.test.js runs procoder over
+      # the whole tracked tree and is part of this run. There used to be a
+      # separate `procoder check hooks bin scripts` step here; it was a second,
+      # narrower list of what the tool must pass, and two lists drift. Fix the
+      # source when the dogfood test fails; do not baseline procoder's own
+      # findings or widen a hold-out to cover them.
       - run: npm test
-      # The gate applies to the gate. Fix the source when this fails; do not
-      # baseline procoder's own findings or widen an exclusion to cover them.
-      - name: procoder checks itself
-        run: node bin/procoder.js check hooks bin scripts

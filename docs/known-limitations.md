@@ -22,10 +22,11 @@ in a real per-language parser is the fix; it hasn't happened yet in 0.1.0.
 
 ## Line-oriented rules, and what fixes and doesn't
 
-Most rules in the language packs (`hooks/checks/lang/*.js`) match against raw
-source lines. A rule name or trigger phrase mentioned in a comment or a
-string literal can produce a finding — a comment reading `// TODO: reduce
-Math.random() usage` can trip the weak-random rule.
+<!-- procoder: literal alone/orphan-todo the marker this sentence quotes as an example, not one left in the tree -->
+A comment reading `// TODO: reduce Math.random() usage` can trip the
+weak-random rule: most rules in the language packs (`hooks/checks/lang/*.js`)
+match against raw source lines, so a rule name or trigger phrase mentioned in
+a comment or a string literal can produce a finding.
 
 `ts.js` runs two of its rules (`safe/xss-sink`, `obvious/nested-ternary`)
 against comment-and-string-stripped lines instead. That closes the
