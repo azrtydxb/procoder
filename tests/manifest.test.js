@@ -24,7 +24,9 @@ test('every hook command references a file that will exist', () => {
     for (const group of hooks.hooks[event]) {
       for (const h of group.hooks) {
         assert.match(h.command, /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/procoder-[a-z-]+\.js/);
-        assert.ok(h.timeout > 0 && h.timeout <= 5);
+        const maxTimeout = event === 'PostToolUse' ? 2 : 5;
+        assert.ok(h.timeout > 0 && h.timeout <= maxTimeout,
+          `${event} hook timeout ${h.timeout} exceeds its ${maxTimeout}s budget`);
       }
     }
   }
