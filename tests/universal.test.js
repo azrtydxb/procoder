@@ -205,6 +205,41 @@ test('finds a credential on a 300KB minified line', () => {
     'a hardcoded AWS key on a 300KB line went unreported');
 });
 
+// Speed used to be bought with a 200-character ceiling on every `[^x]*` span,
+// which is a real blind spot rather than a safe approximation: an interpolated
+// expression or an argument list longer than that fell out of the check
+// entirely. The spans are walked left to right now — one pass, nothing capped —
+// so length is no longer what decides whether a line is examined.
+test('a long interpolated expression in a log call is still seen', () => {
+  const expr = 'user.' + 'profile.'.repeat(40) + 'password';
+  assert.ok(ids('logger.info(`auth ${' + expr + '}`)').includes('safe/secret-in-log'),  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
+    `a ${expr.length}-character interpolated credential went unreported`);
+});
+
+test('a commented-out call with a long argument list is still seen', () => {
+  const args = 'argument, '.repeat(30);
+  const block = [`// send(${args}payload)`, `// retry(${args}payload)`, '// note'].join('\n');
+  assert.ok(ids(block).includes('alone/commented-code'),
+    `commented-out calls with ${args.length}-character argument lists went unreported`);
+});
+
+// Nothing above may cost what the ceiling was bought to prevent. Same bound and
+// same reasoning as the 300KB test: the assertion is the growth rate.
+test('stays linear on a single 400KB line with unbounded spans in it', () => {
+  const rep = (unit) => unit.repeat(Math.ceil((400 * 1024) / unit.length));
+  const shapes = {
+    'unclosed interpolation': 'console.log(`token ${' + rep('a') + '`)',  // procoder: literal alone/debug-leftover, safe/secret-in-log scanner input for that rule, not an instance of it
+    'one huge closed argument list in a comment': '// send(' + rep('a,') + 'x)',
+    'many opens, one close': '// f(' + rep('a(') + ')',
+  };
+  for (const [what, source] of Object.entries(shapes)) {
+    const start = Date.now();
+    run(source);
+    const ms = Date.now() - start;
+    assert.ok(ms < 500, `${what}: took ${ms}ms on a 400KB line`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // The literal marker: text that describes a pattern, marked as such.
 //
