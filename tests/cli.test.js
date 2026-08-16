@@ -481,3 +481,68 @@ test('an install path with shell metacharacters is refused, with the manual snip
   assert.match(out, /statusLine/, 'the manual snippet is the fallback');
   assert.strictEqual(fs.existsSync(settingsIn(repo)), false, 'nothing may be written');
 });
+
+// A plugin install lives under a version-named directory that `/procoder:update`
+// replaces wholesale. A command naming that directory stops resolving the day
+// the version changes, and because the statusline script is simply gone it
+// prints nothing at all — the badge disappears with no error anywhere. These
+// tests stand a fake versioned cache up, move the version, and insist the
+// command written before the move still prints the badge after it.
+
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX shell only' };
+
+// bin/ requires ../hooks/, so those two directories are the whole plugin as far
+// as `statusline install` is concerned.
+function versionedInstall(version) {
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cache-'));
+  tempDirs.push(cache);
+  const home = path.join(cache, 'plugins', 'cache', 'procoder', 'procoder', version);
+  for (const dir of ['bin', 'hooks']) {
+    fs.cpSync(path.join(__dirname, '..', dir), path.join(home, dir), { recursive: true });
+  }
+  return home;
+}
+
+function runStatusLine(command, repo, input = '{}') {
+  return spawnSync('bash', ['-c', command], {
+    input, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  });
+}
+
+function installFrom(home, repo, args = []) {
+  return spawnSync('node', [path.join(home, 'bin', 'procoder.js'), 'statusline', 'install', ...args], {
+    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  });
+}
+
+test('the command written for a plugin install survives a version bump', POSIX_ONLY, () => {
+  const home = versionedInstall('0.2.0');
+  const repo = repoWith({});
+  atLevel(repo, 'strict');
+
+  const installed = installFrom(home, repo);
+  assert.strictEqual(installed.status, 0, String(installed.stdout) + String(installed.stderr));
+  const { command } = readSettings(repo).statusLine;
+  assert.doesNotMatch(command, /0\.2\.0/, 'the written command must not pin a version');
+
+  fs.renameSync(home, path.join(path.dirname(home), '0.3.0'));
+  const r = runStatusLine(command, repo);
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.strictEqual(String(r.stdout).trim(), '[PROCODER:STRICT]');
+});
+
+// The other half of not pinning: when the plugin is gone entirely, the command
+// has to fall silent rather than spray a resolution error into the status bar.
+test('the plugin command prints nothing, quietly, once the plugin is removed', POSIX_ONLY, () => {
+  const home = versionedInstall('0.2.0');
+  const repo = repoWith({});
+  atLevel(repo, 'strict');
+  assert.strictEqual(installFrom(home, repo).status, 0);
+
+  const { command } = readSettings(repo).statusLine;
+  fs.rmSync(path.dirname(home), { recursive: true, force: true });
+  const r = runStatusLine(command, repo);
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.strictEqual(String(r.stdout), '');
+  assert.strictEqual(String(r.stderr), '');
+});

@@ -259,8 +259,52 @@ function statuslineScript() {
     isWindows ? 'procoder-statusline.ps1' : 'procoder-statusline.sh');
 }
 
+// POSIX single quoting, which has no escape character: close the quote, emit an
+// escaped quote, reopen. Anything at all can be passed through this safely,
+// which is what lets the shell fragments below take a path — and, for compose,
+// somebody else's whole command line — as an argument rather than as text
+// spliced into the middle of a script.
+const shQuote = (s) => `'${s.replace(/'/g, "'\\''")}'`;
+
+// A plugin install lands under a version-named directory that the next
+// `/procoder:update` replaces wholesale:
+//   .../plugins/cache/procoder/procoder/0.2.0/hooks/procoder-statusline.sh
+// Writing that path into settings.json pins the command to a directory with a
+// known expiry date, and when it goes the script is merely absent — no error,
+// no output, the badge just stops appearing. Silent failure is the worst shape
+// this project has, so a versioned path is never written; the sibling of the
+// version directory is, and the version is resolved at run time.
+//
+// Returns the parent of the version directory, or null for an install whose
+// path has no version in it — a git clone, where pinning is correct and the
+// simpler command is the better one.
+const VERSION_DIR = /^\d+\.\d+\.\d+/;
+
+function versionedBase(script) {
+  const versionDir = path.dirname(path.dirname(script));
+  return VERSION_DIR.test(path.basename(versionDir)) ? path.dirname(versionDir) : null;
+}
+
+// Picks the most recently written install among the versions present, rather
+// than the highest version string: `sort -V` is not portable, lexical order
+// puts 0.9.0 above 0.10.0, and the directory an update just wrote is the one
+// the user is running. `[ -r ]` covers the no-match case too — an unmatched
+// glob stays literal and is not readable — so an uninstalled plugin exits 0
+// with no output instead of spraying a resolution error into the status bar.
+const RESOLVE_VERSION = 'p=; for c in "$1"/*/hooks/procoder-statusline.sh; do '
+  + '[ -r "$c" ] || continue; [ -z "$p" ] || [ "$c" -nt "$p" ] || continue; p=$c; done; '
+  + '[ -n "$p" ] || exit 0; exec bash "$p"';
+
+// procoder: no PowerShell equivalent of RESOLVE_VERSION — a Windows plugin
+// install stays pinned to its version directory. Add one when procoder is
+// actually shipped and tested as a plugin on Windows; an untested resolver in
+// the statusline would trade a known gap for an unknown one.
 function statuslineCommand(script) {
-  return isWindows ? `powershell -NoProfile -File "${script}"` : `bash "${script}"`;
+  if (isWindows) return `powershell -NoProfile -File "${script}"`;
+  const base = versionedBase(script);
+  return base
+    ? `bash -c ${shQuote(RESOLVE_VERSION)} procoder-statusline ${shQuote(base)}`
+    : `bash "${script}"`;
 }
 
 const settingsPath = () => path.join(getClaudeDir(), 'settings.json');
