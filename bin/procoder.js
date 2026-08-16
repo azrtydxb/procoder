@@ -16,11 +16,15 @@ const {
   fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 
-const USAGE = `usage: procoder <check|baseline|verify> <paths...>
+const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <paths...>
 
   check     report findings not present in the baseline; exit 1 if any
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
+
+  --unused-exclusions  (verify only) also fail if a [exclude] rules entry
+                        suppressed nothing in this run — a stale suppression
+                        left behind after the finding it silenced was fixed
 `;
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -81,6 +85,34 @@ function presentFindings(files, repoRoot, config) {
   return present;
 }
 
+// A rule exclusion ("path:rule-id") is real rot the moment it stops silencing
+// anything — the finding it named got fixed, or the file moved on — and it
+// then sits in .procoder.toml suppressing nothing, forever, unnoticed.
+// Detected by re-running the same files through a config with `rules` cleared
+// (paths exclusions untouched) and checking, per exclusion, whether a finding
+// with its exact (path, id) still turns up. Only `rules` are checked: `paths`
+// exclusions are commonly aspirational (a vendor/ that does not exist yet),
+// so flagging them would just be noise. Only files the run actually covered
+// can answer for an exclusion naming them — a single-file `verify` cannot
+// know whether some other file's exclusion is still earning its keep, so an
+// exclusion naming a path outside this run is skipped rather than guessed at.
+function unusedRuleExclusions(files, repoRoot, config) {
+  const rules = config.exclude.rules;
+  if (rules.length === 0) return [];
+
+  const withoutRules = { ...config, exclude: { ...config.exclude, rules: [] } };
+  const coveredPaths = new Set();
+  const stillFires = new Set();
+  for (const absPath of files) {
+    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, withoutRules, false);
+    if (skipped) continue;
+    coveredPaths.add(relPath);
+    for (const f of findings) stillFires.add(`${relPath}\0${f.id}`);
+  }
+
+  return rules.filter((r) => coveredPaths.has(r.path) && !stillFires.has(`${r.path}\0${r.id}`));
+}
+
 const SAMPLE_SIZE = 3;
 
 // Naming a few of the new findings makes a CI failure actionable; the full
@@ -91,9 +123,22 @@ function sample(added, present) {
   return shown + (rest > 0 ? `  ...and ${rest} more\n` : '');
 }
 
+// Reported under plain `verify` too — a stale exclusion is rot worth seeing —
+// but it only fails the build under the dedicated flag: the honest case (the
+// underlying finding got fixed) must not turn into a CI failure by default.
+function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
+  const stale = unusedRuleExclusions(files, repoRoot, config);
+  if (stale.length === 0) return 0;
+  process.stdout.write(
+    `procoder: ${stale.length} exclusion rule${stale.length === 1 ? '' : 's'} suppressed nothing ` +
+    'in this run:\n' + stale.map((r) => `  ${r.path}:${r.id}\n`).join('') +
+    'Remove them from [exclude] rules in .procoder.toml, or note why they still apply.\n');
+  return unusedExclusions ? 1 : 0;
+}
+
 // The ratchet: accepted debt may shrink, never grow. Compares fingerprints,
 // not counts, so fixing an old finding buys no room for a new one.
-function runVerify(files, repoRoot, config) {
+function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
   const baseline = loadBaseline(repoRoot, config);
   const present = presentFindings(files, repoRoot, config);
 
@@ -107,7 +152,7 @@ function runVerify(files, repoRoot, config) {
   }
   process.stdout.write(
     `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
-  return 0;
+  return reportUnusedExclusions(files, repoRoot, config, unusedExclusions);
 }
 
 function runCheck(files, repoRoot, config) {
@@ -129,8 +174,17 @@ function runCheck(files, repoRoot, config) {
 // must not find a method on Object.prototype and try to run it.
 const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['verify', runVerify]]);
 
+// Isolated so main() can pull the flag out of argv without pushing the
+// function that dispatches commands over the line-count threshold.
+function parseFlags(argv) {
+  const unusedExclusions = argv.includes('--unused-exclusions');
+  const rest = unusedExclusions ? argv.filter((a) => a !== '--unused-exclusions') : argv;
+  return { unusedExclusions, rest };
+}
+
 function main(argv) {
-  const [command, ...targets] = argv;
+  const { unusedExclusions, rest } = parseFlags(argv);
+  const [command, ...targets] = rest;
   const run = COMMANDS.get(command);
   if (!run || targets.length === 0) {
     process.stderr.write(USAGE);
@@ -166,7 +220,7 @@ function main(argv) {
     if (command === 'verify') return 2;
   }
 
-  return run(files, repoRoot, config);
+  return run(files, repoRoot, config, { unusedExclusions });
 }
 
 process.exit(main(process.argv.slice(2)));
