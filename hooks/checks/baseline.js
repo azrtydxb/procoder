@@ -17,11 +17,27 @@ function normalizeLine(text) {
   return String(text || '').trim().replace(/\s+/g, ' ');
 }
 
-function fingerprint(finding, relPath, sourceLine) {
+function fingerprint(finding, relPath, sourceLine, ordinal = 0) {
   const normalizedPath = String(relPath).replace(/\\/g, '/');
   return crypto.createHash('sha1')
-    .update(`${finding.id}\0${normalizedPath}\0${normalizeLine(sourceLine)}`)
+    .update(`${finding.id}\0${normalizedPath}\0${normalizeLine(sourceLine)}\0${ordinal}`)
     .digest('hex');
+}
+
+// One fingerprint per finding, in order. Identical violating lines share id,
+// path and normalized content, so each gets the ordinal of its occurrence:
+// without it one accepted violating line would accept fifty copies of itself,
+// and copy-paste is exactly how legacy code grows. The ordinal is still immune
+// to reformatting — indentation changes do not reorder lines.
+function fingerprintsFor(findings, relPath, lines) {
+  const seen = new Map();
+  return findings.map((f) => {
+    const sourceLine = lines[f.line - 1];
+    const key = `${f.id}\0${normalizeLine(sourceLine)}`;
+    const ordinal = seen.get(key) || 0;
+    seen.set(key, ordinal + 1);
+    return fingerprint(f, relPath, sourceLine, ordinal);
+  });
 }
 
 function baselinePath(repoRoot, config) {
@@ -48,8 +64,8 @@ function writeBaseline(repoRoot, config, entries) {
 
 function suppress(findings, { baseline, relPath, lines }) {
   if (!baseline || baseline.size === 0) return findings;
-  return findings.filter((f) =>
-    !baseline.has(fingerprint(f, relPath, lines[f.line - 1])));
+  const fps = fingerprintsFor(findings, relPath, lines);
+  return findings.filter((f, i) => !baseline.has(fps[i]));
 }
 
 // The ratchet: a finding present today that the baseline never accepted is
@@ -62,5 +78,5 @@ function growthCheck(baseline, currentFingerprints) {
 }
 
 module.exports = {
-  fingerprint, loadBaseline, writeBaseline, suppress, growthCheck, baselinePath,
+  fingerprint, fingerprintsFor, loadBaseline, writeBaseline, suppress, growthCheck, baselinePath,
 };

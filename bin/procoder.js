@@ -12,7 +12,7 @@ const path = require('path');
 const { loadConfig, findRepoRoot } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
-const { fingerprint, writeBaseline, loadBaseline, growthCheck } = require('../hooks/checks/baseline');
+const { fingerprintsFor, writeBaseline, loadBaseline, growthCheck } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> <paths...>
 
@@ -53,7 +53,7 @@ function runBaseline(files, repoRoot, config) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
     if (skipped) continue;
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
-    for (const f of findings) entries.push(fingerprint(f, relPath, lines[f.line - 1]));
+    entries.push(...fingerprintsFor(findings, relPath, lines));
   }
   writeBaseline(repoRoot, config, entries);
   process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
@@ -62,17 +62,19 @@ function runBaseline(files, repoRoot, config) {
 
 // Fingerprint → a human-readable location, for every finding present today.
 // Findings are collected BEFORE baseline suppression, so the ratchet compares
-// the full picture against what was accepted.
+// the full picture against what was accepted. Every occurrence gets its own
+// entry — the ordinal in the fingerprint keeps identical lines apart, so
+// cloning a baselined violation cannot collapse into the accepted one.
 function presentFindings(files, repoRoot, config) {
   const present = new Map();
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config, false);
     if (skipped) continue;
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
-    for (const f of findings) {
-      present.set(fingerprint(f, relPath, lines[f.line - 1]),
-        `${relPath}:${f.line}  ${f.id} — ${f.message}`);
-    }
+    const fps = fingerprintsFor(findings, relPath, lines);
+    findings.forEach((f, i) => {
+      present.set(fps[i], `${relPath}:${f.line}  ${f.id} — ${f.message}`);
+    });
   }
   return present;
 }

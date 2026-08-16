@@ -59,6 +59,15 @@ test('suppression survives the file being reformatted', () => {
     suppress([f(1)], { baseline: known, relPath: 'a.ts', lines: after }), []);
 });
 
+// One accepted occurrence accepts one occurrence. A second identical line is a
+// new violation, even though id, path and normalized content are identical.
+test('suppress accepts only as many duplicates as the baseline recorded', () => {
+  const lines = ['// TODO: later', '// TODO: later', '// TODO: later'];
+  const known = new Set([fingerprint(f(1), 'a.ts', lines[0])]);
+  const out = suppress([f(1), f(2), f(3)], { baseline: known, relPath: 'a.ts', lines });
+  assert.strictEqual(out.length, 2);
+});
+
 test('growthCheck passes when every current finding is baselined', () => {
   const baseline = new Set(['a', 'b', 'c']);
   assert.strictEqual(growthCheck(baseline, new Set(['a', 'b', 'c'])).ok, true);

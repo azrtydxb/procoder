@@ -84,6 +84,37 @@ test('verify fails when a baselined finding is swapped for a different one', () 
   assert.match(swapped.out, /innerHTML|xss/i);
 });
 
+// Copy-paste is how legacy code grows: every identical line shares id, path and
+// normalized content, so without an occurrence ordinal one baselined line
+// accepts an unlimited number of clones.
+test('verify fails when a baselined violation is cloned', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
+  cli(repo, ['baseline', 'a.ts']);
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(51));
+
+  const verified = cli(repo, ['verify', 'a.ts']);
+  assert.notStrictEqual(verified.code, 0);
+  assert.match(verified.out, /not in the baseline/i);
+
+  const checked = cli(repo, ['check', 'a.ts']);
+  assert.notStrictEqual(checked.code, 0);
+  assert.match(checked.out, /SAFE/);
+});
+
+test('verify passes when the baselined duplicate count is unchanged', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });
+  cli(repo, ['baseline', 'a.ts']);
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
+  assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
+});
+
+test('verify passes when a duplicate violation is deleted — shrinking is fine', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });
+  cli(repo, ['baseline', 'a.ts']);
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(2));
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
+});
+
 test('unknown subcommand prints usage and exits non-zero', () => {
   const repo = repoWith({});
   const result = cli(repo, ['frobnicate']);
