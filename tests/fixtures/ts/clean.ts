@@ -5,6 +5,16 @@ function lookupUser(db: any, id: string) {
   return db.query("SELECT * FROM users WHERE id = ?", [id]);
 }
 
+function lookupUserNumbered(db: any, id: string) {
+  // build the query with "SELECT " + cols
+  return db.query("SELECT * FROM users WHERE id = $1", [id]);
+}
+
+function greet(name: string) {
+  const msg = "hello " + name;
+  return msg;
+}
+
 function renderBio(el: any, userInput: string) {
   el.textContent = userInput;
 }
