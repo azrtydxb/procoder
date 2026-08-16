@@ -107,10 +107,13 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <code>git ls-files</code>, so every tracked file is in the gate the day it lands,
   this page and its stylesheet included. Running the tool over this repository
   today, <code>node bin/procoder.js check .</code> reports <strong>0 findings</strong>
-  over <strong>202</strong> tracked files and exits 0, having skipped 55 of them
-  and said so on stderr for every one: 46 by <code>[exclude] paths</code> in
+  over <strong>202</strong> tracked files and exits 0, having skipped 19 of them
+  and said so on stderr for every one: 10 by <code>[exclude] paths</code> in
   <code>.procoder.toml</code>, one line per pattern with its count, and 9 across
-  two <code>.procoderignore</code> files. So 147 files are actually read.
+  two <code>.procoderignore</code> files. So <strong>183</strong> files are
+  actually read — the number the README publishes, and the one
+  <code>tests/dogfood.test.js</code> asserts against the scan's own output so it
+  cannot drift.
 </p>
 
 <p>
@@ -133,15 +136,24 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 </p>
 
 <p>
-  The 46 are <code>tests/fixtures/</code> — inputs whose whole purpose is to be
-  scanned by the tests rather than by the scan — and the nine rule files
-  <code>scripts/sync-rules.js</code> generates from the doctrine, which would
-  otherwise gate the same quoted rule ids ten times over. That key used to be
-  the quietest hold-out procoder offered. It is not now: every run prints one
-  stderr line per pattern with its count and the pattern that did it, naming a
-  file directly if you named that file yourself, and <code>verify</code> reports
-  a configured exclusion whose path no longer exists. What it still cannot see
-  is the entry above — an exclusion whose path is present but has gone clean.
+  The 10 are the 7 <code>tests/fixtures/*/dirty.*</code> files — inputs whose
+  whole purpose is to be scanned by the tests rather than by the scan, where a
+  line marker would change the input the test reads — plus three files carrying
+  one named false positive each. That key was 46 files until recently, on the
+  argument that <code>scripts/sync-rules.js</code> generates 32 of them from the
+  doctrine. The argument was sound and the scope was not: 30 of the 32 held back
+  no finding at all, because they are rendered from a source file that is itself
+  in the gate, so they are gated now too.
+</p>
+
+<p>
+  That key used to be the quietest hold-out procoder offered. It is not now:
+  every run prints one stderr line per pattern with its count and the pattern
+  that did it, naming a file directly if you named that file yourself, and
+  <code>verify</code> reports a configured exclusion that holds nothing back —
+  path gone, matching no file, or covering only clean files — failing the build
+  under <code>--unused-exclusions</code>. The last two are claims about the tree
+  and are judged only when the run covered the whole repository.
 </p>
 
 <p>

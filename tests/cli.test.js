@@ -450,6 +450,64 @@ test('a path exclusion that still covers a real directory is not reported', () =
   assert.doesNotMatch(result.out, /excludes nothing/i);
 });
 
+// The two ways a path exclusion rots without its path going anywhere. Both were
+// silent until now, which is the shape this project exists to argue against: an
+// exclusion nobody judges narrows the gate on the day it stops being needed and
+// says nothing on the day it starts mattering again.
+
+test('a path exclusion whose target has gone clean is reported', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["gen/"]\n',
+    'gen/a.ts': 'const x = 1;\n',
+    'src/c.ts': 'const y = 1;\n',
+  });
+  const plain = cli(repo, ['verify', '.']);
+  assert.strictEqual(plain.code, 0, 'plain verify does not fail CI over a stale exclusion');
+  assert.match(plain.out, /excludes nothing/i);
+  assert.match(plain.out, /gen\/ — nothing it excludes has a finding/);
+
+  const flagged = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
+});
+
+test('a glob path exclusion matching nothing is reported', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["**/*.gen.ts"]\n',
+    'src/c.ts': 'const x = 1;\n',
+  });
+  const plain = cli(repo, ['verify', '.']);
+  assert.strictEqual(plain.code, 0);
+  assert.match(plain.out, /\*\*\/\*\.gen\.ts — it matches no file in the tree/);
+
+  const flagged = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
+});
+
+test('a glob path exclusion still suppressing a finding is not reported', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["**/*.gen.ts"]\n',
+    'src/c.gen.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const result = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.strictEqual(result.code, 0);
+  assert.doesNotMatch(result.out, /excludes nothing/i);
+});
+
+// The same restraint an out-of-run rule exclusion gets. "This glob matches
+// nothing" and "everything under it is clean" are claims about the tree; a run
+// over one file has not seen the tree and must not make either — and, since the
+// scan is the expensive half, must not pay for them.
+test('the tree-wide path exclusion rules stay quiet on a partial run', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["gen/", "**/*.gen.ts"]\n',
+    'gen/a.ts': 'const x = 1;\n',
+    'src/c.ts': 'const y = 1;\n',
+  });
+  const result = cli(repo, ['verify', '--unused-exclusions', 'src/c.ts']);
+  assert.strictEqual(result.code, 0, 'a run that never saw the tree cannot judge a path exclusion');
+  assert.doesNotMatch(result.out, /excludes nothing/i);
+});
+
 // A CI gate that passes because it looked at nothing is the worst version of
 // this defect: `max_file_bytes` set too low skipped every file in the repo and
 // verify still printed "ratchet holds" and exited 0.

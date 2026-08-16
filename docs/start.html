@@ -79,9 +79,9 @@ procoder verify &lt;paths...&gt;    # exit 1 if a finding is not in the baseline
 <p>
   <code>verify</code> is the CI ratchet: accepted debt may shrink, never grow. It
   takes one extra flag, <code>--unused-exclusions</code>, which also fails when an
-  exclusion stopped suppressing anything, or names a path that no longer exists —
-  a suppression left behind after the finding it silenced was fixed is itself
-  rung-4 rot.
+  exclusion stopped suppressing anything — a rule that silences no finding, or a
+  path whose target is gone, matches nothing, or has gone clean. A suppression
+  left behind after the finding it silenced was fixed is itself rung-4 rot.
 </p>
 
 <p>

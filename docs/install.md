@@ -244,9 +244,12 @@ which a ratchet cannot honestly cover. Exit 2 never means "you added findings".
 
 `verify` takes one extra flag, `--unused-exclusions`: it also fails if an
 `[exclude] rules` entry suppressed nothing in this run, or an `[exclude] paths`
-entry names a path that no longer exists — a stale suppression left behind after
+entry holds nothing back — its path no longer exists, it matches no file in the
+tree, or every file it covers is clean. A stale suppression left behind after
 the finding it silenced was fixed. Without the flag the stale entries are still
-reported, they just do not fail the build.
+reported, they just do not fail the build. The last two path rules are claims
+about the tree and are judged only when the run's targets covered the whole
+repository.
 
 `check` takes `--no-ignore`, which answers "why is this file not being checked?"
 by turning off every `.procoderignore` for the run. It reaches ignore files and

@@ -147,35 +147,50 @@ the test at `tests/dogfood.test.js:73` fails if a `HELD_OUT` path matches no
 tracked file or has gone clean.
 
 Measured today over **202** tracked files, `procoder check .` reports **0**
-findings and exits 0, having skipped **55** of them and said so on stderr for
+findings and exits 0, having skipped **19** of them and said so on stderr for
 every one:
 
-- **46 by `[exclude] paths` in `.procoder.toml`**, one line per pattern with
-  its count: 14 `tests/fixtures/`, 13 `.openclaw/`, 12 `.opencode/`, and one
-  each for `AGENTS.md`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.kiro/`,
-  `.qoder/` and `.agents/`. All but `tests/fixtures/` are files
-  `scripts/sync-rules.js` generates from `skills/procoder/SKILL.md`; gating a
-  generated copy of doctrine that quotes rule ids by the dozen would gate the
-  same text ten times over.
-- **9 by two `.procoderignore` files**: 5 under `docs/superpowers/` and 4
-  `examples/*/before.*`.
+- **10 by `[exclude] paths` in `.procoder.toml`**, one line per pattern with
+  its count: 7 `tests/fixtures/*/dirty.*`, and one each for
+  `tests/fixtures/ts/clean.ts`, `.opencode/command/rot.md` and
+  `.openclaw/commands/rot.md`. The dirty fixtures exist to be scanned by the
+  tests rather than by the scan, and a line marker in one would change the
+  input the test reads. The other three carry exactly one finding each, named
+  in `.procoder.toml` next to the entry, with the source fix named too.
+- **9 by two `.procoderignore` files**: 5 under `docs/superpowers/` (1500-line
+  planning documents for work already executed, quoting rule ids by the
+  hundred — 56 findings under `--no-ignore`, all of them meta-text) and 4
+  `examples/*/before.*` (files that violate a rung on purpose, and are still
+  checked on every test run through `procoder check --no-ignore`).
 
-So 147 files are actually read. The repository root also carries a
-`.procoderignore` for `.claude/` and `.superpowers/`; both are untracked agent
-scratch, so the count it skips is whatever the machine happens to be holding
-and is not a reproducible number.
+So **183** files are actually read, and README.md publishes those three
+numbers; `tests/dogfood.test.js` asserts them against the scan's own output, so
+the paragraph fails the build rather than going quietly out of date. The
+repository root also carries a `.procoderignore` for `.claude/` and
+`.superpowers/`; both are untracked agent scratch, so the count it skips is
+whatever the machine happens to be holding and is not a reproducible number.
+
+This list was 46 files until the staleness rules below existed to judge it. Of
+the 32 generated rule files then excluded on the "it is generated" argument, 30
+held nothing back at all — they are rendered from `skills/procoder/SKILL.md`,
+which is itself in the gate, so the markers that keep the source clean render
+into them too. They are gated now. The remaining two are one false positive,
+not a category.
 
 What this does *not* give you:
 
-- **A `.procoderignore` has no expiry test, and `[exclude] paths` has only
-  half of one.** `unusedPathExclusions` in `hooks/checks/config.js` reports a
-  configured path exclusion whose path no longer exists — under plain `verify`,
-  failing the build only under `--unused-exclusions`. It deliberately judges
-  nothing else: an exclusion naming a directory that still exists but has gone
-  clean, and a glob that matches nothing at all, are both silent. Verified in a
-  throwaway repo — `paths = ["keep/", "**/*.gen.ts"]` with `keep/` holding one
-  clean file and no `.gen.ts` anywhere: `verify --unused-exclusions` exits 0
-  and reports neither. An ignore file gets no staleness test of any kind.
+- **A `.procoderignore` has no expiry test.** `[exclude] paths` now has a full
+  one. `unusedPathExclusions` in `hooks/checks/config.js` reports a configured
+  path exclusion three ways — its path no longer exists, it matches no file in
+  the tree, or every file it covers is clean — under plain `verify`, failing
+  the build only under `--unused-exclusions`, which is the contract
+  `unusedRuleExclusions` has always had. Verified in a throwaway repo:
+  `paths = ["keep/", "**/*.gen.ts"]` with `keep/` holding one clean file and no
+  `.gen.ts` anywhere now names both, and exits non-zero under the flag. The two
+  tree-wide rules are decided only when the run's targets covered the whole
+  repository — "this glob matches nothing" is a claim about the tree, and a
+  `verify` over one file has not seen it — so a partial run still says nothing,
+  deliberately. An ignore file gets no staleness test of any kind.
 - **`--no-ignore` does not re-include a `[exclude] paths` entry, on purpose.**
   The flag answers "why is this file not being checked?" by turning off every
   `.procoderignore` for the run, and nothing else. `[exclude] paths` is the

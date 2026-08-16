@@ -1,8 +1,36 @@
 [exclude]
-# tests/fixtures/ is the one path exclusion that is about meta-text: clean.txt
-# and dirty.txt are inputs whose whole purpose is to be scanned by the tests,
-# not by the scan. A marker in them would change the input and break the test
-# that reads them, so this is the one case the line marker cannot serve.
+# Every entry here is scoped to the files that actually earn it, and each one is
+# checked on every `verify` — a pattern whose path is gone, that matches no file,
+# or all of whose files are clean is reported and fails `--unused-exclusions`.
+# This list was four times longer until that check existed to judge it:
+#
+#   dropped  AGENTS.md, .cursor/, .windsurf/, .clinerules/, .kiro/, .qoder/,
+#            .agents/ — 7 generated rule files, excluded on the "it is
+#            generated" argument and holding back nothing at all. They are
+#            rendered from skills/procoder/SKILL.md, which is itself in the
+#            gate, so the markers that keep the source clean render into them
+#            too and gating the copies costs nothing. If a future SKILL.md edit
+#            reddens one of them, the fix is a marker in SKILL.md, not an
+#            exclusion here; `npm run sync` re-renders.
+#   narrowed .opencode/ and .openclaw/ (25 files) → the two rot.md renders. One
+#            finding each, both the same false positive: sync-rules.js renders a
+#            `description:` frontmatter line from commands/rot.toml reading
+#            "…stale, and deprecated code…", which alone/deprecated-no-trigger  # procoder: literal alone/deprecated-no-trigger this line quotes the text that trips the rule
+#            reads as a deprecation notice. The other 23 renders are gated.
+#            Delete these two the day the renderer or the .toml carries a marker.
+#   narrowed tests/fixtures/ (14 files) → the 7 dirty.* plus ts/clean.ts. The
+#            clean.* fixtures were excluded by association and are clean under
+#            the whole engine, so 6 of them are now gated for free. ts/clean.ts
+#            is the exception: its prose block of "never db.query(`…`)" lines
+#            reads to alone/commented-out-code as 12 lines of commented-out
+#            code. That is the one case the line marker is right for and it is
+#            not applied here only because the fixture belongs to the language
+#            pack's tests; delete this entry the moment it carries one.
+#
+# The dirty.* fixtures stay: they are inputs whose whole purpose is to be
+# scanned by the tests, not by the scan. A marker in them would change the input
+# and break the test that reads them, so this is the one case the line marker
+# cannot serve.
 #
 # examples/*/before.* is deliberately NOT listed here, though it is the obvious
 # candidate: those files violate a rung on purpose, paired with an after.* that
@@ -14,7 +42,12 @@
 # still teaches. The examples tree is held out of the self-scan in
 # tests/dogfood.test.js instead, where it is one line with a reason next to it
 # and the real `procoder check` still sees the files.
-paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
+paths = [
+  "tests/fixtures/*/dirty.*",
+  "tests/fixtures/ts/clean.ts",
+  ".opencode/command/rot.md",
+  ".openclaw/commands/rot.md",
+]
 
 # No rule exclusions. The three that used to exempt hooks/checks/patterns/
 # markers.js are gone: that file now carries a line marker on each of the eleven
