@@ -25,8 +25,21 @@ test('does not flag secrets read from the environment or a manager', () => {
 test('flags secrets and PII reaching log calls', () => {
   assert.ok(ids('logger.info(`auth ${token}`)').includes('safe/secret-in-log'));
   assert.ok(ids('console.log("authorization: " + req.headers.authorization)').includes('safe/secret-in-log'));
+  assert.ok(ids('log.debug(`session ${sessionId} rotated`)').includes('safe/secret-in-log'));
   assert.ok(ids('log.debug(f"user email {user.email}")').includes('safe/pii-in-log'));
   assert.deepStrictEqual(ids('logger.info(`user ${user.id} logged in`)'), []);
+});
+
+test('does not flag a sensitive word in the log message when it is not what is interpolated', () => {
+  assert.deepStrictEqual(ids('log.info(`password validation ran for ${user.id}`)'), []);
+  assert.deepStrictEqual(ids('log.info(`credential check passed for ${user.id}`)'), []);
+  assert.deepStrictEqual(ids('logger.info(`user ${user.id} logged in`)'), []);
+  assert.deepStrictEqual(ids('logger.warn("password reset requested for " + user.id)'), []);
+});
+
+test('still flags when the sensitive word is part of the interpolated expression itself', () => {
+  assert.ok(ids('log.info(`${user.password}`)').includes('safe/secret-in-log'));
+  assert.ok(ids('log.info(`${config.apiKey}`)').includes('safe/secret-in-log'));
 });
 
 test('flags a block of commented-out code but not prose comments', () => {

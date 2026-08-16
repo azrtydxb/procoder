@@ -3,6 +3,9 @@ password = os.environ["DB_PASSWORD"]
 const token = await secrets.get("stripe");
 logger.info(`user ${user.id} logged in`)
 console.log("password reset requested for this account")
+log.info(`password validation ran for ${user.id}`)
+log.info(`credential check passed for ${user.id}`)
+logger.warn("password reset requested for " + user.id)
 // TODO(pascal): drop the shim
 // TODO INFRA-4821: drop the shim
 // @deprecated remove after v3.0

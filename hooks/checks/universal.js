@@ -32,6 +32,20 @@ const PII_WORD = /\b(?:email|e-mail|ssn|social[_-]?security|phone[_-]?number|dat
 // literal mentioning the word is fine ("password reset requested").
 const INTERPOLATED = /\$\{[^}]*\}|%[sdv]|\{\}|\{[a-z_][\w.]*\}|["'`]\s*[+,]\s*\w|\bf["']/i;
 
+// Extracts the actual interpolated *expressions* — `${expr}`, an f-string/format
+// `{expr}`, or the identifier chain on the other side of a `+`/`,` concatenation —
+// so the secret/PII word check below tests what is being logged, not what the
+// surrounding message happens to say about it.
+function interpolatedExpressions(line) {
+  const exprs = [];
+  let m;
+  const braceRe = /\$\{([^}]*)\}|(?<!\$)\{([a-z_][\w.]*)\}/gi;
+  while ((m = braceRe.exec(line))) exprs.push(m[1] || m[2]);
+  const concatRe = /["'`]\s*[+,]\s*([A-Za-z_][\w.]*)|([A-Za-z_][\w.]*)\s*\+\s*["'`]/g;
+  while ((m = concatRe.exec(line))) exprs.push(m[1] || m[2]);
+  return exprs.join(' ');
+}
+
 const COMMENT_LINE = /^\s*(?:\/\/|#|--|\*(?!\/))\s?(.*)$/;
 // A commented line is CODE, not prose, when it ends in a code terminator or
 // contains an assignment/call/brace — prose sentences do not.
@@ -98,13 +112,14 @@ function checkUniversal(source, { relPath, config } = {}) {
     }
 
     if (LOG_CALL.test(line) && INTERPOLATED.test(line)) {
-      if (SECRET_WORD.test(line)) {
+      const interpolated = interpolatedExpressions(line);
+      if (SECRET_WORD.test(interpolated)) {
         findings.push(finding({
           rung: 'SAFE', id: 'safe/secret-in-log', line: lineNo,
           message: 'credential interpolated into a log call',
           fix: 'log a correlation id instead; never the credential',
         }));
-      } else if (PII_WORD.test(line)) {
+      } else if (PII_WORD.test(interpolated)) {
         findings.push(finding({
           rung: 'SAFE', id: 'safe/pii-in-log', line: lineNo,
           message: 'PII interpolated into a log call',
