@@ -3,6 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { checkUniversal } = require('../hooks/checks/universal');
 const { DEFAULTS } = require('../hooks/checks/config');
+// The budgets below time an in-process, synchronous scan, so they are measured
+// in CPU milliseconds — `node --test` runs the test files concurrently, and a
+// wall-clock budget scores the machine's load as much as the scanner's cost.
+// See tests/perf-guard.js.
+const { cpuMs } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const run = (src) => checkUniversal(src, { relPath: 'x.js', config });
@@ -158,17 +163,14 @@ test('stays cheap on a long comment run of long near-code lines', () => {
   // Worst case for the assignment arm: every line starts with something that
   // walks the member-expression loop before failing to reach an `=`.
   const line = '// ' + 'a.b[0].c'.repeat(500) + ' measured at 1MB = 34ms';
-  const start = Date.now();
-  run(Array.from({ length: 2000 }, () => line).join('\n'));
-  const ms = Date.now() - start;
+  const ms = cpuMs(() => run(Array.from({ length: 2000 }, () => line).join('\n')));
   assert.ok(ms < 500, `took ${ms}ms on pathological comment run`);
 });
 
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'x = ' + 'a'.repeat(20000) + ';  // eslint-disable-next-line no-eval no reason here but long';
-  const start = Date.now();
-  run(long);
-  assert.ok(Date.now() - start < 500, 'took too long on pathological input');
+  const ms = cpuMs(() => run(long));
+  assert.ok(ms < 500, `took ${ms}ms on pathological input`);
 });
 
 // A 300KB minified bundle on one line — the file the pack is exempted from the
@@ -189,9 +191,7 @@ test('stays linear on a single 300KB line', () => {
     'unclosed interpolation in a log call': 'console.log("' + rep('${') + '")',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
   };
   for (const [what, source] of Object.entries(shapes)) {
-    const start = Date.now();
-    run(source);
-    const ms = Date.now() - start;
+    const ms = cpuMs(() => run(source));
     assert.ok(ms < 500, `${what}: took ${ms}ms on a 300KB line`);
   }
 });
@@ -233,9 +233,7 @@ test('stays linear on a single 400KB line with unbounded spans in it', () => {
     'many opens, one close': '// f(' + rep('a(') + ')',
   };
   for (const [what, source] of Object.entries(shapes)) {
-    const start = Date.now();
-    run(source);
-    const ms = Date.now() - start;
+    const ms = cpuMs(() => run(source));
     assert.ok(ms < 500, `${what}: took ${ms}ms on a 400KB line`);
   }
 });
@@ -557,8 +555,8 @@ test('marker scanning is cheap on a large marker-free file', () => {
   const { filterMarkedLiterals } = require('../hooks/checks/universal');
   const source = Array.from({ length: 20000 }, (_, i) => `const a${i} = compute(${i});`).join('\n');
   const findings = [{ id: 'safe/hardcoded-secret', line: 1 }];
-  const start = Date.now();
-  for (let i = 0; i < 20; i += 1) filterMarkedLiterals(source, findings);
-  const ms = Date.now() - start;
+  const ms = cpuMs(() => {
+    for (let i = 0; i < 20; i += 1) filterMarkedLiterals(source, findings);
+  });
   assert.ok(ms < 200, `marker scan cost ${ms}ms over 20 passes of a 20k-line file`);
 });

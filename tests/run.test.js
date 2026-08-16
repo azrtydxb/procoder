@@ -10,6 +10,11 @@ const {
 const { loadConfig } = require('../hooks/checks/config');
 const { writeBaseline, fingerprint } = require('../hooks/checks/baseline');
 const { finding } = require('../hooks/checks/finding');
+// Every budget below times an in-process, synchronous scan, so it is measured
+// in CPU milliseconds: `node --test` runs the test files concurrently, and a
+// wall-clock budget scores how loaded the machine is as much as how expensive
+// checkFile is. See tests/perf-guard.js.
+const { cpuMs } = require('./perf-guard');
 
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-run-'));
@@ -221,10 +226,12 @@ test('a large but ordinary source is scanned, not skipped', () => {
   const repo = repoWith({
     'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
   });
-  const started = Date.now();
-  const out = checkFile(path.join(repo, 'big.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(Date.now() - started < 2000, 'a 400KB source blew the budget');
+  let out;
+  const elapsed = cpuMs(() => {
+    out = checkFile(path.join(repo, 'big.ts'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  });
+  assert.ok(elapsed < 2000, `a 400KB source blew the budget: ${elapsed}ms`);
   assert.strictEqual(out.skipped, null);
   assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
 });
@@ -233,9 +240,10 @@ test('a minified file finishes well inside the 2s budget', () => {
   let line = '';
   while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
   const repo = repoWith({ 'min.ts': line });
-  const started = Date.now();
-  const out = checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  const elapsed = Date.now() - started;
+  let out;
+  const elapsed = cpuMs(() => {
+    out = checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  });
   assert.ok(elapsed < 2000, `checkFile took ${elapsed}ms`);
   assert.strictEqual(out.skipped, null);
 });
@@ -244,10 +252,12 @@ test('a long line does not stall a file of otherwise normal lines', () => {
   const repo = repoWith({
     'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,  // procoder: literal safe/dynamic-eval, safe/xss-sink the short lines either side of the 100KB one, so the scan must reach both
   });
-  const started = Date.now();
-  const out = checkFile(path.join(repo, 'mixed.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(Date.now() - started < 2000, 'the long line was scanned anyway');
+  let out;
+  const elapsed = cpuMs(() => {
+    out = checkFile(path.join(repo, 'mixed.ts'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  });
+  assert.ok(elapsed < 2000, `the long line was scanned anyway: ${elapsed}ms`);
   const ids = out.findings.map((f) => f.id);
   assert.ok(ids.includes('safe/dynamic-eval'));
   assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
@@ -306,10 +316,12 @@ test('the shape path still does not see a minified line', () => {
 // errors. The per-line cap is what keeps that a report rather than a flood.
 test('a minified line that matches thousands of times is capped, and says so', () => {
   const repo = repoWith({ 'bundle.ts': `${'try{a();}catch(e){}'.repeat(3000)}\n` });  // procoder: literal true/swallowed-error the synthetic minified line this test floods the cap with
-  const started = Date.now();
-  const out = checkFile(path.join(repo, 'bundle.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(Date.now() - started < 2000, 'the minified line blew the budget');
+  let out;
+  const elapsed = cpuMs(() => {
+    out = checkFile(path.join(repo, 'bundle.ts'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  });
+  assert.ok(elapsed < 2000, `the minified line blew the budget: ${elapsed}ms`);
   assert.strictEqual(out.findings.length, MAX_FINDINGS_PER_LINE + 1);
   assert.ok(out.findings.some((f) => f.id === 'true/findings-suppressed'));
 });
@@ -321,10 +333,11 @@ test('a sink on a line with a runaway word run is reported', () => {
   const repo = repoWith({
     'bundle.ts': `db.query(\`select * from t where id = \${id}\`);${'x'.repeat(1024 * 1024)}\n`,
   });
-  const started = Date.now();
-  const out = checkFile(path.join(repo, 'bundle.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  const elapsed = Date.now() - started;
+  let out;
+  const elapsed = cpuMs(() => {
+    out = checkFile(path.join(repo, 'bundle.ts'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  });
   assert.ok(elapsed < 500, `checkFile took ${elapsed}ms on a 1MB word run`);
   assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
     'the sink on the word-run line was invisible');
@@ -332,9 +345,8 @@ test('a sink on a line with a runaway word run is reported', () => {
 
 test('a long line stays cheap: the shape path never sees it', () => {
   const repo = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
-  const started = Date.now();
-  checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  const elapsed = Date.now() - started;
+  const elapsed = cpuMs(() => checkFile(path.join(repo, 'min.ts'),
+    { repoRoot: repo, config: loadConfig(repo) }));
   assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — the shape path is quadratic in line length`);
 });
 
@@ -453,16 +465,6 @@ function grow(unit, bytes) {
   return s.slice(0, bytes);
 }
 
-function bestOf(runs, work) {
-  let best = Infinity;
-  for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
-  }
-  return best;
-}
-
 // A file that yields one finding per line. At 3MB that is ~157,000 findings,
 // and `push(...findings)` spreads every one of them onto the call stack.
 //
@@ -550,6 +552,22 @@ test('span-derived shape metrics still do not see a minified line', () => {
 // Relative by construction: both sides run the same hung linter on the same
 // machine, so load moves them together. RED against a fixed linter timeout:
 // the tiny file cost ~1.0s and the file at the cap ~1.8s, a ratio of 1.8.
+//
+// Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: the property
+// under test is elapsed time spent waiting on a hung child process, which
+// costs this process no CPU at all. The budget it defends is a wall-clock
+// budget. Being a ratio between two measurements taken back to back is what
+// keeps it load-proof here.
+function wallBestOf(runs, work) {
+  let best = Infinity;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    work();
+    best = Math.min(best, Date.now() - started);
+  }
+  return best;
+}
+
 test('a hung linter plus a file at the cap costs no more than a hung linter alone', shimTest, () => {
   const hang = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
   const repo = repoWith({
@@ -561,8 +579,8 @@ test('a hung linter plus a file at the cap costs no more than a hung linter alon
   const run = (name) => checkFile(path.join(repo, name), { repoRoot: repo, config });
 
   withShim('eslint', hang, () => {
-    const tiny = bestOf(2, () => run('tiny.ts'));
-    const atCap = bestOf(2, () => run('atcap.ts'));
+    const tiny = wallBestOf(2, () => run('tiny.ts'));
+    const atCap = wallBestOf(2, () => run('atcap.ts'));
     assert.ok(atCap < tiny * 1.35 + 100,
       `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file — `
       + 'the linter did not yield its slice to the pack');

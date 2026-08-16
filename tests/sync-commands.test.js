@@ -5,6 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { renderCommands, render } = require('../scripts/sync-rules');
 
@@ -25,17 +26,28 @@ test('ported commands carry the generated warning', () => {
   }
 });
 
+// sync-rules.js resolves its output root from __dirname, not cwd, so running
+// the tracked copy writes into the tracked tree — which would repair the very
+// drift `npm run sync:check` exists to catch, and would hand every other test
+// file a working tree that mutates under it (this test deliberately corrupts a
+// tracked file and restores it in a finally, a window any concurrently running
+// file could read, and a crash would leave dirty). Copying first is what
+// tests/sync-rules.test.js already does, and for the same reason.
 test('sync --check covers commands as well as rules', () => {
-  execFileSync('node', [path.join(root, 'scripts/sync-rules.js')], { cwd: root });
-  const victim = path.join(root, '.opencode/command/review.md');
-  const saved = fs.readFileSync(victim, 'utf8');
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-sync-cmd-'));
   try {
-    fs.writeFileSync(victim, saved + '\ndrift\n');
-    assert.throws(() => execFileSync(
-      'node', [path.join(root, 'scripts/sync-rules.js'), '--check'],
-      { cwd: root, stdio: 'pipe' }));
+    for (const dir of ['scripts', 'hooks', 'skills', 'commands']) {
+      fs.cpSync(path.join(root, dir), path.join(scratch, dir), { recursive: true });
+    }
+    const cli = path.join(scratch, 'scripts/sync-rules.js');
+    execFileSync('node', [cli]);
+
+    const victim = path.join(scratch, '.opencode/command/review.md');
+    assert.ok(fs.existsSync(victim), 'sync did not render the command port under test');
+    fs.appendFileSync(victim, '\ndrift\n');
+    assert.throws(() => execFileSync('node', [cli, '--check'], { stdio: 'pipe' }));
   } finally {
-    fs.writeFileSync(victim, saved);
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
 

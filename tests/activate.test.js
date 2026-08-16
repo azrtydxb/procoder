@@ -5,6 +5,10 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Neither procoder-activate.js nor procoder-subagent.js reads stdin, so every
+// call below hands them a file-backed one rather than a piped `input:` the
+// parent has to win a race to write. See tests/hook-stdin.js.
+const { execHook } = require('./hook-stdin');
 
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-activate.js');
 const SUBAGENT = path.join(__dirname, '..', 'hooks', 'procoder-subagent.js');
@@ -14,9 +18,7 @@ function run(script, env = {}) {
   // The caller inspects dir after this returns, so cleanup is left to the OS
   // temp reaper.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
-  const stdout = execFileSync('node', [script], {
-    encoding: 'utf8',
-    input: '{}',
+  const stdout = execHook(script, {
     env: { ...process.env, CLAUDE_CONFIG_DIR: dir, ...env },
   });
   return { stdout, dir, levelFile: path.join(dir, '.procoder-active') };
@@ -57,9 +59,7 @@ test('subagent hook wraps context in hookSpecificOutput', () => {
 test('a persisted "off" level suppresses subagent doctrine injection', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
   fs.writeFileSync(path.join(dir, '.procoder-active'), 'off\n');
-  const stdout = execFileSync('node', [SUBAGENT], {
-    encoding: 'utf8',
-    input: '{}',
+  const stdout = execHook(SUBAGENT, {
     env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
   });
   assert.strictEqual(stdout, '');
@@ -79,11 +79,7 @@ test('saying "stop procoder" then launching a subagent injects no doctrine', () 
     env,
   });
 
-  const stdout = execFileSync('node', [SUBAGENT], {
-    encoding: 'utf8',
-    input: '{}',
-    env,
-  });
+  const stdout = execHook(SUBAGENT, { env });
   assert.strictEqual(stdout, '');
 });
 
@@ -101,13 +97,13 @@ test('deactivation survives a session restart, for the session and its subagents
     assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off');
 
     // Session 2 starts.
-    const start = execFileSync('node', [HOOK], { encoding: 'utf8', input: '{}', env });
+    const start = execHook(HOOK, { env });
     assert.ok(!/SAFE/.test(start), 'doctrine emitted after deactivation');
     assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off',
       'session start erased the persisted deactivation');
 
     // A subagent launched in session 2 must stay silent too.
-    const sub = execFileSync('node', [SUBAGENT], { encoding: 'utf8', input: '{}', env });
+    const sub = execHook(SUBAGENT, { env });
     assert.strictEqual(sub, '');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -119,9 +115,7 @@ test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
   try {
     const levelFile = path.join(dir, '.procoder-active');
     fs.writeFileSync(levelFile, 'paranoid\n');
-    execFileSync('node', [HOOK], {
-      encoding: 'utf8',
-      input: '{}',
+    execHook(HOOK, {
       env: { ...process.env, CLAUDE_CONFIG_DIR: dir, PROCODER_DEFAULT_LEVEL: 'off' },
     });
     assert.ok(!fs.existsSync(levelFile), 'env-level off left a stale persisted level behind');
@@ -131,9 +125,7 @@ test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
 });
 
 test('hooks exit 0 even when the config dir is unwritable', () => {
-  assert.doesNotThrow(() => execFileSync('node', [HOOK], {
-    encoding: 'utf8',
-    input: '{}',
+  assert.doesNotThrow(() => execHook(HOOK, {
     env: { ...process.env, CLAUDE_CONFIG_DIR: '/proc/nope-procoder' },
   }));
 });
@@ -345,9 +337,7 @@ test('fetchLatestVersion resolves null for every failure mode, and never throws'
 
 function runHook(dir, env = {}) {
   const started = Date.now();
-  const stdout = execFileSync('node', [HOOK], {
-    encoding: 'utf8',
-    input: '{}',
+  const stdout = execHook(HOOK, {
     env: {
       ...process.env,
       CLAUDE_CONFIG_DIR: dir,

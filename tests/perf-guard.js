@@ -45,12 +45,30 @@ const PERF_MULTIPLE = 40;
 const PERF_FLOOR_MS = 5;
 const RUNS = 3;
 
+// CPU time, not wall-clock. Every timed guard in this suite measures a
+// synchronous, CPU-bound scan, and `node --test` runs the test files
+// concurrently — so wall-clock measures how busy the machine is at least as
+// much as how expensive the code is. Measured here on a 10-core box, the 2MB
+// signaturesFrom scan costs 104ms of wall and 106ms of CPU idle; under 60
+// competing spinners it costs ~1,000ms of wall and 175ms of CPU. Wall-clock
+// inflated 10x and blew a 500ms bound (it did, at 645ms, in one of twenty
+// full-suite runs); CPU inflated 1.7x, which is cache and SMT contention and
+// nothing more. Other processes steal wall time from us; they cannot spend our
+// CPU time for us.
+//
+// It does not make timing free of noise, so the fastest of RUNS still applies:
+// a GC pause is our own CPU time, and best-of-N is what drops it.
+function cpuMs(work) {
+  const before = process.cpuUsage();
+  work();
+  const spent = process.cpuUsage(before);
+  return (spent.user + spent.system) / 1000;
+}
+
 function bestOf(runs, work) {
   let best = Infinity;
   for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
+    best = Math.min(best, cpuMs(work));
   }
   return best;
 }
@@ -95,4 +113,4 @@ function assertLinear(spec) {
   }
 }
 
-module.exports = { SIZE, assertLinear, bestOf, lineOf };
+module.exports = { SIZE, assertLinear, bestOf, cpuMs, lineOf };

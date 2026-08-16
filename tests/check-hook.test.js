@@ -141,6 +141,10 @@ test('malformed input exits cleanly', () => {
 // config parsing), or a regression smaller than that multiple.
 const SPAWN_MULTIPLE = 6;
 
+// Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: what is
+// timed here is a child process, whose CPU is not this process's to measure.
+// Being a ratio between two spawns taken back to back is what keeps it from
+// scoring the machine's load instead of the hook's cost.
 function bestOf(runs, work) {
   let best = Infinity;
   for (let i = 0; i < runs; i += 1) {

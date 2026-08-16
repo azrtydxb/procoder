@@ -7,24 +7,11 @@ const {
 } = require('../hooks/checks/shape');
 const { DEFAULTS } = require('../hooks/checks/config');
 
-// Milliseconds for the fastest of three runs. The perf guards below all sit
-// two orders of magnitude under their bound — the failure they exist to catch
-// costs seconds — so the only realistic way for them to fail on a healthy tree
-// is a single scheduler stall or a GC pause landing inside the measurement. A
-// stall hits one run of three, not all three, so the best of three keeps the
-// order-of-magnitude signal and drops the flake. It cannot help against
-// sustained load that slows every run alike; nothing in-process can, short of
-// asserting on a ratio between two input sizes, and these guards deliberately
-// assert absolute cost against the hook's 2s whole-file budget.
-function bestOf(runs, work) {
-  let best = Infinity;
-  for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
-  }
-  return best;
-}
+// CPU milliseconds for the fastest of three runs — the same guard the language
+// packs use, imported rather than re-declared here, because the copy that used
+// to live in this file measured wall-clock and flaked under the concurrent
+// suite. See tests/perf-guard.js for why CPU time is what these bounds mean.
+const { bestOf } = require('./perf-guard');
 
 test('analyzeBraces reports nesting depth and block spans', () => {
   const src = [
