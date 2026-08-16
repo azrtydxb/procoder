@@ -292,3 +292,104 @@ test('an if or while header does not shadow the name it tests', () => {
   assert.ok(ids('function f(db, id) {\n  const q = "SELECT " + id;\n  while (q.length) {\n    db.query(q);\n  }\n}')
     .includes('safe/sql-injection'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3: a rung-1 finding on textbook-correct code is the defect that gets
+// the tool switched off. Every case below has its unsafe twin right beside it —
+// a fix that silences a false positive by weakening the rule is not a fix.
+
+// Item 1. A constant or allow-list-derived fragment interpolated into an
+// otherwise fully parameterized query is the recommended way to write a query
+// with a dynamic column, and it is correct: the value is not user data.
+test('a constant fragment in a parameterized query stays silent', () => {
+  assert.ok(!ids("const col = 'created_at';\ndb.query(`SELECT * FROM t WHERE id = $1 ORDER BY ${col}`, [id]);")  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids("const ORDER = { a: 'a ASC' };\nconst clause = ORDER[key] || 'id ASC';\ndb.query('SELECT * FROM t WHERE id = $1 ORDER BY ' + clause, [id]);")  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const TABLE = "users";\ndb.query("SELECT * FROM " + TABLE);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+test('the same shapes report when the fragment is not provably constant', () => {
+  assert.ok(ids("const col = req.query.col;\ndb.query('SELECT * FROM t ORDER BY ' + col, [id]);")  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('db.query(`SELECT * FROM t WHERE id = ${userId}`, []);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('const TABLE = req.body.t;\ndb.query("SELECT * FROM " + TABLE);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('const col = "a";\ndb.query("SELECT * FROM t WHERE n = " + req.getName());')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+// Item 2. `execute` and `query` are ordinary method names. A Command pattern
+// and a job runner both spell their entry point that way, and a SQL-injection
+// finding in a file with no SQL and no database handle in it is always wrong.
+test('a generic execute/query in a file with no database in it stays silent', () => {
+  assert.ok(!ids('function run(step, ctx) {\n  const label = `step ${step.id}`;\n  return step.execute(label);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function ask(agent, term) {\n  const phrase = `find ${term}`;\n  return agent.query(phrase);\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('the same call reports as soon as the file does talk to a database', () => {
+  assert.ok(ids('function run(db, step) {\n  const label = `step ${step.id}`;\n  return db.execute(label);\n}')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function ask(agent, term) {\n  const phrase = `SELECT * FROM t WHERE n = ${term}`;\n  return agent.query(phrase);\n}')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+// Item 3. safe/xss-sink carried no dataSink flag, so the constant-argument
+// discharge never ran on it and `el.innerHTML = ''` reported.
+test('a constant assigned to an HTML sink stays silent', () => {
+  assert.ok(!ids("el.innerHTML = '';").includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(!ids("other.innerHTML = '<b>hi</b>';").includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(!ids('<div dangerouslySetInnerHTML={{__html: "<b>x</b>"}} />').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+});
+
+test('an HTML sink still reports anything that is not a constant', () => {
+  assert.ok(ids('el.innerHTML = userInput;').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(ids('el.innerHTML = `<b>${name}</b>`;').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(ids("el.outerHTML = '<b>' + name + '</b>';").includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(ids('el.innerHTML = sanitize(x);').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(ids('document.write(x);').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+});
+
+// Item 5. A `sql` tagged template is parameterized by construction: drizzle,
+// postgres.js and slonik turn each `${…}` into a bind parameter, never text.
+test('a sql tagged template is not a source', () => {
+  assert.ok(!ids('const rows = await sql`SELECT * FROM t WHERE id = ${id}`;')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const q = sql`SELECT * FROM t WHERE id = ${id}`;\nconst rows = await db.execute(q);')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('await db.execute(sql`SELECT * FROM users WHERE id = ${userId}`);')
+    .includes('safe/sql-injection'));
+});
+
+test('an untagged or raw-tagged template is still a source', () => {
+  assert.ok(ids('const q = `SELECT * FROM t WHERE id = ${id}`;\nawait db.execute(q);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('const q = raw`SELECT * FROM t WHERE id = ${id}`;\ndb.query(q);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+// A type annotation between the name and the `=` defeated the binding
+// recogniser outright, so an annotated binding established no taint at all.
+test('a type-annotated binding still establishes taint', () => {
+  assert.ok(ids('const q: string = "SELECT * FROM t WHERE id = " + userId;\ndb.query(q);')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const q: string = "SELECT * FROM t WHERE id = ?";\ndb.query(q, [userId]);')
+    .includes('safe/sql-injection'));
+});
+
+// A cross-line finding names the line the value was built on as a field, so a
+// consumer reads it rather than parsing "built at line N" out of the message.
+test('a cross-line taint finding carries the build line as sourceLine', () => {
+  const found = check('const q = "SELECT * FROM t WHERE id = " + userId;\ndb.query(q);',  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    { relPath: 'x.ts', config }).filter((f) => f.id === 'safe/sql-injection');
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].line, 2);
+  assert.strictEqual(found[0].sourceLine, 1);
+  const inline = check('db.query("SELECT * FROM t WHERE id = " + userId);',  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    { relPath: 'x.ts', config }).filter((f) => f.id === 'safe/sql-injection');
+  assert.strictEqual(inline[0].sourceLine, undefined);
+});

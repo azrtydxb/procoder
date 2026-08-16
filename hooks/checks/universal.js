@@ -386,18 +386,14 @@ const EMPTY_SET = new Set();
 // reason, and still reaches no line the finding does not already name: the
 // scope is the finding's own two lines, not a range between them.
 //
-// The build line is read back out of the message rather than off a field,
-// because `finding()` keeps five keys and a sixth would have to be added in
-// taint.js, which this change does not own. That coupling is the weak part of
-// this fix and is deliberately confined to one regex: the durable form is a
-// `sourceLine` on the finding itself.
-const BUILT_AT = /\bbuilt at line (\d+)\b/;
-
+// The build line arrives as `sourceLine` on the finding — set by taint.js
+// wherever a finding's sink and its source are different lines. It used to be
+// read back out of the message text with a `built at line (\d+)` regex, which
+// worked and was tested, and which would have broken silently the day anyone
+// reworded the message. A field cannot be reworded.
 function markedIds(marked, f) {
   const at = marked.get(f.line) || EMPTY_SET;
-  const built = BUILT_AT.exec(f.message || '');
-  if (!built) return at;
-  const also = marked.get(Number(built[1]));
+  const also = f.sourceLine ? marked.get(f.sourceLine) : undefined;
   return also ? new Set([...at, ...also]) : at;
 }
 

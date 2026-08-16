@@ -3,7 +3,7 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   SIGNATURE_LOOKBACK,
   analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings, stripNoise,
@@ -19,8 +19,15 @@ const EXTENSIONS = ['.py'];
 // finding about the algorithm and a literal argument says nothing about it.
 const LINE_RULES = [
   {
+    // Each quote style is matched on its own branch. A single `["'][^"']*["']`
+    // class excludes *both* quotes from the literal's body, so it never saw
+    // `"… name = '%s'" % name` — a literal that contains the other quote is
+    // exactly how SQL gets written, and that is the most common Python
+    // injection spelling there is. Each branch is anchored on its own quote and
+    // terminated by it, so the scans partition the line and there is no
+    // backtracking; see LITERAL_PLUS in ts.js for the same shape.
     id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
-    re: /\b(?:execute|executemany|raw|text)\s*\(\s*(?:f["']|["'][^"']*["']\s*%|["'][^"']*["']\s*\+|["'][^"']*["']\s*\.format\s*\()/i,
+    re: /\b(?:execute|executemany|raw|text)\s*\(\s*(?:f["']|"[^"]*"\s*(?:[%+]|\.format\s*\()|'[^']*'\s*(?:[%+]|\.format\s*\())/i,
     message: 'SQL built by f-string, % or concatenation',
     fix: 'pass parameters as the second argument instead',
   },
@@ -73,16 +80,26 @@ const LINE_RULES = [
 // `exec(` are already reported on the sink itself whatever the argument is.
 const TAINT = {
   indent: true,
-  assign: /^\s*([A-Za-z_][\w]*)\s*\+?=(?!=)/,
+  // The optional `(?:\s*:[^=\n]*)?` is an annotation: `q: str = "…" + user_id`
+  // established no taint at all, because the recogniser stopped at the `:`.
+  assign: /^\s*([A-Za-z_][\w]*)\s*(?::[^=\n]*)?\+?=(?!=)/,
   // A `def`'s parameters, which shadow any enclosing binding of the same name.
   // Python's statements have no block-opening brace to cut them at, so the
   // generic "the list this statement ends with" would read every call's
   // arguments as a binding; `def` is the only thing here that binds.
   params: /^\s*(?:async\s+)?def\s+\w+\s*\(([^()]*)\)/,
+  // Each quote style on its own branch, for the reason spelled out on the line
+  // rule above: `["'][^"'\n]*` excludes both quotes from the literal's body, so
+  // `f"… name = '{name}'"` — an interpolation inside single quotes inside a
+  // double-quoted f-string, and the most common Python injection spelling —
+  // matched nothing and established no taint.
   sources: [
-    /\bf["'][^"'\n]*\{/,
-    /["'][^"'\n]*["']\s*%\s*[A-Za-z_({[]/,
-    /["'][^"'\n]*["']\s*\.\s*format\s*\(\s*[^)\s]/,
+    /\bf"[^"\n]*\{/,
+    /\bf'[^'\n]*\{/,
+    /"[^"\n]*"\s*%\s*[A-Za-z_({[]/,
+    /'[^'\n]*'\s*%\s*[A-Za-z_({[]/,
+    /"[^"\n]*"\s*\.\s*format\s*\(\s*[^)\s]/,
+    /'[^'\n]*'\s*\.\s*format\s*\(\s*[^)\s]/,
     ...CONCAT,
   ],
   sinks: [
@@ -149,6 +166,18 @@ function defParams(lines, start) {
 // `x=[]`, `x={}`, `x=set()` — a default built once at definition time and
 // then shared by every call that does not override it.
 const MUTABLE_DEFAULT = /=\s*(?:\[\s*\]|\{\s*\}|set\s*\(\s*\))/;
+
+// `hashlib.md5(data, usedforsecurity=False)` — the standard, explicit way to
+// say this hash is not a security primitive: a cache key, a checksum, a legacy
+// file id, a FIPS-mode escape hatch. safe/weak-hash is a finding about the
+// algorithm, so a literal argument says nothing about it and the rule carries
+// no `dataSink` mark; this flag is the one argument that does answer it, and
+// reporting the developer who wrote it down is the finding that teaches people
+// to ignore rung 1.
+const NOT_FOR_SECURITY = /usedforsecurity\s*=\s*False/;
+
+const notForSecurity = (rule, line) => rule.id === 'safe/weak-hash'
+  && NOT_FOR_SECURITY.test(line);
 
 // This used to be a line rule, `\bdef\s+\w+\s*\([^)]{0,500}=\s*…`, whose
 // parameter span was bounded to 500 characters because an unbounded `[^)]*` is
@@ -225,14 +254,16 @@ function measureBlocks(lines, blocks) {
 function check(source, { relPath, config } = {}) {
   const lines = stripComments(source, 'py').split(/\r?\n/);
   const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
-  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
+  const ctx = packContext({
+    lines, stripped: stripNoise(String(source || ''), 'py').split(/\r?\n/), spec: TAINT,
+  });
+  const inline = lineRuleFindings(LINE_RULES, lines, {
+    skip: (rule, line) => notForSecurity(rule, line) || skipConstant(rule, line, ctx),
+  });
 
   return [
     ...inline,
-    ...taintFindings({
-      lines, stripped: stripNoise(String(source || ''), 'py').split(/\r?\n/),
-      spec: TAINT, existing: inline,
-    }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...mutableDefaultFindings(lines),
     ...exceptFindings(lines),
     ...shapeFindings({

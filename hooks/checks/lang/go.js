@@ -2,7 +2,7 @@
 // procoder — Go pack.
 
 const { stripComments } = require('./comments');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -25,8 +25,13 @@ const LINE_RULES = [
     fix: 'handle it, wrap it with context, or return it',
   },
   {
+    // Each quote style on its own branch: a single ``["'`][^"'`]*["'`]`` class
+    // excludes every quote from the literal's body, so `"… name = '" + id` —
+    // a literal that contains the other quote, which is how SQL gets written —
+    // matched nothing. Anchored on its own quote and terminated by it, so the
+    // scans partition the line.
     id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
-    re: /\b(?:Query|QueryRow|Exec)\w*\s*\(\s*(?:fmt\.Sprintf|["'`][^"'`]*["'`]\s*\+)/,
+    re: /\b(?:Query|QueryRow|Exec)\w*\s*\(\s*(?:fmt\.Sprintf|"[^"]*"\s*\+|`[^`]*`\s*\+)/,
     message: 'SQL built by Sprintf or concatenation',
     fix: 'use placeholders ($1, ?) and pass the values as arguments',
   },
@@ -93,7 +98,10 @@ const TAINT = {
   // 100KB word run cost 4,887ms, against 13ms for every other pack. Requiring
   // the space first means the group cannot overlap the name at all, so each
   // backtrack step of the name fails in constant time.
-  assign: /^\s*(?:var\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*[:+]?=(?!=)/,
+  // `const` alongside `var`: without it `const table = "users"` bound the name
+  // `const` instead of `table`, so a table name declared the way Go declares
+  // one was neither tracked nor provably constant.
+  assign: /^\s*(?:(?:var|const)\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*[:+]?=(?!=)/,
   sources: [/\bfmt\.Sprintf\s*\(/, /`[^`\n]*`\s*\+\s*(?=[A-Za-z_(])/, ...CONCAT],
   sinks: [
     {
@@ -140,15 +148,15 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
+  const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, lines, {
-    skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo) || skipConstant(rule, line),
+    skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo)
+      || skipConstant(rule, line, ctx),
   });
 
   return [
     ...inline,
-    ...taintFindings({
-      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
-    }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNC_SIGNATURE)),
       maxDepth,

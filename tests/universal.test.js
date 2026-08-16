@@ -531,6 +531,10 @@ const CROSS_LINE = [{
   id: 'safe/sql-injection',
   line: 4,
   message: 'query built from untrusted input, built at line 2',
+  // The field taint.js sets wherever a finding's sink and its source are
+  // different lines. The message still says so in prose for the reader; what
+  // the marker filter keys off is this.
+  sourceLine: 2,
   fix: 'parameterize',
 }];
 

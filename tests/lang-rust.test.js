@@ -261,3 +261,19 @@ test('a parameter shadowing a tainted name starts clean', () => {
   assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let q = format!("SELECT {}", id);\n    fn g(other: String) {\n        sqlx::query(&q);\n    }\n}')
     .includes('safe/sql-injection'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3. Item 1: a constant table spliced into an otherwise parameterized
+// query. `const` and `static` were also missing from the binding recogniser,
+// so `const TABLE: &str = "users"` matched nothing at all.
+test("a constant fragment in a parameterized query stays silent", () => {
+  assert.ok(!ids('const TABLE: &str = "users";\nlet rows = sqlx::query(&format!("SELECT * FROM {} WHERE id = $1", TABLE)).bind(id);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the same shape reports when the fragment is not provably constant", () => {
+  assert.ok(ids('let rows = sqlx::query(&format!("SELECT * FROM t WHERE id = {}", user_id));\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('const TABLE: &str = "users";\nlet q = format!("SELECT * FROM {} WHERE n = {}", TABLE, name);\nlet r = sqlx::query(&q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

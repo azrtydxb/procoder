@@ -282,3 +282,22 @@ test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`String token = helper("${PAD}") + secureRandom.nextLong();`).includes('safe/weak-random'));
   assert.ok(!ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) { verify(chain); }`).includes('safe/tls-disabled'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3. Item 1: a constant column spliced into an otherwise parameterized
+// query is correct — the value is not user data.
+test("a constant fragment in a parameterized query stays silent", () => {
+  assert.ok(!ids('String col = "created_at";\nps = conn.executeQuery("SELECT * FROM t WHERE id = ? ORDER BY " + col);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('static final String TABLE = "users";\nstmt.executeQuery("SELECT * FROM " + TABLE);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the same shape reports when the fragment is not provably constant", () => {
+  assert.ok(ids('String col = request.getParameter("c");\nps = conn.executeQuery("SELECT * FROM t WHERE id = ? ORDER BY " + col);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('ResultSet rs = stmt.executeQuery("SELECT * FROM t WHERE id = " + userId);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('String q = "SELECT * FROM t WHERE n = " + request.getName();\nstmt.executeQuery(q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

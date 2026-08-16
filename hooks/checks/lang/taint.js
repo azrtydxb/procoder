@@ -140,6 +140,9 @@ function unitsOf(lines, stripped, indent) {
     split.lastIndex = 0;
     for (let m = split.exec(guide); m; m = split.exec(guide)) {
       push(line.slice(from, m.index), guide.slice(from, m.index), index + 1);
+      // The statement a `{` ended is the one that opens a block, and so the
+      // only one whose trailing parenthesised list can be a parameter list.
+      if (m[0] === '{') units[units.length - 1].opens = true;
       braces = levelStep(m[0], braces);
       if (!indent) level = braces;
       from = m.index + 1;
@@ -205,21 +208,76 @@ function paramsOf(spec, unit) {
   return match ? namesIn(match[1]) : [];
 }
 
+// The one id whose sink verbs — `execute`, `query`, `Query`, `raw` — are also
+// ordinary method names. A Command pattern and a job runner both spell their
+// entry point `execute`, and reporting SQL injection in a file that contains no
+// SQL at all is the rung-1 finding on textbook code that gets a tool switched
+// off. Named rather than flagged per rule because the id is permanent and the
+// question — "is this really a database call" — is the same wherever it is
+// asked: line rule, span rule, taint sink.
+const SQL_ID = 'safe/sql-injection';
+
+// Evidence that this file talks to a database at all, in any of the three
+// shapes it can take. Any one of them is enough, because each covers what the
+// others miss: a query assembled entirely from fragments has no statement text,
+// an ORM call has no SQL text either, and a raw driver call has no library name.
+//
+//   * SQL statement text. The verbs that double as ordinary method names —
+//     `update`, `create`, `delete`, `drop` — need their following keyword
+//     before they count; `select` and `truncate` do not, since neither is a
+//     method name anyone writes by accident.
+//   * A database vocabulary word, as a substring rather than a whole word:
+//     `sql` alone catches `SqlCommand`, `sqlx`, `mysql`, `sqlalchemy` and
+//     `executeSql`, and none of them means anything else.
+//   * A receiver that is a canonical database handle, at the shape it is
+//     called on: `db.`, `cur.`, `conn.`, `stmt.`, `session.`.
+//
+// It is deliberately weak, and its only job is to tell a file that talks to a
+// database from one that never does. A file that does keeps every finding it
+// had; a Command pattern or a job runner, whose `execute` and `query` are
+// ordinary method names, loses a rung-1 SQL finding it should never have had.
+const DB_EVIDENCE = new RegExp([
+  String.raw`\b(?:select|truncate|upsert|insert\s+into|update\s+\w+\s+set|delete\s+from`,
+  String.raw`|(?:create|alter|drop)\s+(?:table|index|view)|merge\s+into|replace\s+into)\b`,
+  String.raw`|sql|jdbc|psycopg|pymysql|sequelize|prisma|knex|mongoose|postgres|sqlite`,
+  String.raw`|database|datasource|repository|entitymanager|dbcontext`,
+  String.raw`|\b(?:db|cur|cursor|conn|connection|pool|session|stmt|statement|tx|trx|dao|repo)\s*\.`,
+].join(''), 'i');
+
+function hasSql(lines) {
+  return lines.some((line) => DB_EVIDENCE.test(line));
+}
+
 // A sink whose argument is a name this scan has seen built from a non-literal.
 // Every capture group is a candidate, which is how Go's `QueryContext(ctx, q)`
 // is read as well as `Query(q)`.
+//
+// The finding is reported at the *sink*, but its real subject is the line the
+// value was built on — which is where an author who reads it writes a
+// suppression marker. `sourceLine` carries that line as a field, so a
+// consumer reads it instead of parsing "built at line N" back out of the
+// message; universal.js keyed off the prose before, and prose gets reworded.
+//
+// It is set only when the two lines differ, and it is added to the object
+// after `finding()` has built it: `finding()` validates and normalises the five
+// keys every finding has, and this is not one of them. Nothing that identifies
+// a finding reads it — the baseline fingerprint is id, path, line text and
+// ordinal — so every existing baseline entry stays valid.
 function sinkFinding(sink, unit, tainted) {
   const match = sink.re.exec(unit.text);
   if (!match) return null;
   const name = match.slice(1).find((group) => group && tainted.has(group));
   if (!name) return null;
-  return finding({
+  const builtAt = tainted.get(name);
+  const found = finding({
     rung: 'SAFE',
     id: sink.id,
     line: unit.line,
-    message: `${sink.message}, built at line ${tainted.get(name)}`,
+    message: `${sink.message}, built at line ${builtAt}`,
     fix: sink.fix,
   });
+  if (builtAt !== unit.line) found.sourceLine = builtAt;
+  return found;
 }
 
 // `q = q + id` builds a query out of two names and no literal, so none of the
@@ -232,7 +290,15 @@ function sinkFinding(sink, unit, tainted) {
 // tainted query leaves it tainted, and appending anything that is not a
 // literal taints it. The operator is read off `code`, so a `+=` inside a
 // string is not one.
-function applyAssignment(spec, unit, tainted, open) {
+//
+// A right-hand side that is *provably constant* — built only from literals and
+// from names this file binds only to literals — never taints, whatever the
+// source patterns say about it. `const TABLE = "users"; q = "SELECT * FROM " +
+// TABLE` is a concatenation, so CONCAT matches it; it is also not data, and
+// reporting it was the same defect as reporting `os.system("ls /tmp")`, one
+// level of indirection out.
+function applyAssignment(spec, unit, scope) {
+  const { tainted, open, consts } = scope;
   const match = spec.assign.exec(unit.code);
   if (!match) return;
   const from = match.index + match[0].length;
@@ -240,6 +306,10 @@ function applyAssignment(spec, unit, tainted, open) {
   const names = namesIn(code);
   const compound = match[0].includes('+=');
 
+  if (fragmentIsConstant(unit.text.slice(from), consts)) {
+    if (!compound) tainted.delete(match[1]);
+    return;
+  }
   if (spec.sources.some((re) => re.test(unit.text.slice(from)))
     || NAME_CONCAT.test(code)
     || names.some((name) => tainted.has(name))
@@ -279,9 +349,24 @@ function applyAssignment(spec, unit, tainted, open) {
 const QUOTES = '"\'`';
 const WORD = /[\w$]/;
 const WORD_START = /[A-Za-z_]/;
-const CONSTANT_WORD = new Set(['true', 'false', 'null', 'nil', 'none', 'undefined']);
+const CONSTANT_WORD = new Set([
+  'true', 'false', 'null', 'nil', 'none', 'undefined',
+  // Operators and binding keywords spelled as words. None of them is a value,
+  // so none of them is data: `new Foo(x)` is about `x`, not about `new`.
+  'new', 'await', 'async', 'return', 'throw', 'yield', 'typeof', 'instanceof',
+  'not', 'and', 'or', 'in', 'is', 'as', 'mut', 'ref', 'out',
+]);
+// A prefix that does *not* interpolate — the string is exactly its own text.
 const LITERAL_PREFIX = new Set(['b', 'r', 'u', 'rb', 'br', 'ur', 'l']);
-const INTERPOLATION = /\$[{A-Za-z_]/;
+// A prefix that does: Python's f-string, in every spelling.
+const FSTRING_PREFIX = new Set(['f', 'fr', 'rf', 'fb', 'bf']);
+const CLOSER = { '(': ')', '[': ']', '{': '}' };
+
+// How deep a constant test follows interpolation nested inside interpolation.
+// A hole's text is a strict substring of the literal that holds it, so the
+// recursion terminates on its own; the cap is what keeps the *cost* bounded on
+// a line that nests them pathologically.
+const HOLE_DEPTH = 3;
 
 // Index of the quote that closes the one at `from`, or the last character of
 // the line when it never closes.
@@ -293,6 +378,23 @@ function stringEnd(line, from) {
   return line.length - 1;
 }
 
+// Index of the bracket that closes the one at `at`, or the last character of
+// the text. Brackets inside a string literal are not structure.
+function closeBracket(text, at) {
+  const open = text[at];
+  const close = CLOSER[open];
+  let depth = 0;
+  for (let i = at; i < text.length; i += 1) {
+    if (QUOTES.includes(text[i])) i = stringEnd(text, i);
+    else if (text[i] === open) depth += 1;
+    else if (text[i] === close) {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return text.length - 1;
+}
+
 // Index of the first character at or after `from` that is not a space.
 function skipSpace(line, from) {
   let i = from;
@@ -300,12 +402,47 @@ function skipSpace(line, from) {
   return i;
 }
 
-// An identifier inside a call that is not itself a value: a keyword-argument
-// name (`shell=True`), an object or path key (`shell: true`, `Command::new`),
-// a language constant, or a non-interpolating string prefix.
-function constantWord(word, line, after) {
+// The expressions a literal interpolates, in every spelling the six packs
+// meet: `${…}` (JS, Kotlin), `$name` (Kotlin), and — only where the literal's
+// own syntax says so, an f-string or a C# `$"…"` — a bare `{…}`. `{{` is an
+// escaped brace and holds nothing.
+//
+// A shell literal's `$HOME` is read as a hole, as it was before: the hole's
+// text is then `HOME`, which is not a constant this file binds, so the literal
+// still counts as data. Erring toward reporting is the right direction here.
+function holeAt(body, at, braced) {
+  if (body[at] === '$' && body[at + 1] === '{') {
+    const end = closeBracket(body, at + 1);
+    return { text: body.slice(at + 2, end), end };
+  }
+  if (body[at] === '$' && WORD_START.test(body[at + 1] || '')) {
+    const end = wordEnd(body, at + 1);
+    return { text: body.slice(at + 1, end), end: end - 1 };
+  }
+  if (!braced || body[at] !== '{') return null;
+  // `{{` is an escaped brace and holds nothing.
+  if (body[at + 1] === '{') return { text: '', end: at + 1 };
+  const end = closeBracket(body, at);
+  return { text: body.slice(at + 1, end), end };
+}
+
+function holesOf(body, braced) {
+  const holes = [];
+  for (let i = 0; i < body.length; i += 1) {
+    const hole = holeAt(body, i, braced);
+    if (!hole) continue;
+    if (hole.text) holes.push(hole.text);
+    i = hole.end;
+  }
+  return holes;
+}
+
+// An identifier that is not itself a value: a keyword-argument name
+// (`shell=True`), an object or path key (`shell: true`, `Command::new`), a
+// language constant, or a name this file binds only to constants.
+function constantWord(word, line, after, consts) {
+  if (consts && consts.has(word)) return true;
   if (CONSTANT_WORD.has(word.toLowerCase())) return true;
-  if (QUOTES.includes(line[after])) return LITERAL_PREFIX.has(word.toLowerCase());
   const at = skipSpace(line, after);
   return line[at] === ':' || (line[at] === '=' && line[at + 1] !== '=');
 }
@@ -313,38 +450,163 @@ function constantWord(word, line, after) {
 // Where the token starting at `at` ends, and whether it is data.
 // An interpolating literal is data wherever it sits — `always` — because a
 // rule may key on an assignment rather than on a call, and `Arguments = $"/c
-// {cmd}"` has no enclosing call to be inside of. An identifier is read only
-// inside a call, where it is an argument; outside one it is the statement's
-// own callee path or its assignment target.
-function stringToken(line, at) {
+// {cmd}"` has no enclosing call to be inside of.
+//
+// A literal whose holes are *all* constant is not data: a column list, a table
+// name or an allow-list lookup spliced into an otherwise parameterized query is
+// the recommended way to write a query with a dynamic column, and it is
+// correct — the value is not user data.
+// `scope` is `{ consts, depth }` — the file's constant names, and how far into
+// nested interpolation this test already is.
+function stringToken(line, at, braced, scope) {
   const end = stringEnd(line, at);
-  const body = line.slice(at + 1, end);
-  return {
-    end,
-    always: true,
-    data: INTERPOLATION.test(body) || (line[at - 1] === '$' && body.includes('{')),
-  };
+  const holes = holesOf(line.slice(at + 1, end), braced);
+  const inner = { ...scope, depth: scope.depth + 1 };
+  const constant = scope.depth < HOLE_DEPTH
+    && holes.every((hole) => constantFragment(hole, inner));
+  return { end, always: true, data: holes.length > 0 && !constant };
 }
 
-function wordToken(line, at) {
+function wordEnd(line, at) {
   let end = at + 1;
   while (end < line.length && WORD.test(line[end])) end += 1;
-  return { end: end - 1, data: !constantWord(line.slice(at, end), line, end) };
+  return end;
 }
 
-function tokenAt(line, at) {
-  if (QUOTES.includes(line[at])) return stringToken(line, at);
-  if (WORD_START.test(line[at])) return wordToken(line, at);
+function wordToken(line, at, scope) {
+  const end = wordEnd(line, at);
+  const word = line.slice(at, end);
+  if (QUOTES.includes(line[end])) {
+    const lower = word.toLowerCase();
+    if (FSTRING_PREFIX.has(lower)) return stringToken(line, end, true, scope);
+    return { end: end - 1, data: !LITERAL_PREFIX.has(lower) };
+  }
+  return { end: end - 1, data: !constantWord(word, line, end, scope.consts) };
+}
+
+function tokenAt(line, at, scope) {
+  if (QUOTES.includes(line[at])) return stringToken(line, at, line[at - 1] === '$', scope);
+  if (WORD_START.test(line[at])) return wordToken(line, at, scope);
   return null;
 }
 
-function constantLine(line) {
+// Is *this one value* built only from things that are provably constant?
+//
+// constantLine below asks a different question — "does this whole statement
+// carry any data anywhere" — and can therefore ignore the identifiers outside
+// its calls, which are the statement's own callee path. Here the fragment *is*
+// one value: a query's SQL argument, an assignment's right-hand side, an
+// interpolation hole. A bare identifier in it is the value, so it has to be
+// judged, and the callee path has to be told apart from it by shape:
+//
+//   * a word followed by `.` or `::` is a path segment, and a word followed by
+//     `{` is a type being constructed. Neither is a value;
+//   * a word followed by `(` is a callee. A *formatter* is transparent — what
+//     `format!("SELECT * FROM {}", TABLE)` produces is its arguments — so the
+//     walk carries on into them and judges each on its own. Any other call is
+//     opaque: what `request.getParameter("c")` returns is user data, and
+//     nothing about its arguments says otherwise.
+//
+//     `strict` decides what "opaque" costs. Where the fragment is the value a
+//     SQL rule keyed on, or a name's whole right-hand side, an opaque call is
+//     data and the fragment is not constant — that is the half that must never
+//     go quiet on a real hole. Where it is only the right of an assignment
+//     being checked for a dataSink discharge, an opaque call is judged by its
+//     arguments instead, which keeps `x = os.system("ls /tmp")` as silent as it
+//     was before; an *empty* argument list has nothing to judge and is data
+//     either way;
+//   * a word followed by `[` on a *constant* name is the allow-list form:
+//     whatever the index, the result is one of that constant's own values, so
+//     the index is skipped;
+//   * anything else is data unless it is constant by constantWord.
+//
+// Each branch answers with the index to carry on from, or -1 for "this is data".
+const PATH_SEGMENT = /^(?:\.|::|\{)/;
+const CALL_OPEN = /^!?\(/;
+
+// The string-formatting constructs the SQL rules key on — `format!(…)`,
+// `String.format(…)`, `"…".format(…)`, `fmt.Sprintf(…)`, `String.Format(…)`.
+const FORMATTERS = new Set(['format', 'sprintf']);
+
+function fragmentCall(text, word, end, scope) {
+  const from = skipSpace(text, end);
+  const open = text[from] === '!' ? from + 1 : from;
+  if (!FORMATTERS.has(word.toLowerCase()) && scope.strict) return -1;
+  return text.slice(open + 1, closeBracket(text, open)).trim() ? end - 1 : -1;
+}
+
+function fragmentWord(text, at, scope) {
+  const end = wordEnd(text, at);
+  if (QUOTES.includes(text[end])) {
+    const token = wordToken(text, at, scope);
+    return token.data ? -1 : token.end;
+  }
+  const from = skipSpace(text, end);
+  const after = text.slice(from, from + 2);
+  if (PATH_SEGMENT.test(after)) return end - 1;
+  if (CALL_OPEN.test(after)) return fragmentCall(text, text.slice(at, end), end, scope);
+  if (after[0] === '[' && scope.consts && scope.consts.has(text.slice(at, end))) {
+    return closeBracket(text, from);
+  }
+  return constantWord(text.slice(at, end), text, end, scope.consts) ? end - 1 : -1;
+}
+
+function constantFragment(text, scope) {
+  for (let i = 0; i < text.length; i += 1) {
+    if (QUOTES.includes(text[i])) {
+      const token = stringToken(text, i, text[i - 1] === '$', scope);
+      if (token.data) return false;
+      i = token.end;
+    } else if (WORD_START.test(text[i])) {
+      const next = fragmentWord(text, i, scope);
+      if (next === -1) return false;
+      i = next;
+    }
+  }
+  return true;
+}
+
+// The entry point everything outside this section uses: a fragment, and the
+// file's constant names.
+const fragmentIsConstant = (text, consts) => constantFragment(text, { consts, depth: 0, strict: true });
+
+// The looser reading, used only for the right of an assignment a dataSink rule
+// matched: an opaque call is judged by its arguments rather than counted as
+// data. See fragmentWord for why the two differ.
+const assignedIsConstant = (text, consts) => constantFragment(text, { consts, depth: 0 });
+
+// Not an assignment: `==`, `!=`, `<=`, `>=`, `===` and the arrow `=>`.
+function assignsAt(line, at) {
+  return line[at + 1] !== '=' && line[at + 1] !== '>' && !'=!<>'.includes(line[at - 1]);
+}
+
+// A wholly constant call — the other half of "a value built only from literals
+// is never tainted", applied to the inline sink rules rather than to a name.
+//
+// `os.system("ls /tmp")` reported safe/shell-injection: the rule keys on the
+// call, and nothing untrusted is in it. A rung-1 rule that fires on obviously
+// safe code is the one that gets a tool switched off, so a rule marked
+// `dataSink` — one whose finding is "untrusted data reaches this call" rather
+// than "this API is the defect" — is discharged when the line's calls carry
+// only constants.
+//
+// Identifiers *inside* a call are data; identifiers outside every call are the
+// statement's own callee path — `os`, `system`, `new`, `Command` — and say
+// nothing about the arguments.
+//
+// A sink that is an *assignment* breaks that: `el.innerHTML = value` puts the
+// data at depth 0, where the callee-path reading would have discharged the very
+// rule that exists to report it, and safe/xss-sink could not be opted in to
+// this discharge at all until it was fixed. So a top-level `=` splits the line:
+// what is left of it is a target and is read as a statement, and what is right
+// of it is one value and is read as a fragment.
+function callDepthConstant(line, consts) {
   let depth = 0;
   for (let i = 0; i < line.length; i += 1) {
     if (line[i] === '(') depth += 1;
     else if (line[i] === ')') depth = Math.max(0, depth - 1);
     else {
-      const token = tokenAt(line, i);
+      const token = tokenAt(line, i, { consts, depth: 0 });
       if (!token) continue;
       if (token.data && (depth > 0 || token.always)) return false;
       i = token.end;
@@ -356,9 +618,143 @@ function constantLine(line) {
   return depth === 0;
 }
 
+// Offset of the `=` of a top-level assignment, or -1. Inside a call it is a
+// keyword argument, not an assignment: `subprocess.run(cmd, shell=True)`.
+function topLevelAssign(line) {
+  let depth = 0;
+  for (let i = 0; i < line.length; i += 1) {
+    if (QUOTES.includes(line[i])) i = stringEnd(line, i);
+    else if (line[i] === '(') depth += 1;
+    else if (line[i] === ')') depth = Math.max(0, depth - 1);
+    else if (line[i] === '=' && depth === 0 && assignsAt(line, i)) return i;
+  }
+  return -1;
+}
+
+// One pass over the line, entered only when a rule has already matched it.
+function constantLine(line, consts) {
+  const at = topLevelAssign(line);
+  if (at === -1) return callDepthConstant(line, consts);
+  return callDepthConstant(line.slice(0, at), consts)
+    && assignedIsConstant(line.slice(at + 1), consts);
+}
+
+// The value a SQL rule keyed on: from the delimiter that opens the call — or
+// the `=` of an assignment sink like `cmd.CommandText = …` — to the top-level
+// `,`, `)` or `;` that ends it.
+//
+// The rest of the line is precisely what makes the query *safe*: `[id]`,
+// `(id,)`, `, id`, `.bind(id)` are the bound parameters, which are untrusted by
+// design and say nothing about whether the SQL text itself was built from data.
+// Testing the whole line instead — as the dataSink discharge does — could never
+// discharge a parameterized query at all, which is why every one of them
+// reported.
+const ARGUMENT_END = ',;';
+const CLOSING = ')]}';
+
+// Where the argument that starts at `start` ends: the first `,`, `;` or closing
+// bracket that is not inside a nested group or a literal.
+function argumentEnd(line, start) {
+  let depth = 0;
+  for (let i = start; i < line.length; i += 1) {
+    const ch = line[i];
+    if (QUOTES.includes(ch)) i = stringEnd(line, i);
+    else if (CLOSER[ch]) depth += 1;
+    else if (depth === 0 && (CLOSING.includes(ch) || ARGUMENT_END.includes(ch))) return i;
+    else if (CLOSING.includes(ch)) depth -= 1;
+  }
+  return line.length;
+}
+
+function sqlArgument(line, re) {
+  const match = re.exec(line);
+  const open = match && /[(=]/.exec(match[0]);
+  if (!open) return '';
+  const start = match.index + open.index + 1;
+  return line.slice(start, argumentEnd(line, start));
+}
+
 // The discharge a pack hands to lineRuleFindings, and the same test spans.js
-// applies to a span rule.
-const skipConstant = (rule, line) => Boolean(rule.dataSink) && constantLine(line);
+// applies to a span rule. `ctx` is the pack's whole-file context — see
+// packContext.
+function skipConstant(rule, line, ctx = {}) {
+  if (rule.id === SQL_ID && rule.re) {
+    if (ctx.sql === false) return true;
+    const argument = sqlArgument(line, rule.re);
+    if (argument.trim() && fragmentIsConstant(argument, ctx.consts)) return true;
+  }
+  return Boolean(rule.dataSink) && constantLine(line, ctx.consts);
+}
+
+// How many times the constant set is recomputed. Each round can only add names
+// — one built from names the previous round proved — so the set converges;
+// three rounds past the literal-only base is more indirection than any real
+// column-list or table-name constant has.
+const CONSTANT_ROUNDS = 4;
+
+// The names this file binds *only* to values it can prove constant.
+//
+// Whole-file and order-independent, deliberately: a name assigned anything
+// unprovable anywhere in the file is not constant, so a later
+// `col = req.query.col` disqualifies an earlier literal binding and no scope
+// tracking is needed. A name that appears in any parameter list is out for the
+// same reason — a parameter is the caller's value, whatever the body later
+// assigns to it.
+//
+// The right-hand side is read off the whole *line*, not off the brace-split
+// unit the taint scan walks: an object literal is a perfectly good constant —
+// `const ORDER = { created: "created_at ASC" }` — and the unit boundary falls
+// in the middle of it. The assignment itself is matched on the noise-stripped
+// line, so an `=` inside a literal is not one.
+//
+// A parameter is the caller's value whatever the body later assigns to it, so
+// a name any parameter list binds is out. That list is read only from a
+// statement that actually opens a block — `paramsOf`'s generic "the last list
+// before the block" cannot otherwise tell `void run(String q) {` from
+// `stmt.executeQuery(q)`, and in the taint scan it does not have to, because
+// the shadow it creates dies with the block. Here it would disqualify a
+// genuinely constant name for the whole file.
+function boundNames(spec, unit) {
+  if (!spec.params && !unit.opens) return [];
+  return paramsOf(spec, unit);
+}
+
+// Every right-hand side each name is ever assigned, by name.
+function assignedValues({ lines, stripped, spec }) {
+  const values = new Map();
+  lines.forEach((line, index) => {
+    const guide = stripped[index] === undefined ? line : stripped[index];
+    const match = spec.assign.exec(guide);
+    if (!match) return;
+    const from = match.index + match[0].length;
+    const list = values.get(match[1]) || [];
+    list.push(line.slice(from));
+    values.set(match[1], list);
+  });
+  return values;
+}
+
+function constantNames(parts) {
+  const values = assignedValues(parts);
+  const bound = new Set();
+  for (const unit of parts.units) {
+    for (const name of boundNames(parts.spec, unit)) bound.add(name);
+  }
+
+  const provable = (list, consts) => list
+    .every((value) => value.trim() && fragmentIsConstant(value, consts));
+
+  let consts = new Set();
+  for (let round = 0; round < CONSTANT_ROUNDS; round += 1) {
+    const next = new Set();
+    for (const [name, list] of values) {
+      if (!bound.has(name) && provable(list, consts)) next.add(name);
+    }
+    if (next.size === consts.size) return next;
+    consts = next;
+  }
+  return consts;
+}
 
 // One finding per id per line: two sinks on one line describe one hole.
 function collect(state, found) {
@@ -371,26 +767,42 @@ function collect(state, found) {
 
 // One forward pass. The sink is tested before the assignment on the same
 // statement, so `q = q + x` reports against the value q already held.
-function scan(units, spec) {
-  const tainted = new Map();
-  const open = [];
+//
+// A SQL sink in a file with no SQL anywhere in it is not a SQL sink at all —
+// `execute`, `query` and `Query` are ordinary method names, and a Command
+// pattern or a job runner spells its entry point exactly that way.
+function scan(spec, ctx) {
+  const scope = { tainted: new Map(), open: [], consts: ctx.consts };
   const state = { findings: [], seen: new Set() };
+  const sinks = spec.sinks.filter((sink) => sink.id !== SQL_ID || ctx.sql !== false);
 
-  for (const unit of units) {
-    forget(tainted, open, unit.level);
-    for (const sink of spec.sinks) collect(state, sinkFinding(sink, unit, tainted));
-    applyAssignment(spec, unit, tainted, open);
-    shadow(tainted, open, unit, paramsOf(spec, unit));
+  for (const unit of ctx.units) {
+    forget(scope.tainted, scope.open, unit.level);
+    for (const sink of sinks) collect(state, sinkFinding(sink, unit, scope.tainted));
+    applyAssignment(spec, unit, scope);
+    shadow(scope.tainted, scope.open, unit, paramsOf(spec, unit));
   }
   return state.findings;
 }
 
-// `existing` is the pack's own line-rule findings: where the inline rule
-// already reported the same id on the same line, this adds nothing.
-function taintFindings({ lines, stripped, spec, existing = [] }) {
-  const already = new Set(existing.map((f) => `${f.id}:${f.line}`));
-  return scan(unitsOf(lines, stripped || lines, Boolean(spec.indent)), spec)
-    .filter((f) => !already.has(`${f.id}:${f.line}`));
+// Everything a pack's rules need about the whole file, computed once and shared
+// by the line rules, the span rules and the taint scan: the statement units, the
+// names bound only to constants, and whether the file contains SQL at all.
+function packContext({ lines, stripped, spec }) {
+  const guide = stripped || lines;
+  const units = unitsOf(lines, guide, Boolean(spec.indent));
+  return {
+    units,
+    consts: constantNames({ lines, stripped: guide, units, spec }),
+    sql: hasSql(lines),
+  };
 }
 
-module.exports = { CONCAT, constantLine, skipConstant, taintFindings };
+// `existing` is the pack's own line-rule findings: where the inline rule
+// already reported the same id on the same line, this adds nothing.
+function taintFindings({ spec, ctx, existing = [] }) {
+  const already = new Set(existing.map((f) => `${f.id}:${f.line}`));
+  return scan(spec, ctx).filter((f) => !already.has(`${f.id}:${f.line}`));
+}
+
+module.exports = { CONCAT, constantLine, packContext, skipConstant, taintFindings };

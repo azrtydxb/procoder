@@ -189,3 +189,43 @@ test('a parameter shadowing a tainted name starts clean', () => {
   assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := "SELECT " + id\n\tg := func(other string) {\n\t\tdb.Query(q)\n\t}\n}')
     .includes('safe/sql-injection'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3. Every case has its unsafe twin beside it.
+
+// Item 1. A constant table name spliced into an otherwise parameterized query
+// is the recommended way to write a query with a dynamic table, and it is
+// correct: the value is not user data. `const` was also missing from the
+// binding recogniser, so `const table = "users"` bound the name `const`.
+test("a constant fragment in a parameterized query stays silent", () => {
+  assert.ok(!ids('const table = "users"\nrows, err := db.Query(fmt.Sprintf("SELECT * FROM %s WHERE id = $1", table), id)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('const TABLE = "users"\nrows, err := db.Query("SELECT * FROM " + TABLE)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the same shapes report when the fragment is not provably constant", () => {
+  assert.ok(ids('table := r.URL.Query().Get("t")\nrows, err := db.Query(fmt.Sprintf("SELECT * FROM %s WHERE id = $1", table), id)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('rows, err := db.Query(fmt.Sprintf("SELECT * FROM t WHERE id = %s", userID))\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+// Item 2. `Query` is an ordinary method name, and a SQL finding in a file
+// with no database in it is always wrong.
+test("a generic Query in a file with no database in it stays silent", () => {
+  assert.ok(!ids('func Ask(a Agent, t string) string {\n\tphrase := fmt.Sprintf("find %s", t)\n\treturn a.Query(phrase)\n}\n')
+    .includes("safe/sql-injection"));
+});
+
+test("the same call reports as soon as the file does talk to a database", () => {
+  assert.ok(ids('func Ask(db *sql.DB, t string) string {\n\tphrase := fmt.Sprintf("find %s", t)\n\treturn db.Query(phrase)\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+// Item 7. A single class excluding every quote never saw a literal that holds
+// the other quote character — which is exactly how SQL gets written.
+test("concatenation where the literal holds the other quote is still seen", () => {
+  assert.ok(ids('rows, err := db.Query("SELECT * FROM u WHERE n = \x27" + name + "\x27")\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

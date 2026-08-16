@@ -297,3 +297,73 @@ test('a parameter shadowing a tainted name starts clean', () => {
   assert.ok(ids('def outer(uid):\n    q = "SELECT 1"\n    def inner(q):\n        q = q + uid\n        cur.execute(q)\n')
     .includes('safe/sql-injection'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3. Every case has its unsafe twin beside it: a fix that silences a
+// false positive by weakening the rule is not a fix.
+
+// Item 1. A constant column list spliced into an otherwise parameterized query.
+test("a constant fragment in a parameterized query stays silent", () => {
+  assert.ok(!ids('COLS = "id, name"\ncur.execute(f"SELECT {COLS} FROM t WHERE id = %s", (id,))\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('TABLE = "users"\ncur.execute("SELECT * FROM " + TABLE)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the same shapes report when the fragment is not user-independent", () => {
+  assert.ok(ids('def h(cur, user_id):\n    cur.execute(f"SELECT * FROM t WHERE id = {user_id}")\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('COLS = request.args["c"]\ncur.execute(f"SELECT {COLS} FROM t WHERE id = %s", (id,))\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+// Item 2. `execute` is an ordinary method name — a Command pattern, a job
+// runner — and a SQL finding in a file with no database in it is always wrong.
+test("a generic execute in a file with no database in it stays silent", () => {
+  assert.ok(!ids('def run(job, n):\n    label = f"job {n}"\n    return job.execute(label)\n')
+    .includes("safe/sql-injection"));
+});
+
+test("the same call reports as soon as the file does talk to a database", () => {
+  assert.ok(ids('def run(cur, n):\n    label = f"job {n}"\n    return cur.execute(label)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+// Item 6. `usedforsecurity=False` is the standard, explicit way to say this
+// hash is not a security primitive. The rule is about the algorithm, and this
+// flag is the one argument that answers it.
+test("a hash explicitly declared non-security stays silent", () => {
+  assert.ok(!ids('h = hashlib.md5(data, usedforsecurity=False).hexdigest()\n')  // procoder: literal safe/weak-hash scanner input for that rule, not an instance of it
+    .includes("safe/weak-hash"));
+  assert.ok(!ids('d = hashlib.sha1(blob, usedforsecurity = False)\n')  // procoder: literal safe/weak-hash scanner input for that rule, not an instance of it
+    .includes("safe/weak-hash"));
+});
+
+test("weak hashing still reports without that flag", () => {
+  assert.ok(ids('digest = hashlib.md5(password.encode()).hexdigest()\n')  // procoder: literal safe/weak-hash scanner input for that rule, not an instance of it
+    .includes("safe/weak-hash"));
+  assert.ok(ids('digest = hashlib.md5(pw, usedforsecurity=True).hexdigest()\n')  // procoder: literal safe/weak-hash scanner input for that rule, not an instance of it
+    .includes("safe/weak-hash"));
+});
+
+// Item 7, a false negative. The f-string source excluded both quote characters
+// from the literal body, so an interpolation inside single quotes inside a
+// double-quoted f-string — the most common Python injection spelling there is —
+// was never seen at all.
+test("an f-string interpolating inside the other quote is a source", () => {
+  assert.ok(ids('def q(cur, name):\n    sql = f"SELECT * FROM users WHERE name = \'{name}\'"\n    cur.execute(sql)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('def q(cur, name):\n    sql = "SELECT * FROM users WHERE name = \'%s\'" % name\n    cur.execute(sql)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('def q(cur, name):\n    sql = "SELECT * FROM users WHERE name = %s"\n    cur.execute(sql, (name,))\n')
+    .includes("safe/sql-injection"));
+});
+
+// A type annotation between the name and the `=` defeated the binding
+// recogniser outright, so an annotated binding established no taint at all.
+test("an annotated binding still establishes taint", () => {
+  assert.ok(ids('def h(cur, user_id):\n    q: str = "SELECT * FROM t WHERE id = " + user_id\n    cur.execute(q)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('def h(cur, user_id):\n    q: str = "SELECT * FROM t WHERE id = %s"\n    cur.execute(q, (user_id,))\n')
+    .includes("safe/sql-injection"));
+});

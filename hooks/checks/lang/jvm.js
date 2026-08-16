@@ -4,7 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -66,7 +66,8 @@ const LINE_RULES = [
 const JVM_NAME = String.raw`([A-Za-z_$][\w$]*)`;
 
 const TAINT = {
-  assign: /^\s*(?:(?:final|val|var|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
+  // `const` sits in the modifier list for Kotlin's `const val`.
+  assign: /^\s*(?:(?:final|val|var|const|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
   sources: [/\bString\.format\s*\(/, /"[^"\n]*\$[A-Za-z_{]/, ...CONCAT],
   sinks: [
     {
@@ -191,14 +192,15 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
+  const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
+  const inline = lineRuleFindings(LINE_RULES, lines, {
+    skip: (rule, line) => skipConstant(rule, line, ctx),
+  });
 
   return [
     ...inline,
-    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline }),
-    ...taintFindings({
-      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
-    }),
+    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline, ctx }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...xxeFindings(lines),
     ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({

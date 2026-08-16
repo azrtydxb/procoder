@@ -3,7 +3,7 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -18,7 +18,12 @@ const LINE_RULES = [
     // takes a C# interpolated string by design and parameterizes it
     // internally, so treating it like string concatenation would be a
     // false positive on the exact pattern teams are told to migrate to.
-    id: 'safe/sql-injection', rung: 'SAFE',
+    //
+    // `dataSink`: the finding is "untrusted data reaches this command", not
+    // "this API is the defect" — `CommandText = $"… @tenant"`, an interpolated
+    // string with zero holes, is a fully parameterized query and was reported
+    // only because the rule was never opted in to the constant discharge.
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /(?:SqlCommand|CommandText|ExecuteSqlRaw|FromSqlRaw)\s*(?:\(|=)\s*(?:\$"|"[^"]*"\s*\+|\w+\s*\+)/,
     message: 'SQL built by interpolation or concatenation',
     fix: 'use parameters (cmd.Parameters.AddWithValue) or FromSqlInterpolated',
@@ -149,14 +154,15 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
+  const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
+  const inline = lineRuleFindings(LINE_RULES, lines, {
+    skip: (rule, line) => skipConstant(rule, line, ctx),
+  });
 
   return [
     ...inline,
-    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline }),
-    ...taintFindings({
-      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
-    }),
+    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline, ctx }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, METHOD_SIGNATURE_LINE)),

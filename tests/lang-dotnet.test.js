@@ -252,3 +252,25 @@ test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`var token = Helper("${PAD}") + RandomNumberGenerator.GetInt32(9);`).includes('safe/weak-random'));
   assert.ok(!ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => Validate(a));`).includes('safe/tls-disabled'));
 });
+
+// ---------------------------------------------------------------------------
+// Round 3. Item 4: `CommandText = $"… @tenant"` is an interpolated string with
+// *zero holes* — a fully parameterized query — and the rule carried no
+// `dataSink` mark, so the constant discharge never ran on it.
+test("an interpolated string with no holes stays silent", () => {
+  assert.ok(!ids('cmd.CommandText = $"SELECT * FROM t WHERE tenant = @tenant";\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+// Item 1: a constant column spliced into an otherwise parameterized query.
+test("a constant fragment in a parameterized query stays silent", () => {
+  assert.ok(!ids('const string col = "created_at";\ncmd.CommandText = $"SELECT * FROM t WHERE id = @id ORDER BY {col}";\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("the same shapes report when the fragment is not provably constant", () => {
+  assert.ok(ids('cmd.CommandText = $"SELECT * FROM t WHERE id = {userId}";\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('string col = "created_at";\ncol = Request.Query["c"];\ncmd.CommandText = $"SELECT * FROM t ORDER BY {col}";\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

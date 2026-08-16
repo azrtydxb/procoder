@@ -4,7 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -77,7 +77,10 @@ const SPAN_RULES = [
 // reaches sqlx. Shell gets no taint sink: `Command::new("sh").arg("-c")` is
 // already reported on the invocation itself, whatever the argument is.
 const TAINT = {
-  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?\+?=(?!=)/,
+  // `const` and `static` alongside `let`: without them `const TABLE: &str =
+  // "users"` matched nothing at all, so a table name declared the way Rust
+  // declares one was neither tracked nor provably constant.
+  assign: /^\s*(?:(?:let|const|static)\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?\+?=(?!=)/,
   sources: [/\bformat!\s*\(/, ...CONCAT],
   sinks: [
     {
@@ -203,16 +206,16 @@ function check(source, { relPath, config } = {}) {
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
 
+  const ctx = packContext({ lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, codeLines, {
-    skip: (rule, line, lineNo) => expectedPanic(rule, line, lineNo) || skipConstant(rule, line),
+    skip: (rule, line, lineNo) => expectedPanic(rule, line, lineNo)
+      || skipConstant(rule, line, ctx),
   });
 
   return [
     ...inline,
-    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
-    ...taintFindings({
-      lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
-    }),
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline, ctx }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...unsafeFindings(codeLines, lines),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FN_SIGNATURE)),

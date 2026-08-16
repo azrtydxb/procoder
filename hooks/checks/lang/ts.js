@@ -3,7 +3,7 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, skipConstant, taintFindings } = require('./taint');
+const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -41,7 +41,12 @@ const LINE_RULES = [
     fix: 'use a parameterized query with bound values',
   },
   {
-    id: 'safe/xss-sink', rung: 'SAFE',
+    // `dataSink`: the finding is "untrusted markup reaches this sink", not
+    // "this API is the defect" — `el.innerHTML = ''` is how a list is cleared,
+    // and constant markup is not XSS. constantLine reads the right of a
+    // top-level `=` as data, which is what keeps `el.innerHTML = userInput`
+    // reported; without that the discharge would silence the rule outright.
+    id: 'safe/xss-sink', rung: 'SAFE', dataSink: true,
     re: /\.innerHTML\s*=|\.outerHTML\s*=|dangerouslySetInnerHTML|document\.write\s*\(/,
     message: 'raw HTML sink',
     fix: 'use textContent, or sanitize before assigning',
@@ -116,9 +121,26 @@ const SPAN_RULES = [
 // time for the same line and nothing new — the duplicate rung 4 forbids.
 const JS_NAME = String.raw`([A-Za-z_$][\w$]*)`;
 
+// A template literal with a hole in it — unless the tag is `sql`.
+//
+// A tagged template is a call over the template's *raw parts*, and the `sql`
+// tag — drizzle, postgres.js, slonik — turns every `${…}` into a bind
+// parameter rather than into text: interpolating into it is the parameterized
+// form, not string building, so it is not a source. Reporting it was a rung-1
+// finding on the exact API those libraries tell you to use.
+//
+// `(?<![\w$])` pins the match to the start of a word run — one starting offset
+// per run rather than one per character, the same pin and the same reason as
+// CONCAT in taint.js — and the lookahead rejects only the exact `sql` tag:
+// `raw`, `mysql` and an untagged `` `…${x}` `` are all still sources.
+const JS_TEMPLATE = /(?<![\w$])(?!sql`)[\w$]*`[^`\n]*\$\{/i;
+
 const TAINT = {
-  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
-  sources: [/`[^`\n]*\$\{/, ...CONCAT],
+  // The optional `(?::[^=\n]*)?` is a type annotation: `const q: string = …` is
+  // how a typed codebase writes the binding, and without it the recogniser
+  // stopped at the `:` and established no taint at all.
+  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?\+?=(?![=>])/,
+  sources: [JS_TEMPLATE, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
@@ -194,16 +216,16 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
   const codeLines = code.split(/\r?\n/);
+  const strippedLines = stripped.split(/\r?\n/);
+  const ctx = packContext({ lines: codeLines, stripped: strippedLines, spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, codeLines, {
-    codeLines: stripped.split(/\r?\n/), skip: skipConstant,
+    codeLines: strippedLines, skip: (rule, line) => skipConstant(rule, line, ctx),
   });
 
   return [
     ...inline,
-    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
-    ...taintFindings({
-      lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
-    }),
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline, ctx }),
+    ...taintFindings({ spec: TAINT, ctx, existing: inline }),
     ...emptyCatchFindings(code, SWALLOWED, 'error swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNCTION_SIGNATURE)),

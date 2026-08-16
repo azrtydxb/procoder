@@ -114,8 +114,10 @@ function ruleHits(rule, line, cache) {
 //
 // A rule marked `dataSink` is discharged on a wholly constant line, the same
 // test and for the same reason as the line rules — see taint.js.
-// `Command::new("sh").arg("-c").arg("ls /tmp")` runs a literal command.
-function spanRuleFindings(rules, lines, { existing = [] } = {}) {
+// `Command::new("sh").arg("-c").arg("ls /tmp")` runs a literal command. `ctx`
+// is the pack's whole-file context, so a name the file binds only to a literal
+// counts as constant here too.
+function spanRuleFindings(rules, lines, { existing = [], ctx } = {}) {
   const already = new Set(existing.map((f) => `${f.id}:${f.line}`));
   const findings = [];
 
@@ -123,7 +125,7 @@ function spanRuleFindings(rules, lines, { existing = [] } = {}) {
     const cache = lineCache(line);
     for (const rule of rules) {
       const key = `${rule.id}:${index + 1}`;
-      if (already.has(key) || !ruleHits(rule, line, cache) || skipConstant(rule, line)) continue;
+      if (already.has(key) || !ruleHits(rule, line, cache) || skipConstant(rule, line, ctx)) continue;
       already.add(key);
       findings.push(finding({
         rung: rule.rung, id: rule.id, line: index + 1, message: rule.message, fix: rule.fix,
