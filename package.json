@@ -8,8 +8,9 @@
   "main": "./hooks/procoder-runtime.js",
   "files": [
     "hooks/", "skills/", "commands/", "scripts/", "bin/", "procoder-mcp/",
-    ".claude-plugin/", ".opencode/", ".openclaw/", "pi-extension/",
-    "AGENTS.md", "LICENSE"
+    ".claude-plugin/", ".opencode/", ".openclaw/", ".cursor/", ".windsurf/",
+    ".clinerules/", ".kiro/", ".qoder/", ".agents/", "pi-extension/",
+    "AGENTS.md", "LICENSE", "gemini-extension.json", "opencode.json"
   ],
   "pi": { "skills": ["./skills"], "extensions": ["./pi-extension/index.js"] },
   "scripts": {

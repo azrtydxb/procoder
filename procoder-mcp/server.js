@@ -11,6 +11,8 @@ const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
 const { getProcoderInstructions } = require('../hooks/procoder-instructions');
 
+const { version: VERSION } = require('./package.json');
+
 // A closed stdout (the client disconnecting) surfaces as an async 'error'
 // event, not a synchronous throw — try/catch cannot catch it, and an uncaught
 // EPIPE would crash the server mid-session.
@@ -96,7 +98,7 @@ function handle(request) {
       result: {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: 'procoder', version: '0.1.0' },
+        serverInfo: { name: 'procoder', version: VERSION },
       },
     };
   }
