@@ -50,7 +50,13 @@ const LINE_RULES = [
 
 const UNSAFE_BLOCK = /^\s*(?:.*\s)?unsafe\s*\{/;
 const SAFETY_COMMENT = /\/\/\s*SAFETY:|\/\/!\s*SAFETY:/i;
-const FN_SIGNATURE = /fn\s+\w+\s*(?:<[^>]{0,500}>)?\s*\(([^)]{0,500})\)[^{\n]{0,500}\{/g;
+// Head up to the parameter list's `(`, tail from where that list closes to the
+// block-opening `{`; shape.js counts the parameters in between without
+// capturing them, so the list has no length ceiling. See go.js.
+const FN_SIGNATURE = {
+  head: /fn\s+\w+\s*(?:<[^>]{0,500}>)?\s*\(/g,
+  tail: /[^{\n]{0,500}\{/,
+};
 const TEST_ATTR = /#\[cfg\(test\)\]|#\[test\]|#\[tokio::test\]/;
 // unwrap()/expect() directly on a Mutex/RwLock lock() is near-universal Rust
 // practice: a poisoned lock means a prior panic already corrupted shared

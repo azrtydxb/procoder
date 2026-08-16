@@ -78,7 +78,16 @@ const LINE_RULES = [
 // `if err != nil { return ... }` guard immediately before the defer.
 const DEFER_LOOKAHEAD = 5;
 
-const FUNC_SIGNATURE = /func\s+(?:\([^)]{0,500}\)\s*)?\w*\s*\(([^)]{0,500})\)[^{\n]{0,500}\{/g;
+// Head up to the parameter list's `(`, tail from where that list closes to the
+// block-opening `{`. The parameters themselves are counted by shape.js's single
+// paramSpans pass rather than captured, so the list may be any length — a
+// captured `([^)]{0,500})` had to be bounded to stay linear and lost every
+// signature past the bound. The receiver group stays bounded: a receiver is one
+// parameter by construction.
+const FUNC_SIGNATURE = {
+  head: /func\s+(?:\([^)]{0,500}\)\s*)?\w*\s*\(/g,
+  tail: /[^{\n]{0,500}\{/,
+};
 
 const DEFERRED_CLOSE = /defer\s+\w+(?:\.\w+)*\.Close\s*\(/;
 

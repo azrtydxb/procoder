@@ -194,7 +194,7 @@ test('a chain of control-flow blocks still counts as nesting', () => {
 test('signaturesFrom stays linear on a huge single-line file', () => {
   const unit = 'function f(a,b){return a+b}';
   const src = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
-  const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
+  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
 
   const ms = bestOf(3, () => signaturesFrom(stripNoise(src), re));
   assert.ok(ms < 500, `signaturesFrom scaled worse than linearly: ${ms}ms`);
@@ -208,7 +208,7 @@ test('signaturesFrom stays linear on a huge single-line file', () => {
 test('analyzeBraces and measureFunctions stay linear in line length', () => {
   const unit = 'function f(a,b){if(a&&b){return a+b}else{return 0}}';
   const line = unit.repeat(Math.ceil((400 * 1024) / unit.length));
-  const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
+  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
 
   const ms = bestOf(3, () => {
     const { blocks } = analyzeBraces(line);
@@ -367,6 +367,110 @@ test('a trailing comma is not a parameter', () => {
   assert.strictEqual(countParams('(,)'), 0);
 });
 
+// --- parameter lists longer than any span ceiling --------------------------
+//
+// The packs used to capture the parameter list as a span bounded to 500
+// characters, so a signature whose parameters ran past that matched no pattern
+// at all: a 60-parameter function on one line produced no finding while a
+// 6-parameter one did. The failure was silent and inverted — the worse the
+// code, the less likely it was reported — and it cost the whole block, not
+// just the parameter count, since an unmatched signature is not measured for
+// length or complexity either.
+//
+// One five-, one sixty- and one four-parameter function per pack, in that
+// pack's own syntax, all on a single line.
+const NAMES = (count) => Array.from({ length: count }, (unused, i) => `p${i}`);
+const ONE_LINE = [
+  ['ts', 'a.ts', (n) => `function wide(${NAMES(n).map((p) => `${p}: string`).join(', ')}) {\n  return 1;\n}`],
+  ['py', 'a.py', (n) => `def wide(${NAMES(n).join(', ')}):\n    return 1`],
+  ['go', 'a.go', (n) => `func wide(${NAMES(n).map((p) => `${p} string`).join(', ')}) error {\n\treturn nil\n}`],
+  ['rust', 'a.rs', (n) => `fn wide(${NAMES(n).map((p) => `${p}: String`).join(', ')}) -> usize {\n    1\n}`],
+  ['jvm', 'X.java', (n) => `class X {\n    public int wide(${NAMES(n).map((p) => `String ${p}`).join(', ')}) {\n        return 1;\n    }\n}`],
+  ['dotnet', 'X.cs', (n) => `class X {\n    public int Wide(${NAMES(n).map((p) => `string ${p}`).join(', ')}) {\n        return 1;\n    }\n}`],
+];
+
+test('a parameter list is counted however long it is, in every pack', () => {
+  for (const [pack, relPath, source] of ONE_LINE) {
+    const wide = paramFinding(pack, source(60), relPath);
+    assert.ok(wide, `${pack}: a 60-parameter function on one line was not measured at all`);
+    assert.strictEqual(wide.message, '60 parameters (limit 4)', pack);
+
+    const six = paramFinding(pack, source(6), relPath);
+    assert.ok(six, `${pack}: a 6-parameter function stopped being reported`);
+    assert.strictEqual(six.message, '6 parameters (limit 4)', pack);
+
+    assert.strictEqual(paramFinding(pack, source(4), relPath), undefined,
+      `${pack}: a 4-parameter function is inside the limit`);
+  }
+});
+
+// The other two shape rules ride on the same match, so the ceiling hid them
+// too: a long-signature function was measured for neither length nor
+// complexity.
+test('a function past the old ceiling is measured for length and complexity too', () => {
+  const params = NAMES(60).map((p) => `${p}: string`).join(', ');
+  const body = Array.from({ length: 60 }, (unused, i) => `  if (p${i}) { return p${i}; }`);
+  const ids = findings('ts', [`function wide(${params}) {`, ...body, '}'].join('\n'), 'a.ts')
+    .map((f) => f.id);
+  assert.ok(ids.includes('obvious/too-many-params'));
+  assert.ok(ids.includes('obvious/function-too-long'));
+  assert.ok(ids.includes('obvious/complexity'));
+});
+
+// Commas that do not separate parameters: inside a default value, inside a
+// subscripted annotation, inside nested generics. Counting them would report a
+// three-parameter function as five and put a finding on correct code.
+test('commas inside defaults, annotations and generics are not separators', () => {
+  assert.strictEqual(countParams('(a, b=(1, 2), c: Dict[str, int])'), 3);
+  assert.strictEqual(countParams('(a: Map<string, Map<string, number>>, b: number)'), 2);
+  assert.strictEqual(countParams('(a = [1, 2, 3], b = { x: 1, y: 2 })'), 2);
+
+  const src = 'def f(a, b=(1, 2), c: Dict[str, int]):\n    return a\n';
+  const found = findings('py', src, 'a.py').find((f) => f.id === 'obvious/too-many-params');
+  assert.strictEqual(found, undefined, 'three parameters were counted as more than four');
+
+  // The same, past the old 500-character ceiling: the nesting has to be read
+  // over a list long enough that the ceiling used to discard the signature.
+  const padding = NAMES(60).map((p) => `${p}: Map<string, number>`);
+  const wide = `function f(${['a', 'b = [1, 2]', ...padding].join(', ')}) {\n  return a;\n}`;
+  assert.strictEqual(paramFinding('ts', wide, 'a.ts').message, '62 parameters (limit 4)');
+});
+
+// The span ceiling existed because an unbounded `[^)]*` capture is retried
+// from every signature start and, with no `)` ahead, runs to end of file each
+// time — quadratic, and once 75 seconds on a 400KB line. Counting commas at
+// bracket depth zero in one pass replaces it, and must not bring that back.
+//
+// Expressed as the ratio between two input sizes rather than as an absolute
+// millisecond bound: an absolute bound flakes under load on a loaded machine,
+// while quadratic scaling shows up as a ratio no amount of load can produce.
+// Quadrupling the input costs ~4x when linear and ~16x when quadratic; 8x
+// leaves a wide margin either way.
+test('parameter counting stays linear in line length', () => {
+  const shapes = {
+    'balanced signatures': 'function f(a,b){if(a&&b){return a+b}else{return 0}}',
+    // No `)` anywhere: the shape on which a greedy unbounded capture scans to
+    // end of file from every one of its starts.
+    'no closing paren': 'function f(a,b,',
+    // Every start nested inside the last, so each parameter list spans the
+    // rest of the file.
+    'nested parameter lists': 'function f(',
+  };
+
+  for (const [shape, unit] of Object.entries(shapes)) {
+    const cost = (kb) => {
+      const line = unit.repeat(Math.ceil((kb * 1024) / unit.length));
+      return bestOf(3, () => packs.ts.check(line, {
+        relPath: 'a.ts', config: { thresholds: DEFAULTS.thresholds },
+      }));
+    };
+    const small = Math.max(1, cost(100));
+    const large = cost(400);
+    assert.ok(large / small < 8,
+      `${shape}: 4x the input cost ${(large / small).toFixed(1)}x the time (${small}ms → ${large}ms)`);
+  }
+});
+
 // Python's blocks come from indentation, and a wrapped `def` already starts its
 // block on the `def` line: the continuation lines are indented past it and the
 // body closes it as usual. So analyzeIndent has no equivalent gap to close.
@@ -398,7 +502,7 @@ test('the lookback does not attribute an else block to the if above it', () => {
     '  }',
     '}',
   ].join('\n');
-  const re = /(?:function\s+\w*|(?<!\w)\w+\s*)\(([^)]{0,500})\)\s*\{/g;
+  const re = { head: /(?:function\s+\w*|(?<!\w)\w+\s*)\(/g, tail: /\s*\{/ };
   const { blocks } = analyzeBraces(src);
   const measured = measureFunctions(
     src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
@@ -426,7 +530,7 @@ test('the signature lookback is bounded', () => {
 // weigh. 100KB and 400KB of a single line, and a file of 20k unmeasurable
 // blocks, all stay far inside the 2s whole-file hook budget.
 test('the signature lookback stays linear in line length and block count', () => {
-  const re = /function\s+\w*\(([^)]{0,500})\)\s*\{/g;
+  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
   for (const size of [100, 400]) {
     const unit = 'if(a&&b){return a+b}else{return 0}';
     const line = unit.repeat(Math.ceil((size * 1024) / unit.length));
@@ -504,7 +608,7 @@ test('binding patterns are data, not nesting', () => {
 // reported six parameters. Hiding a violation is the worse direction of error,
 // and private members are ordinary modern JS.
 test('a private class method is measured like a public one', () => {
-  const re = /(?:async\s+)?(?<!\w)\w+\s*\(([^)]{0,500})\)\s*\{/g;
+  const re = { head: /(?:async\s+)?(?<!\w)\w+\s*\(/g, tail: /\s*\{/ };
   const measure = (src) => {
     const { blocks } = analyzeBraces(src);
     return measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));

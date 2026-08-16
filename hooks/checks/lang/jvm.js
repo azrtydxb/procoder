@@ -83,8 +83,14 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 // hits on ordinary class bodies: letting the return-type class span
 // newlines (via \s) turns "no method starts here" into an exponential
 // search over every blank-line/brace combination in the file.
-const METHOD_SIGNATURE_LINE =
-  /^\s*(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|strictfp|fun)\s+)*[\w<>[\],.]+(?:\s*<[\w\s<>[\],.]*>)?\s+\w+\s*\(([^)]*)\)\s*(?:throws\s+[\w,.\s]+)?\{\s*$/;
+// Split at the parameter list's `(`: shape.js counts the parameters between it
+// and its matching `)` — the one that closes the list, not the first one, so a
+// default or a nested call inside a parameter no longer ends it early — and the
+// tail carries on through `throws` to the block-opening brace.
+const METHOD_SIGNATURE_LINE = {
+  head: /^\s*(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|strictfp|fun)\s+)*[\w<>[\],.]+(?:\s*<[\w\s<>[\],.]*>)?\s+\w+\s*\(/,
+  tail: /\s*(?:throws\s+[\w,.\s]+)?\{\s*$/,
+};
 
 // An XML factory is only a finding when nothing nearby hardens it.
 function xxeFindings(lines) {
