@@ -119,13 +119,13 @@ Environment variables:
 | `CLAUDE_CONFIG_DIR` | Overrides where procoder persists the active level (`<dir>/.procoder-active`). Defaults to `~/.claude`. |
 | `PROCODER_HOST` | Selects the hook wire protocol for non-Claude-Code hosts. One of `codex`, `copilot`, `qoder`. Unset (or any other value) uses the native Claude Code protocol. `codex` is also auto-detected via `CODEX_HOME`. |
 
-`.procoder.toml` configures the check engine itself (level, thresholds, and
-exclusions):
+`.procoder.toml` configures the check engine itself (rung severities,
+thresholds, and exclusions):
 
 ```toml
 [rungs]
 safe = "error"
-true_ = "error"
+true = "error"
 obvious = "warn"
 alone = "warn"
 
@@ -137,8 +137,8 @@ rules = ["scripts/legacy-parser.js:obvious/complexity"]
 `[rungs]` sets each rung's severity. `error` findings are reported as must-fix;
 `warn` findings are reported as advisory. The active level modulates this: at
 `pragmatic`, the judgment rungs (OBVIOUS, ALONE) are flagged without blocking
-language, while SAFE and TRUE always demand a fix. The key is `true_` rather
-than `true`, since bare `true` is a TOML boolean.
+language, while SAFE and TRUE always demand a fix. The keys are the four rung
+names verbatim, `true` included — it is a bare key, not a boolean.
 
 `[exclude] paths` excludes whole paths (directory prefixes) from every check.
 `[exclude] rules` is narrower and exact-path-only: each entry is

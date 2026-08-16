@@ -186,3 +186,20 @@ test('a rule exclusion splits on the first colon, so tool rule ids survive', () 
   assert.ok(isRuleExcluded(cfg, 'src/b.ts', 'true/eslint:no-eval'));
   assert.ok(!isRuleExcluded(cfg, 'src/a.ts', 'true/eslint:no-eval'));
 });
+
+// The README's [rungs] example is the contract users type. mergeSection merges
+// by literal key, so a documented key the code does not use is a knob that
+// silently does nothing — this fails the moment docs and code drift apart.
+test('every rung key the README documents actually changes a severity', () => {
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  const block = /\[rungs\]\n((?:[a-z_]+ = "[a-z]+"\n)+)/.exec(readme);
+  assert.ok(block, 'README no longer documents a [rungs] example');
+  const keys = block[1].trim().split('\n').map((line) => line.split(' ')[0]);
+  assert.deepStrictEqual(keys.slice().sort(), Object.keys(DEFAULTS.rungs).sort());
+
+  for (const key of keys) {
+    const cfg = loadConfig(tempRepo({ '.procoder.toml': `[rungs]\n${key} = "warn"\n` }));
+    assert.strictEqual(cfg.rungs[key], 'warn', `documented key ${key} did nothing`);
+    assert.deepStrictEqual(Object.keys(cfg.rungs).sort(), keys.slice().sort());
+  }
+});
