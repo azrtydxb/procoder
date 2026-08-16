@@ -952,3 +952,99 @@ test('an arrow inside an expression is not a declaration', () => {
   assert.deepStrictEqual(measureTs(src), []);
   assert.deepStrictEqual(findings('ts', src, 'a.ts'), []);
 });
+
+// --- a function named after a keyword is still a function --------------------
+//
+// The keyword sweep above rejects a statement-position head whose word is a
+// control-flow keyword. Applied as one global list to every pack it went one
+// step too far: a function *named* after one of those words — `match(pattern,
+// input)` in a parser, `lock(resource)` in a scheduler, `using(handle)`,
+// `when(condition)` — was not measured for length, nesting, parameters or
+// complexity either. Silent coverage loss, in five of the six packs.
+//
+// A declaration is told from a statement by what is in front of the word.
+// `function`, `func`, `fn`, `def`, an access modifier, a return type — anything
+// ahead of the name in the head means a declaration, so only a head that is the
+// keyword and nothing else can be a statement. That alone clears every pack
+// whose head demands a declaration keyword (Go's `func`, Rust's `fn`) or two
+// tokens (Java's and C#'s `<type> <name>`), and leaves the bare-name heads —
+// TypeScript's — to the second half: the word must actually be control flow in
+// *that* language. `match` is a statement in Rust and a name in JavaScript;
+// `with` is a statement in Python and a name in C#; `lock` is C#'s alone.
+const KEYWORD_NAMED = [
+  ['ts', 'a.ts', ['function match(a, b, c, d, e, f) {', '  return a + b + c + d + e + f;', '}']],
+  ['py', 'a.py', ['def match(a, b, c, d, e, f):', '    return a']],
+  ['go', 'a.go', ['func lock(a, b, c, d, e, f int) int {', '\treturn a', '}']],
+  ['rust', 'a.rs', ['fn lock(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {',
+    '    a', '}']],
+  ['jvm', 'X.java', ['class X {',
+    '    public int lock(int a, int b, int c, int d, int e, int f) {', '        return a;',
+    '    }', '}']],
+  ['dotnet', 'X.cs', ['class X {',
+    '    public int when(int a, int b, int c, int d, int e, int f) {', '        return a;',
+    '    }', '}']],
+];
+
+test('a function named after a control-flow keyword is measured', () => {
+  for (const [pack, relPath, lines] of KEYWORD_NAMED) {
+    const found = paramFinding(pack, lines.join('\n'), relPath);
+    assert.ok(found, `${pack}: a keyword-named function was not measured at all`);
+    assert.strictEqual(found.message, '6 parameters (limit 4)', pack);
+    assert.strictEqual(found.line, lines.findIndex((l) => l.includes('(')) + 1, pack);
+  }
+});
+
+// The same word in the other role. Each body holds a control-flow statement
+// long enough to trip obvious/function-too-long if it were mistaken for a
+// function: exactly one finding must come back, at the enclosing declaration.
+const STATEMENT_BODIES = [
+  ['ts', 'a.ts', 1, (body) => ['function route(kind) {', '  switch (kind) {',
+    ...body, '  }', '}']],
+  ['py', 'a.py', 1, (body) => ['def route(path):', '    with open(path) as handle:',
+    ...body.map((l) => '    ' + l), '    return 0']],
+  ['go', 'a.go', 1, (body) => ['func route(kind int) int {', '\tfor i := 0; i < 3; i++ {',
+    ...body, '\t}', '\treturn 0', '}']],
+  ['rust', 'a.rs', 1, (body) => ['fn route(kind: i32) -> i32 {', '    match kind {',
+    ...body, '        _ => 0,', '    }', '}']],
+  ['jvm', 'X.java', 2, (body) => ['class X {', '    public int route(int k) {',
+    '        synchronized (this) {', ...body, '        }', '        return 0;', '    }', '}']],
+  ['dotnet', 'X.cs', 2, (body) => ['class X {', '    public int Route(int k) {',
+    '        lock (gate) {', ...body, '        }', '        return 0;', '    }', '}']],
+];
+
+test('a control-flow statement is not measured as a function', () => {
+  const body = Array.from({ length: 45 }, (unused, i) => `        step${i}();`);
+  for (const [pack, relPath, line, shape] of STATEMENT_BODIES) {
+    const found = findings(pack, shape(body).join('\n'), relPath)
+      .filter((f) => f.id === 'obvious/function-too-long');
+    assert.strictEqual(found.length, 1,
+      `${pack}: reported at lines ${found.map((f) => f.line)}`);
+    assert.strictEqual(found[0].line, line, pack);
+  }
+});
+
+// The bare-name head is TypeScript's alone, and the only one where the word
+// carries no declaration in front of it: a class method named `match` looks
+// exactly like `switch (…)` to the pattern. What separates them is the
+// language, not the shape — JavaScript has no `match` statement — so the sweep
+// only ever rejects words that are reserved control flow in JS/TS.
+test('a class method named after a non-keyword is measured', () => {
+  for (const name of ['match', 'when', 'lock', 'using', 'unless', 'until', 'foreach']) {
+    const src = ['class Parser {',
+      `  ${name}(a, b, c, d, e, f) {`, '    return a;', '  }', '}'].join('\n');
+    const found = paramFinding('ts', src, 'a.ts');
+    assert.ok(found, `${name}: a method named after a non-keyword was not measured`);
+    assert.strictEqual(found.line, 2, name);
+  }
+});
+
+// Over the thresholds, at the right line, once — the whole point of measuring
+// it at all.
+test('an over-threshold function named after a keyword reports once', () => {
+  const src = ['function match(kind, input) {',
+    ...Array.from({ length: 12 }, (unused, i) => `  if (kind === ${i} && input) return ${i};`),
+    '  return 0;', '}'].join('\n');
+  const found = findings('ts', src, 'a.ts').filter((f) => f.id === 'obvious/complexity');
+  assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
+  assert.strictEqual(found[0].line, 1);
+});
