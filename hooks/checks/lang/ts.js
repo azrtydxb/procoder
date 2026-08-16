@@ -6,6 +6,10 @@ const { analyzeBraces, countParams, estimateComplexity, shapeFindings, stripNois
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
+// `onCode` runs the rule against the noise-stripped line instead of the raw one.
+// Set it where the pattern describes code shape rather than string content, so a
+// regex literal or a string that merely quotes the pattern is not a hit. Rules
+// that must see literal text (SQL built inside a template string) leave it off.
 const LINE_RULES = [
   {
     id: 'safe/sql-injection', rung: 'SAFE',
@@ -14,7 +18,7 @@ const LINE_RULES = [
     fix: 'use a parameterized query with bound values',
   },
   {
-    id: 'safe/xss-sink', rung: 'SAFE',
+    id: 'safe/xss-sink', rung: 'SAFE', onCode: true,
     re: /\.innerHTML\s*=|\.outerHTML\s*=|dangerouslySetInnerHTML|document\.write\s*\(/,
     message: 'raw HTML sink',
     fix: 'use textContent, or sanitize before assigning',
@@ -44,7 +48,7 @@ const LINE_RULES = [
     fix: 'delete it, or route through the project logger',
   },
   {
-    id: 'obvious/nested-ternary', rung: 'OBVIOUS',
+    id: 'obvious/nested-ternary', rung: 'OBVIOUS', onCode: true,
     re: /\?[^?:\n]*\?[^:\n]*:[^:\n]*:/,
     message: 'nested ternary',
     fix: 'rewrite as if/else or a lookup',
@@ -57,54 +61,62 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 const FUNCTION_SIGNATURE =
   /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?\w+\s*)\(([^)]*)\)\s*(?::[^{=]+)?(?:=>)?\s*\{/g;
 
-function check(source, { relPath, config } = {}) {
+function lineRuleFindings(lines, codeLines) {
   const findings = [];
-  const text = String(source || '');
-  const lines = text.split(/\r?\n/);
-  const stripped = stripNoise(text);
-
   lines.forEach((line, index) => {
     for (const rule of LINE_RULES) {
-      if (rule.re.test(line)) {
-        findings.push(finding({
-          rung: rule.rung, id: rule.id, line: index + 1,
-          message: rule.message, fix: rule.fix,
-        }));
-      }
+      const subject = rule.onCode ? codeLines[index] : line;
+      if (!rule.re.test(subject)) continue;
+      findings.push(finding({
+        rung: rule.rung, id: rule.id, line: index + 1,
+        message: rule.message, fix: rule.fix,
+      }));
     }
   });
+  return findings;
+}
 
-  for (const match of stripped.matchAll(SWALLOWED)) {
-    findings.push(finding({
-      rung: 'TRUE', id: 'true/swallowed-error',
-      line: stripped.slice(0, match.index).split('\n').length,
-      message: 'error swallowed by an empty catch',
-      fix: 'log with context and rethrow, or handle it explicitly',
-    }));
-  }
+function swallowedFindings(stripped) {
+  return Array.from(stripped.matchAll(SWALLOWED), (match) => finding({
+    rung: 'TRUE', id: 'true/swallowed-error',
+    line: stripped.slice(0, match.index).split('\n').length,
+    message: 'error swallowed by an empty catch',
+    fix: 'log with context and rethrow, or handle it explicitly',
+  }));
+}
 
-  // Attach params and complexity to the brace blocks that start on a signature line.
-  const { maxDepth, blocks } = analyzeBraces(text);
+// Attaches params and complexity to the brace blocks that start on a signature line.
+function measureFunctions(lines, stripped, blocks) {
   const signatures = new Map();
   for (const match of stripped.matchAll(FUNCTION_SIGNATURE)) {
     signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
   }
 
-  const measured = blocks.map((block) => {
-    const signature = signatures.get(block.startLine);
-    const body = lines.slice(block.startLine - 1, block.endLine).join('\n');
-    return {
+  return blocks
+    .filter((block) => signatures.has(block.startLine))
+    .map((block) => ({
       ...block,
-      params: signature === undefined ? 0 : countParams('(' + signature + ')'),
-      complexity: signature === undefined ? 0 : estimateComplexity(body),
-    };
-  }).filter((block) => signatures.has(block.startLine));
+      params: countParams('(' + signatures.get(block.startLine) + ')'),
+      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
+    }));
+}
 
-  findings.push(...shapeFindings({
-    blocks: measured, maxDepth, thresholds: config.thresholds, kind: 'function',
-  }));
+function check(source, { relPath, config } = {}) {
+  const text = String(source || '');
+  const lines = text.split(/\r?\n/);
+  const stripped = stripNoise(text);
+  const { maxDepth, blocks } = analyzeBraces(text);
 
-  return findings;
+  return [
+    ...lineRuleFindings(lines, stripped.split(/\r?\n/)),
+    ...swallowedFindings(stripped),
+    ...shapeFindings({
+      blocks: measureFunctions(lines, stripped, blocks),
+      maxDepth,
+      thresholds: config.thresholds,
+      kind: 'function',
+    }),
+  ];
 }
 
 module.exports = { check, EXTENSIONS };

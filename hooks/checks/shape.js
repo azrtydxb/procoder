@@ -9,12 +9,22 @@
 
 const { finding } = require('./finding');
 
-// Removes string and comment content so their braces do not count. Replaces
-// rather than deletes, so line numbers survive.
+// A regex literal, recognised only where an expression may start — after an
+// operator, an opening bracket, a comma, a colon or a statement end. That
+// restriction is what keeps `a / b / c` from being read as a regex. Its body
+// is quantifier braces and alternation bars, not code: counted as structure it
+// reports nesting and branching that the file does not contain.
+const REGEX_LITERAL =
+  /(^|[(,=:[!&|?{};])(\s*)\/((?:[^/\\\n[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+)\/([a-z]*)/g;
+
+// Removes string, comment and regex content so their braces do not count.
+// Replaces rather than deletes, so line numbers survive.
 function stripNoise(source) {
   return String(source || '')
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + m.slice(p.length).replace(/./g, ' '))
+    .replace(REGEX_LITERAL, (m, pre, gap, body, flags) =>
+      pre + gap + '/' + ' '.repeat(body.length) + '/' + flags)
     .replace(/#[^\n]*/g, (m) => m.replace(/./g, ' '))
     .replace(/"(?:[^"\\\n]|\\.)*"/g, (m) => '"' + ' '.repeat(Math.max(0, m.length - 2)) + '"')
     .replace(/'(?:[^'\\\n]|\\.)*'/g, (m) => "'" + ' '.repeat(Math.max(0, m.length - 2)) + "'")
