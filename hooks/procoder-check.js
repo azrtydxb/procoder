@@ -13,6 +13,20 @@ const { readHookInput, writeHookOutput, readLevel } = require('./procoder-runtim
 
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 
+// Spec §3.2: keep only findings inside the region the tool call touched. An
+// Edit names the text it wrote, so the region is that text's span; a Write
+// wrote the whole file and every line is touched. Any other tool shape whose
+// payload does not name what it wrote falls back to the whole file — the
+// mitigation for false positives must not itself hide a real one.
+function touchedTexts(toolInput) {
+  if (!toolInput) return null;
+  if (Array.isArray(toolInput.edits)) {
+    return toolInput.edits.map((e) => e && (e.new_string || e.new_source)).filter(Boolean);
+  }
+  const written = toolInput.new_string || toolInput.new_source;
+  return written ? [written] : null;
+}
+
 readHookInput().then((input) => {
   const level = readLevel();
   if (level === 'off') return;
@@ -27,7 +41,9 @@ readHookInput().then((input) => {
   const repoRoot = findRepoRoot(path.dirname(absPath));
   const config = loadConfig(repoRoot);
 
-  const { relPath, findings, skipped } = checkFile(absPath, { repoRoot, config });
+  const { relPath, findings, skipped } = checkFile(absPath, {
+    repoRoot, config, touched: touchedTexts(input.tool_input),
+  });
   if (skipped || findings.length === 0) return;
 
   const header = `procoder [${level}] — ${findings.length} finding${findings.length === 1 ? '' : 's'} in ${relPath}. Fix these before moving on:`;

@@ -2,9 +2,10 @@
 // procoder — external tooling detection and invocation.
 //
 // The ladder applies to procoder itself: if the project already has a linter
-// configured, that linter's rules ARE the project's definition of correct.
-// Re-implementing them would create exactly the duplicate-rule rot rung 4
-// forbids. The built-in packs exist only for projects with nothing configured.
+// configured, that linter's rules ARE the project's definition of correct for
+// the OBVIOUS rung. Re-implementing its shape thresholds would create exactly
+// the duplicate-rule rot rung 4 forbids. The SAFE rung is never deferred —
+// see run.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -16,7 +17,10 @@ const WHICH = process.platform === 'win32' ? 'where' : 'which';
 const toolCache = new Map();
 
 function hasTool(name) {
-  if (toolCache.has(name)) return toolCache.get(name);
+  // Keyed by PATH as well as name: the answer is only valid for the PATH that
+  // produced it, and a stale hit would outlive any change to it.
+  const key = `${name}\0${process.env.PATH || ''}`;
+  if (toolCache.has(key)) return toolCache.get(key);
   let found = false;
   try {
     execFileSync(WHICH, [name], { stdio: 'ignore', timeout: 1000 });
@@ -24,13 +28,41 @@ function hasTool(name) {
   } catch (e) {
     found = false;
   }
-  toolCache.set(name, found);
+  toolCache.set(key, found);
   return found;
+}
+
+// Some entries in a tool's configFiles list are shared ecosystem manifests that
+// exist in essentially every repo of their language — pyproject.toml, Cargo.toml
+// — whether or not the linter is configured. Existence alone is no evidence, so
+// those files must actually contain the tool's section. Files that exist for one
+// linter and nothing else (ruff.toml, .eslintrc.json) are evidence by existence.
+const EVIDENCE = {
+  'pyproject.toml': /^\s*\[tool\.ruff\b/m,
+  'setup.cfg': /^\s*\[(?:ruff|flake8)\]/m,
+  'Cargo.toml': /^\s*\[(?:lints\.clippy|workspace\.lints\.clippy|package\.metadata\.clippy)\b/m,
+  'package.json': /"eslintConfig"\s*:/,
+};
+
+const MAX_CONFIG_BYTES = 512 * 1024;
+
+function hasEvidence(absFile, marker) {
+  try {
+    if (fs.statSync(absFile).size > MAX_CONFIG_BYTES) return false;
+    return marker.test(fs.readFileSync(absFile, 'utf8'));
+  } catch (e) {
+    return false;
+  }
 }
 
 function isConfigured(repoRoot, tool) {
   if (!tool || !tool.configFiles) return false;
-  return tool.configFiles.some((file) => fs.existsSync(path.join(repoRoot, file)));
+  return tool.configFiles.some((file) => {
+    const abs = path.join(repoRoot, file);
+    if (!fs.existsSync(abs)) return false;
+    const marker = EVIDENCE[path.basename(file)];
+    return marker ? hasEvidence(abs, marker) : true;
+  });
 }
 
 function resolveFor(relPath, { repoRoot }) {
@@ -46,8 +78,14 @@ function resolveFor(relPath, { repoRoot }) {
 // filesystem path only — never from file contents — so a repo cannot smuggle
 // a command line through a file's content. timeout and maxBuffer bound both
 // the wall-clock and memory cost of a runaway linter inside the hook budget.
-function runTool(tool, { repoRoot, absPath, timeoutMs = 1500 }) {
+// Returns { findings, ok }. `ok` is false when the run told us nothing rather
+// than told us the file is clean — a timeout, a missing binary, or a non-zero
+// exit with no parseable output. The caller uses that to fall back to the
+// built-in pack: a broken linter must degrade to less coverage, never to
+// silence, which in a gate is indistinguishable from a pass.
+function runToolResult(tool, { repoRoot, absPath, timeoutMs = 1500 }) {
   let stdout = '';
+  let threw = false;
   try {
     stdout = execFileSync(tool.name, tool.argv(absPath), {
       cwd: repoRoot,
@@ -60,15 +98,21 @@ function runTool(tool, { repoRoot, absPath, timeoutMs = 1500 }) {
     // Linters exit non-zero when they find something — the output is still on
     // stdout and still useful. A timeout or missing binary leaves it empty.
     stdout = (e && e.stdout) ? String(e.stdout) : '';
+    threw = true;
   }
 
-  if (!stdout.trim()) return [];
+  if (!stdout.trim()) return { findings: [], ok: !threw };
 
   try {
-    return tool.parse(stdout).filter((f) => f && f.line > 0);
+    const findings = tool.parse(stdout).filter((f) => f && f.line > 0);
+    return { findings, ok: findings.length > 0 || !threw };
   } catch (e) {
-    return [];
+    return { findings: [], ok: false };
   }
 }
 
-module.exports = { hasTool, isConfigured, resolveFor, runTool };
+function runTool(tool, opts) {
+  return runToolResult(tool, opts).findings;
+}
+
+module.exports = { hasTool, isConfigured, resolveFor, runTool, runToolResult };
