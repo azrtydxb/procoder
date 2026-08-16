@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // procoder — orchestrates one file's checks.
 //
-// Order: exclusion → read → SAFE/TRUE rules (always) → shape rules (unless the
-// project's own linter covers them) → universal pack (always) → baseline
-// suppression → sort → cap.
+// Order: exclusion → size guard → read → SAFE/TRUE rules (always) →
+// shape rules (unless the project's own linter covers them) → universal pack
+// (always) → touched-range narrowing → baseline suppression → sort → cap.
 
 const fs = require('fs');
 const path = require('path');
@@ -26,6 +26,10 @@ const BUDGET_MS = 2000;
 const MAX_FILE_BYTES = 256 * 1024;
 const MAX_LINE_BYTES = 4096;
 
+// Findings this many lines either side of the touched region still belong to
+// the edit — a guard clause removed just above it, a brace it unbalanced.
+const CONTEXT_MARGIN = 3;
+
 // Minified content defeats the shape scanners' line-oriented assumptions and
 // costs more than the whole budget. Blanked rather than dropped: line numbers
 // on everything else must survive.
@@ -34,9 +38,24 @@ function blankLongLines(source) {
   return source.split('\n').map((l) => (l.length > MAX_LINE_BYTES ? '' : l)).join('\n');
 }
 
+// The line span of each touched text, located in the file as written. A text
+// that cannot be found — a formatter rewrote it, or the payload shape has no
+// such field — contributes no range, and no ranges at all means whole file.
+function touchedRanges(source, texts) {
+  const ranges = [];
+  for (const text of texts || []) {
+    if (!text) continue;
+    const at = source.indexOf(text);
+    if (at < 0) continue;
+    const start = source.slice(0, at).split('\n').length;
+    ranges.push([start - CONTEXT_MARGIN, start + text.split('\n').length - 1 + CONTEXT_MARGIN]);
+  }
+  return ranges.length ? ranges : null;
+}
+
 function checkFile(absPath, {
   repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
-  budgetMs = BUDGET_MS,
+  touched = null, budgetMs = BUDGET_MS,
 } = {}) {
   const deadline = Date.now() + budgetMs;
   const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
@@ -57,6 +76,10 @@ function checkFile(absPath, {
 
   const scanned = blankLongLines(source);
   const findings = [];
+  // Narrowed to the touched region when the caller could identify one. The
+  // universal pack below is deliberately excluded: a credential committed
+  // anywhere in the file is a leak regardless of which line was edited.
+  const local = [];
 
   // The project's own linter defines this project's shape thresholds, so its
   // findings replace the pack's obvious/* rules. They never replace the pack's
@@ -68,7 +91,7 @@ function checkFile(absPath, {
     const result = runToolResult(tool, {
       repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
     });
-    findings.push(...result.findings);
+    local.push(...result.findings);
     toolAnswered = result.ok;
   }
 
@@ -77,10 +100,15 @@ function checkFile(absPath, {
     const packFindings = pack.check(scanned, { relPath, config });
     // A linter that timed out or crashed answered nothing, so the pack covers
     // the whole file rather than leaving a hole where the shape rules were.
-    findings.push(...(toolAnswered
+    local.push(...(toolAnswered
       ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
       : packFindings));
   }
+
+  const ranges = touched && touchedRanges(source, touched);
+  findings.push(...(ranges
+    ? local.filter((f) => ranges.some(([lo, hi]) => f.line >= lo && f.line <= hi))
+    : local));
 
   // The universal pack runs regardless: no linter checks for credentials in
   // source, PII in logs, or a deprecation with no removal trigger.

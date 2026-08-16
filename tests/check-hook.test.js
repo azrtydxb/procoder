@@ -17,18 +17,23 @@ function repoWith(files) {
   return dir;
 }
 
-function runHook(repo, filePath, env = {}) {
+function runHook(repo, filePath, env = {}, payload = {}) {
   const stdout = execFileSync('node', [HOOK], {
     encoding: 'utf8',
     cwd: repo,
     input: JSON.stringify({
       tool_name: 'Write',
-      tool_input: { file_path: filePath },
       cwd: repo,
+      ...payload,
+      tool_input: { file_path: filePath, ...(payload.tool_input || {}) },
     }),
     env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
   });
   return stdout.trim() ? JSON.parse(stdout) : {};
+}
+
+function contextOf(out) {
+  return (out.hookSpecificOutput && out.hookSpecificOutput.additionalContext) || '';
 }
 
 test('emits findings as PostToolUse additionalContext', () => {
@@ -82,4 +87,36 @@ test('the hook completes within its 2s budget on a minified file', () => {
   runHook(repo, path.join(repo, 'min.ts'));
   const elapsed = Date.now() - started;
   assert.ok(elapsed < 2000, `hook took ${elapsed}ms on a 200KB single-line file`);
+});
+
+test('an Edit reports only the region it touched', () => {
+  const repo = repoWith({
+    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+  });
+  const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
+    tool_name: 'Edit',
+    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
+  });
+  assert.match(contextOf(out), /a\.ts:42/);
+  assert.ok(!/a\.ts:1\s/.test(contextOf(out)), 'reported an untouched line of the file');
+});
+
+test('a Write reports the whole file it wrote', () => {
+  const repo = repoWith({
+    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+  });
+  const out = runHook(repo, path.join(repo, 'a.ts'));
+  assert.match(contextOf(out), /a\.ts:1\b/);
+  assert.match(contextOf(out), /a\.ts:42/);
+});
+
+test('a secret outside the edited region is still reported', () => {
+  const repo = repoWith({
+    'a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+  });
+  const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
+    tool_name: 'Edit',
+    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
+  });
+  assert.match(contextOf(out), /a\.ts:1\b/);
 });

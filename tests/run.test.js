@@ -202,6 +202,35 @@ test('a long line does not stall a file of otherwise normal lines', () => {
   assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
 });
 
+test('touched narrows the language pack to the edited region', () => {
+  const repo = repoWith({
+    'src/a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+  });
+  const out = checkFile(path.join(repo, 'src/a.ts'), {
+    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],
+  });
+  const lines = out.findings.filter((f) => f.id === 'safe/dynamic-eval').map((f) => f.line);
+  assert.deepStrictEqual(lines, [42]);
+});
+
+test('touched never narrows the universal pack — a secret anywhere counts', () => {
+  const repo = repoWith({
+    'src/a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
+  });
+  const out = checkFile(path.join(repo, 'src/a.ts'), {
+    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],
+  });
+  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret' && f.line === 1));
+});
+
+test('touched text that is not in the file falls back to the whole file', () => {
+  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });
+  const out = checkFile(path.join(repo, 'src/a.ts'), {
+    repoRoot: repo, config: loadConfig(repo), touched: ['nothing like this'],
+  });
+  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+});
+
 test('relPath is repo-relative and uses forward slashes', () => {
   const repo = repoWith({ 'src/deep/a.ts': 'eval(a);\n' });
   const out = checkFile(path.join(repo, 'src/deep/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
