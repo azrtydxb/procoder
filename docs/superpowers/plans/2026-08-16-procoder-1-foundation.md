@@ -4,7 +4,7 @@
 
 **Goal:** Ship a working Claude Code plugin that injects the procoder doctrine at session start, persists an intensity level, shows it in the statusline, and generates every other platform's rule file from one canonical source.
 
-**Architecture:** A `SessionStart` hook reads the active level and writes the doctrine into session context, exactly as ponytail does. The doctrine lives once in `skills/procoder/SKILL.md` with level-tagged blocks; `hooks/procoder-instructions.js` filters it by level at runtime, and `scripts/sync-rules.js` renders it into the nine other platform rule files at build time with a CI drift check.
+**Architecture:** A `SessionStart` hook reads the active level and writes the doctrine into session context, exactly as ponytail does. The doctrine lives once in `skills/procoder/SKILL.md` with level-tagged blocks; `hooks/procoder-instructions.js` filters it by level at runtime, and `scripts/sync-rules.js` renders it into the nine other platform rule files at build time with a CI drift check. (**Corrected:** shipped `scripts/sync-rules.js` renders `AGENTS.md` plus seven other platform rule files — eight `TARGETS` entries in all, not nine plus one. opencode's doctrine comes from reading `AGENTS.md` directly, so what would have been its ninth rule file became a command port instead — see Plan 3's correction on the platform count.)
 
 **Tech Stack:** Node.js ≥18, CommonJS, zero runtime dependencies. Tests via `node --test`. Bash + PowerShell for statusline.
 
@@ -226,6 +226,21 @@ Expected: PASS (3 tests). The PostToolUse command references `procoder-check.js`
 git add package.json .gitignore .claude-plugin hooks/claude-hooks.json tests/manifest.test.js
 git commit -m "feat: plugin manifests and hook declarations"
 ```
+
+**Corrected:** the `hooks/claude-hooks.json` and `manifest.test.js` shown above
+already declare all four events, `PostToolUse` included, pointing at
+`procoder-check.js` — a file this plan doesn't create until Plan 2. That
+contradicts Plan 2's own note ("Plan 1 deliberately does NOT declare the
+`PostToolUse` hook — declaring a hook whose script does not ship makes every
+`Write`/`Edit` spawn a missing file. Task 15 of this plan must therefore
+**add** the `PostToolUse` block..."), which is the version that matches how
+the two plans are meant to compose: Task 1 here should declare only
+`SessionStart` / `SubagentStart` / `UserPromptSubmit`, with `manifest.test.js`
+asserting those three events, and Plan 2 Task 15 adds the fourth block
+alongside `procoder-check.js` in the same commit. The shipped
+`hooks/claude-hooks.json` ends up with all four either way — this note exists
+because the two plan documents disagree about which one adds the fourth, and
+Plan 2's account is the one to trust.
 
 ---
 
@@ -1466,6 +1481,16 @@ if (require.main === module) main();
 module.exports = { render, TARGETS, WARNING };
 ```
 
+**Corrected:** `TARGETS` above has nine entries, including
+`.opencode/command/procoder.md` as a rule file. Shipped `scripts/sync-rules.js`
+has eight — that entry is gone. opencode reads `AGENTS.md` for the doctrine
+itself, so a ninth copy of the same rule text was redundant; what opencode
+actually needed was its per-command prompts, which shipped `sync-rules.js`
+handles with a separate `renderCommands()` (added in Plan 3) that ports each
+`commands/*.toml` to `.opencode/command/<name>.md` and
+`.openclaw/commands/<name>.md`. So the platform count didn't shrink so much as
+move: one rule-file target became ten command-file targets instead.
+
 ```yaml
 # .github/workflows/ci.yml
 name: ci
@@ -1487,6 +1512,8 @@ jobs:
 
 Run: `npm run sync && node --test tests/sync-rules.test.js`
 Expected: PASS (5 tests), and nine generated files plus `AGENTS.md` on disk.
+(Per the correction above: shipped, this is seven generated files plus
+`AGENTS.md` — eight total.)
 
 - [ ] **Step 5: Commit**
 

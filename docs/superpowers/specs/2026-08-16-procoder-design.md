@@ -301,11 +301,26 @@ number, so it survives reformatting).
 This is what makes procoder adoptable in a legacy repo instead of producing 4,000 findings
 on first run and getting switched off.
 
+**Corrected:** a *count* ratchet, as described above, does not do what this section claims.
+It cannot tell a new violation from an old one fixed in the same run — five findings today
+against a baseline of five reads as "no growth" even when one of the five is brand new and
+a different one was cleaned up alongside it. It also can't stop a single accepted violation
+from being copy-pasted: the fingerprint as specified (id + file + normalized content, no
+line number) is identical for every clone of the same violating line, so baselining one
+instance baselines all of them, forever — exactly the kind of growth a ratchet exists to
+catch. Shipped `hooks/checks/baseline.js` compares fingerprint *sets* instead
+(`growthCheck(baseline, currentFingerprints)`, reporting the specific fingerprints not in the
+baseline as `added`), and each fingerprint carries a fourth component — the ordinal of that
+finding's occurrence among identical id+content matches in the file — so the second and
+further copies of an accepted violation still surface as new. That ordinal is also why the
+baseline file carries a `version` field (currently `2`): a file written before the ordinal
+existed has nothing to fall back to, so it loads as empty rather than being half-honoured,
+and `procoder verify` exits `2` (distinct from the `1` an ordinary grown-findings failure
+returns) to tell CI "re-baseline required" apart from "you introduced a finding."
+
 ### 3.4 `.procoder.toml`
 
 ```toml
-level = "strict"
-
 [exclude]
 paths = ["vendor/", "migrations/", "**/*.generated.*"]
 
@@ -317,14 +332,26 @@ complexity = 10
 
 [rungs]
 safe = "error"
-true_ = "error"   # rung 2; key avoids the TOML boolean literal
+true = "error"    # rung 2
 obvious = "warn"
 alone = "warn"
 
 [baseline]
 file = ".procoder-baseline.json"
-enforce_no_growth = true
 ```
+
+**Corrected:** the original draft of this example spelled the rung-2 key `true_`, commented
+"avoids the TOML boolean literal." That reasoning was wrong and the mistake shipped into
+Plan 2 before being caught: the parser matches table keys lexically and only runs the
+*value* through boolean parsing, so a bare `true` key parses fine — `true = "error"` is an
+ordinary string assignment. A config using `true_` would silently do nothing; the loader
+would carry it as an unrecognized key and rung 2 would stay at its default. Shipped
+`hooks/checks/config.js` uses the bare key. The draft also had a top-level `level = "strict"`
+and a `baseline.enforce_no_growth = true`; neither is read by `config.js`. The intensity
+level turned out to be a session concept, persisted separately by
+`hooks/procoder-runtime.js`, not a per-repo config key — and the ratchet was never
+conditional, so there was nothing for "enforce" to toggle. Both keys were removed as dead
+rather than documented as no-ops.
 
 ## 4. Commands
 

@@ -21,7 +21,7 @@
 - The hook **never blocks**. It emits `additionalContext` only. There is no deny path.
 - Rung severities default to: SAFE `error`, TRUE `error`, OBVIOUS `warn`, ALONE `warn`.
 - Every check has a stable `id` of the form `<rung>/<slug>` (e.g. `safe/hardcoded-secret`). Ids are permanent — baselines reference them.
-- Baseline fingerprints are `sha1(id + '\0' + relPath + '\0' + normalizedLine)`. **Never** line numbers — a reformat must not resurrect suppressed findings.
+- Baseline fingerprints are `sha1(id + '\0' + relPath + '\0' + normalizedLine)`. **Never** line numbers — a reformat must not resurrect suppressed findings. **Corrected:** shipped fingerprints add a fourth field, the occurrence ordinal (`sha1(id + '\0' + relPath + '\0' + normalizedLine + '\0' + ordinal)`) — see Task 13's correction for why an id+path+content hash alone let one accepted violation baseline every copy-pasted instance of itself.
 - `PROCODER_NO_HOOK=1` disables the hook entirely.
 - No check may read a file outside the repo root, and no check may execute a command string built from file contents.
 
@@ -384,6 +384,36 @@ enforce_no_growth = true
 
 Fixtures are excluded because they contain deliberate violations; the generated
 rule directories are excluded because they are generated.
+
+**Corrected:** three things above didn't survive to the shipped config.
+
+`true_` was never necessary. The comment claims the trailing underscore
+"avoids the TOML boolean literal," but the parser matches table keys
+lexically and only runs the *value* through boolean parsing — `true = "error"`
+is an ordinary string assignment to a key that happens to be spelled `true`,
+and parses fine. Shipped `hooks/checks/config.js` uses the bare key: `rungs: {
+safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' }`. A config
+written with `true_ = "error"`, as this task instructed, would be silently
+inert — the loader would merge it as an unrecognized extra key and the real
+`rungs.true` would stay at its default.
+
+`level` and `baseline.enforce_no_growth` are not read by `config.js` at all —
+shipped `DEFAULTS` has no top-level `level` key and `baseline` defaults to
+`{ file: '.procoder-baseline.json' }` only. Both were dead: the intensity
+level (`pragmatic`/`strict`/`paranoid`) turned out to be a session concept,
+not a repo config concept — it is persisted per Plan 1's
+`hooks/procoder-runtime.js` (`setLevel`/`readLevel`), not read from
+`.procoder.toml`. And "enforce growth" was never conditional — the ratchet
+always rejects growth; there was no mode where it wouldn't. A `.procoder.toml`
+written against this task's example would carry two keys that do nothing.
+
+Shipped `config.js` also gained an `exclude.rules` array not in this task at
+all — `path:rule-id` entries that suppress one named check at one exact file
+path, split on the first colon (so a check id containing its own colon, like
+an external tool's `true/eslint:no-eval`, still parses correctly) and rejected
+if the path is a directory or glob. That's an addition, not a contradiction of
+anything written here, so it isn't corrected above — just flagged for anyone
+extending this task's code from the plan instead of from source.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -837,6 +867,24 @@ function checkUniversal(source, { relPath, config } = {}) {
 
 module.exports = { checkUniversal };
 ```
+
+**Corrected:** the regexes above are what this task originally wrote, not what
+shipped. Code review surfaced two real bugs in them: `LOOKS_LIKE_CODE`'s
+unanchored `=\s*[^=]` arm matched measured prose like "1MB = 34ms", so a
+why-comment recording the numbers behind a threshold — exactly what rung 3
+asks an author to write — was flagged as commented-out code; and its
+`\w+\([^)]*\)` arm, along with `INTERPOLATED`'s `\$\{[^}]*\}`, ran unbounded to
+end-of-line, which is quadratic on an unclosed `${` or `(` and cost ~36s on a
+300KB minified line — sixteen times the whole hook budget. The shipped
+`hooks/checks/universal.js` and `hooks/checks/patterns/markers.js` fix both:
+`LOOKS_LIKE_CODE`'s assignment arm now requires an anchored identifier or
+member-expression target (`ASSIGN_TARGET`), and every `[^x]*`-shaped span is
+capped at 200 characters (`SPAN_MAX`) so the scan stays linear. The marker
+tables (`SUPPRESSION`, `SUPPRESSION_NAMED`, `SUPPRESSION_BLANKET`,
+`SUPPRESSION_REASON`, `ORPHAN_MARKER`/`OWNED_MARKER`, `DEPRECATION_MARK`,
+`REMOVAL_TRIGGER`) were also split out into `patterns/markers.js` rather than
+living in this file — see that file's own header comment for why. Read the
+shipped source for the current patterns; what is below is the first draft.
 
 Write `tests/fixtures/universal/dirty.txt` containing at least one instance of
 each of the six ids, and `clean.txt` containing the near-miss variants that must
@@ -2865,6 +2913,34 @@ module.exports = {
 };
 ```
 
+**Corrected:** this task's `growthCheck(baseline, currentCount)` compares
+totals, and shipped `baseline.js` does not. A count can't tell a new violation
+from an old one fixed in the same run — five findings today against five
+baselined is "ok" even if one of the five is brand new and a different old one
+happened to get cleaned up alongside it. The shipped `growthCheck(baseline,
+currentFingerprints)` instead takes the current run's fingerprint *set* and
+reports exactly which fingerprints aren't in the baseline (`added`), so a
+clone of an already-accepted violation cannot ride in unnoticed either — see
+the next correction.
+
+`fingerprint()` also gained a fourth argument, `ordinal`, defaulting to `0`.
+Without it, two lines with identical id and normalized content hash to the
+same fingerprint, so accepting one instance of a violation via the baseline
+silently accepted infinite copy-pasted instances of it too — exactly the kind
+of growth the ratchet exists to catch. `fingerprintsFor(findings, relPath,
+lines)` now assigns each finding the ordinal of its occurrence (by id +
+normalized line) before hashing, so the second and further copies of a
+baselined violation are still reported as new.
+
+The baseline file also gained a `version` field check absent from this task:
+`BASELINE_VERSION = 2` (the ordinal above is what bumped it from 1). A file at
+any other version loads as an empty `Set` with a `staleVersion` property
+rather than being read as-is, because a v1 file has no ordinals to fall back
+to — reading it as current would suppress nothing and dump a legacy repo's
+whole backlog as "new". `bin/procoder.js` reports this on stderr and `verify`
+exits `2` (not `1`) so CI can tell "re-baseline required" apart from "you
+introduced findings" — see Task 15's own correction below.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/baseline.test.js`
@@ -3407,6 +3483,19 @@ process.exit(main(process.argv.slice(2)));
 ```
 
 Add to `package.json`: `"bin": { "procoder": "./bin/procoder.js" }`.
+
+**Corrected:** `verify` above computes `total` findings and calls
+`growthCheck(baseline, total)` — a count comparison. The shipped
+`bin/procoder.js` instead collects the actual fingerprint set for the current
+run and calls `growthCheck(baseline, currentFingerprints)`, which returns the
+specific `added` fingerprints not present in the baseline (see the correction
+in Task 13). It also stops short of running `growthCheck` at all when the
+baseline file itself is unreadable at the current version: shipped `verify`
+exits **2** — not the `1` this task's implementation returns for grown
+findings — when `loadBaseline` reports `staleVersion`, so CI can distinguish
+"the baseline format changed, re-run `procoder baseline`" from "you introduced
+a new finding." `verify` still exits `1` for an ordinary grown-findings
+failure once the baseline itself loads cleanly.
 
 - [ ] **Step 4: Run test to verify it passes**
 

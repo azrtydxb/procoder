@@ -1625,6 +1625,10 @@ Set `version` to `0.1.0` in `package.json`, `.claude-plugin/plugin.json`,
 with a `## 0.1.0` section listing: the four-rung doctrine, three levels, the
 PostToolUse check engine across six languages, the ratchet baseline, ten
 commands, the MCP server, and the ten generated platform rule files.
+(**Corrected:** shipped `CHANGELOG.md` counts eight generated platform rule
+files, not ten — see Plan 1's correction on the platform count. It correctly
+lists ten *command* ports each for opencode and openclaw separately, which
+this line conflates with the rule files.)
 
 Extend `.github/workflows/ci.yml` with a matrix over Node 18/20/22 and macOS +
 Ubuntu, keeping the existing `npm test`, `npm run sync:check`, and
