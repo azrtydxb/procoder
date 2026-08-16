@@ -37,9 +37,14 @@ function hasTool(name) {
 // — whether or not the linter is configured. Existence alone is no evidence, so
 // those files must actually contain the tool's section. Files that exist for one
 // linter and nothing else (ruff.toml, .eslintrc.json) are evidence by existence.
+//
+// setup.cfg is deliberately absent: it used to count as evidence for ruff, and
+// ruff does not read it. Verified against ruff 0.16.3 — a setup.cfg carrying
+// `[ruff] line-length = 20` changes nothing about the run — so a repo whose
+// only Python config was a flake8 setup.cfg deferred procoder's obvious/*
+// rules to a ruff running on its defaults, which contain no shape rule at all.
 const EVIDENCE = {
   'pyproject.toml': /^\s*\[tool\.ruff\b/m,
-  'setup.cfg': /^\s*\[(?:ruff|flake8)\]/m,
   'Cargo.toml': /^\s*\[(?:lints\.clippy|workspace\.lints\.clippy|package\.metadata\.clippy)\b/m,
 };
 

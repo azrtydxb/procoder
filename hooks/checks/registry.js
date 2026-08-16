@@ -4,6 +4,7 @@
 // The tool entries describe how to INVOKE and PARSE each linter. Whether one is
 // actually configured in the project is resolve.js's job.
 
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { finding } = require('./finding');
@@ -72,25 +73,134 @@ function externalFinding(line, message, tool, ruleId) {
   });
 }
 
+// A linter can decline a file instead of judging it: eslint says so out loud
+// ("File ignored because of a matching ignore pattern", exit 0), ruff used to
+// say so only by printing an empty result set. Either way the tool linted
+// nothing, so treating it as "answered, nothing found" hands the file to a
+// judge that never looked at it and takes the pack's obvious/* rules down with
+// it — the same coverage-deleting shape as the clippy and golangci-lint bugs.
+// A parser signals it by throwing, which resolve.js reads as not-ok and the
+// caller answers by running the full pack.
+function declined(what) {
+  throw new Error(`the linter did not lint this file: ${what}`);
+}
+
+// Verified against cargo 1.93.1 / clippy 0.1.93: `cargo clippy` cannot be
+// scoped to a single FILE — it compiles and lints whole crates, and in a
+// workspace plain `cargo clippy` lints every member (editing crate-a reported
+// crate-b's warnings too). It CAN be scoped to a single PACKAGE, and that is
+// the bound worth taking inside a 1.5s budget: `-p <name>` compiles only the
+// member that owns the file. The package is read by walking up from the file
+// to the nearest Cargo.toml carrying a [package] name — filesystem only, no
+// second subprocess. No manifest, no name, or a name cargo rejects all fall
+// back to a run that still answers or still fails loudly; none of them can
+// produce a false clean.
+const MAX_MANIFEST_BYTES = 512 * 1024;
+const MAX_MANIFEST_WALK = 40;
+
+function readManifest(file) {
+  try {
+    if (fs.statSync(file).size > MAX_MANIFEST_BYTES) return null;
+    return fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    // There is no manifest at this level, or it cannot be read. Either way
+    // there is no package name here and the walk continues upward; an
+    // unreadable manifest must not stop the search, only fail to answer it.
+    return null;
+  }
+}
+
+function cargoPackageOf(absFile) {
+  let dir = path.dirname(String(absFile || ''));
+  for (let up = 0; up < MAX_MANIFEST_WALK; up += 1) {
+    const text = readManifest(path.join(dir, 'Cargo.toml'));
+    const section = text && /^[ \t]*\[package\][^\n]*\n([\s\S]*?)(?=^[ \t]*\[|$)/m.exec(text);
+    const name = section && /^[ \t]*name[ \t]*=[ \t]*["']([^"'\n]+)["']/m.exec(section[1]);
+    if (name) return name[1];
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
+// One `file:line:col: warning: text` diagnostic, already matched.
+//
+// `--message-format short` does NOT print the lint name: clippy 0.1.93 emits
+// ``crate-a/src/lib.rs:6:5: warning: unneeded `return` statement`` and nothing
+// more, so this match fails and the id is the bare `true/clippy`. Only
+// `--message-format json` carries `message.code.code`, and cargo writes that
+// to STDOUT — moving to it would give up the stderr reading this integration
+// exists to guarantee. The trailing-`[rule]` form is still matched because
+// rustc prints it in its long format; the gap is recorded, not papered over.
+function clippyFinding(m) {
+  const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
+  return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
+}
+
 const TOOLS = {
   py: {
     name: 'ruff',
-    configFiles: ['ruff.toml', '.ruff.toml', 'pyproject.toml', 'setup.cfg'],
-    argv: (file) => ['check', '--output-format', 'json', '--force-exclude', file],
+    // ruff reads pyproject.toml, ruff.toml and .ruff.toml — and nothing else.
+    // Verified against ruff 0.16.3: a setup.cfg carrying `[ruff] line-length =
+    // 20` changes nothing about the run. Counting setup.cfg as evidence made
+    // procoder defer its obvious/* rules to a ruff running on defaults, whose
+    // default rule set (E4, E7, E9, F) contains no shape rule at all — a
+    // flake8-configured repo was checked LESS than a repo with no linter.
+    configFiles: ['ruff.toml', '.ruff.toml', 'pyproject.toml'],
+    // No --force-exclude. Verified against ruff 0.16.3: with it, a file the
+    // project's `exclude` covers is answered with `[]` and exit 0 — byte for
+    // byte what a clean file produces — so procoder read "clean", deferred and
+    // dropped the pack's obvious/* rules for a file ruff never opened. Without
+    // it, an explicitly named path is always linted, so `[]` means clean and
+    // nothing else. A path the project excludes from ruff is procoder's to
+    // exclude in .procoder.toml, not ruff's to silence procoder with.
+    argv: (file) => ['check', '--output-format', 'json', file],
     // parse() must THROW on output it cannot read, never return []. Returning
     // [] tells resolve.js the tool answered and found nothing, which skips the
     // built-in pack too — so a linter that printed a flag error would delete
     // the rung instead of falling back to it. A genuinely empty result set is
     // still `[]` on the wire and still parses to no findings.
-    parse: (stdout) => JSON.parse(stdout).map((item) =>
-      externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff', item.code)),
+    parse: (stdout) => JSON.parse(stdout).map((item) => {
+      // ruff 0.16.3 reports a file it could not parse as a single
+      // `invalid-syntax` item and lints nothing else in it. Reporting that one
+      // item and calling the run answered would defer the shape rules to a run
+      // that never happened; the pack's regex rules still read a broken file.
+      if (item && item.code === 'invalid-syntax') declined('ruff could not parse it');
+      return externalFinding(item.location && item.location.row, `${item.code}: ${item.message}`, 'ruff', item.code);
+    }),
   },
   ts: {
     name: 'eslint',
-    configFiles: ['eslint.config.js', 'eslint.config.mjs', '.eslintrc', '.eslintrc.json', '.eslintrc.cjs', '.eslintrc.js'],
+    // Flat config in every extension eslint loads it from — eslint 10 reads
+    // .ts/.mts/.cts config natively, and dropped .eslintrc entirely. The
+    // eslintrc names stay: on eslint 8 they are still the config, and on
+    // eslint 10 a repo that has only one of them makes eslint exit 2 with an
+    // empty stdout, which resolve.js already reads as not-ok — the pack runs.
+    configFiles: [
+      'eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs',
+      'eslint.config.ts', 'eslint.config.mts', 'eslint.config.cts',
+      '.eslintrc', '.eslintrc.json', '.eslintrc.cjs', '.eslintrc.js',
+      '.eslintrc.yml', '.eslintrc.yaml',
+    ],
     argv: (file) => ['--format', 'json', file],
-    parse: (stdout) => JSON.parse(stdout).flatMap((result) => (result.messages || []).map((m) =>
-      externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId))),
+    parse: (stdout) => JSON.parse(stdout).flatMap((result) => {
+      const messages = result.messages || [];
+      // Verified against eslint 10.8.1. Two answers mean eslint linted nothing:
+      //   - an ignored file: one warning, ruleId null, NO `line` field, exit 0.
+      //     The line-less finding was dropped by the runner's `line > 0` filter
+      //     and the zero exit read as clean, so every project with an `ignores`
+      //     list silently lost the pack's obvious/* rules on those files.
+      //   - a file that does not parse: one `fatal` message and no lint results.
+      for (const m of messages) {
+        if (m && m.fatal) declined(`eslint could not parse it: ${m.message}`);
+        if (m && m.ruleId == null && /^File ignored\b/.test(String(m.message || ''))) {
+          declined('eslint ignores it');
+        }
+      }
+      return messages.map((m) =>
+        externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId));
+    }),
   },
   go: {
     name: 'golangci-lint',
@@ -108,12 +218,17 @@ const TOOLS = {
   //
   // cargo clippy has no per-file scoping: unlike eslint/ruff/golangci-lint,
   // which take a single file as their argv target, clippy always compiles
-  // and lints the whole crate. That is a real limitation this fix does not
-  // remove — see the report for why the entry stays enabled anyway. What it
-  // DOES fix is attribution: rustTarget records the absolute path argv() was
-  // called for, and parse() discards every finding whose reported path
-  // isn't that file, so a warning in src/other.rs is never presented as a
-  // fact about the file actually being written.
+  // and lints whole crates. Verified against cargo 1.93.1 / clippy 0.1.93,
+  // and it is not merely cosmetic: in a two-member workspace, plain
+  // `cargo clippy` reported crate-b's warnings while crate-a was the file
+  // being written. It CAN be scoped to a package, so argv() names one with
+  // `-p` — see cargoPackageOf. That bounds the compile to the member that
+  // owns the file instead of the whole workspace.
+  //
+  // Attribution is belt to that brace: rustTarget records the absolute path
+  // argv() was called for, and parse() discards every finding whose reported
+  // path isn't that file, so a warning in src/other.rs is never presented as
+  // a fact about the file actually being written.
   rust: (() => {
     let rustTarget = null;
     const DIAGNOSTIC = /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/;
@@ -133,7 +248,9 @@ const TOOLS = {
       configFiles: ['clippy.toml', '.clippy.toml', 'Cargo.toml'],
       argv: (file) => {
         rustTarget = file;
-        return ['clippy', '--message-format', 'short', '--quiet'];
+        const pkg = cargoPackageOf(file);
+        const scope = pkg ? ['-p', pkg] : [];
+        return ['clippy', ...scope, '--message-format', 'short', '--quiet'];
       },
       parse: (output) => {
         const text = String(output);
@@ -145,10 +262,7 @@ const TOOLS = {
         if (!diagnostics.length && text.trim()) throw new Error('no clippy diagnostic in output');
         return diagnostics
           .filter((m) => !rustTarget || sameFile(m[1], rustTarget))
-          .map((m) => {
-            const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
-            return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
-          });
+          .map(clippyFinding);
       },
     };
   })(),

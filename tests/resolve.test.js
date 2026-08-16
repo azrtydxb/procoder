@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { hasTool, isConfigured, resolveFor, runTool, runToolResult } = require('../hooks/checks/resolve');
 const { TOOLS } = require('../hooks/checks/registry');
 
@@ -38,7 +39,13 @@ test('isConfigured requires one of the tool config files', () => {
 test('a shared manifest is not evidence unless it names the tool', () => {
   assert.strictEqual(isConfigured(tempRepo({ 'pyproject.toml': '[project]\nname="x"\n' }), TOOLS.py), false);
   assert.strictEqual(isConfigured(tempRepo({ 'pyproject.toml': '[tool.ruff]\n' }), TOOLS.py), true);
+  // setup.cfg is not evidence for ruff in any form: ruff does not read it.
+  // Verified against ruff 0.16.3 — a setup.cfg carrying `[ruff] line-length =
+  // 20` changes nothing about the run — so counting it deferred procoder's
+  // obvious/* rules to a ruff on its defaults, which has no shape rule at all.
   assert.strictEqual(isConfigured(tempRepo({ 'setup.cfg': '[metadata]\n' }), TOOLS.py), false);
+  assert.strictEqual(isConfigured(tempRepo({ 'setup.cfg': '[ruff]\nline-length = 20\n' }), TOOLS.py), false);
+  assert.strictEqual(isConfigured(tempRepo({ 'setup.cfg': '[flake8]\n' }), TOOLS.py), false);
   assert.strictEqual(isConfigured(tempRepo({ 'Cargo.toml': '[package]\nname="x"\n' }), TOOLS.rust), false);
   assert.strictEqual(isConfigured(tempRepo({ 'Cargo.toml': '[lints.clippy]\n' }), TOOLS.rust), true);
   assert.strictEqual(isConfigured(tempRepo({ 'clippy.toml': '' }), TOOLS.rust), true);
@@ -242,6 +249,151 @@ fourStates({
   unconfigured: { 'a.py': 'x = 1\n' },
   answers: 'printf \'[{"location":{"row":1},"code":"E722","message":"do not use bare except"}]\'\nexit 1',
   fails: 'printf "ruff: unrecognized subcommand\\n"\nexit 2',
+});
+
+// --- the four states, per tool, against the REAL binary ---------------------
+//
+// A shim proves only that the parser handles the shape the shim author
+// imagined. Two of the four wired tools were broken in ways shims never
+// caught — clippy reporting on stderr, golangci-lint v2 appending a tally to
+// its JSON — and eslint and ruff had never been run at all. These tests run
+// the real binary when it is on PATH and skip when it is not: a developer or
+// CI runner that has the tool exercises the integration, one that does not
+// still passes. No test here may REQUIRE a binary.
+//
+// Findings are asserted by file, line and id, not merely by count: the whole
+// class of defect being guarded against is a parser that reads real output as
+// something other than what it is.
+const REAL_TIMEOUT_MS = 60000;
+
+function toolMajor(name, args) {
+  const run = spawnSync(name, args, { encoding: 'utf8', timeout: 10000 });
+  const banner = `${run.stdout || ''}${run.stderr || ''}`;
+  const m = /(\d+)\.\d+/.exec(banner);
+  return m ? Number(m[1]) : -1;
+}
+
+function realRun(relFile, files) {
+  const repo = tempRepo(files);
+  const tool = resolveFor(relFile, { repoRoot: repo });
+  if (!tool) return null;
+  return runToolResult(tool, { repoRoot: repo, absPath: path.join(repo, relFile), timeoutMs: REAL_TIMEOUT_MS });
+}
+
+// `which` has to stay reachable for hasTool to answer at all, so the blanked
+// PATH keeps the system directories. A tool installed in one of them cannot be
+// hidden that way, and the shim states above already cover absence, so the
+// real absence test says it is skipping rather than passing vacuously.
+function systemVisible(name) {
+  return shimmable && withPath(shimDir({}), () => hasTool(name));
+}
+
+const ESLINT = !shimmable ? 'shims unavailable on this platform'
+  : !hasTool('eslint') ? 'eslint is not on PATH'
+    : toolMajor('eslint', ['--version']) < 9 ? 'eslint older than 9 has no flat config'
+      : false;
+const RUFF = !shimmable ? 'shims unavailable on this platform'
+  : !hasTool('ruff') ? 'ruff is not on PATH' : false;
+
+// Flat config only — eslint 9 rejects an .eslintignore outright and eslint 10
+// dropped .eslintrc, so mixing the two eras in one fixture tests neither.
+const ESLINT_CONFIG = "module.exports = [{ rules: { 'no-unused-vars': 'error', 'no-eval': 'error' } }];\n";
+const ESLINT_REPO = {
+  'package.json': '{"name":"procoder-fixture","version":"1.0.0","private":true}\n',
+  'eslint.config.js': ESLINT_CONFIG,
+  'a.js': 'var dead = 1;\n',
+};
+const RUFF_REPO = {
+  'ruff.toml': '[lint]\nselect = ["F"]\n',
+  'a.py': 'import os\n',
+};
+
+test('eslint (real): absent → no tool resolves, the pack runs', {
+  skip: ESLINT || (systemVisible('eslint') && 'eslint lives in a system dir; the shim states cover absence'),
+}, () => {
+  const repo = tempRepo(ESLINT_REPO);
+  assert.strictEqual(withPath(shimDir({}), () => resolveFor('a.js', { repoRoot: repo })), null);
+});
+
+test('eslint (real): present but unconfigured → no tool resolves, the pack runs', { skip: ESLINT }, () => {
+  assert.strictEqual(realRun('a.js', { 'a.js': 'var dead = 1;\n' }), null);
+});
+
+test('eslint (real): configured and answering → its findings carry file, line and rule id', { skip: ESLINT }, () => {
+  const out = realRun('a.js', ESLINT_REPO);
+  assert.strictEqual(out.ok, true);
+  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['TRUE', 'true/eslint:no-unused-vars', 1]]);
+});
+
+test('eslint (real): configured and genuinely clean → ok, so the shape rules stay deferred', { skip: ESLINT }, () => {
+  assert.deepStrictEqual(
+    realRun('a.js', { ...ESLINT_REPO, 'a.js': 'module.exports = 1;\n' }),
+    { findings: [], ok: true },
+  );
+});
+
+test('eslint (real): configured but failing → not ok, the pack runs', { skip: ESLINT }, () => {
+  const out = realRun('a.js', { ...ESLINT_REPO, 'eslint.config.js': 'this is not valid javascript {{{\n' });
+  assert.deepStrictEqual(out.findings, []);
+  assert.strictEqual(out.ok, false, 'a failing eslint must fall back to the pack, never to silence');
+});
+
+test('eslint (real): a file eslint ignores is not a clean file', { skip: ESLINT }, () => {
+  // eslint answers an ignored path with one line-less warning and exit 0. The
+  // runner drops line-less findings, so this read as "answered, nothing found"
+  // and deleted the pack's obvious/* rules for every path in an `ignores` list.
+  const out = realRun('a.js', { ...ESLINT_REPO, 'eslint.config.js': "module.exports = [{ ignores: ['a.js'] }];\n" });
+  assert.deepStrictEqual(out.findings, []);
+  assert.strictEqual(out.ok, false, 'a file eslint declined to lint must fall back to the pack');
+});
+
+test('eslint (real): a file eslint cannot parse is not a clean file', { skip: ESLINT }, () => {
+  const out = realRun('a.js', { ...ESLINT_REPO, 'a.js': 'function ( {\n' });
+  assert.strictEqual(out.ok, false, 'a fatal parse error means eslint linted nothing');
+});
+
+test('ruff (real): absent → no tool resolves, the pack runs', {
+  skip: RUFF || (systemVisible('ruff') && 'ruff lives in a system dir; the shim states cover absence'),
+}, () => {
+  const repo = tempRepo(RUFF_REPO);
+  assert.strictEqual(withPath(shimDir({}), () => resolveFor('a.py', { repoRoot: repo })), null);
+});
+
+test('ruff (real): present but unconfigured → no tool resolves, the pack runs', { skip: RUFF }, () => {
+  assert.strictEqual(realRun('a.py', { 'a.py': 'import os\n' }), null);
+});
+
+test('ruff (real): configured and answering → its findings carry file, line and rule id', { skip: RUFF }, () => {
+  const out = realRun('a.py', RUFF_REPO);
+  assert.strictEqual(out.ok, true);
+  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['TRUE', 'true/ruff:F401', 1]]);
+});
+
+test('ruff (real): configured and genuinely clean → ok, so the shape rules stay deferred', { skip: RUFF }, () => {
+  assert.deepStrictEqual(realRun('a.py', { ...RUFF_REPO, 'a.py': 'x = 1\n' }), { findings: [], ok: true });
+});
+
+test('ruff (real): configured but failing → not ok, the pack runs', { skip: RUFF }, () => {
+  const out = realRun('a.py', { ...RUFF_REPO, 'ruff.toml': 'not-a-real-ruff-setting = 3\n' });
+  assert.deepStrictEqual(out.findings, []);
+  assert.strictEqual(out.ok, false, 'a failing ruff must fall back to the pack, never to silence');
+});
+
+test('ruff (real): a path the project excludes is still answered, not reported clean', { skip: RUFF }, () => {
+  // With --force-exclude, ruff answered an excluded path with `[]` and exit 0 —
+  // byte for byte what a clean file produces — so procoder deferred its shape
+  // rules to a run that never opened the file. Without it, `[]` means clean.
+  const out = realRun('sub/a.py', {
+    'ruff.toml': '[lint]\nselect = ["F"]\n\nexclude = ["sub"]\n',
+    'sub/a.py': 'import os\n',
+  });
+  assert.strictEqual(out.ok, true);
+  assert.deepStrictEqual(out.findings.map((f) => f.id), ['true/ruff:F401']);
+});
+
+test('ruff (real): a file ruff cannot parse is not a clean file', { skip: RUFF }, () => {
+  const out = realRun('a.py', { ...RUFF_REPO, 'a.py': 'def f(\n' });
+  assert.strictEqual(out.ok, false, 'a syntax error means ruff linted nothing else');
 });
 
 test('the SAFE rung is never deferred to an external tool', () => {
