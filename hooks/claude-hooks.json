@@ -36,19 +36,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-check.js\"",
-            "timeout": 2,
-            "statusMessage": "procoder check..."
-          }
-        ]
-      }
     ]
   }
 }

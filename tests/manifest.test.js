@@ -13,20 +13,25 @@ test('plugin.json points at the hooks config that exists', () => {
   assert.ok(fs.existsSync(path.join(root, 'hooks/claude-hooks.json')));
 });
 
-test('every hook command references a file that will exist', () => {
+test('every hook command references a script that ships', () => {
   const hooks = readJson('hooks/claude-hooks.json');
   const events = Object.keys(hooks.hooks);
+  // PostToolUse is deliberately absent: it runs procoder-check.js, which the
+  // check-engine plan ships. Declaring it now would spawn a missing script on
+  // every Write/Edit. That plan re-adds this declaration with the script.
   assert.deepStrictEqual(
     events.sort(),
-    ['PostToolUse', 'SessionStart', 'SubagentStart', 'UserPromptSubmit']
+    ['SessionStart', 'SubagentStart', 'UserPromptSubmit']
   );
   for (const event of events) {
     for (const group of hooks.hooks[event]) {
       for (const h of group.hooks) {
         assert.match(h.command, /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/procoder-[a-z-]+\.js/);
-        const maxTimeout = event === 'PostToolUse' ? 2 : 5;
-        assert.ok(h.timeout > 0 && h.timeout <= maxTimeout,
-          `${event} hook timeout ${h.timeout} exceeds its ${maxTimeout}s budget`);
+        assert.ok(h.timeout > 0 && h.timeout <= 5,
+          `${event} hook timeout ${h.timeout} exceeds its 5s budget`);
+        const script = /hooks\/(procoder-[a-z-]+\.js)/.exec(h.command)[1];
+        assert.ok(fs.existsSync(path.join(root, 'hooks', script)),
+          `${event} declares ${script}, which does not ship`);
       }
     }
   }
