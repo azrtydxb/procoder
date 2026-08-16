@@ -101,12 +101,22 @@ function parseRuleExclusions(raw) {
   return raw
     .filter((entry) => typeof entry === 'string')
     .map((entry) => {
-      const split = entry.lastIndexOf(':');
-      if (split === -1) return { path: '', id: '' };
-      return { path: entry.slice(0, split), id: entry.slice(split + 1) };
+      // First colon, not last: check ids carry the external tool's own rule id
+      // ("true/eslint:no-eval"), so an id may contain colons. A path with one
+      // is not a real case.
+      const split = entry.indexOf(':');
+      if (split === -1) return { entry, path: '', id: '' };
+      return { entry, path: entry.slice(0, split), id: entry.slice(split + 1) };
     })
-    .filter((rule) => rule.path && rule.id
-      && !rule.path.endsWith('/') && !rule.path.includes('*'));
+    .filter((rule) => {
+      const ok = rule.path && rule.id
+        && !rule.path.endsWith('/') && !rule.path.includes('*');
+      // Dropping silently is how a correct-looking exclusion ends up doing
+      // nothing for a week. Say so; never throw — config must not crash a hook.
+      if (!ok) process.stderr.write(`procoder: ignoring rule exclusion "${rule.entry}" — expected "path:rule-id" with an exact file path\n`);
+      return ok;
+    })
+    .map((rule) => ({ path: rule.path, id: rule.id }));
 }
 
 function isRuleExcluded(config, relPath, id) {

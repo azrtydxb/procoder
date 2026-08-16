@@ -169,3 +169,20 @@ test('a rule exclusion missing either half is dropped, never widened', () => {
   assert.deepStrictEqual(cfg.exclude.rules, []);
   assert.ok(!isRuleExcluded(cfg, 'a/patterns.js', 'alone/orphan-todo'));
 });
+
+// An entry is `path:id`, and ids now carry an external tool's own rule id
+// ("true/eslint:no-eval"), so the split has to be on the first colon: a path
+// with a colon in it is not a real case, an id with one is.
+test('a rule exclusion splits on the first colon, so tool rule ids survive', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoder.toml':
+      '[exclude]\nrules = ["src/a.ts:obvious/complexity", "src/b.ts:true/eslint:no-eval"]\n',
+  }));
+  assert.deepStrictEqual(cfg.exclude.rules, [
+    { path: 'src/a.ts', id: 'obvious/complexity' },
+    { path: 'src/b.ts', id: 'true/eslint:no-eval' },
+  ]);
+  assert.ok(isRuleExcluded(cfg, 'src/a.ts', 'obvious/complexity'));
+  assert.ok(isRuleExcluded(cfg, 'src/b.ts', 'true/eslint:no-eval'));
+  assert.ok(!isRuleExcluded(cfg, 'src/a.ts', 'true/eslint:no-eval'));
+});
