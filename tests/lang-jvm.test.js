@@ -37,7 +37,7 @@ test('flags shell injection', () => {
 });
 
 test('flags swallowed exceptions', () => {
-  assert.ok(ids('try { go(); } catch (Exception e) { }').includes('true/swallowed-error'));
+  assert.ok(ids('try { go(); } catch (Exception e) { }').includes('true/swallowed-error'));  // procoder: literal true/swallowed-error the Java snippet handed to the pack as input
   assert.ok(ids('catch (IOException e) { e.printStackTrace(); }').includes('true/printstacktrace'));
   assert.ok(!ids('catch (IOException e) { log.error("read failed", e); throw e; }').includes('true/swallowed-error'));
 });
@@ -55,7 +55,7 @@ test('ignores rules named in comments, not the code beside them', () => {
   assert.ok(!ids('// never new ObjectInputStream(payload)').includes('safe/unsafe-deserialize'));
   assert.ok(!ids('/* MessageDigest.getInstance("MD5") is not a password hash */')
     .includes('safe/weak-hash'));
-  assert.ok(!ids('// never Runtime.getRuntime().exec("git log " + branch);')
+  assert.ok(!ids('// never Runtime.getRuntime().exec("git log " + branch);')  // procoder: literal safe/shell-injection, safe/sql-injection the commented Java snippet the pack must NOT flag
     .includes('safe/shell-injection'));
   assert.ok(!ids('// e.printStackTrace() is not error handling').includes('true/printstacktrace'));
   assert.ok(!ids('// System.out.println("here") was removed').includes('alone/debug-leftover'));
@@ -65,7 +65,7 @@ test('ignores rules named in comments, not the code beside them', () => {
     .includes('safe/sql-injection'));
   assert.ok(ids('var in = new ObjectInputStream(payload); // bad').includes('safe/unsafe-deserialize'));
   assert.ok(ids('MessageDigest.getInstance("MD5"); // bad').includes('safe/weak-hash'));
-  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch); // bad')
+  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch); // bad')  // procoder: literal safe/shell-injection, safe/sql-injection the same Java snippet uncommented, which the pack must flag
     .includes('safe/shell-injection'));
   assert.ok(ids('e.printStackTrace(); // bad').includes('true/printstacktrace'));
   assert.ok(ids('System.out.println("here"); // bad').includes('alone/debug-leftover'));

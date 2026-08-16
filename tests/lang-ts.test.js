@@ -29,8 +29,8 @@ test('flags SQL concatenation where the literal holds the other quote character'
 });
 
 test('flags XSS sinks and dynamic evaluation', () => {
-  assert.ok(ids('el.innerHTML = userInput;').includes('safe/xss-sink'));
-  assert.ok(ids('<div dangerouslySetInnerHTML={{ __html: body }} />').includes('safe/xss-sink'));
+  assert.ok(ids('el.innerHTML = userInput;').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the TS snippet handed to the pack as input
+  assert.ok(ids('<div dangerouslySetInnerHTML={{ __html: body }} />').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the JSX variant of the same input
   assert.ok(ids('eval(payload)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.ok(!ids('el.textContent = userInput;').includes('safe/xss-sink'));
 });
@@ -58,8 +58,8 @@ test('flags shell injection where the literal holds the other quote character', 
 });
 
 test('flags swallowed errors and floating promises', () => {
-  assert.ok(ids('try { go(); } catch (e) {}').includes('true/swallowed-error'));
-  assert.ok(ids('try { go(); } catch (e) { /* ignore */ }').includes('true/swallowed-error'));
+  assert.ok(ids('try { go(); } catch (e) {}').includes('true/swallowed-error'));  // procoder: literal true/swallowed-error the empty-catch snippet the pack must flag
+  assert.ok(ids('try { go(); } catch (e) { /* ignore */ }').includes('true/swallowed-error'));  // procoder: literal true/swallowed-error the comment-only-catch variant of it
   assert.ok(!ids('try { go(); } catch (e) { logger.error(e); }').includes('true/swallowed-error'));
 });
 
@@ -84,41 +84,41 @@ test('flags nested ternaries', () => {
 // Both directions of the shared principle: a rule sees code, not prose or a
 // pattern that merely spells the sink, and string literals are code.
 test('ignores rules named in comments, not the code beside them', () => {
-  assert.ok(!ids('// never el.innerHTML = userInput;').includes('safe/xss-sink'));
-  assert.ok(!ids('// never eval(payload)').includes('safe/dynamic-eval'));
-  assert.ok(!ids('/* db.query(`SELECT ${id}`) is how not to do it */').includes('safe/sql-injection'));
-  assert.ok(!ids("// never exec('rm -rf ' + dir)").includes('safe/shell-injection'));
-  assert.ok(!ids('// rejectUnauthorized: false is never acceptable').includes('safe/tls-disabled'));
-  assert.ok(!ids('// const token = Math.random(); is not a secret').includes('safe/weak-random'));
-  assert.ok(!ids('// console.log("here") was removed').includes('alone/debug-leftover'));
+  assert.ok(!ids('// never el.innerHTML = userInput;').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the commented sink the pack must NOT flag
+  assert.ok(!ids('// never eval(payload)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval the commented eval the pack must NOT flag
+  assert.ok(!ids('/* db.query(`SELECT ${id}`) is how not to do it */').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the commented query the pack must NOT flag
+  assert.ok(!ids("// never exec('rm -rf ' + dir)").includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection the commented exec the pack must NOT flag
+  assert.ok(!ids('// rejectUnauthorized: false is never acceptable').includes('safe/tls-disabled'));  // procoder: literal safe/tls-disabled the commented TLS option the pack must NOT flag
+  assert.ok(!ids('// const token = Math.random(); is not a secret').includes('safe/weak-random'));  // procoder: literal safe/weak-random the commented Math.random the pack must NOT flag
+  assert.ok(!ids('// console.log("here") was removed').includes('alone/debug-leftover'));  // procoder: literal alone/debug-leftover the commented console.log the pack must NOT flag
   assert.ok(!ids('// const x = a ? b ? 1 : 2 : 3;').includes('obvious/nested-ternary'));
 
-  assert.ok(ids('el.innerHTML = userInput; // never do this').includes('safe/xss-sink'));
-  assert.ok(ids('eval(payload); // bad').includes('safe/dynamic-eval'));
-  assert.ok(ids('db.query(`SELECT ${id}`); // bad').includes('safe/sql-injection'));
-  assert.ok(ids("exec('rm -rf ' + dir); // bad").includes('safe/shell-injection'));
-  assert.ok(ids('rejectUnauthorized: false, // bad').includes('safe/tls-disabled'));
-  assert.ok(ids('const token = Math.random(); // bad').includes('safe/weak-random'));
-  assert.ok(ids('console.log("here"); // bad').includes('alone/debug-leftover'));
-  assert.ok(ids('const x = a ? b ? 1 : 2 : 3; // bad').includes('obvious/nested-ternary'));
+  assert.ok(ids('el.innerHTML = userInput; // never do this').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the same sink uncommented, which the pack must flag
+  assert.ok(ids('eval(payload); // bad').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval the same eval uncommented, which the pack must flag
+  assert.ok(ids('db.query(`SELECT ${id}`); // bad').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the same query uncommented, which the pack must flag
+  assert.ok(ids("exec('rm -rf ' + dir); // bad").includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection the same exec uncommented, which the pack must flag
+  assert.ok(ids('rejectUnauthorized: false, // bad').includes('safe/tls-disabled'));  // procoder: literal safe/tls-disabled the same TLS option uncommented, which the pack must flag
+  assert.ok(ids('const token = Math.random(); // bad').includes('safe/weak-random'));  // procoder: literal safe/weak-random the same Math.random uncommented, which the pack must flag
+  assert.ok(ids('console.log("here"); // bad').includes('alone/debug-leftover'));  // procoder: literal alone/debug-leftover the same console.log uncommented, which the pack must flag
+  assert.ok(ids('const x = a ? b ? 1 : 2 : 3; // bad').includes('obvious/nested-ternary'));  // procoder: literal obvious/nested-ternary the same nested ternary uncommented, which the pack must flag
 });
 
 // A regex spelling a sink is a matcher for it, not a call to it — the pattern
 // a linter, a WAF rule or a codemod is built from.
 test('a sink named inside a regex literal is not a sink', () => {
-  assert.ok(!ids('const re = /dangerouslySetInnerHTML|\\.innerHTML\\s*=/;').includes('safe/xss-sink'));
+  assert.ok(!ids('const re = /dangerouslySetInnerHTML|\\.innerHTML\\s*=/;').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the regex that matches the sink, given to the pack as input
   assert.ok(!ids('const re = /\\beval\\(/;').includes('safe/dynamic-eval'));
   assert.ok(!ids('const re = /console\\.log\\(/;').includes('alone/debug-leftover'));
   // Division is not a regex, and the code after it still counts.
-  assert.ok(ids('const r = a / b; eval(payload);').includes('safe/dynamic-eval'));
+  assert.ok(ids('const r = a / b; eval(payload);').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval the division-then-eval snippet the pack must still flag
 });
 
 // The direction ts used to lose: build tooling and SSR assemble code as
 // strings, and a sink assembled there runs exactly as written.
 test('sees sinks assembled inside string and template literals', () => {
-  assert.ok(ids('render(`el.innerHTML = "${raw}"`)').includes('safe/xss-sink'));
-  assert.ok(ids('emit("document.write(" + payload + ")")').includes('safe/xss-sink'));
-  assert.ok(ids('db.query("SELECT * FROM t WHERE a = " + a)').includes('safe/sql-injection'));
+  assert.ok(ids('render(`el.innerHTML = "${raw}"`)').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the sink assembled inside a template literal
+  assert.ok(ids('emit("document.write(" + payload + ")")').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink the sink assembled by string concatenation
+  assert.ok(ids('db.query("SELECT * FROM t WHERE a = " + a)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the query assembled by string concatenation
 });
 
 // A ternary is an operator of the grammar: it cannot occur inside a literal,

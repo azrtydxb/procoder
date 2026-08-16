@@ -11,10 +11,10 @@ const { stripComments } = require('../hooks/checks/lang/comments');
 const gone = (text) => text.replace(/[^\n]/g, ' ');
 
 test('blanks line and block comments, keeping line numbers', () => {
-  assert.strictEqual(stripComments('a();\n// never eval(x)\nb();\n', 'c'),
-    `a();\n${gone('// never eval(x)')}\nb();\n`);
-  assert.strictEqual(stripComments('a(); /* eval(x)\nmore */ b();', 'c'),
-    `a(); ${gone('/* eval(x)')}\n${gone('more */')} b();`);
+  assert.strictEqual(stripComments('a();\n// never eval(x)\nb();\n', 'c'),  // procoder: literal safe/dynamic-eval the source given to stripComments, where the eval sits in a comment
+    `a();\n${gone('// never eval(x)')}\nb();\n`);  // procoder: literal safe/dynamic-eval the expected output of that same source
+  assert.strictEqual(stripComments('a(); /* eval(x)\nmore */ b();', 'c'),  // procoder: literal safe/dynamic-eval the block-comment variant of the same input
+    `a(); ${gone('/* eval(x)')}\n${gone('more */')} b();`);  // procoder: literal safe/dynamic-eval the expected output of the block-comment variant
 });
 
 test('keeps string literals — a sink can be assembled in one', () => {
@@ -32,10 +32,10 @@ test('a comment marker inside a string is not a comment', () => {
 });
 
 test('blanks python comments and statement-position docstrings', () => {
-  assert.strictEqual(stripComments('x = 1  # never eval(y)\n', 'py'),
-    `x = 1  ${gone('# never eval(y)')}\n`);
-  assert.strictEqual(stripComments('def f():\n    """never eval(y)"""\n', 'py'),
-    `def f():\n    ${gone('"""never eval(y)"""')}\n`);
+  assert.strictEqual(stripComments('x = 1  # never eval(y)\n', 'py'),  // procoder: literal safe/dynamic-eval the Python source given to stripComments, eval inside a # comment
+    `x = 1  ${gone('# never eval(y)')}\n`);  // procoder: literal safe/dynamic-eval the expected output of that Python source
+  assert.strictEqual(stripComments('def f():\n    """never eval(y)"""\n', 'py'),  // procoder: literal safe/dynamic-eval the docstring variant of the same Python input
+    `def f():\n    ${gone('"""never eval(y)"""')}\n`);  // procoder: literal safe/dynamic-eval the expected output of the docstring variant
   // A triple-quoted string used as a value is data, not documentation.
   assert.strictEqual(stripComments('t = """SELECT 1"""\n', 'py'), 't = """SELECT 1"""\n');
 });
@@ -43,7 +43,7 @@ test('blanks python comments and statement-position docstrings', () => {
 test('blanks regex bodies in js only, and never mistakes division for one', () => {
   assert.strictEqual(stripComments('const re = /eval\\(/;', 'js'), 'const re = /      /;');
   assert.strictEqual(stripComments('x = a/b/c;', 'js'), 'x = a/b/c;');
-  assert.strictEqual(stripComments('x = a / b; eval(y)', 'js'), 'x = a / b; eval(y)');
+  assert.strictEqual(stripComments('x = a / b; eval(y)', 'js'), 'x = a / b; eval(y)');  // procoder: literal safe/dynamic-eval input and expected output for a division that is not a regex
   // Other grammars have no regex literal — `/` is only ever division there.
   assert.strictEqual(stripComments('x := a/b/c', 'c'), 'x := a/b/c');
 });

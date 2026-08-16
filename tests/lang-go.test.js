@@ -83,7 +83,7 @@ test('a defer Close in a comment does not discharge the resource rule', () => {
 });
 
 test('keeps seeing sinks built inside string literals', () => {
-  assert.ok(ids('db.Query("SELECT * FROM t WHERE id = " + id)').includes('safe/sql-injection'));
+  assert.ok(ids('db.Query("SELECT * FROM t WHERE id = " + id)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the Go snippet handed to the pack as input
   assert.ok(ids('exec.Command("bash", "-c", "rm "+dir)').includes('safe/shell-injection'));
 });
 

@@ -37,7 +37,7 @@ function contextOf(out) {
 }
 
 test('emits findings as PostToolUse additionalContext', () => {
-  const repo = repoWith({ 'a.ts': 'el.innerHTML = danger;\n' });
+  const repo = repoWith({ 'a.ts': 'el.innerHTML = danger;\n' });  // procoder: literal safe/xss-sink the one-line fixture the hook is asked to report on
   const out = runHook(repo, path.join(repo, 'a.ts'));
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolUse');
   assert.match(out.hookSpecificOutput.additionalContext, /SAFE/);

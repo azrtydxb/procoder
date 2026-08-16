@@ -125,7 +125,7 @@ test('a linter that crashes without parseable output falls back to the pack', sh
 test('the same preference applies to the other ecosystems', shimTest, () => {
   const repo = repoWith({
     '.eslintrc.json': '{}',
-    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',  // procoder: literal safe/dynamic-eval, safe/xss-sink the two-line fixture this test writes for the pack to find
   });
   const eslint = '#!/bin/sh\necho \'[{"messages":[{"line":1,"ruleId":"no-unused-vars","message":"unused"}]}]\'\n';
   const out = withShim('eslint', eslint, () =>
@@ -173,7 +173,7 @@ test('findings are sorted by rung and capped', () => {
       '// TODO: one',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
       '// TODO: two',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
       'eval(a);',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-      'el.innerHTML = b;',
+      'el.innerHTML = b;',  // procoder: literal safe/xss-sink one line of the fixture whose findings this test sorts
       'debugger;',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
       'console.log(1);',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
     ].join('\n'),
@@ -240,7 +240,7 @@ test('a minified file finishes well inside the 2s budget', () => {
 
 test('a long line does not stall a file of otherwise normal lines', () => {
   const repo = repoWith({
-    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,  // procoder: literal safe/dynamic-eval, safe/xss-sink the short lines either side of the 100KB one, so the scan must reach both
   });
   const started = Date.now();
   const out = checkFile(path.join(repo, 'mixed.ts'),
@@ -303,7 +303,7 @@ test('the shape path still does not see a minified line', () => {
 // With the packs reading long lines, one minified line reports 3,000 swallowed
 // errors. The per-line cap is what keeps that a report rather than a flood.
 test('a minified line that matches thousands of times is capped, and says so', () => {
-  const repo = repoWith({ 'bundle.ts': `${'try{a();}catch(e){}'.repeat(3000)}\n` });
+  const repo = repoWith({ 'bundle.ts': `${'try{a();}catch(e){}'.repeat(3000)}\n` });  // procoder: literal true/swallowed-error the synthetic minified line this test floods the cap with
   const started = Date.now();
   const out = checkFile(path.join(repo, 'bundle.ts'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
@@ -339,7 +339,7 @@ test('a long line stays cheap: the shape path never sees it', () => {
 // One line can match a rule thousands of times. The cap keeps that off the
 // report — and says where it cut, because a silently truncated result is worse
 // than a long one.
-const FLOODED_LINE = 'try{a();}catch(e){}'.repeat(30);
+const FLOODED_LINE = 'try{a();}catch(e){}'.repeat(30);  // procoder: literal true/swallowed-error the fixture line whose repeats exercise the per-line cap
 
 test('one line cannot contribute more than the per-line cap', () => {
   const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\n` });
@@ -360,7 +360,7 @@ test('the suppressed overflow is reported, not silent', () => {
 });
 
 test('a line under the cap gets no suppression notice', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });  // procoder: literal safe/dynamic-eval, safe/xss-sink the two-finding fixture that must stay under the per-line cap
   const out = checkFile(path.join(repo, 'src/a.ts'),
     { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   assert.ok(!out.findings.some((f) => f.id === 'true/findings-suppressed'));

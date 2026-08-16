@@ -66,7 +66,7 @@ test('baseline records findings, after which check passes', () => {
 test('a NEW violation still fails after a baseline exists', () => {
   const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink the rewritten fixture that adds one finding on top of the baseline
   const result = cli(repo, ['check', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /xss|innerHTML|SAFE/i);
@@ -81,7 +81,7 @@ test('verify passes when the baseline has not grown', () => {
 test('verify fails when new violations appear on top of the baseline', () => {
   const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink the fixture whose two extra findings the ratchet must reject
   const result = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /not in the baseline/i);
@@ -94,10 +94,10 @@ test('verify fails when a baselined finding is swapped for a different one', () 
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink step 2 of the swap fixture — the sink added beside the baselined eval
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 1);
 
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'el.innerHTML = y;\n');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'el.innerHTML = y;\n');  // procoder: literal safe/xss-sink step 3 of the swap fixture — same total, different finding
   const swapped = cli(repo, ['verify', 'a.ts']);
   assert.strictEqual(swapped.code, 1);
   assert.match(swapped.out, /innerHTML|xss/i);

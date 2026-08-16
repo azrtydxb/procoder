@@ -45,7 +45,7 @@ test('flags shell injection', () => {
 });
 
 test('flags swallowed exceptions and leftover debugging', () => {
-  assert.ok(ids('try { Go(); } catch (Exception) { }').includes('true/swallowed-error'));
+  assert.ok(ids('try { Go(); } catch (Exception) { }').includes('true/swallowed-error'));  // procoder: literal true/swallowed-error the C# snippet handed to the pack as input
   assert.ok(ids('Console.WriteLine("here");').includes('alone/debug-leftover'));
   assert.ok(!ids('_logger.LogInformation("started");').includes('alone/debug-leftover'));
 });
