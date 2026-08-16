@@ -1,5 +1,6 @@
 ---
 name: procoder
+# procoder: literal alone/deprecated-no-trigger the description names the word, it is not a deprecation
 description: Governs whether code is allowed to ship — security at trust boundaries, correctness, readability, and nothing stale left behind. Use on ANY coding task: writing, editing, refactoring, reviewing, or dependency changes. Also use whenever the user says "procoder", "is this safe to ship", "review for security", "clean this up", "dead code", or "deprecated".
 ---
 
@@ -199,12 +200,17 @@ A change isn't done until the thing it replaced is gone.
   code first, suppress only a confirmed false positive. Never blanket-disable
   (a file, a whole rule set, or a rule in config to pass one site). Scope to
   the narrowest unit the tool allows — next-line over block, block over file.
-  Always name the specific rule: `// eslint-disable-next-line <rule> -- <why>`,
+  Always name the specific rule: `// eslint-disable-next-line <rule> -- <why>`, <!-- procoder: literal alone/blanket-suppression these are examples of the syntax, not suppressions -->
   `# noqa: <code>`, `# type: ignore[<code>]`, `//nolint:<linter> // <why>`,
   `@SuppressWarnings("<specific>")` on the narrowest declaration, `#pragma
   warning disable <ID>` paired with a matching restore. State why, in the
   suppression itself. An unnamed, unexplained, or stale (finding since fixed)
   suppression is itself a rung-4 violation.
+- **Text that describes a pattern** — a doc teaching what a bad suppression
+  looks like, a fixture holding a specimen key — is not an instance of it.
+  Mark those lines `procoder: literal <rule-id>[, <rule-id>] <why>`, in a <!-- procoder: literal alone/blanket-suppression these are examples of the syntax, not suppressions -->
+  comment, trailing the line or standing above it. Same contract as any
+  suppression: name the rules, say why, or it silences nothing.
 
 Applies to the diff.
 <!-- /level -->
