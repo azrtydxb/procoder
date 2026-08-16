@@ -46,7 +46,20 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Process\.Start\s*\([^)]*(?:\$"|"[^"]*"\s*\+|\+\s*"[^"]*")|(?=.*UseShellExecute\s*=\s*true)(?=.*Arguments\s*=\s*\$")/,
+    // The argument spans are bounded: `[^)]*` is retried from every offset of
+    // a line full of `Process.Start(`, which is quadratic on its own (796ms
+    // at 100KB). A ceiling of 500 chars caps the work per offset; a call
+    // whose arguments run past 500 characters before the first quote is
+    // beyond what a line-based scanner resolves usefully anyway.
+    //
+    // The ProcessStartInfo half is a conjunction — UseShellExecute = true
+    // *and* an interpolated Arguments, in either order on the line. Written
+    // as a bare `(?=.*A)(?=.*B)` pair it is anchorless, so the engine retries
+    // both scans from every one of the line's n offsets: 4.9s on a 100KB
+    // line, 75s at 400KB. Anchoring at `^` (with /m so it still applies per
+    // line if this is ever run over whole text) leaves one start per line and
+    // makes it linear; the conjunction itself is unchanged.
+    re: /Process\.Start\s*\([^)]{0,500}(?:\$"|"[^"]{0,500}"\s*\+|\+\s*"[^"]{0,500}")|^(?=.*UseShellExecute\s*=\s*true).*Arguments\s*=\s*\$"/m,
     message: 'shell invoked with an interpolated command',
     fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
   },

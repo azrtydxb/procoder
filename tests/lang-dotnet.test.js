@@ -89,3 +89,33 @@ test('measures methods whose generic return type contains a space', () => {
   assert.ok(ids(method('Dictionary<string, int>')).includes('obvious/too-many-params'));
   assert.ok(ids(method('Dictionary<string,int>')).includes('obvious/too-many-params'));
 });
+
+test('flags the ProcessStartInfo pair in either order', () => {
+  // The two halves are a conjunction on one line; anchoring the rule at `^`
+  // to make it linear must not make it order-sensitive.
+  assert.ok(ids('var psi = new ProcessStartInfo { Arguments = $"/c {cmd}", UseShellExecute = true };').includes('safe/shell-injection'));
+  assert.ok(ids('var psi = new ProcessStartInfo { UseShellExecute = true, Arguments = $"/c {cmd}" };').includes('safe/shell-injection'));
+  assert.ok(!ids('var psi = new ProcessStartInfo { Arguments = $"/c {cmd}", UseShellExecute = false };').includes('safe/shell-injection'));
+});
+
+// Perf guard: every rule here must stay linear in line length. These lines are
+// the adversarial shapes for the SAFE rules — a prefix that matches, repeated,
+// so a rule with an unbounded span retries that span from every offset. The
+// bound is deliberately loose: linear runs take ~10ms for 100KB, and the
+// quadratic version of safe/shell-injection took 4,700ms on the same input, so
+// 1s separates "linear" from "regression" with room for a loaded CI machine.
+// The hook's whole budget is 2s.
+test('stays linear on a very long single line', () => {
+  const units = [
+    'Process.Start("a" ',
+    'var psi = new ProcessStartInfo { UseShellExecute = true, Name = "a", ',
+    'var x = foo(a, b) + "s" + bar; ',
+  ];
+  for (const unit of units) {
+    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
+    const started = Date.now();
+    check(line, { relPath: 'X.cs', config });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
+  }
+});
