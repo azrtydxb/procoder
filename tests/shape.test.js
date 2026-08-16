@@ -509,45 +509,101 @@ test('the lookback does not attribute an else block to the if above it', () => {
   assert.deepStrictEqual(measured.map((b) => b.startLine).sort(), [1, 2]);
 });
 
-// The bound is what keeps the work per unmeasured block constant. A signature
-// wrapped further than it stays unmeasured — the same false negative as before,
-// now confined to a shape no formatter produces under a sane params limit.
-test('the signature lookback is bounded', () => {
-  const wrap = (count) => [
-    'function wide(',
-    ...Array.from({ length: count }, (unused, i) => `  p${i},`),
-    ') {',
-    '  return 1;',
-    '}',
-  ].join('\n');
+// The lookback used to be bounded at ten lines, which is the same inverted
+// failure the 500-character parameter span had: one parameter per line is what
+// every formatter produces, so the functions wrapped furthest are the ones with
+// the most parameters — exactly what obvious/too-many-params exists to report.
+// Nothing about the wrap is bounded any more: the parameter list's `(` is
+// matched to its `)` by the one paramSpans pass over the file, however many
+// lines apart they are.
+const wrapped = (count) => [
+  'function wide(',
+  ...Array.from({ length: count }, (unused, i) => `  p${i},`),
+  ') {',
+  '  return 1;',
+  '}',
+].join('\n');
 
-  assert.ok(paramFinding('ts', wrap(8), 'a.ts'), 'an 8-line wrap should be measured');
-  assert.strictEqual(paramFinding('ts', wrap(40), 'a.ts'), undefined);
+test('a signature wrapped over 25 lines is measured', () => {
+  for (const count of [8, 25, 40, 200]) {
+    const found = paramFinding('ts', wrapped(count), 'a.ts');
+    assert.ok(found, `a ${count}-line wrap was not measured at all`);
+    assert.strictEqual(found.message, `${count} parameters (limit 4)`);
+    assert.strictEqual(found.line, 1, 'reported at the brace instead of the signature');
+  }
 });
 
-// The lookback runs for every block that is not itself a signature — most
-// blocks in a file — so it has to cost the same whatever the lines around it
-// weigh. 100KB and 400KB of a single line, and a file of 20k unmeasurable
-// blocks, all stay far inside the 2s whole-file hook budget.
-test('the signature lookback stays linear in line length and block count', () => {
-  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
-  for (const size of [100, 400]) {
-    const unit = 'if(a&&b){return a+b}else{return 0}';
-    const line = unit.repeat(Math.ceil((size * 1024) / unit.length));
-    const src = 'const x = 1;\n' + line;
-    const ms = bestOf(3, () => {
-      const { blocks } = analyzeBraces(src);
-      measureFunctions(src.split('\n'), blocks, signaturesFrom(stripNoise(src), re));
-    });
-    assert.ok(ms < 500, `${size}KB single line scaled worse than linearly: ${ms}ms`);
-  }
+// The other two shape rules ride on the same attribution, and the length is
+// counted from the signature's first line, not from its brace.
+test('a signature wrapped past the old bound is measured for length too', () => {
+  const long = findings('ts', wrapped(60), 'a.ts')
+    .find((f) => f.id === 'obvious/function-too-long');
+  assert.ok(long, 'a wrapped function was not measured for length');
+  assert.strictEqual(long.line, 1, 'length counted from the brace, not the signature');
+  assert.strictEqual(long.message, 'function is 64 lines (limit 40)');
+});
 
-  const many = Array.from({ length: 20000 }, () => 'while (a) {\n}').join('\n');
-  const ms = bestOf(3, () => {
-    const { blocks } = analyzeBraces(many);
-    measureFunctions(many.split('\n'), blocks, signaturesFrom(stripNoise(many), re));
-  });
-  assert.ok(ms < 1000, `the lookback scaled worse than linearly in blocks: ${ms}ms`);
+// Every pack that keys a function off its block-opening brace, on a wrap far
+// past the old ten-line bound: the two whose head is scanned over the whole
+// file (ts, go, rust) and the two whose head is anchored to the start of a line
+// and so must be met line by line (jvm, dotnet).
+const DEEP_WRAPS = [
+  ['ts', 'a.ts', (n) => ['function wide(',
+    ...Array.from({ length: n }, (unused, i) => `  p${i}: string,`), ') {', '  return 1;', '}']],
+  ['go', 'a.go', (n) => ['func wide(',
+    ...Array.from({ length: n }, (unused, i) => `\tp${i} string,`), ') error {', '\treturn nil', '}']],
+  ['rust', 'a.rs', (n) => ['fn wide(',
+    ...Array.from({ length: n }, (unused, i) => `    p${i}: String,`), ') -> usize', 'where', '    T: Clone,', '{', '    1', '}']],
+  ['jvm', 'X.java', (n) => ['class X {', '    public int wide(',
+    ...Array.from({ length: n }, (unused, i) => `            String p${i},`),
+    '            int last) throws IOException {', '        return 1;', '    }', '}']],
+  ['dotnet', 'X.cs', (n) => ['class X', '{', '    public int Wide(',
+    ...Array.from({ length: n }, (unused, i) => `        string p${i},`),
+    '        int last)', '    {', '        return 1;', '    }', '}']],
+];
+
+test('a wrap far past the old bound is measured in every brace pack', () => {
+  for (const [pack, relPath, shape] of DEEP_WRAPS) {
+    const lines = shape(25);
+    const found = paramFinding(pack, lines.join('\n'), relPath);
+    assert.ok(found, `${pack}: a 25-line wrap was not measured at all`);
+    // jvm and dotnet carry one more parameter on the closing line.
+    const expected = pack === 'jvm' || pack === 'dotnet' ? 26 : 25;
+    assert.strictEqual(found.message, `${expected} parameters (limit 4)`, pack);
+    assert.strictEqual(found.line, lines.findIndex((l) => l.includes('(')) + 1, pack);
+  }
+});
+
+// Removing the bound must not buy the quadratic scan back. Expressed as a ratio
+// between two input sizes rather than an absolute millisecond bound, for the
+// reason the parameter-counting guard above gives: load moves an absolute
+// bound, and cannot manufacture a ratio. The shapes are the ones the
+// attribution pass actually walks — a file of blocks that are not functions,
+// where every candidate has to be rejected, and a file of nothing but wrapped
+// signatures, where every candidate is accepted.
+test('signature attribution stays linear in line length and in signature count', () => {
+  const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
+  const rawShape = (src) => {
+    const lines = src.split('\n');
+    const { blocks } = analyzeBraces(src);
+    measureFunctions(lines, blocks, signaturesFrom(stripNoise(src), re));
+  };
+
+  const oneLine = (kb) => {
+    const unit = 'if(a&&b){return a+b}else{return 0}';
+    const src = 'const x = 1;\n' + unit.repeat(Math.ceil((kb * 1024) / unit.length));
+    return Math.max(1, bestOf(3, () => rawShape(src)));
+  };
+  const ratio = oneLine(400) / oneLine(100);
+  assert.ok(ratio < 8, `4x the line length cost ${ratio.toFixed(1)}x the time`);
+
+  const manyWraps = (count) => {
+    const src = Array.from({ length: count }, (unused, i) =>
+      `function w${i}(\n  a,\n  b,\n  c,\n) {\n  return a;\n}`).join('\n');
+    return Math.max(1, bestOf(3, () => rawShape(src)));
+  };
+  const wrapRatio = manyWraps(4000) / manyWraps(1000);
+  assert.ok(wrapRatio < 8, `4x the signatures cost ${wrapRatio.toFixed(1)}x the time`);
 });
 
 // --- mixed tab/space indentation -------------------------------------------

@@ -373,44 +373,67 @@ function lineRuleFindings(rules, lines, { codeLines = lines, skip } = {}) {
   return findings;
 }
 
-// Line number for a match offset. A global regex yields matches in increasing
-// offset order, so one forward cursor over the newlines answers every call and
-// the whole scan stays linear. Slicing the source per match instead — the
-// obvious way — is quadratic, and a minified file is one long line where every
-// slice spans the entire file.
-function lineCounter(text) {
-  let line = 1;
-  let nextBreak = text.indexOf('\n');
-  return (offset) => {
-    while (nextBreak !== -1 && nextBreak < offset) {
-      line += 1;
-      nextBreak = text.indexOf('\n', nextBreak + 1);
-    }
-    return line;
-  };
-}
-
-// How far back a block-opening `{` may look for the signature it belongs to.
-// Prevailing formatters (prettier, black, gofmt, rustfmt) wrap one parameter
-// per line once a signature exceeds the line width, so the span from the
-// signature's first line to its brace costs one line per parameter plus the
-// opening line, at most one line for a return type / `throws` / `where`, and
-// the brace line. Ten reaches a seven-parameter wrap — already well past every
-// params threshold worth setting (the default is 4), so the functions this
-// exists to catch are inside the bound. A signature wrapped further stays
-// unmeasured, exactly as every wrapped signature was before.
+// How far a wrapped `def`'s continuation lines are followed in
+// `hooks/checks/lang/py.js`. Python has no block-opening brace, so nothing in
+// this file uses it any more; it stays exported because that pack imports it.
 const SIGNATURE_LOOKBACK = 10;
 
-// The most text a rescan may look at. The lookback is attempted for every
-// block whose own line is not a signature — most blocks in a file — so its
-// cost has to be constant per block, and one line may be the whole file.
-// Capping the span keeps it constant. It is a cap on the *wrapped* case only:
-// a signature on its own line is found by the pack's own scan, which has no
-// ceiling at all, so a 60-parameter one-liner is measured however long it is.
-// Within the ten-line lookback, 1000 characters is 100 per line, past any
-// formatter's line width — the binding limit on a wrapped signature is
-// SIGNATURE_LOOKBACK, not this.
-const SIGNATURE_MAX_CHARS = 1000;
+// How far past its parameter list's `)` a block-opening `{` may sit. This is a
+// bound on the *tail* — a return type, `throws`, a `where` clause — and not on
+// the wrap: the parameter list is matched to its own `)` by the single
+// paramSpans pass over the file, so a signature wrapped over 25 or 500 lines is
+// measured either way. That is the whole point of the split; the old ten-line
+// lookback bounded the wrap itself, and one parameter per line is what every
+// formatter produces, so it lost the functions with the most parameters —
+// exactly what obvious/too-many-params exists to report.
+//
+// Four lines reaches rustfmt's widest shape: `) -> T`, `where`, one bound per
+// line, `{`. 2000 characters is past any formatter's line width several times
+// over, and is what keeps the work constant on a minified line, where the text
+// after a `)` is the rest of the file: the budget is checked before any of it
+// is materialised, so a candidate that cannot fit a tail costs one subtraction.
+const TAIL_LOOKAHEAD_LINES = 4;
+const TAIL_MAX_CHARS = 2000;
+
+// Offset where each line starts. One pass to build, one binary search per
+// lookup, and — unlike a forward cursor — it answers offsets in any order,
+// which a signature scan needs: a callback nested inside a parameter list is
+// matched after the signature that encloses it and starts before it ends.
+function lineStarts(text) {
+  const starts = [0];
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) starts.push(at + 1);
+  return starts;
+}
+
+function lineAtOffset(starts, offset) {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (starts[mid] <= offset) low = mid;
+    else high = mid - 1;
+  }
+  return low + 1;
+}
+
+// The line of the `{` a signature's tail reaches, or 0. The tail is re-applied
+// to the text from the parameter list's `)` to the end of each candidate line
+// in turn, newlines flattened to spaces and the brace required to be the last
+// thing in the window — which is what lets a pack's own tail work here
+// unchanged, `$` anchors (Java, C#) and `[^{\n]` spans (Go, Rust) alike. Every
+// pack writes its tail against a single line, because that is the only shape it
+// ever saw before a signature was allowed to wrap.
+function braceLineAfter(text, starts, tail, from) {
+  const first = lineAtOffset(starts, from);
+  for (let line = first; line <= starts.length && line - first <= TAIL_LOOKAHEAD_LINES; line += 1) {
+    const end = starts[line] === undefined ? text.length : starts[line] - 1;
+    if (end - from > TAIL_MAX_CHARS) return 0;
+    const window = text.slice(from, Math.max(from, end)).replace(/\n/g, ' ').trimEnd();
+    tail.lastIndex = 0;
+    if (tail.exec(window) && tail.lastIndex === window.length) return line;
+  }
+  return 0;
+}
 
 // A pack's signature pattern, applied at one offset: the head match locates
 // the parameter list's `(`, paramSpans says where it closes and how many
@@ -425,40 +448,6 @@ function signatureAt(text, spans, tail, match) {
   return tail.exec(text) ? { params: span.params, end: tail.lastIndex } : null;
 }
 
-// Re-runs the pack's own signature pattern over a candidate line span,
-// flattened to a single line. Flattening is the whole trick: every pack's
-// pattern wants the parameter list and the brace on one line, which is why a
-// wrapped signature matches none of them. The match must start at the span's
-// first line and end at its brace, so a block is attributed only to a
-// signature that actually begins there and is opened by that very brace —
-// without the end anchor an `} else {` would match the `if` above it. The
-// start test allows text before the match on that line, because a pack's
-// pattern starts at `function`/`fn`/`func` and leaves `export`, `pub` or a
-// decorator to its left.
-function rescanner(stripped, head, tail) {
-  // A copy, because the pack's pattern is a module-level global regex shared
-  // by every file: exec'ing it here would leave `lastIndex` mid-source, and
-  // matchAll seeds its own copy from it — the next file scanned would start
-  // partway in and lose the signatures before that point.
-  const scan = new RegExp(head.source, head.flags);
-  let lines = null;
-  return (from, to) => {
-    if (!lines) lines = stripped.split(/\r?\n/);
-    const span = lines.slice(from - 1, to);
-    let size = 0;
-    for (const line of span) size += line.length + 1;
-    if (size > SIGNATURE_MAX_CHARS) return null;
-
-    const flat = span.join(' ');
-    scan.lastIndex = 0;
-    const match = scan.exec(flat);
-    if (!match || match.index >= span[0].length) return null;
-    const signature = signatureAt(flat, paramSpans(flat), tail, match);
-    if (!signature) return null;
-    return signature.end === flat.trimEnd().length ? signature.params : null;
-  };
-}
-
 // Signature line number → its parameter count. Packs supply a `{ head, tail }`
 // pair: either a global head scanned across the whole stripped source, or a
 // line-anchored one that must be exec'd per line to stay clear of catastrophic
@@ -466,49 +455,99 @@ function rescanner(stripped, head, tail) {
 // whatever text the head is scanned over, so they cost the same whether the
 // file holds one signature or ten thousand.
 //
-// `rescan` rides along on the map because the packs pass this straight into
-// measureFunctions and nowhere else: it is the one place that still holds both
-// the stripped source and the pattern, and adding it here changes no pack.
+// `wrapped` rides along on the map — brace line → the signature that brace
+// opens — because the packs pass this straight into measureFunctions and
+// nowhere else: it is the one place that holds both the stripped source and
+// the pattern, and adding it here changes no pack.
+//
+// The wrapped case used to be answered the other way round, by walking back up
+// to ten lines from every unattributed brace and re-running the head over the
+// flattened span. That search is what carried the bound, and the bound is what
+// dropped the most-wrapped — so the most-parametered — signatures. Going
+// forward from the head instead needs no search: the parameter list's `)` is
+// already known from the paramSpans pass, whatever line it landed on, and only
+// the short tail after it has to be re-read.
+// Every head in the file, as { startLine, parenAt, params, braceLine }, with
+// braceLine 0 where the pack's own tail did not reach a brace. A global head is
+// scanned over the whole source and its tail may cross lines; a line-anchored
+// one is exec'd per line — at most one match per line, as before — and its tail
+// is read on that line alone, so a brace it reaches is on that line.
+function headMatch(startLine, parenAt, found, braceLine) {
+  return {
+    startLine,
+    parenAt,
+    params: found ? found.params : 0,
+    braceLine: found ? braceLine : 0,
+  };
+}
+
+function* headMatches(stripped, head, { spans, starts, after }) {
+  if (head.global) {
+    for (const match of stripped.matchAll(head)) {
+      const found = signatureAt(stripped, spans, after, match);
+      yield headMatch(lineAtOffset(starts, match.index), match.index + match[0].length - 1,
+        found, found && lineAtOffset(starts, found.end - 1));
+    }
+    return;
+  }
+  const lines = stripped.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = head.exec(lines[index]);
+    if (!match) continue;
+    yield headMatch(index + 1, starts[index] + match.index + match[0].length - 1,
+      signatureAt(lines[index], paramSpans(lines[index]), after, match), index + 1);
+  }
+}
+
+// Nearest wins, as the backward walk's first hit did: of two signatures whose
+// braces land on one line, the inner one describes that block better.
+function attribute(wrapped, braceLine, startLine, params) {
+  const held = wrapped.get(braceLine);
+  if (braceLine > startLine && (!held || held.startLine < startLine)) {
+    wrapped.set(braceLine, { startLine, params });
+  }
+}
+
 function signaturesFrom(stripped, { head, tail }) {
   const signatures = new Map();
-  // Sticky and its own copy, for the same reason the rescanner copies the head.
-  const after = new RegExp(tail.source, tail.flags.includes('y') ? tail.flags : tail.flags + 'y');
+  const wrapped = new Map();
+  const at = {
+    spans: paramSpans(stripped),
+    starts: lineStarts(stripped),
+    // Sticky, and its own copy: the pack's pattern is a module-level regex
+    // shared by every file, and exec'ing it here would leave lastIndex adrift.
+    after: new RegExp(tail.source, tail.flags.includes('y') ? tail.flags : tail.flags + 'y'),
+  };
 
-  if (head.global) {
-    const spans = paramSpans(stripped);
-    const lineAt = lineCounter(stripped);
-    for (const match of stripped.matchAll(head)) {
-      const signature = signatureAt(stripped, spans, after, match);
-      if (signature) signatures.set(lineAt(match.index), signature.params);
+  for (const { startLine, parenAt, params, braceLine } of headMatches(stripped, head, at)) {
+    if (braceLine) {
+      signatures.set(startLine, params);
+      attribute(wrapped, braceLine, startLine, params);
+      continue;
     }
-  } else {
-    stripped.split(/\r?\n/).forEach((line, index) => {
-      const match = head.exec(line);
-      const signature = match && signatureAt(line, paramSpans(line), after, match);
-      if (signature) signatures.set(index + 1, signature.params);
-    });
+    // The tail stopped at a line end (Java, C#) or refused to cross one (Go,
+    // Rust). Where the parameter list closed is known whatever it spanned, so
+    // only the short tail after it has to be re-read.
+    const span = at.spans.get(parenAt);
+    if (span) {
+      attribute(wrapped, braceLineAfter(stripped, at.starts, at.after, span.end + 1),
+        startLine, span.params);
+    }
   }
-  signatures.rescan = rescanner(stripped, head, after);
+  signatures.wrapped = wrapped;
   return signatures;
 }
 
 // The signature a block belongs to: the one on its own opening line, or — when
-// the signature wrapped — the nearest one starting within SIGNATURE_LOOKBACK
-// lines above whose parameter list is still open at this brace. Reported at
-// the signature's first line, so a finding points at the function rather than
-// at its brace.
+// the signature wrapped — the one whose tail reached this very brace. Reported
+// at the signature's first line, so a finding points at the function rather
+// than at its brace. Requiring that brace is what keeps `} else {` from being
+// attributed to the `if` above it.
 function signatureOf(block, signatures) {
   if (signatures.has(block.startLine)) {
     return { startLine: block.startLine, params: signatures.get(block.startLine) };
   }
-  if (!signatures.rescan) return null;
-
-  const stop = Math.max(1, block.startLine - SIGNATURE_LOOKBACK);
-  for (let from = block.startLine - 1; from >= stop; from -= 1) {
-    const params = signatures.rescan(from, block.startLine);
-    if (params !== null) return { startLine: from, params };
-  }
-  return null;
+  return (signatures.wrapped && signatures.wrapped.get(block.startLine)) || null;
 }
 
 // Attaches params and complexity to the blocks that start on a signature line,
@@ -549,10 +588,10 @@ function measureFunctions(lines, blocks, signatures) {
 // chooses the text: stripped source where comments should not rescue it, raw
 // where the pattern spells out the comment forms itself.
 function emptyCatchFindings(text, re, message) {
-  const lineAt = lineCounter(text);
+  const starts = lineStarts(text);
   return Array.from(text.matchAll(re), (match) => finding({
     rung: 'TRUE', id: 'true/swallowed-error',
-    line: lineAt(match.index),
+    line: lineAtOffset(starts, match.index),
     message,
     fix: 'log with context and rethrow, or handle it explicitly',
   }));
