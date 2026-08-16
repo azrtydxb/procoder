@@ -82,12 +82,13 @@ file = ".procoder-baseline.json"</code></pre>
 
 <p>
   It is judged for staleness too. <code>verify</code> reports a configured path
-  exclusion whose path no longer exists, and fails on it under
+  exclusion three ways — its path no longer exists, it matches no file in the
+  tree, or every file it covers is clean — and fails on it under
   <code>--unused-exclusions</code>. Only the project's own entries, never the
   built-in <code>node_modules/</code>, <code>vendor/</code>, <code>dist/</code>
-  defaults, and only patterns with no <code>*</code> in them: what a glob would
-  have matched depends on a tree the run may not have covered, so those are left
-  alone rather than guessed at.
+  defaults. The last two are claims about the tree, so they are made only when
+  the run's targets covered the whole repository; a <code>verify</code> over one
+  file leaves them alone rather than guessing.
 </p>
 
 <p>
@@ -291,10 +292,10 @@ build/          # a directory of that name, at any depth
 <p>
   <code>verify --unused-exclusions</code> additionally fails when an
   <code>[exclude] rules</code> entry suppressed nothing in the run, or an
-  <code>[exclude] paths</code> entry names a path that no longer exists — a stale
-  suppression left behind after the finding it silenced was fixed is itself rung-4
-  rot. Without the flag those entries are still reported, they just do not fail
-  the build.
+  <code>[exclude] paths</code> entry holds nothing back — its path is gone, it
+  matches no file, or every file it covers is clean. A stale suppression left
+  behind after the finding it silenced was fixed is itself rung-4 rot. Without
+  the flag those entries are still reported, they just do not fail the build.
 </p>
 
 <p>

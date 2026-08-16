@@ -31,8 +31,11 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
 
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
                         suppressed nothing in this run, or a [exclude] paths
-                        entry names a path that no longer exists — a stale
-                        suppression left behind after what it silenced was fixed
+                        entry holds nothing back — its path is gone, it matches
+                        no file, or every file it covers is clean. A stale
+                        suppression left behind after what it silenced was
+                        fixed. The last two are judged only when the run's
+                        targets covered the whole repository.
   --no-ignore           check files a .procoderignore covers anyway — answers
                         "why is this file not being checked?". [exclude] paths
                         in .procoder.toml still applies, and every file it holds
@@ -173,12 +176,49 @@ function sample(added, present) {
   return shown + (rest > 0 ? `  ...and ${rest} more\n` : '');
 }
 
+// The audit `unusedPathExclusions` needs to judge a pattern on more than
+// whether its path still exists: the tree's repo-relative paths, and a scan of
+// one of them with that one pattern lifted.
+//
+// Only built for a run whose targets covered the whole repository, and that is
+// the whole of why it is affordable. "This glob matches nothing" and "nothing
+// under this directory has a finding" are claims about the tree; a run over one
+// file cannot make either, so a partial run passes no audit and the two rules
+// go quiet — the same restraint an out-of-run rule exclusion gets. And because
+// the run already walked the tree, `files` IS the tree: the audit adds no walk,
+// only the re-scan of the excluded files themselves.
+//
+// It never runs in the hook. The hook calls checkFile directly and has never
+// called this file's exclusion audit at all, so its 2s budget is untouched.
+function pathAudit(files, repoRoot, config, wholeTree) {
+  if (!wholeTree || config.exclude.configuredPaths.length === 0) return undefined;
+  const abs = new Map(files.map((f) => [path.relative(config.root, f).replace(/\\/g, '/'), f]));
+  // One config per pattern, cached: each carries its own .procoderignore cache,
+  // so rebuilding it per file would re-read every ignore file in the tree.
+  const lifted = new Map();
+  const configWithout = (pattern) => {
+    if (!lifted.has(pattern)) {
+      lifted.set(pattern, { ...config,
+        exclude: { ...config.exclude, paths: config.exclude.paths.filter((p) => p !== pattern) } });
+    }
+    return lifted.get(pattern);
+  };
+  return {
+    files: Array.from(abs.keys()),
+    findings: (rel, pattern) => {
+      const out = checkFile(abs.get(rel),
+        { repoRoot, config: configWithout(pattern), maxFindings: Infinity, applyBaseline: false });
+      return out.skipped ? null : out.findings.length;
+    },
+  };
+}
+
 // Reported under plain `verify` too — a stale exclusion is rot worth seeing —
 // but it only fails the build under the dedicated flag: the honest case (the
 // underlying finding got fixed) must not turn into a CI failure by default.
-function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
+function reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, wholeTree }) {
   const stale = unusedRuleExclusions(files, repoRoot, config);
-  const gone = unusedPathExclusions(config);
+  const gone = unusedPathExclusions(config, pathAudit(files, repoRoot, config, wholeTree));
   if (stale.length > 0) {
     process.stdout.write(
       `procoder: ${stale.length} exclusion rule${stale.length === 1 ? '' : 's'} suppressed nothing ` +
@@ -187,17 +227,17 @@ function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
   }
   if (gone.length > 0) {
     process.stdout.write(
-      `procoder: ${gone.length} path exclusion${gone.length === 1 ? '' : 's'} excludes nothing — ` +
-      'the path no longer exists:\n' + gone.map((p) => `  ${p}\n`).join('') +
-      'Remove them from [exclude] paths in .procoder.toml, or restore the path. Left in place, ' +
-      'they silently exclude whatever lands there next.\n');
+      `procoder: ${gone.length} path exclusion${gone.length === 1 ? ' excludes' : 's exclude'} nothing:\n` +
+      gone.map((p) => `  ${p.pattern} — ${p.reason}\n`).join('') +
+      'Remove them from [exclude] paths in .procoder.toml, or say why they still apply. Left in ' +
+      'place, they silently exclude whatever lands there next.\n');
   }
   return unusedExclusions && stale.length + gone.length > 0 ? 1 : 0;
 }
 
 // The ratchet: accepted debt may shrink, never grow. Compares fingerprints,
 // not counts, so fixing an old finding buys no room for a new one.
-function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
+function runVerify(files, repoRoot, config, { unusedExclusions = false, wholeTree = false } = {}) {
   const baseline = loadBaseline(repoRoot, config);
   const present = presentFindings(files, repoRoot, config);
   reportSkipped();
@@ -228,7 +268,7 @@ function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
   }
   process.stdout.write(
     `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
-  return reportUnusedExclusions(files, repoRoot, config, unusedExclusions);
+  return reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, wholeTree });
 }
 
 // Same rule the PostToolUse hook applies: at `pragmatic` the judgment rungs
@@ -667,7 +707,12 @@ function main(argv) {
   const halt = reportStaleBaseline(command, repoRoot, config);
   if (halt !== null) return halt;
 
-  return run(files, repoRoot, config, { unusedExclusions });
+  // Whether this run's targets covered the whole repository. Two of the three
+  // path-exclusion staleness rules are claims about the tree and are only made
+  // when the run actually saw it — see pathAudit.
+  const wholeTree = targets.some((t) => path.resolve(t) === repoRoot);
+
+  return run(files, repoRoot, config, { unusedExclusions, wholeTree });
 }
 
 process.exit(main(process.argv.slice(2)));

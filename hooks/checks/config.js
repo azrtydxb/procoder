@@ -275,29 +275,60 @@ function excludingPattern(config, relPath) {
   return config.exclude.paths.find((pattern) => matchesPattern(pattern, normalized)) || null;
 }
 
-// Path exclusions that can no longer be excluding anything: the directory or
-// file they name is not there.
+// Path exclusions that can no longer be excluding anything. Three ways that
+// happens, and the third is the expensive one:
 //
-// A rule exclusion goes stale when the finding it silenced gets fixed, and the
-// CLI detects that by re-running. A path exclusion cannot be judged that way —
-// a run over one file says nothing about a pattern naming another tree — but
-// the commonest rot is decidable without running anything at all: `vendor/`
-// after vendor/ was deleted, `src/generated/` after the generator moved. It
-// stays in force forever, silently, and the next directory to land at that
-// path is excluded by a decision nobody made.
+//   gone     the file or directory the pattern names is not there any more —
+//            `vendor/` after vendor/ was deleted, `src/generated/` after the
+//            generator moved. Decidable from the path alone, with no scan.
+//   empty    the pattern is there but matches no file in the tree — the shape
+//            a glob rots into, since `**/*.gen.ts` survives the deletion of
+//            every generated file without changing a character.
+//   clean    it matches files, and not one of them has a finding. The
+//            exclusion is holding nothing back today; the day it starts to,
+//            nobody will be told.
 //
-// Only the project's own entries, never the built-in defaults, and only
-// patterns with no `*` in them: what a glob would have matched depends on the
-// tree, and "matched nothing in this run" is not the same claim as "matches
-// nothing" when the run covered one file. Those are left alone rather than
-// guessed at, which is the same restraint rule exclusions outside the run get.
-function unusedPathExclusions(config) {
+// Left in force, each of the three excludes whatever lands at that path next,
+// by a decision nobody made. Rule exclusions have been judged to this standard
+// since they existed (`unusedRuleExclusions` in bin/procoder.js) and path
+// exclusions were judged only on `gone`, which is the half that costs nothing.
+//
+// `empty` and `clean` cannot be answered from config alone: both are claims
+// about the tree, and a run over one file cannot make them. So they are decided
+// only when the caller passes an `audit` — `{ files, findings }`, the tree's
+// repo-relative paths and a scan of one of them — and the CLI passes one only
+// for a `verify` whose targets covered the whole repository. That is the same
+// restraint rule exclusions get: an exclusion the run could not see is left
+// alone rather than guessed at. Called with no audit (the hook, any direct API
+// caller) this does exactly what it did before, at exactly the old cost.
+//
+// Only the project's own entries, never the built-in defaults.
+// Why one pattern is doing nothing, or null if it is still earning its place.
+function staleReason(config, pattern, audit) {
+  if (!pattern.includes('*')
+    && !fs.existsSync(path.join(config.root, pattern.replace(/\/+$/, '')))) {
+    return 'the path no longer exists';
+  }
+  if (!audit) return null;
+  const matched = audit.files.filter((rel) => matchesPattern(pattern, rel));
+  if (matched.length === 0) return 'it matches no file in the tree';
+  // `findings` returns null for a file it could not judge — one still excluded
+  // by another pattern, ignored, too large, unreadable. Null is not 0, so one
+  // unjudgeable file is enough to leave the exclusion alone: a scan that saw
+  // less than the whole set cannot report the set clean.
+  return matched.every((rel) => audit.findings(rel, pattern) === 0)
+    ? `nothing it excludes has a finding (${matched.length} file${matched.length === 1 ? '' : 's'} scanned)`
+    : null;
+}
+
+function unusedPathExclusions(config, audit) {
   // A hand-built config (a direct API caller, a test) may carry no
   // `configuredPaths` at all, and nothing here may throw into a hook.
   if (!config.root || !Array.isArray(config.exclude && config.exclude.configuredPaths)) return [];
-  return config.exclude.configuredPaths.filter((pattern) =>
-    pattern && !pattern.includes('*')
-    && !fs.existsSync(path.join(config.root, pattern.replace(/\/+$/, ''))));
+  return config.exclude.configuredPaths
+    .filter((pattern) => typeof pattern === 'string' && pattern !== '')
+    .map((pattern) => ({ pattern, reason: staleReason(config, pattern, audit) }))
+    .filter((entry) => entry.reason !== null);
 }
 
 // `rules = ["path/pattern:check/id"]` — the narrow form of exclusion. A path

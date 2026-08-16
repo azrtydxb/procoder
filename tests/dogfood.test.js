@@ -5,7 +5,7 @@
 // fails, fix the source. Do not baseline it, and do not widen an exclusion.
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
@@ -45,16 +45,70 @@ function trackedFiles() {
     .split('\n').filter(Boolean).filter((file) => !excluded(file));
 }
 
+// spawnSync, not execFileSync: the skip lines go to stderr so they survive a
+// piped stdout, and the run that has to count them exits 0 — which is exactly
+// the case execFileSync gives you no stderr for.
 function selfScan(extraTargets = []) {
-  try {
-    return {
-      code: 0,
-      out: execFileSync('node', [CLI, 'check', ...trackedFiles(), ...extraTargets], { cwd: root, encoding: 'utf8' }),
-    };
-  } catch (e) {
-    return { code: e.status, out: String(e.stdout || '') };
-  }
+  const r = spawnSync('node', [CLI, 'check', ...trackedFiles(), ...extraTargets],
+    { cwd: root, encoding: 'utf8' });
+  return { code: r.status, out: String(r.stdout || ''), err: String(r.stderr || '') };
 }
+
+// Every skip the scan announced, counted from its own stderr rather than
+// re-derived from the config — the published number has to be the one the tool
+// prints, or the paragraph in README.md is describing a different program.
+// Two shapes: one line per file when the file was named on the command line
+// (which is every excluded file here, since the targets come from git ls-files),
+// and one counted line per .procoderignore.
+function skipCount(stderr) {
+  let skipped = 0;
+  for (const line of stderr.split('\n')) {
+    const counted = line.match(/procoder: (\d+) files? skipped by /);
+    if (counted) skipped += Number(counted[1]);
+    else if (/procoder: skipped \S+ .* not checked\./.test(line)) skipped += 1;
+  }
+  return skipped;
+}
+
+// The self-scan's own arithmetic, and the claim README.md makes about it.
+//
+// "There is no hold-out list" was true and still misleading: a quarter of the
+// tree was skipped by [exclude] paths and two .procoderignore files, and a
+// reader of that sentence would not have guessed it. The fix is not a
+// disclaimer, it is publishing the three numbers — and pinning them here, so
+// the day the tree or an exclusion changes, the paragraph fails with it rather
+// than quietly describing a scan that no longer exists.
+test('the scan reads the number of files README.md says it does', () => {
+  const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean).length;
+  const { err } = selfScan();
+  const skipped = skipCount(err);
+
+  const readme = require('fs').readFileSync(path.join(root, 'README.md'), 'utf8');
+  const claim = readme.match(/of \*\*(\d+)\*\* tracked files the scan\s+reads \*\*(\d+)\*\* and skips \*\*(\d+)\*\*/);
+  assert.ok(claim, 'README.md no longer states the tracked/read/skipped numbers — restore them');
+  const [, saysTracked, saysRead, saysSkipped] = claim.map(Number);
+
+  assert.strictEqual(saysTracked, tracked, `README.md says ${saysTracked} tracked files, git ls-files reports ${tracked}`);
+  assert.strictEqual(saysSkipped, skipped, `README.md says ${saysSkipped} files skipped, the scan skipped ${skipped}`);
+  assert.strictEqual(saysRead, tracked - skipped, `README.md says ${saysRead} files read, the scan read ${tracked - skipped}`);
+});
+
+// The instrument that keeps the numbers above from rotting in the other
+// direction: an exclusion still in the list after it stopped holding anything
+// back. procoder judges its own [exclude] paths on every verify, so this is the
+// tool's own rule applied to the tool's own config, not a second mechanism.
+test('every path exclusion procoder sets for itself still holds something back', () => {
+  let out = '';
+  try {
+    out = execFileSync('node', [CLI, 'verify', '--unused-exclusions', '.'],
+      { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch (e) {
+    out = String(e.stdout || '');
+    assert.fail(`procoder's own exclusions are stale:\n${out}`);
+  }
+  assert.doesNotMatch(out, /exclude nothing|excludes nothing/);
+});
 
 test('procoder reports no findings against its own source', () => {
   const { code, out } = selfScan();
