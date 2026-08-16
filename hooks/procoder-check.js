@@ -71,9 +71,21 @@ readHookInput().then((input) => {
   const { relPath, findings, skipped, staleBaseline } = checkFile(absPath, {
     repoRoot, config, touched: touchedTexts(input.tool_input),
   });
+
+  // A skipped file has no findings, and so is indistinguishable from a clean one
+  // on the channel the model reads — "too large to check" and "nothing wrong"
+  // are opposite answers arriving as the same silence. The reason goes to
+  // stderr: it reaches the transcript for anyone wondering why a file stopped
+  // being gated, without spending model context on every deliberately excluded
+  // file. Findings themselves never travel this channel.
+  if (skipped) {
+    process.stderr.write(`procoder: skipped ${relPath} (${skipped})\n`);
+    return;
+  }
+
   // Findings are the only trigger for output, which also keeps the stale-baseline
   // notice off clean writes instead of on every write forever.
-  if (skipped || findings.length === 0) return;
+  if (findings.length === 0) return;
 
   writeHookOutput('PostToolUse', level,
     buildMessage({ level, config, relPath, findings, staleBaseline }));
