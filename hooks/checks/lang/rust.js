@@ -3,6 +3,7 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
 const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
@@ -24,28 +25,45 @@ const LINE_RULES = [
     fix: 'use bind parameters',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)[^;]{0,500}\.arg\s*\(\s*"-c"/,
-    message: 'shell invoked with an interpolated command',
-    fix: 'call the binary directly with separate args',
-  },
-  {
+    // safe/shell-injection and safe/weak-random are in SPAN_RULES: both
+    // reached across the rest of the statement with a `[^;]`/`[^=]` span, and
+    // both had to bound it at 500 characters to stay linear.
     id: 'safe/tls-disabled', rung: 'SAFE',
     re: /danger_accept_invalid_certs\s*\(\s*true\s*\)|danger_accept_invalid_hostnames\s*\(\s*true\s*\)/,
     message: 'TLS certificate verification disabled',
     fix: 'add the proper root certificate instead',
   },
   {
-    id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*(?::[^=]{1,500})?=\s*rand::(?:random|thread_rng)\b/i,
-    message: 'general-purpose RNG used for a security value',
-    fix: 'use a CSPRNG (rand::rngs::OsRng or the ring crate)',
-  },
-  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /\bdbg!\s*\(|\bprintln!\s*\(|\beprintln!\s*\(/,
     message: 'leftover debugging statement',
     fix: 'delete it, or use the tracing/log crate',
+  },
+];
+
+// Rules whose needle may sit anywhere later in the same statement — see
+// spans.js. A builder chain is exactly where the 500-character ceiling bit:
+// `Command::new("sh")` followed by a long `.env(...).current_dir(...)` run
+// before `.arg("-c")` went unreported, as did a binding whose type annotation
+// ran past 500 characters before the `= rand::random()`.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement',
+    anchor: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)/g,
+    needles: [/\.arg\s*\(\s*"-c"/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with separate args',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE', within: 'statement',
+    // The anchor stops at the name: the needle begins with the `=`, and the
+    // window opens where the anchor's match ends, so consuming the `=` here
+    // would put it behind the window. What sat between the two was the type
+    // annotation whose length was the ceiling.
+    anchor: /\b(?:token|secret|key|nonce|salt|session)\w*/gi,
+    needles: [/=\s*rand::(?:random|thread_rng)\b/g],
+    message: 'general-purpose RNG used for a security value',
+    fix: 'use a CSPRNG (rand::rngs::OsRng or the ring crate)',
   },
 ];
 
@@ -180,6 +198,7 @@ function check(source, { relPath, config } = {}) {
 
   return [
     ...inline,
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
     ...taintFindings({
       lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
     }),

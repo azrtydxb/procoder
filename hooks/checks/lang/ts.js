@@ -2,6 +2,7 @@
 // procoder — TypeScript / JavaScript pack.
 
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
 const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
@@ -21,12 +22,21 @@ const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 // literal may contain the *other* quote — `"rm '"` and `'rm "'` are exactly how
 // shell and SQL fragments get built, and a single `["'][^"']*["']` class misses
 // both. Each branch is anchored on its own quote, so there is no backtracking.
-const LITERAL_PLUS = String.raw`(?:"[^"]{0,500}"|'[^']{0,500}')\s*\+`;
+//
+// The literal is unbounded. It used to be `[^"]{0,500}`, which dropped the
+// finding for any SQL or shell fragment longer than 500 characters — and a
+// long literal is exactly where a stray `+ id` hides. Removing the bound does
+// not reintroduce the quadratic shape the bound existed for, because the span
+// here is *delimiter-terminated*: a scan can only start at a quote and ends at
+// the next one, so the scans partition the line rather than each running to
+// its end. The `[^)]`-style spans, which have no such terminator, moved to
+// spans.js instead. Measured unchanged at 100KB and 400KB.
+const LITERAL_PLUS = String.raw`(?:"[^"]*"|'[^']*')\s*\+`;
 
 const LINE_RULES = [
   {
     id: 'safe/sql-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})`, 'i'),
+    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`, 'i'),
     message: 'SQL built by interpolation or concatenation',
     fix: 'use a parameterized query with bound values',
   },
@@ -44,7 +54,9 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})|\b(?:spawn|execFile)\s*\([^)]{0,500}\bshell\s*:\s*true`),
+    // The `shell: true` half moved to SPAN_RULES: its `[^)]{0,500}` had no
+    // delimiter to terminate it, so it is the half that had to be bounded.
+    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`),
     message: 'shell invoked with an interpolated command',
     fix: 'use execFile/spawn with an argument array and shell:false',
   },
@@ -71,6 +83,21 @@ const LINE_RULES = [
     re: /\?[^?:\n]{0,500}\?[^:\n]{0,500}:[^:\n]{0,500}:/,
     message: 'nested ternary',
     fix: 'rewrite as if/else or a lookup',
+  },
+];
+
+// Rules whose needle may sit anywhere inside the call's own argument list —
+// see spans.js. `spawn('sh', [cmd], { shell: true })` puts the option object
+// after an array of any length, which is why this cannot be a line rule with a
+// bounded span: the bound decided how long the command could be before the
+// finding was silently dropped.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    anchor: /\b(?:spawn|execFile)\s*\(/g,
+    needles: [/\bshell\s*:\s*true/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'use execFile/spawn with an argument array and shell:false',
   },
 ];
 
@@ -161,6 +188,7 @@ function check(source, { relPath, config } = {}) {
 
   return [
     ...inline,
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
     ...taintFindings({
       lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
     }),

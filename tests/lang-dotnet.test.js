@@ -154,7 +154,12 @@ test('stays linear on a very long single line', () => {
       'var cmd = new SqlCommand(q, c); ',
       'Process.Start(arg); ',
     ],
-    sources: ['x'.repeat(100 * 1024)],
+    sources: [
+      'x'.repeat(100 * 1024),
+      // Nested calls that DO close — see lang-ts.test.js.
+      'Process.Start('.repeat(7000) + ')'.repeat(7000),
+      'ServerCertificateValidationCallback = a '.repeat(2500),
+    ],
   });
 });
 
@@ -187,4 +192,20 @@ test('taint clears on a literal reassignment and does not leave its block', () =
     .includes('safe/sql-injection'));
   assert.ok(!ids('void A(string id) {\n  var q = "SELECT " + id;\n}\nvoid B(SqlConnection c, string q) {\n  var cmd = new SqlCommand(q, c);\n}')
     .includes('safe/sql-injection'));
+});
+
+// The 500-character span ceilings the SAFE rules used to carry: a sink whose
+// interpolation sits further than that from the call was missed entirely.
+const PAD = 'a'.repeat(600);
+
+test('sees a sink whose interpolation is more than 500 characters from the call', () => {
+  assert.ok(ids(`Process.Start("${PAD}", $"git log {branch}");`).includes('safe/shell-injection'));
+  assert.ok(ids(`var token = Helper("${PAD}") + new Random().Next();`).includes('safe/weak-random'));
+  assert.ok(ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => true);`).includes('safe/tls-disabled'));
+});
+
+test('the safe forms stay silent however long the arguments are', () => {
+  assert.ok(!ids(`Process.Start("git", "${PAD}");`).includes('safe/shell-injection'));
+  assert.ok(!ids(`var token = Helper("${PAD}") + RandomNumberGenerator.GetInt32(9);`).includes('safe/weak-random'));
+  assert.ok(!ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => Validate(a));`).includes('safe/tls-disabled'));
 });

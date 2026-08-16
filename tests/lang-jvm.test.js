@@ -179,7 +179,13 @@ test('stays linear on a very long single line', () => {
       'stmt.executeQuery(q); ',
       'Runtime.getRuntime().exec(cmd); ',
     ],
-    sources: ['x'.repeat(100 * 1024)],
+    sources: [
+      'x'.repeat(100 * 1024),
+      // Nested calls that DO close, so paramSpans records a span for each —
+      // see lang-ts.test.js for why this shape is the one to guard.
+      'checkServerTrusted('.repeat(5000) + ')'.repeat(5000),
+      'new ProcessBuilder('.repeat(5000) + ')'.repeat(5000),
+    ],
   });
 });
 
@@ -212,4 +218,23 @@ test('taint clears on a literal reassignment and does not leave its block', () =
     .includes('safe/sql-injection'));
   assert.ok(!ids('void a(String id) {\n  String q = "SELECT " + id;\n}\nvoid b(Statement stmt, String q) {\n  stmt.executeQuery(q);\n}')
     .includes('safe/sql-injection'));
+});
+
+// The 500-character span ceilings the SAFE rules used to carry: a sink whose
+// interpolation sits further than that from the call was missed entirely.
+const PAD = 'a'.repeat(600);
+
+test('sees a sink whose interpolation is more than 500 characters from the call', () => {
+  assert.ok(ids(`stmt.executeQuery("SELECT ${PAD} WHERE id = " + id);`).includes('safe/sql-injection'));
+  assert.ok(ids(`Runtime.getRuntime().exec("git log ${PAD} " + branch);`).includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection the over-500-character scanner input for that rule, not an instance of it
+  assert.ok(ids(`new ProcessBuilder("sh", "${PAD}", "-c", cmd).start();`).includes('safe/shell-injection'));
+  assert.ok(ids(`String token = helper("${PAD}") + new Random().nextLong();`).includes('safe/weak-random'));
+  assert.ok(ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) {}`).includes('safe/tls-disabled'));
+});
+
+test('the safe forms stay silent however long the arguments are', () => {
+  assert.ok(!ids(`stmt.executeQuery("SELECT ${PAD} WHERE id = ?");`).includes('safe/sql-injection'));
+  assert.ok(!ids(`new ProcessBuilder("git", "${PAD}", "log", branch).start();`).includes('safe/shell-injection'));
+  assert.ok(!ids(`String token = helper("${PAD}") + secureRandom.nextLong();`).includes('safe/weak-random'));
+  assert.ok(!ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) { verify(chain); }`).includes('safe/tls-disabled'));
 });

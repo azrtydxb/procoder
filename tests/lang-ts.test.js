@@ -161,7 +161,13 @@ test('stays linear on a very long single line', () => {
       'const q = "SELECT " + id; db.query(q); ',
       'const a = "x" + b; ',
     ],
-    sources: ['x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){'],
+    sources: [
+      'x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){',
+      // Nested calls that DO close, so paramSpans records a span for each:
+      // the shape a slice-per-span implementation of spans.js would be
+      // quadratic on. 14,000 levels deep at 100KB.
+      'spawn('.repeat(14000) + ')'.repeat(14000),
+    ],
   });
 });
 
@@ -205,4 +211,22 @@ test('taint clears on a literal reassignment and does not leave its block', () =
     .includes('safe/sql-injection'));
   assert.ok(!ids('function a(id) {\n  const q = "SELECT " + id;\n}\nfunction b(db, q) {\n  db.query(q);\n}')
     .includes('safe/sql-injection'));
+});
+
+// The 500-character span ceilings the SAFE rules used to carry: a sink whose
+// interpolation sits further than that from the call was missed entirely, and
+// a long literal is exactly where a stray concatenation hides.
+const PAD = 'a'.repeat(600);
+
+test('sees a sink whose interpolation is more than 500 characters from the call', () => {
+  assert.ok(ids(`db.query("SELECT ${PAD} WHERE id = " + id)`).includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the over-500-character scanner input for that rule, not an instance of it
+  assert.ok(ids('db.query(`SELECT ' + PAD + ' WHERE id = ${id}`)').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the over-500-character scanner input for that rule, not an instance of it
+  assert.ok(ids(`execSync("rm -rf ${PAD}/" + dir)`).includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection the over-500-character scanner input for that rule, not an instance of it
+  assert.ok(ids(`spawn('sh', ['${PAD}', cmd], { shell: true })`).includes('safe/shell-injection'));  // procoder: literal safe/shell-injection the over-500-character scanner input for that rule, not an instance of it
+});
+
+test('the safe forms stay silent however long the arguments are', () => {
+  assert.ok(!ids(`db.query("SELECT ${PAD} WHERE id = ?", [id])`).includes('safe/sql-injection'));
+  assert.ok(!ids(`spawn('ls', ['${PAD}', dir])`).includes('safe/shell-injection'));
+  assert.ok(!ids(`execFile('git', ['log', '${PAD}', branch])`).includes('safe/shell-injection'));
 });

@@ -2,6 +2,7 @@
 // procoder — C# / .NET pack.
 
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
 const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
@@ -35,33 +36,24 @@ const LINE_RULES = [
     fix: 'use SHA256, or PBKDF2/Argon2 for passwords',
   },
   {
-    id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]{0,500}new\s+Random\s*\(/i,
-    message: 'System.Random used for a security value',
-    fix: 'use RandomNumberGenerator.GetBytes',
-  },
-  {
     id: 'safe/tls-disabled', rung: 'SAFE',
-    re: /ServerCertificateValidationCallback\s*(?:\+?=)\s*[^;]{0,500}=>\s*true|DangerousAcceptAnyServerCertificateValidator/,
+    re: /DangerousAcceptAnyServerCertificateValidator/,
     message: 'TLS certificate validation disabled',
     fix: 'validate against the proper CA instead',
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    // The argument spans are bounded: `[^)]*` is retried from every offset of
-    // a line full of `Process.Start(`, which is quadratic on its own (796ms
-    // at 100KB). A ceiling of 500 chars caps the work per offset; a call
-    // whose arguments run past 500 characters before the first quote is
-    // beyond what a line-based scanner resolves usefully anyway.
+    // The Process.Start half moved to SPAN_RULES; its `[^)]{0,500}` is where
+    // the 500-character ceiling was, and it had no delimiter to terminate it.
     //
-    // The ProcessStartInfo half is a conjunction — UseShellExecute = true
-    // *and* an interpolated Arguments, in either order on the line. Written
-    // as a bare `(?=.*A)(?=.*B)` pair it is anchorless, so the engine retries
-    // both scans from every one of the line's n offsets: 4.9s on a 100KB
-    // line, 75s at 400KB. Anchoring at `^` (with /m so it still applies per
-    // line if this is ever run over whole text) leaves one start per line and
-    // makes it linear; the conjunction itself is unchanged.
-    re: /Process\.Start\s*\([^)]{0,500}(?:\$"|"[^"]{0,500}"\s*\+|\+\s*"[^"]{0,500}")|^(?=.*UseShellExecute\s*=\s*true).*Arguments\s*=\s*\$"/m,
+    // This half is a conjunction — UseShellExecute = true *and* an
+    // interpolated Arguments, in either order on the line. Written as a bare
+    // `(?=.*A)(?=.*B)` pair it is anchorless, so the engine retries both scans
+    // from every one of the line's n offsets: 4.9s on a 100KB line, 75s at
+    // 400KB. Anchoring at `^` (with /m so it still applies per line if this is
+    // ever run over whole text) leaves one start per line and makes it linear;
+    // the conjunction itself is unchanged, and it has no ceiling.
+    re: /^(?=.*UseShellExecute\s*=\s*true).*Arguments\s*=\s*\$"/m,
     message: 'shell invoked with an interpolated command',
     fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
   },
@@ -70,6 +62,35 @@ const LINE_RULES = [
     re: /Console\.(?:WriteLine|Write)\s*\(|Debug\.WriteLine\s*\(/,
     message: 'leftover debugging statement',
     fix: 'delete it, or route through ILogger',
+  },
+];
+
+// Rules whose needle may sit anywhere inside the same call or the same
+// statement — see spans.js. All three carried a 500-character ceiling: a
+// Process.Start whose interpolated argument sat further than that from the
+// call, a token assignment with a long expression before `new Random(`, and a
+// validation callback wrapped in a long expression were all unreported.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    anchor: /Process\.Start\s*\(/g,
+    needles: [/\$"|"[^"\n]*"\s*\+|\+\s*"[^"\n]*"/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE', within: 'statement',
+    anchor: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=/gi,
+    needles: [/new\s+Random\s*\(/g],
+    message: 'System.Random used for a security value',
+    fix: 'use RandomNumberGenerator.GetBytes',
+  },
+  {
+    id: 'safe/tls-disabled', rung: 'SAFE', within: 'statement',
+    anchor: /ServerCertificateValidationCallback\s*\+?=/g,
+    needles: [/=>\s*true/g],
+    message: 'TLS certificate validation disabled',
+    fix: 'validate against the proper CA instead',
   },
 ];
 
@@ -132,6 +153,7 @@ function check(source, { relPath, config } = {}) {
 
   return [
     ...inline,
+    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline }),
     ...taintFindings({
       lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
     }),
