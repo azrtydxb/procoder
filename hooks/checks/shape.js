@@ -629,7 +629,44 @@ function headMatch(where, found, braceLine) {
 // Statement position only. A keyword reached through a member access is a
 // method: `p.catch(err => { … })`, `s.match(re)`, `list.for(…)` are ordinary
 // code and are still measured. `.`, `?.`, `::` and `->` all end in one of these.
-const CONTROL_HEAD = /(?:^|[^\w$])(if|else|elif|elsif|for|foreach|while|until|unless|switch|case|when|match|catch|except|rescue|using|lock|synchronized|with)\s*\($/;
+//
+// Two things narrow it, because one global keyword list applied to every pack
+// took a function *named* after one of these words out of measurement
+// altogether — not length, not nesting, not parameters, not complexity. That is
+// silent coverage loss, and it hit five of the six packs: `match(pattern,
+// input)` in a parser, `lock(resource)` in a scheduler, `using(handle)`,
+// `when(condition)` are ordinary names, and in the languages where the word is
+// not reserved at all they are legal ones.
+//
+// First: the keyword has to be the *whole* head. A declaration puts something
+// in front of the name — `function`, `func`, `fn`, an access modifier, a return
+// type — and every pack's head captures that prefix, so a head that is a bare
+// keyword and a paren is the only one that can be a statement. `else if (…)` is
+// the one two-token statement any pack's head reaches (Java's and C#'s want
+// `<type> <name>` and find `else` and `if`), so `else` is allowed in front of
+// the word and nothing else is. That single test clears four packs outright:
+// Go's head demands `func`, Rust's `fn`, Java's and C#'s two tokens, so
+// `func lock(…)`, `fn lock(…)`, `public int lock(…)` and `public int when(…)`
+// are declarations by construction and never reach the list.
+//
+// Second: the list is only the words that are control flow in the language with
+// a bare-name head — JavaScript and TypeScript, whose pattern matches a method
+// shorthand `match(a, b) {` with nothing in front of it at all. There the shape
+// cannot decide it and the language must: JS has no `match`, `when`, `lock`,
+// `using`, `unless`, `until`, `foreach`, `except`, `rescue` or `synchronized`
+// statement, so those words are names there and are measured. The words that
+// stay are JS's own reserved control-flow keywords, which is what the
+// false-positive sweep was ever about — `switch (…) {`, `if (…) {`,
+// `while (…) {`, `for (…) {`, `catch (…) {`, `case (…):` and `with (…) {`.
+//
+// The dropped words cannot cost the other packs a false positive, because none
+// of their heads can match those statements in the first place: C#'s
+// `foreach (…)`, `using (…)` and `lock (…)`, Java's `synchronized (…)` and
+// Kotlin's `when (…)` are one token and a paren, and the line-anchored heads
+// need two. Rust's `match x {` and `match (a, b) {` carry no `fn`. Python never
+// comes through here — py.js measures by indentation off `def`, which is why it
+// was the one pack that already got this right.
+const CONTROL_HEAD = /^\s*(?:else\s+)?(if|for|while|switch|case|catch|with)\s*\($/;
 const MEMBER_ACCESS = /[.:>]/;
 
 // The same keywords again, anywhere in the text a tail crossed to reach its
