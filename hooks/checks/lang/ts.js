@@ -3,7 +3,7 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -35,7 +35,7 @@ const LITERAL_PLUS = String.raw`(?:"[^"]*"|'[^']*')\s*\+`;
 
 const LINE_RULES = [
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`, 'i'),
     message: 'SQL built by interpolation or concatenation',
     fix: 'use a parameterized query with bound values',
@@ -47,13 +47,13 @@ const LINE_RULES = [
     fix: 'use textContent, or sanitize before assigning',
   },
   {
-    id: 'safe/dynamic-eval', rung: 'SAFE',
+    id: 'safe/dynamic-eval', rung: 'SAFE', dataSink: true,
     re: /\beval\s*\(|new\s+Function\s*\(|setTimeout\s*\(\s*["'`]/,
     message: 'dynamic code evaluation',
     fix: 'replace with a lookup table or a direct call',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
+    id: 'safe/shell-injection', rung: 'SAFE', dataSink: true,
     // The `shell: true` half moved to SPAN_RULES: its `[^)]{0,500}` had no
     // delimiter to terminate it, so it is the half that had to be bounded.
     re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`),
@@ -93,7 +93,7 @@ const LINE_RULES = [
 // finding was silently dropped.
 const SPAN_RULES = [
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call', dataSink: true,
     anchor: /\b(?:spawn|execFile)\s*\(/g,
     needles: [/\bshell\s*:\s*true/g],
     message: 'shell invoked with an interpolated command',
@@ -117,7 +117,7 @@ const SPAN_RULES = [
 const JS_NAME = String.raw`([A-Za-z_$][\w$]*)`;
 
 const TAINT = {
-  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
   sources: [/`[^`\n]*\$\{/, ...CONCAT],
   sinks: [
     {
@@ -184,7 +184,9 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
   const codeLines = code.split(/\r?\n/);
-  const inline = lineRuleFindings(LINE_RULES, codeLines, { codeLines: stripped.split(/\r?\n/) });
+  const inline = lineRuleFindings(LINE_RULES, codeLines, {
+    codeLines: stripped.split(/\r?\n/), skip: skipConstant,
+  });
 
   return [
     ...inline,

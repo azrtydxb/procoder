@@ -4,7 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -14,7 +14,7 @@ const EXTENSIONS = ['.java', '.kt', '.kts'];
 
 const LINE_RULES = [
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /(?:executeQuery|executeUpdate|createQuery|rawQuery|execute)\s*\(\s*(?:"[^"]*"\s*\+|String\.format|\w+\s*\+)|String\.format\s*\(\s*"\s*SELECT/i,
     message: 'SQL built by concatenation or format',
     fix: 'use PreparedStatement with bound parameters',
@@ -66,7 +66,7 @@ const LINE_RULES = [
 const JVM_NAME = String.raw`([A-Za-z_$][\w$]*)`;
 
 const TAINT = {
-  assign: /^\s*(?:(?:final|val|var|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  assign: /^\s*(?:(?:final|val|var|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
   sources: [/\bString\.format\s*\(/, /"[^"\n]*\$[A-Za-z_{]/, ...CONCAT],
   sinks: [
     {
@@ -92,14 +92,14 @@ const TAINT = {
 // long expression before `new Random(` were all silently unreported.
 const SPAN_RULES = [
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call', dataSink: true,
     anchor: /Runtime\.getRuntime\(\)\.exec\s*\(/g,
     needles: [/\+/g],
     message: 'shell invoked with an interpolated command',
     fix: 'call the binary directly with a separate argument list',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call', dataSink: true,
     anchor: /new\s+ProcessBuilder\s*\(/g,
     needles: [/"(?:sh|bash|cmd(?:\.exe)?|powershell)"/g, /"(?:-c|\/c)"/g],
     message: 'shell invoked with an interpolated command',
@@ -191,7 +191,7 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const inline = lineRuleFindings(LINE_RULES, lines);
+  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
 
   return [
     ...inline,

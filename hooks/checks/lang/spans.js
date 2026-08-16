@@ -26,6 +26,7 @@
 // no ceiling anywhere.
 
 const { finding } = require('../finding');
+const { skipConstant } = require('./taint');
 const { paramSpans } = require('../shape');
 
 const SEMICOLON = /;/g;
@@ -110,6 +111,10 @@ function ruleHits(rule, line, cache) {
 // Applies a pack's span-rule table. `existing` is the pack's line-rule
 // findings: where a line rule already reported the same id on the same line —
 // the two halves of .NET's shell rule, say — this adds nothing.
+//
+// A rule marked `dataSink` is discharged on a wholly constant line, the same
+// test and for the same reason as the line rules — see taint.js.
+// `Command::new("sh").arg("-c").arg("ls /tmp")` runs a literal command.
 function spanRuleFindings(rules, lines, { existing = [] } = {}) {
   const already = new Set(existing.map((f) => `${f.id}:${f.line}`));
   const findings = [];
@@ -118,7 +123,7 @@ function spanRuleFindings(rules, lines, { existing = [] } = {}) {
     const cache = lineCache(line);
     for (const rule of rules) {
       const key = `${rule.id}:${index + 1}`;
-      if (already.has(key) || !ruleHits(rule, line, cache)) continue;
+      if (already.has(key) || !ruleHits(rule, line, cache) || skipConstant(rule, line)) continue;
       already.add(key);
       findings.push(finding({
         rung: rule.rung, id: rule.id, line: index + 1, message: rule.message, fix: rule.fix,

@@ -3,7 +3,7 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -42,7 +42,7 @@ const LINE_RULES = [
     fix: 'validate against the proper CA instead',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
+    id: 'safe/shell-injection', rung: 'SAFE', dataSink: true,
     // The Process.Start half moved to SPAN_RULES; its `[^)]{0,500}` is where
     // the 500-character ceiling was, and it had no delimiter to terminate it.
     //
@@ -72,7 +72,7 @@ const LINE_RULES = [
 // validation callback wrapped in a long expression were all unreported.
 const SPAN_RULES = [
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call', dataSink: true,
     anchor: /Process\.Start\s*\(/g,
     needles: [/\$"|"[^"\n]*"\s*\+|\+\s*"[^"\n]*"/g],
     message: 'shell invoked with an interpolated command',
@@ -107,7 +107,7 @@ const SPAN_RULES = [
 const CS_NAME = String.raw`([A-Za-z_@]\w*)`;
 
 const TAINT = {
-  assign: /^\s*(?:(?:readonly|const|public|private|protected|internal|static|var)\s+)*(?:[\w<>[\],.?]+\s+)?([A-Za-z_@]\w*)\s*=(?![=>])/,
+  assign: /^\s*(?:(?:readonly|const|public|private|protected|internal|static|var)\s+)*(?:[\w<>[\],.?]+\s+)?([A-Za-z_@]\w*)\s*\+?=(?![=>])/,
   sources: [/\$"[^"\n]*\{/, /\b[Ss]tring\.Format\s*\(/, ...CONCAT],
   sinks: [
     {
@@ -149,7 +149,7 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const inline = lineRuleFindings(LINE_RULES, lines);
+  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
 
   return [
     ...inline,

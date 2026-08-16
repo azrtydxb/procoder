@@ -2,7 +2,7 @@
 // procoder — Go pack.
 
 const { stripComments } = require('./comments');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -25,13 +25,13 @@ const LINE_RULES = [
     fix: 'handle it, wrap it with context, or return it',
   },
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /\b(?:Query|QueryRow|Exec)\w*\s*\(\s*(?:fmt\.Sprintf|["'`][^"'`]*["'`]\s*\+)/,
     message: 'SQL built by Sprintf or concatenation',
     fix: 'use placeholders ($1, ?) and pass the values as arguments',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
+    id: 'safe/shell-injection', rung: 'SAFE', dataSink: true,
     re: /exec\.Command\s*\(\s*["'`](?:sh|bash|cmd|powershell)["'`]\s*,\s*["'`]-c/,
     message: 'shell invoked with an interpolated command',
     fix: 'call the binary directly with an argument slice',
@@ -93,7 +93,7 @@ const TAINT = {
   // 100KB word run cost 4,887ms, against 13ms for every other pack. Requiring
   // the space first means the group cannot overlap the name at all, so each
   // backtrack step of the name fails in constant time.
-  assign: /^\s*(?:var\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*:?=(?!=)/,
+  assign: /^\s*(?:var\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*[:+]?=(?!=)/,
   sources: [/\bfmt\.Sprintf\s*\(/, /`[^`\n]*`\s*\+\s*(?=[A-Za-z_(])/, ...CONCAT],
   sinks: [
     {
@@ -141,7 +141,7 @@ function check(source, { relPath, config } = {}) {
   const { maxDepth, blocks } = analyzeBraces(text);
 
   const inline = lineRuleFindings(LINE_RULES, lines, {
-    skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo),
+    skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo) || skipConstant(rule, line),
   });
 
   return [

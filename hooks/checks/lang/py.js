@@ -3,7 +3,7 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   SIGNATURE_LOOKBACK,
   analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings, stripNoise,
@@ -11,27 +11,33 @@ const {
 
 const EXTENSIONS = ['.py'];
 
+// `dataSink` marks the rules whose finding is "untrusted data reaches this
+// call", as against "this API is the defect": a shell command, a string
+// evaluated as code, bytes deserialized. Those are discharged when everything
+// the call carries is a constant — see taint.js. safe/weak-hash and
+// safe/tls-disabled carry no such mark, because `hashlib.md5(b"x")` is a
+// finding about the algorithm and a literal argument says nothing about it.
 const LINE_RULES = [
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /\b(?:execute|executemany|raw|text)\s*\(\s*(?:f["']|["'][^"']*["']\s*%|["'][^"']*["']\s*\+|["'][^"']*["']\s*\.format\s*\()/i,
     message: 'SQL built by f-string, % or concatenation',
     fix: 'pass parameters as the second argument instead',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
+    id: 'safe/shell-injection', rung: 'SAFE', dataSink: true,
     re: /shell\s*=\s*True|\bos\.system\s*\(|\bos\.popen\s*\(/,
     message: 'shell execution with an interpolated command',
     fix: 'pass an argument list and leave shell=False',
   },
   {
-    id: 'safe/dynamic-eval', rung: 'SAFE',
+    id: 'safe/dynamic-eval', rung: 'SAFE', dataSink: true,
     re: /\beval\s*\(|\bexec\s*\(|\b__import__\s*\(/,
     message: 'dynamic code evaluation',
     fix: 'replace with a dict lookup or a direct call',
   },
   {
-    id: 'safe/unsafe-deserialize', rung: 'SAFE',
+    id: 'safe/unsafe-deserialize', rung: 'SAFE', dataSink: true,
     re: /\bpickle\.loads?\s*\(|\bmarshal\.loads?\s*\(|\byaml\.load\s*\((?![^)]*Safe)/,
     message: 'unsafe deserialization of untrusted bytes',
     fix: 'use json, or yaml.safe_load',
@@ -67,7 +73,12 @@ const LINE_RULES = [
 // `exec(` are already reported on the sink itself whatever the argument is.
 const TAINT = {
   indent: true,
-  assign: /^\s*([A-Za-z_][\w]*)\s*=(?!=)/,
+  assign: /^\s*([A-Za-z_][\w]*)\s*\+?=(?!=)/,
+  // A `def`'s parameters, which shadow any enclosing binding of the same name.
+  // Python's statements have no block-opening brace to cut them at, so the
+  // generic "the list this statement ends with" would read every call's
+  // arguments as a binding; `def` is the only thing here that binds.
+  params: /^\s*(?:async\s+)?def\s+\w+\s*\(([^()]*)\)/,
   sources: [
     /\bf["'][^"'\n]*\{/,
     /["'][^"'\n]*["']\s*%\s*[A-Za-z_({[]/,
@@ -214,7 +225,7 @@ function measureBlocks(lines, blocks) {
 function check(source, { relPath, config } = {}) {
   const lines = stripComments(source, 'py').split(/\r?\n/);
   const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
-  const inline = lineRuleFindings(LINE_RULES, lines);
+  const inline = lineRuleFindings(LINE_RULES, lines, { skip: skipConstant });
 
   return [
     ...inline,

@@ -4,7 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -19,7 +19,7 @@ const LINE_RULES = [
     fix: 'propagate with ? and a typed error',
   },
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /\bquery\w*\s*\(\s*&?format!|\bexecute\s*\(\s*&?format!/,
     message: 'SQL built with format!',
     fix: 'use bind parameters',
@@ -48,7 +48,7 @@ const LINE_RULES = [
 // ran past 500 characters before the `= rand::random()`.
 const SPAN_RULES = [
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement', dataSink: true,
     anchor: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)/g,
     needles: [/\.arg\s*\(\s*"-c"/g],
     message: 'shell invoked with an interpolated command',
@@ -77,7 +77,7 @@ const SPAN_RULES = [
 // reaches sqlx. Shell gets no taint sink: `Command::new("sh").arg("-c")` is
 // already reported on the invocation itself, whatever the argument is.
 const TAINT = {
-  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?=(?!=)/,
+  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?\+?=(?!=)/,
   sources: [/\bformat!\s*\(/, ...CONCAT],
   sinks: [
     {
@@ -194,7 +194,9 @@ function check(source, { relPath, config } = {}) {
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
 
-  const inline = lineRuleFindings(LINE_RULES, codeLines, { skip: expectedPanic });
+  const inline = lineRuleFindings(LINE_RULES, codeLines, {
+    skip: (rule, line, lineNo) => expectedPanic(rule, line, lineNo) || skipConstant(rule, line),
+  });
 
   return [
     ...inline,

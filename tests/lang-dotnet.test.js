@@ -204,6 +204,49 @@ test('sees a sink whose interpolation is more than 500 characters from the call'
   assert.ok(ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => true);`).includes('safe/tls-disabled'));
 });
 
+// Defect: a sink whose arguments are wholly constant carries nothing
+// untrusted, and a rung-1 rule that fires on obviously-safe code is what gets
+// the whole pack turned off. An identifier, a nested call or an interpolation
+// is data, and those still report.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('Process.Start("cmd.exe", "/c " + "dir");').includes('safe/shell-injection'));
+  assert.ok(!ids('var psi = new ProcessStartInfo { FileName = "cmd.exe", Arguments = $"/c dir", UseShellExecute = true };').includes('safe/shell-injection'));
+});
+
+test('the same sinks still report anything that is not a constant', () => {
+  assert.ok(ids('Process.Start($"git log {branch}");').includes('safe/shell-injection'));
+  assert.ok(ids('Process.Start("cmd.exe", "/c " + cmd);').includes('safe/shell-injection'));
+  assert.ok(ids('Process.Start("cmd.exe", "/c " + Build(dir));').includes('safe/shell-injection'));
+});
+
+// Defect: `q = q + id` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('void F(SqlConnection c, string id) {\n  var q = "SELECT id=";\n  q = q + id;\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void F(SqlConnection c, string id) {\n  var b = $"x{id}";\n  var a = b;\n  var cmd = new SqlCommand(a, c);\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('void F(SqlConnection c, string id) {\n  var q = "SELECT id=";\n  q += id;\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void F(SqlConnection c, string id) {\n  var q = $"SELECT {id}";\n  q += " LIMIT 1";\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void F(SqlConnection c) {\n  var q = "SELECT a";\n  q += " FROM t";\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('void F(SqlConnection c, string id) {\n  var q = "SELECT " + id;\n  void G(string q) {\n    var cmd = new SqlCommand(q, c);\n  }\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void F(SqlConnection c, string id) {\n  var q = "SELECT " + id;\n  void G(string other) {\n    var cmd = new SqlCommand(q, c);\n  }\n}')
+    .includes('safe/sql-injection'));
+});
+
 test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`Process.Start("git", "${PAD}");`).includes('safe/shell-injection'));
   assert.ok(!ids(`var token = Helper("${PAD}") + RandomNumberGenerator.GetInt32(9);`).includes('safe/weak-random'));

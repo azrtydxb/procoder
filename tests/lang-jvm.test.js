@@ -232,6 +232,50 @@ test('sees a sink whose interpolation is more than 500 characters from the call'
   assert.ok(ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) {}`).includes('safe/tls-disabled'));
 });
 
+// Defect: a sink whose arguments are wholly constant carries nothing
+// untrusted, and a rung-1 rule that fires on obviously-safe code is what gets
+// the whole pack turned off. An identifier, a nested call, a concatenation or
+// a Kotlin interpolation is data, and those still report.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('new ProcessBuilder("sh", "-c", "ls /tmp").start();').includes('safe/shell-injection'));
+  assert.ok(!ids('Runtime.getRuntime().exec("ls " + "/tmp");').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+});
+
+test('the same sinks still report anything that is not a constant', () => {
+  assert.ok(ids('new ProcessBuilder("sh", "-c", cmd).start();').includes('safe/shell-injection'));
+  assert.ok(ids('new ProcessBuilder("sh", "-c", build(dir)).start();').includes('safe/shell-injection'));
+  assert.ok(ids('new ProcessBuilder("sh", "-c", "rm $dir").start();').includes('safe/shell-injection'));
+  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch);').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+});
+
+// Defect: `q = q + id` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('void f(String id) {\n    String q = "SELECT id=";\n    q = q + id;\n    stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void f(String id) {\n    String b = String.format("x%s", id);\n    String a = b;\n    stmt.executeQuery(a);\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('void f(String id) {\n    String q = "SELECT id=";\n    q += id;\n    stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void f(String id) {\n    String q = String.format("SELECT %s", id);\n    q += " LIMIT 1";\n    stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void f() {\n    String q = "SELECT a";\n    q += " FROM t";\n    stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('void f(String id) {\n    String q = "SELECT " + id;\n    Runnable r = new Runnable() {\n        void run(String q) {\n            stmt.executeQuery(q);\n        }\n    };\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void f(String id) {\n    String q = "SELECT " + id;\n    Runnable r = new Runnable() {\n        void run(String other) {\n            stmt.executeQuery(q);\n        }\n    };\n}')
+    .includes('safe/sql-injection'));
+});
+
 test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`stmt.executeQuery("SELECT ${PAD} WHERE id = ?");`).includes('safe/sql-injection'));
   assert.ok(!ids(`new ProcessBuilder("git", "${PAD}", "log", branch).start();`).includes('safe/shell-injection'));
