@@ -12,6 +12,24 @@ const RANK = { pragmatic: 1, strict: 2, paranoid: 3 };
 const DOCTRINE_PATH = path.join(__dirname, '..', 'skills', 'procoder', 'SKILL.md');
 
 const BLOCK = /<!-- level:([a-z]+) -->\n?([\s\S]*?)<!-- \/level -->\n?/g;
+const FENCE = /```[\s\S]*?```/g;
+
+// Collapses runs of 3+ newlines to a single blank line, but leaves fenced
+// code blocks untouched — a blank line inside a fence is content, not
+// formatting whitespace left over from stripped level blocks.
+function collapseBlankRuns(text) {
+  let out = '';
+  let lastIndex = 0;
+  let match;
+  FENCE.lastIndex = 0;
+  while ((match = FENCE.exec(text)) !== null) {
+    out += text.slice(lastIndex, match.index).replace(/\n{3,}/g, '\n\n');
+    out += match[0];
+    lastIndex = FENCE.lastIndex;
+  }
+  out += text.slice(lastIndex).replace(/\n{3,}/g, '\n\n');
+  return out;
+}
 
 function getProcoderInstructions(level) {
   const active = normalizeLevel(level) || DEFAULT_LEVEL;
@@ -29,11 +47,9 @@ function getProcoderInstructions(level) {
   const body = doctrine.replace(/^---\n[\s\S]*?\n---\n/, '');
   const activeRank = RANK[active];
 
-  return body
-    .replace(BLOCK, (_match, blockLevel, content) =>
-      (RANK[blockLevel] || 0) <= activeRank ? content : '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  const stripped = body.replace(BLOCK, (_match, blockLevel, content) =>
+    (RANK[blockLevel] || 0) <= activeRank ? content : '');
+  return collapseBlankRuns(stripped).trim();
 }
 
-module.exports = { getProcoderInstructions, RANK };
+module.exports = { getProcoderInstructions, RANK, collapseBlankRuns };

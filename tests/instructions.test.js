@@ -1,7 +1,7 @@
 // tests/instructions.test.js
 const test = require('node:test');
 const assert = require('node:assert');
-const { getProcoderInstructions, RANK } = require('../hooks/procoder-instructions');
+const { getProcoderInstructions, RANK, collapseBlankRuns } = require('../hooks/procoder-instructions');
 
 test('off yields no instructions', () => {
   assert.strictEqual(getProcoderInstructions('off'), '');
@@ -53,4 +53,33 @@ test('an unknown level is treated as the default', () => {
 
 test('RANK orders the levels', () => {
   assert.ok(RANK.pragmatic < RANK.strict && RANK.strict < RANK.paranoid);
+});
+
+test('blank-line collapse skips fenced code blocks', () => {
+  const fixture = [
+    'before',
+    '',
+    '',
+    '',
+    '```js',
+    'const a = 1;',
+    '',
+    '',
+    'const b = 2;',
+    '```',
+    '',
+    '',
+    '',
+    'after',
+  ].join('\n');
+
+  const out = collapseBlankRuns(fixture);
+
+  // Outside the fence, 3+ blank lines still collapse to one.
+  assert.ok(out.includes('before\n\n```'), 'blank-run collapse outside fences regressed');
+  assert.ok(out.includes('```\n\nafter'), 'blank-run collapse outside fences regressed');
+
+  // Inside the fence, the blank line between the two statements must survive.
+  assert.ok(out.includes('const a = 1;\n\n\nconst b = 2;'),
+    'blank line inside a fenced code block was collapsed');
 });
