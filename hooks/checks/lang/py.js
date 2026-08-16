@@ -49,7 +49,13 @@ const LINE_RULES = [
   },
   {
     id: 'true/mutable-default', rung: 'TRUE',
-    re: /\bdef\s+\w+\s*\([^)]*=\s*(?:\[\s*\]|\{\s*\}|set\s*\(\s*\))/,
+    // The parameter span is bounded: `[^)]*` is retried from every `def` on a
+    // line full of them, and with no `)` anywhere it runs to end of line each
+    // time — quadratic (653ms on a 100KB line, 2739ms at 200KB, the whole cost
+    // of this pack on that input). Bounding it makes it linear; the conjunction
+    // is unchanged, and 500 characters is the same bound go.js, rust.js and
+    // dotnet.js already put on their argument spans.
+    re: /\bdef\s+\w+\s*\([^)]{0,500}=\s*(?:\[\s*\]|\{\s*\}|set\s*\(\s*\))/,
     message: 'mutable default argument — shared across calls',
     fix: 'default to None and build the value inside the function',
   },
