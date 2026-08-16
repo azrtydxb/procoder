@@ -66,4 +66,16 @@ class DirtyExamples {
 
     void go() throws Exception {
     }
+
+    // Assign-then-use: the same two violations the inline forms above commit,
+    // written the way real code writes them.
+    void lookupUserTainted(Statement stmt, String id) throws Exception {
+        String q = "SELECT * FROM t WHERE id = " + id;
+        stmt.executeQuery(q);
+    }
+
+    void runTainted(String dir) throws Exception {
+        String cmd = "ls " + dir;
+        Runtime.getRuntime().exec(cmd);
+    }
 }

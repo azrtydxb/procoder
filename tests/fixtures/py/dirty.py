@@ -61,3 +61,8 @@ def deep(x, y, z, w):
         for a in y:
             while z:
                 go(w)
+
+
+def lookup_user_tainted(cursor, uid):
+    q = f"SELECT * FROM t WHERE id = {uid}"
+    return cursor.execute(q)

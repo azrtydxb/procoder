@@ -60,3 +60,8 @@ func fetchPage(url string) (*http.Response, error) {
 func debugPrint(x int) {
 	fmt.Println("here", x)
 }
+
+func lookupUserTainted(db *sql.DB, id string) (*sql.Rows, error) {
+	q := "SELECT * FROM t WHERE id = " + id
+	return db.Query(q)
+}

@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { check, EXTENSIONS } = require('../hooks/checks/lang/dotnet');
 const { DEFAULTS } = require('../hooks/checks/config');
+const { assertLinear } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const ids = (src) => check(src, { relPath: 'X.cs', config }).map((f) => f.id);
@@ -137,18 +138,74 @@ test('flags the ProcessStartInfo pair in either order', () => {
 // 1s separates "linear" from "regression" with room for a loaded CI machine.
 // The hook's whole budget is 2s.
 test('stays linear on a very long single line', () => {
-  const units = [
-    'Process.Start("a" ',
-    'var psi = new ProcessStartInfo { UseShellExecute = true, Name = "a", ',
-    'var token = ',
-    'ServerCertificateValidationCallback = ',
-    'var x = foo(a, b) + "s" + bar; ',
-  ];
-  for (const unit of units) {
-    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const started = Date.now();
-    check(line, { relPath: 'X.cs', config });
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
-  }
+  assertLinear({
+    assert,
+    check,
+    relPath: 'X.cs',
+    config,
+    baseline: 'return;  ',
+    units: [
+      'Process.Start("a" ',
+      'var psi = new ProcessStartInfo { UseShellExecute = true, Name = "a", ',
+      'var token = ',
+      'ServerCertificateValidationCallback = ',
+      'var x = foo(a, b) + "s" + bar; ',
+      'var q = "SELECT " + id; ',
+      'var cmd = new SqlCommand(q, c); ',
+      'Process.Start(arg); ',
+    ],
+    sources: [
+      'x'.repeat(100 * 1024),
+      // Nested calls that DO close — see lang-ts.test.js.
+      'Process.Start('.repeat(7000) + ')'.repeat(7000),
+      'ServerCertificateValidationCallback = a '.repeat(2500),
+    ],
+  });
+});
+
+// Local taint: the assign-then-use form, at least as common as the inline one.
+// Reported at the sink, naming the line the value was built on.
+test('tracks an interpolated or concatenated string from its assignment to a sink', () => {
+  const src = 'void F(SqlConnection c, string id) {\n  var q = "SELECT * FROM t WHERE id=" + id;\n  var cmd = new SqlCommand(q, c);\n}';
+  const hit = check(src, { relPath: 'X.cs', config }).find((f) => f.id === 'safe/sql-injection');
+  assert.ok(hit, 'no safe/sql-injection for the assign-then-use form');
+  assert.strictEqual(hit.line, 3, 'reported at the sink, not the assignment');
+  assert.match(hit.message, /line 2/);
+
+  assert.ok(ids('void F(DbContext db, string id) {\n  var q = $"SELECT * FROM t WHERE id={id}";\n  db.Database.ExecuteSqlRaw(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void F(string dir) {\n  var cmd = "ls " + dir;\n  Process.Start(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('a parameterized or literal-only variable reaching a sink stays silent', () => {
+  assert.ok(!ids('void F(SqlConnection c, string id) {\n  var q = "SELECT * FROM t WHERE id = @id";\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void F(SqlConnection c) {\n  var q = "SELECT " + "a, b" + " FROM t";\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void F() {\n  var cmd = "notepad.exe";\n  Process.Start(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('taint clears on a literal reassignment and does not leave its block', () => {
+  assert.ok(!ids('void F(SqlConnection c, string id) {\n  var q = "SELECT t WHERE id=" + id;\n  q = "SELECT * FROM t";\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void A(string id) {\n  var q = "SELECT " + id;\n}\nvoid B(SqlConnection c, string q) {\n  var cmd = new SqlCommand(q, c);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// The 500-character span ceilings the SAFE rules used to carry: a sink whose
+// interpolation sits further than that from the call was missed entirely.
+const PAD = 'a'.repeat(600);
+
+test('sees a sink whose interpolation is more than 500 characters from the call', () => {
+  assert.ok(ids(`Process.Start("${PAD}", $"git log {branch}");`).includes('safe/shell-injection'));
+  assert.ok(ids(`var token = Helper("${PAD}") + new Random().Next();`).includes('safe/weak-random'));
+  assert.ok(ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => true);`).includes('safe/tls-disabled'));
+});
+
+test('the safe forms stay silent however long the arguments are', () => {
+  assert.ok(!ids(`Process.Start("git", "${PAD}");`).includes('safe/shell-injection'));
+  assert.ok(!ids(`var token = Helper("${PAD}") + RandomNumberGenerator.GetInt32(9);`).includes('safe/weak-random'));
+  assert.ok(!ids(`ServerCertificateValidationCallback = Wrap("${PAD}", (a, b, c, d) => Validate(a));`).includes('safe/tls-disabled'));
 });

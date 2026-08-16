@@ -73,3 +73,24 @@ def documented(value):
     cursor.execute(f"SELECT {value}") — parameterize instead.
     """
     return value
+
+
+def lookup_user_bound(cursor, uid):
+    q = "SELECT * FROM t WHERE id = %s"
+    return cursor.execute(q, (uid,))
+
+
+def list_columns(cursor):
+    q = "SELECT " + "id, name" + " FROM t"
+    return cursor.execute(q)
+
+
+def rebuild_query(cursor, uid):
+    q = "SELECT * FROM t WHERE id = " + uid
+    q = "SELECT * FROM t"
+    return cursor.execute(q)
+
+
+def describe_dir(target):
+    cmd = "ls " + target
+    logger.info(cmd)

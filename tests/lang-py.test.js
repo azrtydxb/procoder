@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { check, EXTENSIONS } = require('../hooks/checks/lang/py');
 const { DEFAULTS } = require('../hooks/checks/config');
+const { assertLinear } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const ids = (src) => check(src, { relPath: 'x.py', config }).map((f) => f.id);
@@ -186,51 +187,56 @@ test('self and cls do not count toward the parameter budget', () => {
 // took .NET's safe/shell-injection rule 4.7s on this input, and this pack's
 // true/mutable-default 653ms.
 //
-// The bound is relative, not an absolute millisecond count. An absolute one
-// measures the machine as much as the code: the old 1s bound was tripped at
-// 1958–2230ms by a rule that was merely slow, because a loaded runner scales
-// every number up at once. So the same 100KB of a benign unit is timed first,
-// which is what "linear on this line length, on this machine, right now" costs;
-// load moves that baseline and the bound with it. Every adversarial unit runs
-// within 4x of it today and quadratic ran at 146x, so 40x sits an order of
-// magnitude clear on both sides. The 5ms floor is for a fast machine where the
-// baseline rounds toward zero — it still leaves 200ms, well under the 586ms the
-// quadratic rule took here.
-//
-// Each timing is the fastest of three runs: a scheduler stall lands in one run
-// of three, not all three.
-const BASELINE_UNIT = 'pass  ';
-const PERF_MULTIPLE = 40;
-const PERF_FLOOR_MS = 5;
-
-function bestOf(runs, work) {
-  let best = Infinity;
-  for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
-  }
-  return best;
-}
-
+// The bound, the baseline it is measured against and the rationale for both
+// now live in tests/perf-guard.js, where the other five packs share them:
+// this pack had the relative bound and the other five still had absolute
+// ones, which is five copies of one property at two different answers.
 test('stays linear on a very long single line', () => {
-  const lineOf = (unit) =>
-    unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-  const timeOf = (unit) => {
-    const line = lineOf(unit);
-    return bestOf(3, () => check(line, { relPath: 'x.py', config }));
-  };
+  assertLinear({
+    assert,
+    check,
+    relPath: 'x.py',
+    config,
+    baseline: 'pass  ',
+    units: [
+      'yaml.load(',
+      'execute("x" ',
+      'def f(a=1, ',
+      'x = f(a, b) + "s" + c; ',
+      'q = f"SELECT {a}" ',
+      'cur.execute(q) ',
+    ],
+    sources: ['x'.repeat(100 * 1024)],
+  });
+});
 
-  const budget = Math.max(timeOf(BASELINE_UNIT), PERF_FLOOR_MS) * PERF_MULTIPLE;
-  const units = [
-    "yaml.load(",
-    "execute(\"x\" ",
-    "def f(a=1, ",
-    "x = f(a, b) + \"s\" + c; ",
-  ];
-  for (const unit of units) {
-    const elapsed = timeOf(unit);
-    assert.ok(elapsed < budget,
-      `100KB line took ${elapsed}ms (budget ${budget}ms) for unit ${JSON.stringify(unit)}`);
-  }
+// Local taint: the assign-then-use form, at least as common as the inline one.
+// Reported at the sink, naming the line the value was built on.
+test('tracks an f-string, % or format value from its assignment to a sink', () => {
+  const src = 'def f(cur, uid):\n    q = f"SELECT * FROM t WHERE id={uid}"\n    cur.execute(q)\n';
+  const hit = check(src, { relPath: 'x.py', config }).find((f) => f.id === 'safe/sql-injection');
+  assert.ok(hit, 'no safe/sql-injection for the f-string form');
+  assert.strictEqual(hit.line, 3, 'reported at the sink, not the assignment');
+  assert.match(hit.message, /line 2/);
+
+  assert.ok(ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id=%s" % uid\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id=" + uid\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id={}".format(uid)\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+});
+
+test('a parameterized or literal-only variable reaching a sink stays silent', () => {
+  assert.ok(!ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id = %s"\n    cur.execute(q, (uid,))\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('def f(cur):\n    q = "SELECT " + "a, b" + " FROM t"\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+});
+
+test('taint clears on a literal reassignment and does not leave its block', () => {
+  assert.ok(!ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id=" + uid\n    q = "SELECT * FROM t"\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('def a(uid):\n    q = "SELECT " + uid\n\n\ndef b(cur, q):\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
 });

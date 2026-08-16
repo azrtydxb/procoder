@@ -2,6 +2,7 @@
 // procoder — Go pack.
 
 const { stripComments } = require('./comments');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -73,6 +74,37 @@ const LINE_RULES = [
   },
 ];
 
+// Local taint (taint.js): the assign-then-use form of the SQL rule above.
+// `q := "SELECT ... id=" + id` then `db.Query(q)` is the shape gofmt'd code
+// takes, and the line rule cannot see it.
+//
+// The sink allows the query to be either the first or the second argument,
+// because the Context variants take `ctx` first; both captures are tested, so
+// `db.QueryContext(ctx, q)` and `db.Query(q)` are read the same way. Shell
+// gets no taint sink: `exec.Command("sh", "-c", …)` is already reported on
+// the shell invocation itself, whatever the argument is.
+const GO_NAME = String.raw`([A-Za-z_]\w*)`;
+
+const TAINT = {
+  // The optional type in `var q string = …` is written `(?:\s+[\w*.[\]]+)?`,
+  // with the whitespace *inside* the group. Written the other way round the
+  // group could start inside the name's own `\w*` run, and two nested
+  // quantifiers over the same characters is the quadratic shape: an unbroken
+  // 100KB word run cost 4,887ms, against 13ms for every other pack. Requiring
+  // the space first means the group cannot overlap the name at all, so each
+  // backtrack step of the name fails in constant time.
+  assign: /^\s*(?:var\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*:?=(?!=)/,
+  sources: [/\bfmt\.Sprintf\s*\(/, /`[^`\n]*`\s*\+\s*(?=[A-Za-z_(])/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`\b(?:Query|QueryRow|QueryContext|QueryRowContext|ExecContext|Exec)\s*\(\s*(?:${GO_NAME}\s*,\s*)?${GO_NAME}\s*[,)]`),
+      message: 'SQL built by Sprintf or concatenation reaches a query',
+      fix: 'use placeholders ($1, ?) and pass the values as arguments',
+    },
+  ],
+};
+
 // How many lines to look ahead for a `defer <resource>.Close()` that
 // discharges the unclosed-resource finding — covers the common
 // `if err != nil { return ... }` guard immediately before the defer.
@@ -108,9 +140,14 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
+  const inline = lineRuleFindings(LINE_RULES, lines, {
+    skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo),
+  });
+
   return [
-    ...lineRuleFindings(LINE_RULES, lines, {
-      skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo),
+    ...inline,
+    ...taintFindings({
+      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
     }),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNC_SIGNATURE)),

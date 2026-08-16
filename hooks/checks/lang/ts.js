@@ -2,6 +2,8 @@
 // procoder — TypeScript / JavaScript pack.
 
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -20,12 +22,21 @@ const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 // literal may contain the *other* quote — `"rm '"` and `'rm "'` are exactly how
 // shell and SQL fragments get built, and a single `["'][^"']*["']` class misses
 // both. Each branch is anchored on its own quote, so there is no backtracking.
-const LITERAL_PLUS = String.raw`(?:"[^"]{0,500}"|'[^']{0,500}')\s*\+`;
+//
+// The literal is unbounded. It used to be `[^"]{0,500}`, which dropped the
+// finding for any SQL or shell fragment longer than 500 characters — and a
+// long literal is exactly where a stray `+ id` hides. Removing the bound does
+// not reintroduce the quadratic shape the bound existed for, because the span
+// here is *delimiter-terminated*: a scan can only start at a quote and ends at
+// the next one, so the scans partition the line rather than each running to
+// its end. The `[^)]`-style spans, which have no such terminator, moved to
+// spans.js instead. Measured unchanged at 100KB and 400KB.
+const LITERAL_PLUS = String.raw`(?:"[^"]*"|'[^']*')\s*\+`;
 
 const LINE_RULES = [
   {
     id: 'safe/sql-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})`, 'i'),
+    re: new RegExp(String.raw`\b(?:query|execute|raw|exec)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`, 'i'),
     message: 'SQL built by interpolation or concatenation',
     fix: 'use a parameterized query with bound values',
   },
@@ -43,7 +54,9 @@ const LINE_RULES = [
   },
   {
     id: 'safe/shell-injection', rung: 'SAFE',
-    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]{0,500}\$\{|${LITERAL_PLUS})|\b(?:spawn|execFile)\s*\([^)]{0,500}\bshell\s*:\s*true`),
+    // The `shell: true` half moved to SPAN_RULES: its `[^)]{0,500}` had no
+    // delimiter to terminate it, so it is the half that had to be bounded.
+    re: new RegExp(String.raw`\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:\`[^\`]*\$\{|${LITERAL_PLUS})`),
     message: 'shell invoked with an interpolated command',
     fix: 'use execFile/spawn with an argument array and shell:false',
   },
@@ -72,6 +85,56 @@ const LINE_RULES = [
     fix: 'rewrite as if/else or a lookup',
   },
 ];
+
+// Rules whose needle may sit anywhere inside the call's own argument list —
+// see spans.js. `spawn('sh', [cmd], { shell: true })` puts the option object
+// after an array of any length, which is why this cannot be a line rule with a
+// bounded span: the bound decided how long the command could be before the
+// finding was silently dropped.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    anchor: /\b(?:spawn|execFile)\s*\(/g,
+    needles: [/\bshell\s*:\s*true/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'use execFile/spawn with an argument array and shell:false',
+  },
+];
+
+// Local taint (taint.js): the assign-then-use form of the two rules above.
+//
+// The verb lists are deliberately not the line rules'. `exec` sits in the SQL
+// rule's list there, which is why `exec("ls " + dir)` is reported as both
+// safe/sql-injection and safe/shell-injection — one of the two is always
+// wrong. A new mechanism does not have to inherit that, so `exec` belongs to
+// the shell sink only, and the SQL sink keeps the verbs that are only ever
+// SQL. `execSync` is spelled before `exec` so the alternation prefers it.
+//
+// safe/xss-sink and safe/dynamic-eval get no taint sink on purpose: both line
+// rules already fire on the sink itself whatever the argument is
+// (`.innerHTML =`, `eval(`), so a taint sink for them would report a second
+// time for the same line and nothing new — the duplicate rung 4 forbids.
+const JS_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+
+const TAINT = {
+  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  sources: [/`[^`\n]*\$\{/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`\b(?:query|execute|raw)\s*\(\s*${JS_NAME}\s*[,)]`, 'i'),
+      message: 'SQL built by interpolation or concatenation reaches a query',
+      fix: 'use a parameterized query with bound values',
+    },
+    {
+      id: 'safe/shell-injection',
+      re: new RegExp(
+        String.raw`(?:\bchild_process\.|(?<![.\w$]))(?:execSync|exec)\s*\(\s*${JS_NAME}\s*[,)]`),
+      message: 'shell command built by interpolation or concatenation',
+      fix: 'use execFile/spawn with an argument array and shell:false',
+    },
+  ],
+};
 
 // try { ... } catch (e) { }  — with only whitespace or a comment in the block.
 const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
@@ -120,9 +183,15 @@ function check(source, { relPath, config } = {}) {
   const code = stripComments(text, 'js');
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
+  const codeLines = code.split(/\r?\n/);
+  const inline = lineRuleFindings(LINE_RULES, codeLines, { codeLines: stripped.split(/\r?\n/) });
 
   return [
-    ...lineRuleFindings(LINE_RULES, code.split(/\r?\n/), { codeLines: stripped.split(/\r?\n/) }),
+    ...inline,
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
+    ...taintFindings({
+      lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...emptyCatchFindings(code, SWALLOWED, 'error swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNCTION_SIGNATURE)),

@@ -3,6 +3,8 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -30,22 +32,14 @@ const LINE_RULES = [
     fix: 'use SHA-256, or BCrypt/Argon2 for passwords',
   },
   {
-    id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=\s*[^;]{0,500}new\s+Random\s*\(|Math\.random\s*\(\s*\)[^;]{0,500}\b(?:token|key|secret)\b/i,
-    message: 'java.util.Random used for a security value',
-    fix: 'use SecureRandom',
-  },
-  {
+    // The two spanning halves — a security-named assignment reaching
+    // `new Random(` in the same statement, and `Math.random()` reaching a
+    // security-named word in it — are in SPAN_RULES. Their `[^;]{0,500}` had
+    // no delimiter within reach to terminate it.
     id: 'safe/tls-disabled', rung: 'SAFE',
-    re: /TrustAllCerts|checkServerTrusted\s*\([^)]{0,500}\)\s*\{\s*\}|ALLOW_ALL_HOSTNAME_VERIFIER/,
+    re: /TrustAllCerts|ALLOW_ALL_HOSTNAME_VERIFIER/,
     message: 'TLS certificate or hostname verification disabled',
     fix: 'trust the proper CA instead of accepting all certificates',
-  },
-  {
-    id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Runtime\.getRuntime\(\)\.exec\s*\([^)]{0,500}\+|new\s+ProcessBuilder\s*\([^)]{0,500}"(?:sh|bash|cmd(?:\.exe)?|powershell)"[^)]{0,500}"(?:-c|\/c)"/,
-    message: 'shell invoked with an interpolated command',
-    fix: 'call the binary directly with a separate argument list',
   },
   {
     id: 'true/printstacktrace', rung: 'TRUE',
@@ -58,6 +52,83 @@ const LINE_RULES = [
     re: /System\.(?:out|err)\.print(?:ln|f)?\s*\(/,
     message: 'leftover debugging statement',
     fix: 'delete it, or route through the project logger',
+  },
+];
+
+// Local taint (taint.js): the assign-then-use form of the two rules above.
+// `String q = "SELECT ... id=" + id;` then `stmt.executeQuery(q);` is the
+// shape a Java codebase actually has, and the line rule cannot see it.
+//
+// The assignment pattern carries an optional type, so both `String q = …` and
+// a plain `q = …` reassignment are read; Kotlin's `val`/`var` sit in the same
+// modifier list. The shell sink is pinned to `getRuntime().exec(` rather than
+// a bare `exec(`, which is far too common a method name to key on.
+const JVM_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+
+const TAINT = {
+  assign: /^\s*(?:(?:final|val|var|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  sources: [/\bString\.format\s*\(/, /"[^"\n]*\$[A-Za-z_{]/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`\b(?:executeQuery|executeUpdate|createQuery|rawQuery|execute)\s*\(\s*${JVM_NAME}\s*[,)]`),
+      message: 'SQL built by concatenation or format reaches a statement',
+      fix: 'use PreparedStatement with bound parameters',
+    },
+    {
+      id: 'safe/shell-injection',
+      re: new RegExp(String.raw`getRuntime\s*\(\s*\)\s*\.\s*exec\s*\(\s*${JVM_NAME}\s*[,)]`),
+      message: 'shell command built by concatenation or format',
+      fix: 'call the binary directly with a separate argument list',
+    },
+  ],
+};
+
+// Rules whose needle may sit anywhere inside the same call or the same
+// statement — see spans.js. Every one of these carried a 500-character
+// ceiling: an exec whose concatenation sat further than that from the call, a
+// ProcessBuilder with a long argument between "sh" and "-c", a
+// checkServerTrusted with a long parameter list, and a token assignment with a
+// long expression before `new Random(` were all silently unreported.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    anchor: /Runtime\.getRuntime\(\)\.exec\s*\(/g,
+    needles: [/\+/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with a separate argument list',
+  },
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'call',
+    anchor: /new\s+ProcessBuilder\s*\(/g,
+    needles: [/"(?:sh|bash|cmd(?:\.exe)?|powershell)"/g, /"(?:-c|\/c)"/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with a separate argument list',
+  },
+  {
+    // The needle list is empty: what makes this a finding is not something
+    // inside the parameter list but the empty block right after it, which
+    // `after` tests where the list closes.
+    id: 'safe/tls-disabled', rung: 'SAFE', within: 'call',
+    anchor: /checkServerTrusted\s*\(/g,
+    needles: [],
+    after: /\s*\{\s*\}/y,
+    message: 'TLS certificate or hostname verification disabled',
+    fix: 'trust the proper CA instead of accepting all certificates',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE', within: 'statement',
+    anchor: /\b(?:token|secret|key|nonce|salt|session)\w*\s*=/gi,
+    needles: [/new\s+Random\s*\(/g],
+    message: 'java.util.Random used for a security value',
+    fix: 'use SecureRandom',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE', within: 'statement',
+    anchor: /Math\.random\s*\(\s*\)/g,
+    needles: [/\b(?:token|key|secret)\b/gi],
+    message: 'java.util.Random used for a security value',
+    fix: 'use SecureRandom',
   },
 ];
 
@@ -120,8 +191,14 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
+  const inline = lineRuleFindings(LINE_RULES, lines);
+
   return [
-    ...lineRuleFindings(LINE_RULES, lines),
+    ...inline,
+    ...spanRuleFindings(SPAN_RULES, lines, { existing: inline }),
+    ...taintFindings({
+      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...xxeFindings(lines),
     ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({

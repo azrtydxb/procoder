@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { check, EXTENSIONS } = require('../hooks/checks/lang/jvm');
 const { DEFAULTS } = require('../hooks/checks/config');
+const { assertLinear } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const ids = (src) => check(src, { relPath: 'X.java', config }).map((f) => f.id);
@@ -160,25 +161,80 @@ test('measures methods whose generic return type contains a space', () => {
   assert.ok(ids(method('Map<String,List<Integer>>')).includes('obvious/too-many-params'));
 });
 
-// Perf guard: every rule here must stay linear in line length. Each unit below
-// is an adversarial prefix — repeated, it makes any unbounded span in a rule
-// re-scan to end of line from every offset, which is the quadratic shape that
-// took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
-// in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
-// a loaded CI machine; the hook's whole budget is 2s.
+// Perf guard — see tests/perf-guard.js for the bound and why it is relative.
 test('stays linear on a very long single line', () => {
-  const units = [
-    "new ProcessBuilder(\"sh\", ",
-    "Runtime.getRuntime().exec(a ",
-    "String token = ",
-    "checkServerTrusted(a ",
-    "var x = f(a, b) + \"s\" + c; ",
-  ];
-  for (const unit of units) {
-    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const started = Date.now();
-    check(line, { relPath: 'X.java', config });
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
-  }
+  assertLinear({
+    assert,
+    check,
+    relPath: 'X.java',
+    config,
+    baseline: 'return;  ',
+    units: [
+      'new ProcessBuilder("sh", ',
+      'Runtime.getRuntime().exec(a ',
+      'String token = ',
+      'checkServerTrusted(a ',
+      'var x = f(a, b) + "s" + c; ',
+      'String q = "SELECT " + id; ',
+      'stmt.executeQuery(q); ',
+      'Runtime.getRuntime().exec(cmd); ',
+    ],
+    sources: [
+      'x'.repeat(100 * 1024),
+      // Nested calls that DO close, so paramSpans records a span for each —
+      // see lang-ts.test.js for why this shape is the one to guard.
+      'checkServerTrusted('.repeat(5000) + ')'.repeat(5000),
+      'new ProcessBuilder('.repeat(5000) + ')'.repeat(5000),
+    ],
+  });
+});
+
+// Local taint: the assign-then-use form, at least as common as the inline one.
+// Reported at the sink, naming the line the value was built on.
+test('tracks a concatenated or formatted string from its assignment to a sink', () => {
+  const src = 'void f(Statement stmt, String id) {\n  String q = "SELECT * FROM t WHERE id=" + id;\n  stmt.executeQuery(q);\n}';
+  const hit = check(src, { relPath: 'X.java', config }).find((f) => f.id === 'safe/sql-injection');
+  assert.ok(hit, 'no safe/sql-injection for the assign-then-use form');
+  assert.strictEqual(hit.line, 3, 'reported at the sink, not the assignment');
+  assert.match(hit.message, /line 2/);
+
+  assert.ok(ids('void f(Statement stmt, String id) {\n  String q = String.format("SELECT * FROM t WHERE id=%s", id);\n  stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('void f(String dir) {\n  String cmd = "ls " + dir;\n  Runtime.getRuntime().exec(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('a bound-parameter or literal-only variable reaching a sink stays silent', () => {
+  assert.ok(!ids('void f(PreparedStatement stmt, String id) {\n  String q = "SELECT * FROM t WHERE id = ?";\n  stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void f(Statement stmt) {\n  String q = "SELECT " + "a, b" + " FROM t";\n  stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void f() {\n  String cmd = "ls -la";\n  Runtime.getRuntime().exec(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('taint clears on a literal reassignment and does not leave its block', () => {
+  assert.ok(!ids('void f(Statement stmt, String id) {\n  String q = "SELECT t WHERE id=" + id;\n  q = "SELECT * FROM t";\n  stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('void a(String id) {\n  String q = "SELECT " + id;\n}\nvoid b(Statement stmt, String q) {\n  stmt.executeQuery(q);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// The 500-character span ceilings the SAFE rules used to carry: a sink whose
+// interpolation sits further than that from the call was missed entirely.
+const PAD = 'a'.repeat(600);
+
+test('sees a sink whose interpolation is more than 500 characters from the call', () => {
+  assert.ok(ids(`stmt.executeQuery("SELECT ${PAD} WHERE id = " + id);`).includes('safe/sql-injection'));
+  assert.ok(ids(`Runtime.getRuntime().exec("git log ${PAD} " + branch);`).includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection the over-500-character scanner input for that rule, not an instance of it
+  assert.ok(ids(`new ProcessBuilder("sh", "${PAD}", "-c", cmd).start();`).includes('safe/shell-injection'));
+  assert.ok(ids(`String token = helper("${PAD}") + new Random().nextLong();`).includes('safe/weak-random'));
+  assert.ok(ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) {}`).includes('safe/tls-disabled'));
+});
+
+test('the safe forms stay silent however long the arguments are', () => {
+  assert.ok(!ids(`stmt.executeQuery("SELECT ${PAD} WHERE id = ?");`).includes('safe/sql-injection'));
+  assert.ok(!ids(`new ProcessBuilder("git", "${PAD}", "log", branch).start();`).includes('safe/shell-injection'));
+  assert.ok(!ids(`String token = helper("${PAD}") + secureRandom.nextLong();`).includes('safe/weak-random'));
+  assert.ok(!ids(`public void checkServerTrusted(X509Certificate[] chain, String ${PAD}) { verify(chain); }`).includes('safe/tls-disabled'));
 });

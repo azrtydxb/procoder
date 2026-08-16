@@ -3,6 +3,8 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
+const { spanRuleFindings } = require('./spans');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -23,22 +25,13 @@ const LINE_RULES = [
     fix: 'use bind parameters',
   },
   {
-    id: 'safe/shell-injection', rung: 'SAFE',
-    re: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)[^;]{0,500}\.arg\s*\(\s*"-c"/,
-    message: 'shell invoked with an interpolated command',
-    fix: 'call the binary directly with separate args',
-  },
-  {
+    // safe/shell-injection and safe/weak-random are in SPAN_RULES: both
+    // reached across the rest of the statement with a `[^;]`/`[^=]` span, and
+    // both had to bound it at 500 characters to stay linear.
     id: 'safe/tls-disabled', rung: 'SAFE',
     re: /danger_accept_invalid_certs\s*\(\s*true\s*\)|danger_accept_invalid_hostnames\s*\(\s*true\s*\)/,
     message: 'TLS certificate verification disabled',
     fix: 'add the proper root certificate instead',
-  },
-  {
-    id: 'safe/weak-random', rung: 'SAFE',
-    re: /\b(?:token|secret|key|nonce|salt|session)\w*\s*(?::[^=]{1,500})?=\s*rand::(?:random|thread_rng)\b/i,
-    message: 'general-purpose RNG used for a security value',
-    fix: 'use a CSPRNG (rand::rngs::OsRng or the ring crate)',
   },
   {
     id: 'alone/debug-leftover', rung: 'ALONE',
@@ -47,6 +40,54 @@ const LINE_RULES = [
     fix: 'delete it, or use the tracing/log crate',
   },
 ];
+
+// Rules whose needle may sit anywhere later in the same statement — see
+// spans.js. A builder chain is exactly where the 500-character ceiling bit:
+// `Command::new("sh")` followed by a long `.env(...).current_dir(...)` run
+// before `.arg("-c")` went unreported, as did a binding whose type annotation
+// ran past 500 characters before the `= rand::random()`.
+const SPAN_RULES = [
+  {
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement',
+    anchor: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)/g,
+    needles: [/\.arg\s*\(\s*"-c"/g],
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with separate args',
+  },
+  {
+    id: 'safe/weak-random', rung: 'SAFE', within: 'statement',
+    // The anchor stops at the name: the needle begins with the `=`, and the
+    // window opens where the anchor's match ends, so consuming the `=` here
+    // would put it behind the window. What sat between the two was the type
+    // annotation whose length was the ceiling.
+    anchor: /\b(?:token|secret|key|nonce|salt|session)\w*/gi,
+    needles: [/=\s*rand::(?:random|thread_rng)\b/g],
+    message: 'general-purpose RNG used for a security value',
+    fix: 'use a CSPRNG (rand::rngs::OsRng or the ring crate)',
+  },
+];
+
+// Local taint (taint.js): the bind-then-use form of the SQL rule above.
+// `let q = format!("SELECT ... {}", id);` then `sqlx::query(&q)` is the shape
+// the line rule cannot see.
+//
+// The binding pattern takes an optional `mut` and an optional type
+// annotation, and also matches a bare reassignment, so rebinding the name to a
+// literal clears it. The sink allows a leading `&`, which is how a `String`
+// reaches sqlx. Shell gets no taint sink: `Command::new("sh").arg("-c")` is
+// already reported on the invocation itself, whatever the argument is.
+const TAINT = {
+  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?=(?!=)/,
+  sources: [/\bformat!\s*\(/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: /\b(?:query|execute)\w*\s*\(\s*&?\s*([A-Za-z_]\w*)\s*[,)]/,
+      message: 'SQL built with format! or concatenation reaches a query',
+      fix: 'use bind parameters',
+    },
+  ],
+};
 
 const UNSAFE_BLOCK = /^\s*(?:.*\s)?unsafe\s*\{/;
 const SAFETY_COMMENT = /\/\/\s*SAFETY:|\/\/!\s*SAFETY:/i;
@@ -153,8 +194,14 @@ function check(source, { relPath, config } = {}) {
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
 
+  const inline = lineRuleFindings(LINE_RULES, codeLines, { skip: expectedPanic });
+
   return [
-    ...lineRuleFindings(LINE_RULES, codeLines, { skip: expectedPanic }),
+    ...inline,
+    ...spanRuleFindings(SPAN_RULES, codeLines, { existing: inline }),
+    ...taintFindings({
+      lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...unsafeFindings(codeLines, lines),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FN_SIGNATURE)),
