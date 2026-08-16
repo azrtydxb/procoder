@@ -544,6 +544,8 @@ Checks implemented, with permanent ids:
 | `alone/commented-code` | ALONE | ≥3 consecutive comment lines that parse as code |
 | `alone/orphan-todo` | ALONE | TODO/FIXME/HACK with no owner or ticket reference |
 | `alone/deprecated-no-trigger` | ALONE | a deprecation marker with no removal date, version, or condition |
+| `alone/blanket-suppression` | ALONE | a linter/type-checker suppression that names no specific rule, or that disables a whole file |
+| `alone/unexplained-suppression` | ALONE | a rule-scoped suppression with no stated reason |
 
 - [ ] **Step 1: Write the failing test**
 
@@ -600,6 +602,28 @@ test('flags TODOs without an owner or ticket', () => {
   assert.ok(ids('// TODO: fix this later').includes('alone/orphan-todo'));
   assert.ok(!ids('// TODO(pascal): drop the shim').includes('alone/orphan-todo'));
   assert.ok(!ids('// TODO INFRA-4821: drop the shim').includes('alone/orphan-todo'));
+});
+
+test('flags blanket suppressions but not narrow, named, explained ones', () => {
+  // File-wide or unnamed: silences everything at that location, including future findings.
+  assert.ok(ids('/* eslint-disable */').includes('alone/blanket-suppression'));
+  assert.ok(ids('// eslint-disable-next-line').includes('alone/blanket-suppression'));
+  assert.ok(ids('x = compute()  # noqa').includes('alone/blanket-suppression'));
+  assert.ok(ids('y = cast(v)  # type: ignore').includes('alone/blanket-suppression'));
+  assert.ok(ids('//nolint').includes('alone/blanket-suppression'));
+  assert.ok(ids('@SuppressWarnings("all")').includes('alone/blanket-suppression'));
+
+  // Named + scoped + explained: the sanctioned form, must stay silent.
+  assert.deepStrictEqual(
+    ids('// eslint-disable-next-line no-eval -- sandboxed evaluator, input is a literal'), []);
+  assert.deepStrictEqual(ids('x = compute()  # noqa: E501 - URL cannot be wrapped'), []);
+  assert.deepStrictEqual(
+    ids('//nolint:errcheck // Close() on a read-only handle cannot fail'), []);
+});
+
+test('flags a named suppression that gives no reason', () => {
+  assert.ok(ids('// eslint-disable-next-line no-eval').includes('alone/unexplained-suppression'));
+  assert.ok(ids('#pragma warning disable CS0618').includes('alone/unexplained-suppression'));
 });
 
 test('flags deprecations with no removal trigger', () => {
@@ -679,6 +703,23 @@ const LOOKS_LIKE_CODE =
 const TODO = /\b(TODO|FIXME|HACK|XXX)\b(?!\s*[(:]?\s*(?:[A-Z]{2,}-\d+|\([^)]+\)))/;
 const TODO_OWNED = /\b(?:TODO|FIXME|HACK|XXX)\b\s*(?:\([^)]+\)|[:\s]*[A-Z]{2,}-\d+)/;
 
+// Suppressions. Silencing a tool is a claim the tool is wrong; an unnamed one also
+// swallows every future finding at that location, which is how a codebase ends up
+// looking clean while rotting.
+const SUPPRESSION =
+  /\beslint-disable(?:-next-line|-line)?\b|#\s*noqa\b|#\s*type:\s*ignore\b|\/\/\s*nolint\b|@SuppressWarnings\s*\(|#pragma\s+warning\s+disable\b|\/\/\s*@ts-(?:ignore|expect-error)\b|#\s*pylint:\s*disable\b|\/\/\s*deepcode\s+ignore\b/i;
+
+// The rule identifier that scopes the suppression, per ecosystem.
+const SUPPRESSION_NAMED =
+  /eslint-disable(?:-next-line|-line)?\s+[\w@/-]+|#\s*noqa:\s*\w+|#\s*type:\s*ignore\[[^\]]+\]|\/\/\s*nolint:\s*[\w,-]+|@SuppressWarnings\s*\(\s*"(?!all")[^"]+"|#pragma\s+warning\s+disable\s+\w+|#\s*pylint:\s*disable=\s*[\w,-]+/i;
+
+// A whole-file disable, or an explicit "everything" target.
+const SUPPRESSION_BLANKET =
+  /\/\*\s*eslint-disable\s*\*\/|@SuppressWarnings\s*\(\s*"all"\s*\)|\/\/\s*nolint\s*$|#\s*pylint:\s*skip-file\b/i;
+
+// The stated reason. Ecosystems spell the separator differently.
+const SUPPRESSION_REASON = /--\s*\S+|\/\/\s*\S+|#\s*[-–]\s*\S+|:\s*\S+\s+\S+/;
+
 const DEPRECATED = /@?\bdeprecated\b|\bDeprecated\s*\(|#\[deprecated/i;
 const REMOVAL_TRIGGER =
   /\b(?:remove|delete|drop|sunset)\b[^.\n]{0,40}\b(?:after|by|in|once|when)\b|\bv?\d+\.\d+\b|\b20\d\d-\d\d(?:-\d\d)?\b/i;
@@ -753,6 +794,22 @@ function checkUniversal(source, { relPath, config } = {}) {
         message: 'TODO with no owner or ticket',
         fix: 'add TODO(owner) or a ticket id, or do it now',
       }));
+    }
+
+    if (SUPPRESSION.test(line)) {
+      if (SUPPRESSION_BLANKET.test(line) || !SUPPRESSION_NAMED.test(line)) {
+        findings.push(finding({
+          rung: 'ALONE', id: 'alone/blanket-suppression', line: lineNo,
+          message: 'suppression names no specific rule, or disables a whole file',
+          fix: 'fix the code instead; if it is genuinely a false positive, name the rule and scope it to this line',
+        }));
+      } else if (!SUPPRESSION_REASON.test(line.replace(SUPPRESSION_NAMED, ''))) {
+        findings.push(finding({
+          rung: 'ALONE', id: 'alone/unexplained-suppression', line: lineNo,
+          message: 'suppression states no reason',
+          fix: 'say what makes this a false positive, on the same line',
+        }));
+      }
     }
 
     if (DEPRECATED.test(line) && !REMOVAL_TRIGGER.test(line)) {

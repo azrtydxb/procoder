@@ -182,6 +182,26 @@ A change isn't done until the thing it replaced is gone.
   condition. A deprecation marker without one is itself a violation.
 - Stale documentation, dead config keys, unused dependencies, and orphaned test fixtures
   are all rot.
+
+**Linter and type-checker suppressions.** Silencing a tool is a claim that the tool is
+wrong, and a codebase full of such claims looks clean while rotting.
+
+- Fix the code first. A suppression is the last resort, never the first move, and only
+  once you are confident the finding is a false positive.
+- Never blanket-disable: no file-level disables, no whole-rule-set disables, and never
+  loosen the rule in configuration to make one site pass.
+- Scope to the narrowest unit the tool supports — one line, or one declaration. A
+  next-line suppression beats a block; a block beats a file.
+- Always name the specific rule, so the suppression cannot silently swallow a different
+  finding that appears at that location later: `// eslint-disable-next-line <rule> -- <why>`,
+  `# noqa: <code>`, `# type: ignore[<code>]`, `//nolint:<linter> // <why>`,
+  `@SuppressWarnings("<specific>")` on the narrowest declaration, `#pragma warning disable
+  <ID>` paired with a matching restore.
+- Always state why, in the suppression itself.
+- A suppression with no named rule, no stated reason, or whose underlying finding has since
+  been fixed is itself a rung-4 violation.
+- For pre-existing findings across a legacy codebase, the ratchet baseline (§3.3) is the
+  sanctioned mechanism — not a scattering of inline suppressions.
 - `strict` applies rung 4 to the diff. `paranoid` applies it to every file touched.
 
 ### 2.7 Interop with ponytail
