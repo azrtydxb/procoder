@@ -2,6 +2,7 @@
 // procoder — Java / Kotlin pack.
 
 const { finding } = require('../finding');
+const { stripComments } = require('./comments');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -101,16 +102,22 @@ function xxeFindings(lines) {
   return findings;
 }
 
+// Every rule here matches code, never prose: a comment naming
+// `new ObjectInputStream(...)` documents the hole, it does not open one. The
+// XXE hardening lookahead reads code too, so a commented-out setFeature call
+// cannot discharge a bare factory. String literals stay — `"SELECT " + id`
+// *is* the SQL. See comments.js for the principle the six packs share.
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
-  const lines = text.split(/\r?\n/);
+  const code = stripComments(text, 'c');
+  const lines = code.split(/\r?\n/);
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
   return [
     ...lineRuleFindings(LINE_RULES, lines),
     ...xxeFindings(lines),
-    ...emptyCatchFindings(text, SWALLOWED, 'exception swallowed by an empty catch'),
+    ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, METHOD_SIGNATURE_LINE)),
       maxDepth,

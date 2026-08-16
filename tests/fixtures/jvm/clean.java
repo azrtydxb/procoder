@@ -63,4 +63,18 @@ class CleanExamples {
 
     void go() throws Exception {
     }
+
+    // Documentation that warns against a practice must not be flagged for the
+    // practice: every rule jvm.js has, named in prose, still silent.
+    //
+    //   never stmt.executeQuery("SELECT * FROM t WHERE id = " + id)
+    //   never new ObjectInputStream(payload) or XMLDecoder(payload)
+    //   never MessageDigest.getInstance("MD5") for a password
+    //   never String token = String.valueOf(new Random().nextLong())
+    //   never Runtime.getRuntime().exec("git log " + branch)
+    //   never DocumentBuilderFactory.newInstance() without hardening
+    //   never catch (Exception e) { } and never e.printStackTrace()
+    //   no leftover System.out.println("here")
+    void documented() {
+    }
 }
