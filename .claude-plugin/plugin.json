@@ -1,0 +1,7 @@
+{
+  "name": "procoder",
+  "version": "0.1.0",
+  "description": "Ship gate for AI-written code. Four rungs — SAFE, TRUE, OBVIOUS, ALONE — enforced every response: security at trust boundaries, handled errors, readable code, and nothing stale left behind.",
+  "author": { "name": "Pascal Watteel" },
+  "hooks": "./hooks/claude-hooks.json"
+}

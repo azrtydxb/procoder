@@ -1,0 +1,11 @@
+{
+  "name": "procoder",
+  "owner": { "name": "Pascal Watteel" },
+  "plugins": [
+    {
+      "name": "procoder",
+      "source": "./",
+      "description": "Four-rung ship gate: SAFE, TRUE, OBVIOUS, ALONE."
+    }
+  ]
+}

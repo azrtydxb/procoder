@@ -1,0 +1,13 @@
+{
+  "name": "procoder",
+  "version": "0.1.0",
+  "description": "Ship gate for AI-written code: security, correctness, readability, and nothing stale left behind.",
+  "license": "MIT",
+  "main": "./hooks/procoder-runtime.js",
+  "files": ["hooks/", "skills/", "commands/", "scripts/", "AGENTS.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "sync": "node scripts/sync-rules.js",
+    "sync:check": "node scripts/sync-rules.js --check"
+  }
+}
