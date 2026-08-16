@@ -303,6 +303,85 @@ test('a literal marker can name an external linter rule id', () => {
   assert.deepStrictEqual(ids(source), []);
 });
 
+// A marker naming an id the engine cannot produce — a typo, or an id renamed
+// since — silenced nothing and said nothing, so the author believed a line was
+// marked when it was not. Two choices made here: the complaint goes to stderr,
+// because the PostToolUse hook's stdout carries a JSON protocol and stderr is
+// where config.js already reports an exclusion it is dropping; and the unknown
+// id suppresses nothing, so the underlying finding still appears — the safe
+// direction, since a marker that does not do what its author thinks must not
+// also hide the thing they were looking at.
+function withStderr(work) {
+  const written = [];
+  const real = process.stderr.write;
+  process.stderr.write = (chunk) => { written.push(String(chunk)); return true; };
+  try {
+    return { result: work(), stderr: written.join('') };
+  } finally {
+    process.stderr.write = real;
+  }
+}
+
+test('a literal marker naming an unknown rule id warns and suppresses nothing', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const findings = [{ id: 'alone/no-such-rule-here', line: 1 }];
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    `x(); // ${MARK}alone/no-such-rule-here a plausible id that does not exist`, findings));
+
+  assert.deepStrictEqual(result, findings, 'an unknown id must silence nothing');
+  assert.ok(stderr.includes('alone/no-such-rule-here'),
+    `the unknown id was swallowed rather than reported: ${JSON.stringify(stderr)}`);
+});
+
+test('the known ids in a marker still apply when it also names an unknown one', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `const k = "${KEY}"; // ${MARK}safe/hardcoded-secret, safe/hardcoded-secrets one real id and one typo`;
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(source, [
+    { id: 'safe/hardcoded-secret', line: 1 },
+    { id: 'alone/debug-leftover', line: 1 },
+  ]));
+
+  assert.deepStrictEqual(result.map((f) => f.id), ['alone/debug-leftover']);
+  assert.ok(stderr.includes('safe/hardcoded-secrets'), 'the typo went unreported');
+});
+
+// An external tool's rule ids are the tool's own and cannot be enumerated, so
+// they are accepted on shape. That must not become a hole a typo slips through:
+// a plain built-in id is still checked against the real set.
+test('an external linter rule id is accepted without a registry of its rules', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `evil(); // ${MARK}true/eslint:no-such-eslint-rule the id above is documentation`;
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    source, [{ id: 'true/eslint:no-such-eslint-rule', line: 1 }]));
+
+  assert.deepStrictEqual(result, []);
+  assert.strictEqual(stderr, '');
+});
+
+// The set is a list, and a list rots. Every check id the engine spells anywhere
+// under hooks/ must be in it, or a marker naming a genuine id would be reported
+// as a typo — the failure this fix exists to prevent, inverted.
+test('every check id the engine can produce is in the known-id set', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { BUILTIN_RULE_IDS } = require('../hooks/checks/patterns/markers');
+  const known = new Set(BUILTIN_RULE_IDS);
+
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    return e.isDirectory() ? walk(full) : (full.endsWith('.js') ? [full] : []);
+  });
+
+  const missing = new Set();
+  for (const file of walk(path.join(__dirname, '..', 'hooks'))) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/'((?:safe|true|obvious|alone)\/[a-z][a-z-]*)'/g)) {
+      if (!known.has(m[1])) missing.add(`${m[1]} (${path.basename(file)})`);
+    }
+  }
+  assert.deepStrictEqual([...missing], [], 'check ids missing from BUILTIN_RULE_IDS');
+});
+
 test('marker scanning is cheap on a large marker-free file', () => {
   const { filterMarkedLiterals } = require('../hooks/checks/universal');
   const source = Array.from({ length: 20000 }, (_, i) => `const a${i} = compute(${i});`).join('\n');

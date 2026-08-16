@@ -228,12 +228,43 @@ function commentedCodeFindings(lines) {
 // `procoder: literal safe/hardcoded-secret it is only an example` beside a live
 // key is louder in review than the key. A form that could not be abused could
 // not be used either.
+// An id the engine cannot produce silences nothing, which is exactly what a
+// typo (`alone/orphan-todos`) or a renamed id looks like — and the author is
+// left believing the line is marked. So the id is checked, and an unknown one
+// is reported rather than swallowed.
+//
+// A configured linter's own rule ids are the tool's to define and cannot be
+// enumerated, so `<rung>/<tool>:<rule>` is accepted on shape. Everything
+// without a colon is a built-in id and must be one of the real ones.
+const KNOWN_RULE_IDS = new Set(markers.BUILTIN_RULE_IDS);
+const EXTERNAL_RULE_ID = /^(?:safe|true|obvious|alone)\/[\w@.-]+:\S+$/;
+
+// Which unknown ids have already been complained about. filterMarkedLiterals
+// runs twice over a file — once for this pack's own findings, once in run.js
+// over every pack's — and the same typo must not be reported twice.
+const reported = new Set();
+
+// stderr, never stdout: the PostToolUse hook's stdout carries a JSON protocol,
+// and stderr is where config.js already reports an exclusion it is dropping.
+function unknownRuleId(id, lineNo) {
+  if (KNOWN_RULE_IDS.has(id) || EXTERNAL_RULE_ID.test(id)) return false;
+  const seen = `${id}@${lineNo}`;
+  if (!reported.has(seen)) {
+    reported.add(seen);
+    process.stderr.write(
+      `procoder: unknown rule id "${id}" in the literal marker on line ${lineNo} — it suppresses nothing\n`);
+  }
+  return true;
+}
+
 function markedLines(lines) {
   const marked = new Map();
   lines.forEach((line, index) => {
     const m = markers.LITERAL_MARKER.exec(line);
     if (!m) return;
-    const ids = m[1].split(',').map((id) => id.trim());
+    const ids = m[1].split(',')
+      .map((id) => id.trim())
+      .filter((id) => !unknownRuleId(id, index + 1));
     const last = markers.LITERAL_MARKER_ALONE.test(line.slice(0, m.index)) ? index + 2 : index + 1;
     for (let lineNo = index + 1; lineNo <= last; lineNo += 1) {
       if (!marked.has(lineNo)) marked.set(lineNo, new Set());
