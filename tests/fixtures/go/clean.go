@@ -82,3 +82,15 @@ func fetchPageClean(url string) (*http.Response, error) {
 func startup() {
 	log.Println("started")
 }
+
+// Documentation that warns against a practice must not be flagged for the
+// practice: every rule go.js has, named in prose, still silent.
+//
+//	never db.Query(fmt.Sprintf("SELECT * FROM t WHERE id = %s", id))
+//	never exec.Command("sh", "-c", userInput)
+//	never tls.Config{InsecureSkipVerify: true}
+//	never h := md5.New() for a password, and never token := rand.Int63()
+//	never result, _ := doWork() — handle the error
+//	no leftover fmt.Println("here")
+//	panic("unreachable") belongs in main, not in a library
+func documentedClean() {}
