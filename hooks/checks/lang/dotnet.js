@@ -78,8 +78,12 @@ const SWALLOWED = /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*
 // why the class itself stays whitespace-free: letting the type span newlines
 // turns "no method here" into a catastrophic-backtracking search over every
 // blank line and brace in the class.
-const METHOD_SIGNATURE_LINE =
-  /^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|abstract|readonly)\s+)*[\w<>[\],.?]+(?:\s*<[\w\s<>[\],.?]*>)?\s+\w+\s*\(([^)]*)\)\s*\{\s*$/;
+// Split at the parameter list's `(` — see jvm.js for why the count comes from
+// shape.js's paramSpans pass rather than from a captured span.
+const METHOD_SIGNATURE_LINE = {
+  head: /^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|sealed|abstract|readonly)\s+)*[\w<>[\],.?]+(?:\s*<[\w\s<>[\],.?]*>)?\s+\w+\s*\(/,
+  tail: /\s*\{\s*$/,
+};
 
 // Every rule here matches code, never prose: a comment naming
 // `FromSqlRaw($"...")` documents the hole, it does not open one. String

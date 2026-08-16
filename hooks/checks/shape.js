@@ -225,23 +225,87 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
   return { maxDepth, blocks };
 }
 
-// A wrapped signature almost always carries a trailing comma — prettier,
-// black, gofmt and rustfmt all add one — so it is dropped before counting,
-// or every wrapped signature reports one parameter more than it has.
-function countParams(signatureText) {
-  const inner = String(signatureText || '')
-    .replace(/^\s*\(|\)\s*$/g, '')
-    .replace(/,\s*$/, '');
-  if (!inner.trim()) return 0;
+// Where each `(` in a text closes, and how many top-level parameters it holds
+// — every paren, in one left-to-right pass.
+//
+// The packs used to capture the parameter list as a *bounded span*
+// (`([^)]{0,500})`) and count commas in the captured text. An unbounded
+// `[^)]*` is retried from every signature start and, with no `)` ahead, runs
+// to end of file each time — quadratic, and tens of seconds on a 400KB
+// minified line. Bounding it made the scan linear and silently dropped every
+// signature whose parameters ran past the bound: a 60-parameter function
+// produced no finding at all where a 6-parameter one did, so
+// obvious/too-many-params — and function-too-long and complexity with it,
+// since an unmatched signature drops its whole block from measurement — lost
+// precisely the functions they exist to report. The worse the code, the less
+// likely it was seen.
+//
+// The checks only ever needed a *count*, never the text. Counting commas at
+// bracket depth zero while scanning forward needs no captured span, and doing
+// it for every paren in one pass costs O(source) per file however long,
+// however many and however deeply nested the parameter lists are. There is no
+// ceiling left to lose the extreme cases to.
+//
+// `<`/`>` are tracked per frame and clamped at zero, so `Map<string, number>`
+// is one parameter while a stray `>` — `=>` in a default, a comparison —
+// cannot drive the count below zero and swallow every comma after it.
+const OPENS = '([{';
+const CLOSES = ')]}';
 
-  let depth = 0;
-  let count = 1;
-  for (const ch of inner) {
-    if ('([{<'.includes(ch)) depth += 1;
-    else if (')]}>'.includes(ch)) depth -= 1;
-    else if (ch === ',' && depth === 0) count += 1;
+// A list with nothing but separators in it has no parameters, and a trailing
+// comma — which prettier, black, gofmt and rustfmt all add to a wrapped
+// signature — closes the last parameter rather than opening another.
+function frameParams(frame) {
+  if (!frame.content) return 0;
+  return frame.last === ',' ? frame.commas : frame.commas + 1;
+}
+
+function countAt(frame, ch) {
+  if (ch === ',' && frame.generic === 0) frame.commas += 1;
+  else if (ch === '<') frame.generic += 1;
+  else if (ch === '>' && frame.generic > 0) frame.generic -= 1;
+}
+
+function paramSpans(text) {
+  const spans = new Map();
+  const stack = [];
+  const seen = (ch) => {
+    const top = stack[stack.length - 1];
+    if (!top || /\s/.test(ch)) return;
+    top.last = ch;
+    top.content = top.content || ch !== ',';
+  };
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (OPENS.includes(ch)) {
+      seen(ch);
+      stack.push({ ch, at: i, commas: 0, generic: 0, last: '', content: false });
+    } else if (CLOSES.includes(ch)) {
+      const frame = stack.pop();
+      if (frame && frame.ch === '(') spans.set(frame.at, { end: i, params: frameParams(frame) });
+      seen(ch);
+    } else {
+      const top = stack[stack.length - 1];
+      if (top) countAt(top, ch);
+      seen(ch);
+    }
   }
-  return count;
+  return spans;
+}
+
+// Parameters in a signature's own text. The packs go through paramSpans
+// directly; this is for the packs that already hold the text — Python's `def`,
+// which has no brace to key on — and it is the same count by the same rule,
+// not a second one.
+//
+// A wrapped signature almost always carries a trailing comma — prettier,
+// black, gofmt and rustfmt all add one — and frameParams drops it, or every
+// wrapped signature would report one parameter more than it has.
+function countParams(signatureText) {
+  const inner = String(signatureText || '').replace(/^\s*\(|\)\s*$/g, '');
+  const span = paramSpans('(' + inner + ')').get(0);
+  return span ? span.params : 0;
 }
 
 const BRANCH = /\b(?:if|else\s+if|elif|for|foreach|while|case|catch|except|when|rescue)\b|\?\s*[^:]+:|&&|\|\||\band\b|\bor\b/g;
@@ -340,9 +404,26 @@ const SIGNATURE_LOOKBACK = 10;
 // The most text a rescan may look at. The lookback is attempted for every
 // block whose own line is not a signature — most blocks in a file — so its
 // cost has to be constant per block, and one line may be the whole file.
-// Capping the span keeps it constant; the packs already bound their parameter
-// text to 500 characters, so no real signature is excluded.
+// Capping the span keeps it constant. It is a cap on the *wrapped* case only:
+// a signature on its own line is found by the pack's own scan, which has no
+// ceiling at all, so a 60-parameter one-liner is measured however long it is.
+// Within the ten-line lookback, 1000 characters is 100 per line, past any
+// formatter's line width — the binding limit on a wrapped signature is
+// SIGNATURE_LOOKBACK, not this.
 const SIGNATURE_MAX_CHARS = 1000;
+
+// A pack's signature pattern, applied at one offset: the head match locates
+// the parameter list's `(`, paramSpans says where it closes and how many
+// parameters it holds, and the tail — sticky, so it can only match right where
+// the list closed — carries on through the return type to the block-opening
+// `{`. Splitting the pattern there is what removes the ceiling: the head and
+// tail are short and bounded, and nothing has to capture the parameters.
+function signatureAt(text, spans, tail, match) {
+  const span = spans.get(match.index + match[0].length - 1);
+  if (!span) return null;
+  tail.lastIndex = span.end + 1;
+  return tail.exec(text) ? { params: span.params, end: tail.lastIndex } : null;
+}
 
 // Re-runs the pack's own signature pattern over a candidate line span,
 // flattened to a single line. Flattening is the whole trick: every pack's
@@ -354,12 +435,12 @@ const SIGNATURE_MAX_CHARS = 1000;
 // start test allows text before the match on that line, because a pack's
 // pattern starts at `function`/`fn`/`func` and leaves `export`, `pub` or a
 // decorator to its left.
-function rescanner(stripped, re) {
+function rescanner(stripped, head, tail) {
   // A copy, because the pack's pattern is a module-level global regex shared
   // by every file: exec'ing it here would leave `lastIndex` mid-source, and
   // matchAll seeds its own copy from it — the next file scanned would start
   // partway in and lose the signatures before that point.
-  const scan = new RegExp(re.source, re.flags);
+  const scan = new RegExp(head.source, head.flags);
   let lines = null;
   return (from, to) => {
     if (!lines) lines = stripped.split(/\r?\n/);
@@ -372,31 +453,42 @@ function rescanner(stripped, re) {
     scan.lastIndex = 0;
     const match = scan.exec(flat);
     if (!match || match.index >= span[0].length) return null;
-    return match.index + match[0].length === flat.trimEnd().length ? match[1] : null;
+    const signature = signatureAt(flat, paramSpans(flat), tail, match);
+    if (!signature) return null;
+    return signature.end === flat.trimEnd().length ? signature.params : null;
   };
 }
 
-// Signature line number → its parameter text. Packs supply either a global
-// regex scanned across the whole stripped source, or a line-anchored one that
-// must be exec'd per line to stay clear of catastrophic backtracking.
+// Signature line number → its parameter count. Packs supply a `{ head, tail }`
+// pair: either a global head scanned across the whole stripped source, or a
+// line-anchored one that must be exec'd per line to stay clear of catastrophic
+// backtracking. The parameter counts come from one paramSpans pass over
+// whatever text the head is scanned over, so they cost the same whether the
+// file holds one signature or ten thousand.
 //
 // `rescan` rides along on the map because the packs pass this straight into
 // measureFunctions and nowhere else: it is the one place that still holds both
 // the stripped source and the pattern, and adding it here changes no pack.
-function signaturesFrom(stripped, re) {
+function signaturesFrom(stripped, { head, tail }) {
   const signatures = new Map();
-  if (re.global) {
+  // Sticky and its own copy, for the same reason the rescanner copies the head.
+  const after = new RegExp(tail.source, tail.flags.includes('y') ? tail.flags : tail.flags + 'y');
+
+  if (head.global) {
+    const spans = paramSpans(stripped);
     const lineAt = lineCounter(stripped);
-    for (const match of stripped.matchAll(re)) {
-      signatures.set(lineAt(match.index), match[1]);
+    for (const match of stripped.matchAll(head)) {
+      const signature = signatureAt(stripped, spans, after, match);
+      if (signature) signatures.set(lineAt(match.index), signature.params);
     }
   } else {
     stripped.split(/\r?\n/).forEach((line, index) => {
-      const match = re.exec(line);
-      if (match) signatures.set(index + 1, match[1]);
+      const match = head.exec(line);
+      const signature = match && signatureAt(line, paramSpans(line), after, match);
+      if (signature) signatures.set(index + 1, signature.params);
     });
   }
-  signatures.rescan = rescanner(stripped, re);
+  signatures.rescan = rescanner(stripped, head, after);
   return signatures;
 }
 
@@ -448,11 +540,7 @@ function measureFunctions(lines, blocks, signatures) {
       startLine: signature.startLine,
       length: block.endLine - signature.startLine + 1,
     };
-    measured.push({
-      ...span,
-      params: countParams('(' + signature.params + ')'),
-      complexity: complexityOf(span),
-    });
+    measured.push({ ...span, params: signature.params, complexity: complexityOf(span) });
   }
   return measured;
 }
@@ -476,6 +564,7 @@ module.exports = {
   analyzeBraces,
   analyzeIndent,
   countParams,
+  paramSpans,
   estimateComplexity,
   shapeFindings,
   lineRuleFindings,

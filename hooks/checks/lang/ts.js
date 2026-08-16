@@ -88,11 +88,31 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 // identifier (`$foo(a) {`), and a run mixing `$` in stays linear anyway because
 // each word run still admits one starting offset.
 //
-// Spans stay bounded as in go.js and rust.js; jvm.js and dotnet.js anchor per
-// line instead, which does not fit here — a TS signature may be nested in an
-// expression or wrap its parameters across lines.
-const FUNCTION_SIGNATURE =
-  /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)\w+\s*)\(([^)]{0,500})\)\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/g;
+// Head up to the parameter list's `(`, tail from where that list closes
+// through an optional return-type annotation to the block-opening `{`. The
+// parameters are counted by shape.js's paramSpans pass rather than captured,
+// so a list of any length is measured — the bounded `([^)]{0,500})` this
+// replaces had to stay bounded to keep the scan linear, and dropped the
+// longest lists entirely. The remaining bounded spans are short by nature.
+// jvm.js and dotnet.js anchor per line instead, which does not fit here — a TS
+// signature may be nested in an expression or wrap its parameters across lines.
+//
+// `\w*`, not `\w+`, on that last branch: an arrow function passed as an
+// argument — `rows.forEach((row, i) => {` — opens its parameter list with a
+// bare `(` that no identifier precedes. The old pattern reached it only by
+// accident, matching the *enclosing call's* paren and stopping its span at the
+// first `)`, which happened to be the arrow's; splitting head from tail took
+// that accident away, and with it the callback's length and complexity
+// findings. Allowing the empty word matches the arrow's own list, and counts
+// its parameters rather than the enclosing call's. The lookbehind still pins
+// every non-empty match to an identifier's first character, so the scan stays
+// linear: an empty `\w*` admits one attempt per offset, which is O(1) work
+// each — the quadratic shape was re-running a greedy `\w+` to the end of a
+// word run, and that is unchanged.
+const FUNCTION_SIGNATURE = {
+  head: /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)\w*\s*)\(/g,
+  tail: /\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/,
+};
 
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
