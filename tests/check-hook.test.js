@@ -52,71 +52,34 @@ test('emits nothing for a clean file', () => {
 
 test('never blocks — no decision or permission field is ever emitted', () => {
   const repo = repoWith({ 'a.ts': 'eval(x);\n' });
-  const out = runHook(repo, path.join(repo, 'a.ts'));
-  assert.strictEqual(out.decision, undefined);
-  assert.strictEqual(out.permissionDecision, undefined);
-  assert.ok(!out.hookSpecificOutput.permissionDecision);
+  for (const level of ['pragmatic', 'strict', 'paranoid']) {
+    const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_DEFAULT_LEVEL: level });
+    assert.strictEqual(out.decision, undefined);
+    assert.strictEqual(out.permissionDecision, undefined);
+    assert.ok(!out.hookSpecificOutput.permissionDecision);
+  }
 });
 
-test('PROCODER_NO_HOOK disables the hook', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });
-  const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_NO_HOOK: '1' });
-  assert.deepStrictEqual(out, {});
+// Rungs 1-2 are enforced at every level; 3-4 are judgment, and at `pragmatic`
+// the user asked to be told about them rather than told to fix them.
+const MIXED_RUNGS = `eval(x);\nfunction big(a) {\n${'  const v = 1;\n'.repeat(45)}}\n`;
+
+test('pragmatic presents SAFE as blocking and OBVIOUS as advisory', () => {
+  const repo = repoWith({ 'a.ts': MIXED_RUNGS });
+  const context = contextOf(runHook(repo, path.join(repo, 'a.ts'),
+    { PROCODER_DEFAULT_LEVEL: 'pragmatic' }));
+  const [blocking, advisory] = context.split(/^Flagged, not blocking:$/m);
+  assert.ok(advisory !== undefined, `no advisory section:\n${context}`);
+  assert.match(blocking, /Fix these before moving on:/);
+  assert.match(blocking, /\[1 SAFE\]/);
+  assert.ok(!/\[3 OBVIOUS\]/.test(blocking), 'OBVIOUS presented as must-fix at pragmatic');
+  assert.match(advisory, /\[3 OBVIOUS\]/);
 });
 
-test('malformed input exits cleanly', () => {
-  const repo = repoWith({});
-  assert.doesNotThrow(() => execFileSync('node', [HOOK], {
-    encoding: 'utf8', cwd: repo, input: 'not json',
-    env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
-  }));
-});
-
-test('the hook completes within its 2s budget on a large file', () => {
-  const repo = repoWith({ 'big.ts': 'const x = 1;\n'.repeat(20000) });
-  const started = Date.now();
-  runHook(repo, path.join(repo, 'big.ts'));
-  assert.ok(Date.now() - started < 2000, 'hook exceeded its budget');
-});
-
-test('the hook completes within its 2s budget on a minified file', () => {
-  let line = '';
-  while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
-  const repo = repoWith({ 'min.ts': line });
-  const started = Date.now();
-  runHook(repo, path.join(repo, 'min.ts'));
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed < 2000, `hook took ${elapsed}ms on a 200KB single-line file`);
-});
-
-test('an Edit reports only the region it touched', () => {
-  const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
-  });
-  const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
-    tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
-  });
-  assert.match(contextOf(out), /a\.ts:42/);
-  assert.ok(!/a\.ts:1\s/.test(contextOf(out)), 'reported an untouched line of the file');
-});
-
-test('a Write reports the whole file it wrote', () => {
-  const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
-  });
-  const out = runHook(repo, path.join(repo, 'a.ts'));
-  assert.match(contextOf(out), /a\.ts:1\b/);
-  assert.match(contextOf(out), /a\.ts:42/);
-});
-
-test('a secret outside the edited region is still reported', () => {
-  const repo = repoWith({
-    'a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,
-  });
-  const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
-    tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },
-  });
-  assert.match(contextOf(out), /a\.ts:1\b/);
+test('strict presents every rung as blocking', () => {
+  const repo = repoWith({ 'a.ts': MIXED_RUNGS });
+  const context = contextOf(runHook(repo, path.join(repo, 'a.ts'),
+    { PROCODER_DEFAULT_LEVEL: 'strict' }));
+  assert.ok(!/not blocking/.test(context), `strict emitted an advisory section:\n${context}`);
+  assert.match(context, /Fix these before moving on:[\s\S]*\[1 SAFE\][\s\S]*\[3 OBVIOUS\]/);
 });

@@ -8,6 +8,9 @@ const { parseToml } = require('./toml');
 const DEFAULTS = {
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
   thresholds: { function_lines: 40, nesting_depth: 3, params: 4, complexity: 10 },
+  // Rungs 1-2 are facts (it is injectable, or it is not); rungs 3-4 are
+  // judgment. Only `pragmatic` acts on the difference — see procoder-check.js.
+  rungs: { safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' },
   baseline: { file: '.procoder-baseline.json' },
 };
 
@@ -53,6 +56,7 @@ function loadConfig(repoRoot) {
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
+    rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
   };
 }

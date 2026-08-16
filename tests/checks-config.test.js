@@ -34,6 +34,18 @@ test('config values override defaults, unset keys keep them', () => {
   assert.strictEqual(cfg.baseline.file, 'b.json');
 });
 
+test('rung severities default to error on 1-2 and warn on 3-4', () => {
+  const cfg = loadConfig(tempRepo());
+  assert.deepStrictEqual(cfg.rungs,
+    { safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' });
+});
+
+test('a project can promote a judgment rung to error', () => {
+  const cfg = loadConfig(tempRepo({ '.procoder.toml': '[rungs]\nobvious = "error"\n' }));
+  assert.strictEqual(cfg.rungs.obvious, 'error');
+  assert.strictEqual(cfg.rungs.alone, 'warn');
+});
+
 test('malformed config falls back to defaults without throwing', () => {
   const cfg = loadConfig(tempRepo({ '.procoder.toml': '[[[not toml' }));
   assert.strictEqual(cfg.thresholds.function_lines, 40);

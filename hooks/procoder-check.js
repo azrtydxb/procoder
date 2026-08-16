@@ -27,6 +27,30 @@ function touchedTexts(toolInput) {
   return written ? [written] : null;
 }
 
+// Spec §2.8: `pragmatic` enforces rungs 1-2 and merely flags 3-4. The severity
+// map says which rungs are judgment calls; the level says whether this session
+// wants judgment calls treated as must-fix. strict and paranoid always do.
+function isBlocking(finding, level, config) {
+  if (level !== 'pragmatic') return true;
+  return config.rungs[finding.rung.toLowerCase()] !== 'warn';
+}
+
+function buildMessage({ level, config, relPath, findings }) {
+  const blocking = findings.filter((f) => isBlocking(f, level, config));
+  const advisory = findings.filter((f) => !isBlocking(f, level, config));
+
+  const lines = [];
+  if (blocking.length) {
+    lines.push(`procoder [${level}] — ${blocking.length} finding${blocking.length === 1 ? '' : 's'} in ${relPath}. Fix these before moving on:`);
+    lines.push(formatFindings(blocking, relPath));
+  }
+  if (advisory.length) {
+    lines.push('Flagged, not blocking:');
+    lines.push(formatFindings(advisory, relPath));
+  }
+  return lines.join('\n');
+}
+
 readHookInput().then((input) => {
   const level = readLevel();
   if (level === 'off') return;
@@ -46,6 +70,5 @@ readHookInput().then((input) => {
   });
   if (skipped || findings.length === 0) return;
 
-  const header = `procoder [${level}] — ${findings.length} finding${findings.length === 1 ? '' : 's'} in ${relPath}. Fix these before moving on:`;
-  writeHookOutput('PostToolUse', level, header + '\n' + formatFindings(findings, relPath));
+  writeHookOutput('PostToolUse', level, buildMessage({ level, config, relPath, findings }));
 }).catch(() => process.exit(0));
