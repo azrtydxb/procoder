@@ -38,6 +38,18 @@ function stripNoise(source) {
 // — still count, so callback pyramids are reported as before.
 const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
 
+// `case 1: {` and `default: {` end in a colon too, but open a block. Without
+// this a switch nested to depth 4 reports 3, and switch-heavy C#, Java and
+// TypeScript under-report throughout. Plain `label:` statements are left
+// alone: a line reading `  key:` is an object key far more often than a label,
+// and treating it as a block would count data literals as nesting again.
+const CASE_LABEL = /^\s*(?:case\b[^:]*|default)\s*:$/;
+
+// The text before a `{`, already right-trimmed, decides what the brace opens.
+function opensBlock(before) {
+  return !LITERAL_BRACE.test(before) || CASE_LABEL.test(before);
+}
+
 // Every brace on one line, in order, each tagged with whether it opens a block
 // rather than a data literal.
 function bracesInLine(line, lineNo) {
@@ -47,7 +59,7 @@ function bracesInLine(line, lineNo) {
       braces.push({
         open: true,
         lineNo,
-        isBlock: !LITERAL_BRACE.test(line.slice(0, i).replace(/\s+$/, '')),
+        isBlock: opensBlock(line.slice(0, i).replace(/\s+$/, '')),
       });
     } else if (line[i] === '}') {
       braces.push({ open: false, lineNo });
