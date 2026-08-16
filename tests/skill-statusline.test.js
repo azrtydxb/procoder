@@ -5,11 +5,11 @@ const fs = require('fs');
 const path = require('path');
 
 const skill = fs.readFileSync(
-  path.join(__dirname, '..', 'skills', 'procoder-statusline', 'SKILL.md'), 'utf8');
+  path.join(__dirname, '..', 'skills', 'statusline', 'SKILL.md'), 'utf8');
 
 test('frontmatter names the skill and its triggers', () => {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(skill);
-  assert.match(m[1], /^name: procoder-statusline$/m);
+  assert.match(m[1], /^name: statusline$/m);
   assert.match(m[1], /install the statusline|statusline/i);
 });
 

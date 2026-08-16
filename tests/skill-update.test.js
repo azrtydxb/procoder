@@ -5,11 +5,11 @@ const fs = require('fs');
 const path = require('path');
 
 const skill = fs.readFileSync(
-  path.join(__dirname, '..', 'skills', 'procoder-update', 'SKILL.md'), 'utf8');
+  path.join(__dirname, '..', 'skills', 'update', 'SKILL.md'), 'utf8');
 
 test('frontmatter names the skill and its triggers', () => {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(skill);
-  assert.match(m[1], /^name: procoder-update$/m);
+  assert.match(m[1], /^name: update$/m);
   assert.match(m[1], /update procoder|latest version/i);
 });
 

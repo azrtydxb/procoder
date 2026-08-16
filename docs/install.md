@@ -62,8 +62,8 @@ the installer refuses to build a command around one and prints this instead:
 quoted or escaped to suit your shell. On Windows, the command is
 `powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
 
-In Claude Code, `/procoder-statusline` runs the installer for you, and
-`/procoder-update` updates an installed procoder — the latter also names the
+In Claude Code, `/procoder:statusline` runs the installer for you, and
+`/procoder:update` updates an installed procoder — the latter also names the
 copied rule files below that a doctrine change makes stale, and says whether the
 baseline format changed and needs `procoder baseline <paths>` re-run.
 
@@ -195,7 +195,7 @@ job, a plain terminal:
 npm install -g procoder
 ```
 
-Then either run `/procoder-guard` inside a session that has the plugin
+Then either run `/procoder:guard` inside a session that has the plugin
 installed, which writes the pre-commit hook and CI export for you, or wire the
 CLI directly:
 
@@ -225,9 +225,9 @@ entries are still reported, they just do not fail the build.
   Claude Code without wanting procoder in the loop — if it's set in your
   interactive shell by habit or by a dotfile, the hook is a silent no-op.
 - Check the level file: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-active`.
-  If it holds `off` (written by `/procoder off` or the deactivation phrase),
+  If it holds `off` (written by `/procoder:level off` or the deactivation phrase),
   the hook still runs but treats the session as inactive. Delete the file or
-  set a real level with `/procoder <level>` to re-activate.
+  set a real level with `/procoder:level <level>` to re-activate.
 - Check that the plugin's hooks are actually registered — `claude plugin
   list` should show `procoder` installed, and `hooks/claude-hooks.json` in
   the installed plugin should be the source Claude Code loaded. A plugin
@@ -285,7 +285,7 @@ re-run `verify`.
 
 | Host | File it reads | Supports levels |
 |---|---|---|
-| Claude Code | plugin hooks (`hooks/claude-hooks.json`) | Yes — `/procoder <level>`, persisted |
+| Claude Code | plugin hooks (`hooks/claude-hooks.json`) | Yes — `/procoder:level <level>`, persisted |
 | Cursor | `.cursor/rules/procoder.mdc` | No — doctrine is rendered at `strict` |
 | Windsurf | `.windsurf/rules/procoder.md` | No — doctrine is rendered at `strict` |
 | Cline | `.clinerules/procoder.md` | No — doctrine is rendered at `strict` |

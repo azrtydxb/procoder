@@ -5,11 +5,11 @@ const fs = require('fs');
 const path = require('path');
 
 const skill = fs.readFileSync(
-  path.join(__dirname, '..', 'skills', 'procoder-deps', 'SKILL.md'), 'utf8');
+  path.join(__dirname, '..', 'skills', 'deps', 'SKILL.md'), 'utf8');
 
 test('frontmatter names the skill and its triggers', () => {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(skill);
-  assert.match(m[1], /^name: procoder-deps$/m);
+  assert.match(m[1], /^name: deps$/m);
   assert.match(m[1], /dependenc|supply chain|vulnerab|package/i);
 });
 

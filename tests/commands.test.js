@@ -26,23 +26,24 @@ function extractPrompt(raw) {
   return match ? match[1] : '';
 }
 
-// Each command's own name (minus the "procoder" / "procoder-" prefix) must
-// show up in the description, and the prompt must actually invoke the skill
-// or behavior the filename promises — not just contain the filename string
-// anywhere, which would pass even for a command wired to the wrong skill.
+// Each command's own name must show up in the description, and the prompt must
+// actually invoke the skill or behavior the filename promises — not just
+// contain the filename string anywhere, which would pass even for a command
+// wired to the wrong skill. Claude Code exposes commands/<name>.toml as
+// /procoder:<name>, so the prompt names the skill the same way.
 const EXPECTATIONS = {
-  'procoder.toml': { descriptionContains: 'intensity level', promptContains: '/procoder' },
-  'procoder-help.toml': { descriptionContains: 'rungs', promptContains: 'procoder-help skill' },
-  'procoder-review.toml': { descriptionContains: 'diff', promptContains: 'procoder-review skill' },
-  'procoder-audit.toml': { descriptionContains: 'whole repository', promptContains: 'procoder-audit skill' },
-  'procoder-rot.toml': { descriptionContains: 'dead, stale, and deprecated', promptContains: 'procoder-rot skill' },  // procoder: literal alone/deprecated-no-trigger scanner input for that rule, not an instance of it
-  'procoder-threat.toml': { descriptionContains: 'trust boundary', promptContains: 'procoder-threat skill' },
-  'procoder-deps.toml': { descriptionContains: 'dependencies', promptContains: 'procoder-deps skill' },
-  'procoder-debt.toml': { descriptionContains: 'removal trigger', promptContains: 'procoder-debt skill' },
-  'procoder-gain.toml': { descriptionContains: 'measured progress', promptContains: 'procoder-gain skill' },
-  'procoder-guard.toml': { descriptionContains: 'pre-commit hook', promptContains: 'procoder-guard skill' },
-  'procoder-statusline.toml': { descriptionContains: 'statusline', promptContains: 'procoder-statusline skill' },
-  'procoder-update.toml': { descriptionContains: 'latest version', promptContains: 'procoder-update skill' },
+  'level.toml': { descriptionContains: 'intensity level', promptContains: '/procoder:level' },
+  'help.toml': { descriptionContains: 'rungs', promptContains: 'procoder:help skill' },
+  'review.toml': { descriptionContains: 'diff', promptContains: 'procoder:review skill' },
+  'audit.toml': { descriptionContains: 'whole repository', promptContains: 'procoder:audit skill' },
+  'rot.toml': { descriptionContains: 'dead, stale, and deprecated', promptContains: 'procoder:rot skill' },  // procoder: literal alone/deprecated-no-trigger scanner input for that rule, not an instance of it
+  'threat.toml': { descriptionContains: 'trust boundary', promptContains: 'procoder:threat skill' },
+  'deps.toml': { descriptionContains: 'dependencies', promptContains: 'procoder:deps skill' },
+  'debt.toml': { descriptionContains: 'removal trigger', promptContains: 'procoder:debt skill' },
+  'gain.toml': { descriptionContains: 'measured progress', promptContains: 'procoder:gain skill' },
+  'guard.toml': { descriptionContains: 'pre-commit hook', promptContains: 'procoder:guard skill' },
+  'statusline.toml': { descriptionContains: 'statusline', promptContains: 'procoder:statusline skill' },
+  'update.toml': { descriptionContains: 'latest version', promptContains: 'procoder:update skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {

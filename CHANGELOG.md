@@ -7,7 +7,7 @@ Initial release.
 - The four-rung doctrine — **SAFE**, **TRUE**, **OBVIOUS**, **ALONE** — as the
   single source in `skills/procoder/SKILL.md`.
 - Three intensity levels (`pragmatic`, `strict`, `paranoid`), persisted across
-  sessions and switchable with `/procoder <level>`.
+  sessions and switchable with `/procoder:level <level>`.
 - A deterministic PostToolUse check engine covering six languages
   (TypeScript/JavaScript, Python, Go, Rust, JVM, .NET), with external-linter
   deference where a project already has one configured.
@@ -25,9 +25,9 @@ Initial release.
   announced on stderr when they bite.
 - A `.procoder.toml` subset parser that warns on stderr for syntax it cannot
   handle, so a mis-parsed exclusion cannot silently narrow the gate.
-- Ten slash commands: `/procoder`, `/procoder-review`, `/procoder-audit`,
-  `/procoder-rot`, `/procoder-threat`, `/procoder-deps`, `/procoder-debt`,
-  `/procoder-gain`, `/procoder-guard`, `/procoder-help`.
+- Ten slash commands: `/procoder:level`, `/procoder:review`, `/procoder:audit`,
+  `/procoder:rot`, `/procoder:threat`, `/procoder:deps`, `/procoder:debt`,
+  `/procoder:gain`, `/procoder:guard`, `/procoder:help`.
 - An MCP server (`procoder-mcp/server.js`) exposing the doctrine and check
   engine over JSON-RPC for non-Claude-Code hosts.
 - Generated platform rule files for Cursor, Windsurf, Cline, Kiro, Qoder,

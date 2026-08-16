@@ -1,0 +1,9 @@
+description = "Audit dependencies: vulnerable, abandoned, unpinned, unused."
+prompt = """
+Use the procoder:deps skill. Arguments (optional path or ecosystem scope):
+$ARGUMENTS
+
+Run each ecosystem's own auditor and the procoder engine before reporting.
+Report in the skill's one-line format. Never report a CVE that did not come
+from a tool.
+"""

@@ -27,7 +27,7 @@ test('ported commands carry the generated warning', () => {
 
 test('sync --check covers commands as well as rules', () => {
   execFileSync('node', [path.join(root, 'scripts/sync-rules.js')], { cwd: root });
-  const victim = path.join(root, '.opencode/command/procoder-review.md');
+  const victim = path.join(root, '.opencode/command/review.md');
   const saved = fs.readFileSync(victim, 'utf8');
   try {
     fs.writeFileSync(victim, saved + '\ndrift\n');

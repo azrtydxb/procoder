@@ -45,7 +45,8 @@ test('README documents every level and command that exists', () => {
     assert.match(readme, new RegExp(level), `README missing level: ${level}`);
   }
   for (const file of fs.readdirSync(path.join(root, 'commands'))) {
-    const cmd = '/' + path.basename(file, '.toml');
+    // Claude Code exposes commands/<name>.toml as /procoder:<name>.
+    const cmd = '/procoder:' + path.basename(file, '.toml');
     assert.ok(readme.includes(cmd), `README missing command: ${cmd}`);
   }
 });

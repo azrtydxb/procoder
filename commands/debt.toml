@@ -1,0 +1,8 @@
+description = "List every deliberate shortcut and whether it has a removal trigger."
+prompt = """
+Use the procoder:debt skill. Arguments (optional path scope): $ARGUMENTS
+
+Derive age and authorship from git, classify each marker as dated, undated, or
+overdue, and report the table plus one line per undated marker. Do not compute a
+rating of any kind.
+"""

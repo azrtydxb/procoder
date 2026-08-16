@@ -47,7 +47,8 @@ test('install docs cover every supported host', () => {
 test('README lists every command that exists', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   for (const file of fs.readdirSync(path.join(root, 'commands'))) {
-    const cmd = '/' + path.basename(file, '.toml');
+    // Claude Code exposes commands/<name>.toml as /procoder:<name>.
+    const cmd = '/procoder:' + path.basename(file, '.toml');
     assert.ok(readme.includes(cmd), `README missing ${cmd}`);
   }
 });

@@ -51,29 +51,29 @@ clone: `claude plugin marketplace add ./procoder`.)
 | `strict` (default) | All four rungs enforced on code touched this session. |
 | `paranoid` | strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff. |
 
-Switch levels mid-session with `/procoder <level>`, or say "stop procoder" /
+Switch levels mid-session with `/procoder:level <level>`, or say "stop procoder" /
 "normal mode" to deactivate. Deactivation is persisted, so it outlives the
-session and survives restarts — re-enable with `/procoder strict` (or any other
+session and survives restarts — re-enable with `/procoder:level strict` (or any other
 level) when you want procoder back.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `/procoder` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
-| `/procoder-review` | Review the current diff against the four rungs. |
-| `/procoder-audit` | Audit the whole repository, ranked by rung severity. |
-| `/procoder-rot` | Find dead, stale, and deprecated code left behind. |  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
-| `/procoder-threat` | Map every trust boundary and what validates it. |
-| `/procoder-deps` | Audit dependencies: vulnerable, abandoned, unpinned, unused. |
-| `/procoder-debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
-| `/procoder-gain` | Measured progress: rot removed, boundaries hardened, baseline shrinkage. |
-| `/procoder-guard` | Install procoder as a pre-commit hook and CI check. |
-| `/procoder-statusline` | Install, inspect, or remove the statusline badge. |
-| `/procoder-update` | Update procoder, and name what the update invalidates. |
-| `/procoder-help` | Show procoder's rungs, levels, and commands. |
+| `/procoder:level` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
+| `/procoder:review` | Review the current diff against the four rungs. |
+| `/procoder:audit` | Audit the whole repository, ranked by rung severity. |
+| `/procoder:rot` | Find dead, stale, and deprecated code left behind. |  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
+| `/procoder:threat` | Map every trust boundary and what validates it. |
+| `/procoder:deps` | Audit dependencies: vulnerable, abandoned, unpinned, unused. |
+| `/procoder:debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
+| `/procoder:gain` | Measured progress: rot removed, boundaries hardened, baseline shrinkage. |
+| `/procoder:guard` | Install procoder as a pre-commit hook and CI check. |
+| `/procoder:statusline` | Install, inspect, or remove the statusline badge. |
+| `/procoder:update` | Update procoder, and name what the update invalidates. |
+| `/procoder:help` | Show procoder's rungs, levels, and commands. |
 
-`/procoder-rot` and `/procoder-threat` have no equivalent in comparable tools:
+`/procoder:rot` and `/procoder:threat` have no equivalent in comparable tools:
 one hunts what previous changes left behind, the other maps where untrusted
 data enters and what validates it.
 

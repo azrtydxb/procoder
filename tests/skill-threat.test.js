@@ -5,12 +5,12 @@ const fs = require('fs');
 const path = require('path');
 
 const skill = fs.readFileSync(
-  path.join(__dirname, '..', 'skills', 'procoder-threat', 'SKILL.md'), 'utf8');
+  path.join(__dirname, '..', 'skills', 'threat', 'SKILL.md'), 'utf8');
 
 test('frontmatter names the skill and its triggers', () => {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(skill);
   assert.ok(m, 'missing frontmatter');
-  assert.match(m[1], /^name: procoder-threat$/m);
+  assert.match(m[1], /^name: threat$/m);
   assert.match(m[1], /threat|trust boundar|attack surface|security review/i);
 });
 

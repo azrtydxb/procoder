@@ -70,8 +70,8 @@ test('the four level names and their order are consistent everywhere they are do
   for (const rel of [
     'skills/procoder/SKILL.md',
     'README.md',
-    'commands/procoder.toml',
-    'skills/procoder-help/SKILL.md',
+    'commands/level.toml',
+    'skills/help/SKILL.md',
   ]) {
     const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8').toLowerCase();
     for (const level of LEVELS) {

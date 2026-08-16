@@ -1,0 +1,9 @@
+description = "Find dead, stale, and deprecated code left behind."  # procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it
+prompt = """
+Use the procoder:rot skill. Arguments (optional path scope; default the whole
+repository): $ARGUMENTS
+
+Run the deterministic engine first, then work the rot categories. Verify
+reachability before recommending any deletion — report anything uncertain as
+"needs confirmation". Report in the skill's one-line format. Do not delete.
+"""

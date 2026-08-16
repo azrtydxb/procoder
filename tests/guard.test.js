@@ -9,7 +9,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const preCommit = fs.readFileSync(path.join(root, 'scripts/templates/pre-commit.sh'), 'utf8');
 const ci = fs.readFileSync(path.join(root, 'scripts/templates/procoder-ci.yml'), 'utf8');
-const skill = fs.readFileSync(path.join(root, 'skills/procoder-guard/SKILL.md'), 'utf8');
+const skill = fs.readFileSync(path.join(root, 'skills/guard/SKILL.md'), 'utf8');
 
 test('pre-commit template checks only staged files', () => {
   assert.match(preCommit, /git diff --cached --name-only/);

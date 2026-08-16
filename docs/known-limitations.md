@@ -162,7 +162,7 @@ differential runs. The narrowings that survived are real, and disclosed here:
 the tool call touched, ±3 lines. The universal pack is exempt — a credential is
 a leak wherever it sits — but a file-level finding reported at line 1
 (`obvious/nesting-depth`) will not surface from an edit made further down. Run
-`procoder check <file>` or `/procoder-review` for the whole-file picture.
+`procoder check <file>` or `/procoder:review` for the whole-file picture.
 
 ## External linter deference
 
