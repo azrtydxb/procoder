@@ -95,3 +95,106 @@ test('writeHookOutput emits PostToolUse as additionalContext JSON', () => {
     assert.strictEqual(parsed.hookSpecificOutput.additionalContext, 'FINDINGS');
   });
 });
+
+test('Codex host emits systemMessage with level and optional hookSpecificOutput', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  const savedHost = process.env.PROCODER_HOST;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  process.env.PROCODER_HOST = 'codex';
+  delete require.cache[require.resolve('../hooks/procoder-runtime')];
+  delete require.cache[require.resolve('../hooks/procoder-config')];
+  try {
+    const rt = require('../hooks/procoder-runtime');
+    const chunks = [];
+    const original = process.stdout.write;
+    process.stdout.write = (c) => { chunks.push(String(c)); return true; };
+    try {
+      rt.writeHookOutput('SessionStart', 'paranoid', '');
+      rt.writeHookOutput('SubagentStart', 'pragmatic', 'CONTEXT');
+    } finally {
+      process.stdout.write = original;
+    }
+    const parsed1 = JSON.parse(chunks[0]);
+    assert.strictEqual(parsed1.systemMessage, 'PROCODER:PARANOID');
+    assert.ok(!parsed1.hookSpecificOutput);
+    const parsed2 = JSON.parse(chunks[1]);
+    assert.strictEqual(parsed2.systemMessage, 'PROCODER:PRAGMATIC');
+    assert.strictEqual(parsed2.hookSpecificOutput.hookEventName, 'SubagentStart');
+    assert.strictEqual(parsed2.hookSpecificOutput.additionalContext, 'CONTEXT');
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+    if (savedHost === undefined) delete process.env.PROCODER_HOST;
+    else process.env.PROCODER_HOST = savedHost;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Copilot host emits additionalContext only for SessionStart with context', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  const savedHost = process.env.PROCODER_HOST;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  process.env.PROCODER_HOST = 'copilot';
+  delete require.cache[require.resolve('../hooks/procoder-runtime')];
+  delete require.cache[require.resolve('../hooks/procoder-config')];
+  try {
+    const rt = require('../hooks/procoder-runtime');
+    const chunks = [];
+    const original = process.stdout.write;
+    process.stdout.write = (c) => { chunks.push(String(c)); return true; };
+    try {
+      rt.writeHookOutput('SessionStart', 'strict', 'DATA');
+      rt.writeHookOutput('SessionStart', 'strict', '');
+      rt.writeHookOutput('SubagentStart', 'strict', 'DATA');
+    } finally {
+      process.stdout.write = original;
+    }
+    const parsed1 = JSON.parse(chunks[0]);
+    assert.deepStrictEqual(parsed1, { additionalContext: 'DATA' });
+    const parsed2 = JSON.parse(chunks[1]);
+    assert.deepStrictEqual(parsed2, {});
+    const parsed3 = JSON.parse(chunks[2]);
+    assert.deepStrictEqual(parsed3, {});
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+    if (savedHost === undefined) delete process.env.PROCODER_HOST;
+    else process.env.PROCODER_HOST = savedHost;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Qoder host emits hookSpecificOutput only when context is non-empty', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  const savedHost = process.env.PROCODER_HOST;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  process.env.PROCODER_HOST = 'qoder';
+  delete require.cache[require.resolve('../hooks/procoder-runtime')];
+  delete require.cache[require.resolve('../hooks/procoder-config')];
+  try {
+    const rt = require('../hooks/procoder-runtime');
+    const chunks = [];
+    const original = process.stdout.write;
+    process.stdout.write = (c) => { chunks.push(String(c)); return true; };
+    try {
+      rt.writeHookOutput('SessionStart', 'strict', 'CONTEXT');
+      rt.writeHookOutput('PostToolUse', 'strict', '');
+    } finally {
+      process.stdout.write = original;
+    }
+    const parsed1 = JSON.parse(chunks[0]);
+    assert.strictEqual(parsed1.hookSpecificOutput.hookEventName, 'SessionStart');
+    assert.strictEqual(parsed1.hookSpecificOutput.additionalContext, 'CONTEXT');
+    const parsed2 = JSON.parse(chunks[1]);
+    assert.deepStrictEqual(parsed2, {});
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+    if (savedHost === undefined) delete process.env.PROCODER_HOST;
+    else process.env.PROCODER_HOST = savedHost;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -11,6 +11,11 @@ const isCodex = !!process.env.CODEX_HOME || process.env.PROCODER_HOST === 'codex
 const isCopilot = process.env.PROCODER_HOST === 'copilot';
 const isQoder = process.env.PROCODER_HOST === 'qoder';
 
+// A closed stdout (the host exiting first) surfaces as an async 'error' event,
+// not a synchronous throw — try/catch alone cannot catch it, and an uncaught
+// EPIPE would crash the hook. Both guards are needed.
+try { process.stdout.on('error', () => {}); } catch (e) { /* best-effort */ }
+
 function readLevel() {
   try {
     const raw = fs.readFileSync(getLevelFilePath(), 'utf8');
