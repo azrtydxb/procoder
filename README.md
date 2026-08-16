@@ -1,24 +1,53 @@
 # procoder
 
-procoder is a [Claude Code](https://claude.com/claude-code) plugin that governs
-whether AI-written code is allowed to ship. Every response is checked against
-four rungs — **SAFE**, **TRUE**, **OBVIOUS**, **ALONE** — covering security at
-trust boundaries, error handling and edge cases, readability, and whether the
-code the change replaced was actually deleted. It pairs with the
-[`ponytail`](https://github.com/dietrichgebert/ponytail) plugin: ponytail decides **what to write** (the minimal, YAGNI-first
-solution); procoder decides **whether it may ship**.
+[![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/azrtydxb/procoder)](LICENSE)
+[![Node](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fazrtydxb%2Fprocoder%2Fmain%2Fpackage.json&query=%24.engines.node&label=node&color=brightgreen)](package.json)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-**<https://azrtydxb.github.io/procoder/>** — the doctrine, install steps,
-commands, configuration and worked examples as a documentation site, with what
-the tool is known to miss linked from every page rather than buried.
+<!-- Each badge above reads its value from something that fails when the value
+     changes: the CI badge from the `ci` workflow, the licence badge from the
+     repository's own LICENSE, the node badge from `engines.node` in
+     package.json, and the zero-dependency badge from tests/manifest.test.js,
+     which asserts `pkg.dependencies === undefined`. No badge states a number
+     nobody keeps honest. -->
 
-It is served from [`docs/`](docs/) by GitHub Pages' own Jekyll build, so the
-masthead, navigation and footer live in exactly one file each —
-`docs/_layouts/page.html`, `docs/_includes/nav.html` and `docs/_data/nav.yml` —
-rather than being copied into every page, which is the duplication rung 4
-exists to catch. Nothing is added to this repository to make that work: no
-package, no lockfile, no build step of your own to run. Edit a page under
-`docs/` and the change is live on the next push to `main`.
+**An AI writes the change in seconds. What it almost never does is delete what
+the change replaced.** So the old function survives — still exported, still
+imported somewhere, still wrong. Six weeks later somebody calls it, or patches
+it instead of its replacement, or reads it and believes it.
+
+procoder is a [Claude Code](https://claude.com/claude-code) plugin and CLI that
+refuses to call a change done until that thing is gone.
+
+That is its fourth rung, **ALONE**, and it has no equivalent in an ordinary
+linter. eslint and ruff answer questions about the code in front of them; none
+of them has a concept of *the thing this replaced*. `/procoder:rot` does: it
+hunts superseded exports, orphaned branches, parallel implementations of one
+job, and it checks reachability before it recommends deleting anything, so what
+it cannot prove is reported as needing confirmation rather than deleted.
+
+Three rungs sit in front of it, in cost order — **SAFE**, **TRUE**,
+**OBVIOUS** — and all four are checked while the code is being written, not at
+review time. The doctrine is injected at session start, so the model is
+*following* the rungs before anything is checked, and a `PostToolUse` hook runs
+the deterministic engine over every file the agent writes. A finding lands in
+the same turn that produced it, when the change is still cheap to undo, instead
+of in a pull request comment three days later.
+
+Pointing a gate at an existing codebase usually produces thousands of findings
+and gets uninstalled the same afternoon. `procoder baseline` records what is
+already there as accepted, and `procoder verify` fails only on what is new: the
+accepted set may shrink, never grow. Adopting procoder on a legacy repository
+does not start with a cleanup.
+
+It pairs with [`ponytail`](https://github.com/dietrichgebert/ponytail):
+ponytail decides **what to write** (the minimal, YAGNI-first solution),
+procoder decides **whether it may ship**.
+
+**Documentation: <https://azrtydxb.github.io/procoder/>** — the doctrine,
+per-host install steps, every command, the full configuration reference, and
+what the tool is known to miss, linked from every page rather than buried.
 
 ## The ladder
 
@@ -44,6 +73,32 @@ its job. `scripts/sync-rules.js` keeps the generated rule files listed in
 is not one of them, so keep this table in step by hand when the doctrine's
 ladder changes.)*
 
+## Where it does not defer
+
+procoder runs the project's own linter rather than replacing it: where eslint,
+ruff, golangci-lint or clippy is configured, its findings replace procoder's
+own shape rules, because the project's linter defines the project's shape.
+
+Rung 1 is the exception. Security findings are never handed to an external
+linter, because eslint and ruff do not check for SQL injection, shell
+injection or disabled TLS verification by default, and a gate that silently
+delegates its non-negotiable rung to a tool that does not check it is worse
+than no gate at all.
+
+The same reasoning is why procoder has **zero runtime dependencies** and a
+lockfile with nothing in it. A tool whose first rung says a new dependency is a
+new trust boundary does not get to add one for convenience.
+
+## It gates itself
+
+`tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
+`git ls-files` so a file is inside the gate the day it lands, and the CI run
+that gates a pull request is the same one. There is no hold-out list. The
+honest whole-repository number — currently 0 findings, with what is skipped and
+why — is published on
+[what it misses](https://azrtydxb.github.io/procoder/limitations.html) rather
+than left for you to measure.
+
 ## Install
 
 ```bash
@@ -53,6 +108,20 @@ claude plugin install procoder
 
 (Replace the marketplace source with a local path if you're installing from a
 clone: `claude plugin marketplace add ./procoder`.)
+
+For a pre-commit hook, a CI job, or a terminal with no agent in it, the same
+engine ships as a CLI:
+
+```bash
+npm install -g procoder
+procoder check <paths...>
+```
+
+Cursor, Windsurf, Cline, Kiro, Qoder, opencode, openclaw, Codex, Copilot, pi
+and any MCP host each read a rule file generated from the same doctrine.
+[`docs/install.md`](docs/install.md) has exact, copy-pasteable steps for each,
+and [Get started](https://azrtydxb.github.io/procoder/start.html) is the same
+material on the site.
 
 ## Levels
 
@@ -75,7 +144,7 @@ level) when you want procoder back.
 | `/procoder:level` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
 | `/procoder:review` | Review the current diff against the four rungs. |
 | `/procoder:audit` | Audit the whole repository, ranked by rung severity. |
-| `/procoder:rot` | Find dead, stale, and deprecated code left behind. |  <!-- procoder: literal alone/deprecated-no-trigger the doctrine names this pattern, it is not an instance of it -->
+| `/procoder:rot` | Find dead, stale, and superseded code left behind. |
 | `/procoder:threat` | Map every trust boundary and what validates it. |
 | `/procoder:deps` | Audit dependencies: vulnerable, abandoned, unpinned, unused. |
 | `/procoder:debt` | Ledger of `procoder:` markers, flagging any without a removal trigger. |
@@ -85,78 +154,20 @@ level) when you want procoder back.
 | `/procoder:update` | Update procoder, and name what the update invalidates. |
 | `/procoder:help` | Show procoder's rungs, levels, and commands. |
 
-`/procoder:rot` and `/procoder:threat` have no equivalent in comparable tools:
-one hunts what previous changes left behind, the other maps where untrusted
-data enters and what validates it.
+`/procoder:rot` and `/procoder:threat` are the two with no equivalent in
+comparable tools: one hunts what previous changes left behind, the other maps
+where untrusted data enters and what validates it. Each command is described in
+full on [Commands](https://azrtydxb.github.io/procoder/commands.html).
 
-See [`examples/`](examples/) for a worked before/after pair per rung, run
-through the real check engine.
-
-## Examples and install docs
-
-[`examples/`](examples/) has one before/after pair per rung — each `before.ts`
-trips its rung through `node bin/procoder.js check`, each `after.ts` is clean.
-
-[`docs/install.md`](docs/install.md) has exact, copy-pasteable install steps
-for every supported host: Claude Code, Cursor, Windsurf, Cline, Kiro, Qoder,
-opencode, openclaw, Codex/Copilot, pi, MCP, and CLI/CI-only.
-
-## MCP
-
-For hosts that speak MCP but not Claude Code plugins, `procoder-mcp/server.js`
-is a dependency-free JSON-RPC 2.0 (stdio) server exposing the same engine as
-the hooks: `procoder_doctrine` (the rungs at a given level), `procoder_check`
-(run the engine against a file), and `procoder_baseline` (read the ratchet
-baseline). Point an `mcpServers` config at it:
-
-```json
-{
-  "mcpServers": {
-    "procoder": {
-      "command": "node",
-      "args": ["/path/to/procoder/procoder-mcp/server.js"]
-    }
-  }
-}
-```
-
-See [`docs/install.md`](docs/install.md#mcp) for the full method list.
+See [`examples/`](examples/) for a worked before/after pair per rung — each
+`before.*` trips its rung through `node bin/procoder.js check`, each `after.*`
+is clean, and both are proved on every test run.
 
 ## Configuration
 
-Environment variables:
-
-| Variable | Effect |
-|---|---|
-| `PROCODER_DEFAULT_LEVEL` | Overrides the default level (`strict`) for new sessions. Must be one of `off`, `pragmatic`, `strict`, `paranoid`. |
-| `PROCODER_NO_HOOK` | Set to `1` to disable all procoder hooks (activation, level tracking, subagent propagation) without uninstalling the plugin. |
-| `CLAUDE_CONFIG_DIR` | Overrides where procoder persists the active level (`<dir>/.procoder-active`). Defaults to `~/.claude`. |
-| `PROCODER_HOST` | Selects the hook wire protocol for non-Claude-Code hosts. One of `codex`, `copilot`, `qoder`. Unset (or any other value) uses the native Claude Code protocol. `codex` is also auto-detected via `CODEX_HOME`. |
-| `PROCODER_NO_UPDATE_CHECK` | Set to `1` to turn off the update notice below, including its once-a-day background request. Nothing else about procoder changes. |
-| `PROCODER_UPDATE_URL` | Where the update check reads the published version from. Defaults to procoder's `plugin.json` on GitHub; point it at a fork or an internal mirror if you install from one. |
-
-### Update notice
-
-When procoder is installed as a Claude Code plugin and a newer version has been
-published, the session starts with one line saying which version is out, which
-one you are running, and to run `/procoder:update`. It says nothing when you are
-up to date, and nothing when it cannot reach GitHub.
-
-Session start never waits on the network. The hook reads a cached answer and
-reports it; when that answer is more than a day old, it spawns a background
-process that fetches a new one and exits without waiting, so the answer lands
-for the *next* session. **This means the first session after a release is
-silent and the one after it notifies — that is the design, not a bug.** The
-measured cost at session start is about 1ms, against the hook's 5 second budget.
-
-The request is a single unauthenticated GET of a static file on
-`raw.githubusercontent.com`, at most once per day, and it sends nothing about
-you or your code. `PROCODER_NO_UPDATE_CHECK=1` disables it outright — no
-request, no background process, no notice — and `PROCODER_NO_HOOK=1` disables
-it along with everything else.
-
-`.procoder.toml` configures the check engine itself (rung severities,
-thresholds, and exclusions):
+`.procoder.toml` configures the check engine — rung severities, shape
+thresholds, and exclusions. Every key is optional; the values below are the
+defaults:
 
 ```toml
 [rungs]
@@ -179,211 +190,47 @@ rules = ["scripts/legacy-parser.js:obvious/complexity"]
 file = ".procoder-baseline.json"
 ```
 
-The values shown for `[thresholds]` and `[baseline]` are the defaults; every
-key is optional. Arrays may span multiple lines. A line the config parser
-cannot recognize is warned on stderr and skipped, never silently dropped.
+`[rungs]` sets each rung's severity — `error` findings are must-fix, `warn`
+findings advisory — and the active level modulates it. The keys are the four
+rung names verbatim, `true` included: it is a bare key, not a boolean. A line
+the parser cannot recognize is warned about on stderr and skipped, never
+silently dropped.
 
-`[rungs]` sets each rung's severity. `error` findings are reported as must-fix;
-`warn` findings are reported as advisory. The active level modulates this: at
-`pragmatic`, the judgment rungs (OBVIOUS, ALONE) are flagged without blocking
-language, while SAFE and TRUE always demand a fix. The keys are the four rung
-names verbatim, `true` included — it is a bare key, not a boolean.
+Two narrower instruments sit under it. A `.procoderignore` file may sit in
+**any** directory and excludes paths beneath it, using a documented subset of
+`.gitignore` syntax — `.gitignore` itself is deliberately not read. And a line
+marker covers text that *describes* a violation rather than committing one:
+<!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
+`<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>`
+It must name its rules and give a reason, and it reaches one line, or two in
+its standalone form.
 
-`[exclude] paths` excludes whole paths (directory prefixes) from every check.
-`[exclude] rules` is narrower and exact-path-only: each entry is
-`path:rule-id`, and `path` must match a file exactly — no directory prefixes,
-no globs. It silences one named rule (e.g. `obvious/complexity`) on one named
-file, everywhere else that rule still applies. Because the match is exact
-rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
-new files added later under the same directory — narrowing enforcement always
-takes a second, deliberate edit per file.
+Six environment variables tune the rest, `PROCODER_DEFAULT_LEVEL` and
+`PROCODER_NO_HOOK` among them.
+[Configuration](https://azrtydxb.github.io/procoder/configuration.html) is the
+full reference for all of the above: every ignore pattern, every precedence
+rule, the ratchet baseline, and every variable.
 
-### The literal marker
+## MCP
 
-The third and narrowest suppression form is not in `.procoder.toml` at all: it
-is a marker written on the line itself, for text that *describes* a violation
-rather than committing one — a detection pattern, a doctrine paragraph, a test
-fixture, a rule id quoted in config.
-
-`<comment syntax> procoder: literal <rule-id>[, <rule-id>…] <reason>` <!-- procoder: literal alone/blanket-suppression the marker syntax written out, not a suppression -->
-
-| Rule | Why |
-|---|---|
-| It must name its rules, comma-separated. There is no bare form and no wildcard. | An unnamed suppression is a rung-4 violation by this project's own doctrine; the bare form is reported as `alone/blanket-suppression`. |
-| It must state a reason of at least two words. | A marker with no reason does not parse, silences nothing, and is reported as `alone/unexplained-suppression`. |
-| The reason runs to end of line, so the marker is always last on its line. | That is what separates a *trailing* marker (this line only) from a *standalone* one (its own line and the next), which is the widest scope offered — there is no block or file form. |
-
-The standalone form exists for lines that cannot carry a comment of their own:
-YAML frontmatter, a markdown table row, a fenced example.
-
-It can name any built-in rule, `safe/hardcoded-secret` included — a mechanism
-that could not cover a credential could not cover the fixtures and doctrine
-pages where the false positives actually are. What keeps it honest is that it
-names the rule, states a reason, reaches at most two lines, and sits in the
-diff right next to the value.
-
-It can also name an external linter's rule id — `true/eslint:no-eval` — which
-carries a colon of its own. A rule id it does not recognise is dropped from the
-marker rather than silently honoured: the finding still reports, and the unknown
-id is named on stderr, so a typo fails loudly instead of quietly widening what
-the marker covers. See [`docs/known-limitations.md`](docs/known-limitations.md)
-for what it does not cover.
-### `.procoderignore`
-
-A `.procoderignore` file may sit in **any** directory and excludes paths in that
-directory and everything beneath it — so a large generated subtree is excluded
-by one file next to it, instead of a central list that grows stale far from what
-it describes.
-
-```
-# gen/.procoderignore
-*.gen.ts        # any depth below gen/
-/vendor/        # only gen/vendor/, not gen/pkg/vendor/
-build/          # a directory of that name, at any depth
-!keep.gen.ts    # ...except this one
-```
-
-The syntax is a **subset** of `.gitignore`, and this list is exhaustive —
-anything not on it is not supported:
-
-| Supported | Meaning |
-|---|---|
-| `# comment`, blank lines | Skipped. Leading and trailing whitespace is trimmed. |
-| `name` | Matches `name` — and everything under it if it is a directory — at any depth below the ignore file. |
-| `a/b.ts` | A slash anywhere anchors the pattern to the ignore file's own directory. |
-| `/vendor` | A leading slash anchors it too. |
-| `build/` | A trailing slash matches only a directory's contents, never a file of that name. |
-| `*` | Any run of characters within one path segment. |
-| `**` | Any run of characters across segments; `**/` also matches zero directories, so `b/**/*.ts` covers `b/x.ts`. |
-| `!pattern` | Negation — puts a path back into the gate. |
-
-**Not supported**, and treated as literal characters rather than silently doing
-something else: `?`, character classes (`[a-z]`), and backslash escapes. A line
-that cannot be compiled is dropped and matches nothing; a `.procoderignore` that
-cannot be read, or is full of nonsense, ignores nothing and never fails a hook.
-
-**Precedence**, in order:
-
-1. `.procoder.toml`'s `[exclude] paths` is decided first and its verdict is
-   final. A `!` in a `.procoderignore` cannot re-include what the root config
-   excluded — the root config is the project-wide contract, and a subdirectory
-   may narrow further but never contradict it.
-2. Otherwise the last matching pattern wins, and a deeper `.procoderignore`'s
-   patterns are applied after a shallower one's — so the deepest file decides,
-   as in git.
-3. Only ignore files in the path's own ancestor directories are ever read, so a
-   `.procoderignore` cannot affect, or reach above, its own directory. A pattern
-   naming a parent (`../`) is dropped.
-
-`.procoderignore` is a **pure path filter**: there is no `path:rule-id` form.
-Silencing one rule on one file stays a deliberate, exact-path edit in
-`.procoder.toml`, where it is visible in one place and `verify
---unused-exclusions` can tell you when it has gone stale.
-
-**`.gitignore` is deliberately not read.** A file being untracked says something
-about version control, not about whether it should ship — and the PostToolUse
-hook fires on files git has never seen. Inheriting those patterns would narrow
-the gate by reusing a file written for another purpose, silently, which is the
-one thing this project refuses to do. Ignoring a path from procoder takes a line
-in a file whose name says so.
-
-Because an ignore file narrows enforcement, `procoder check` reports what it
-covered — one line on stderr per ignore file that actually skipped something:
-
-```
-procoder: 412 files skipped by gen/.procoderignore — not checked.
-```
-
-Per ignore file, not per file: the case this exists for is a large generated
-subtree, and a line per file would bury the findings it was meant to make room
-for. `check`, `baseline` and `verify` share the engine, so a file one of them
-ignores is ignored by all three and the ratchet cannot disagree with itself.
-
-To answer "why is this file not being checked?", or to check an ignored file
-deliberately, pass `--no-ignore`:
-
-```bash
-procoder check --no-ignore src/gen/api.ts
-```
-
-It turns off every `.procoderignore` for that run and nothing else —
-`.procoder.toml`'s `[exclude] paths` still applies, so the flag cannot become a
-way into `node_modules/` by accident.
-
-procoder uses this on itself. Three ignore files, each sitting next to what it
-describes: `/.procoderignore` covers `.claude/` and `.superpowers/` (agent
-scratch, untracked, and `.claude/worktrees/` is a full second copy of the repo);
-`docs/superpowers/.procoderignore` covers planning documents for work already
-executed, which quote rule ids and sample violations by the hundred; and
-`examples/.procoderignore` covers `before.*` only — those files violate a rung
-on purpose, while every `after.*` stays gated as ordinary source. The examples
-are still proved on every run, because `tests/examples.test.js` checks the
-`before.*` files with `--no-ignore`.
-
-Symlinks are not resolved: a path is matched exactly as it was written, so a
-symlinked directory is judged by the name it was reached through.
-
-## Statusline
-
-procoder ships a statusline script that prints the active level (e.g.
-`[PROCODER:STRICT]`), or nothing when procoder is off or inactive. One command
-wires it up:
-
-```bash
-procoder statusline install
-```
-
-It writes the `statusLine` block into your Claude Code settings
-(`$CLAUDE_CONFIG_DIR/settings.json`, or `~/.claude/settings.json`), resolving
-the script path from where this copy of procoder actually lives and picking the
-`.sh` or the `.ps1` for your platform. Everything else in that file is left as
-it was, the previous version is copied to a timestamped `.backup-` file first,
-and running it twice changes nothing the second time. A `statusLine` that is not
-procoder's is reported, not replaced.
-
-If you already have a statusline you like, keep it and put the badge after it:
-
-```bash
-procoder statusline install --append   # yours, then [PROCODER:STRICT]
-procoder statusline install --force    # replace yours with the badge
-```
-
-`--append` wraps both commands in one that reads the session JSON Claude Code
-sends on stdin once and replays it into each of them, so a statusline that reads
-`.cwd` keeps working. Your original entry is recorded verbatim next to the
-wrapper, and `procoder statusline uninstall` puts it back exactly as it was.
-`--append` builds a POSIX shell command, so it is not available on Windows.
-
-```bash
-procoder statusline status     # what is configured today
-procoder statusline uninstall  # remove procoder's entry, restore any it composed with
-```
-
-`status` names one of four states: nothing configured, procoder's, somebody
-else's, or procoder's composed with somebody else's.
-
-A plugin install lives under a version-named directory that the next update
-replaces, so the command written for one resolves the current version when it
-runs rather than naming today's — otherwise the badge would silently vanish on
-every update. Installed from a clone, where the path is stable, it names the
-script directly.
-
-If you would rather edit the file yourself — or the installer declined because
-your install path contains characters a shell would interpret — the block it
-writes is just:
+For hosts that speak MCP but not Claude Code plugins, `procoder-mcp/server.js`
+is a dependency-free JSON-RPC 2.0 (stdio) server exposing the same engine as
+the hooks: `procoder_doctrine` (the rungs at a given level), `procoder_check`
+(run the engine against a file), and `procoder_baseline` (read the ratchet
+baseline). Point an `mcpServers` config at it:
 
 ```json
 {
-  "statusLine": {
-    "type": "command",
-    "command": "bash /path/to/procoder/hooks/procoder-statusline.sh"
+  "mcpServers": {
+    "procoder": {
+      "command": "node",
+      "args": ["/path/to/procoder/procoder-mcp/server.js"]
+    }
   }
 }
 ```
 
-Substitute the real install path, quoted or escaped to suit your shell. On
-Windows the equivalent is
-`powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
+See [`docs/install.md`](docs/install.md#mcp) for the full method list.
 
 ## Other platforms
 
@@ -409,3 +256,17 @@ reads `AGENTS.md` for the doctrine itself and these for the slash commands.
 
 Run `npm run sync` after editing the doctrine or a command to regenerate all
 of the above, or `npm run sync:check` to verify there's no drift.
+
+## The documentation site
+
+The site is served from [`docs/`](docs/) by GitHub Pages' own Jekyll build, so
+the masthead, navigation and footer live in exactly one file each —
+`docs/_layouts/page.html`, `docs/_includes/nav.html` and `docs/_data/nav.yml` —
+rather than being copied into every page, which is the duplication rung 4
+exists to catch. Nothing is added to this repository to make that work: no
+package, no lockfile, no build step of your own to run. Edit a page under
+`docs/` and the change is live on the next push to `main`.
+
+The pages make no external request — no CDN, no web font, no analytics, no
+badge image fetched from a third party — for the same reason the tool has no
+runtime dependencies.
