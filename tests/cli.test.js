@@ -7,8 +7,18 @@ const path = require('path');
 
 const CLI = path.join(__dirname, '..', 'bin', 'procoder.js');
 
+// Every test builds its own throwaway repo under the OS temp dir; without
+// cleanup a run leaves dozens of them behind. Tracked centrally and swept in
+// one `after` hook rather than a try/finally per test, so a test that adds a
+// new repoWith() call later can't forget the teardown.
+const tempDirs = [];
+test.after(() => {
+  for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cli-'));
+  tempDirs.push(dir);
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
   for (const [rel, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });

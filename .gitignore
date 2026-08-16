@@ -1,3 +1,4 @@
 node_modules/
 .procoder-baseline.json
 *.log
+hooks/checks/dogfood-canary.js

@@ -7,8 +7,16 @@ const path = require('path');
 const { hasTool, isConfigured, resolveFor, runTool, runToolResult } = require('../hooks/checks/resolve');
 const { TOOLS } = require('../hooks/checks/registry');
 
+// Tracked centrally and swept in one `after` hook, rather than a try/finally
+// per test, so a test that adds a new tempRepo() call later can't forget it.
+const tempDirs = [];
+test.after(() => {
+  for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tempRepo(files = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-res-'));
+  tempDirs.push(dir);
   for (const [rel, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
     fs.writeFileSync(path.join(dir, rel), content);
