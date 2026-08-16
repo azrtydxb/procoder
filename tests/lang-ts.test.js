@@ -113,3 +113,24 @@ test('stays linear on a very long single line', () => {
     assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
   }
 });
+
+// FUNCTION_SIGNATURE used to retry its `\w+` branch from every offset of an
+// unbroken word run: 54ms at 8KB, 9,041ms at 100KB. Pinning that branch to the
+// start of an identifier made it linear — 100KB now costs single-digit ms, so
+// 1s is regression, not slow CI.
+test('stays linear on an unbroken word run', () => {
+  for (const src of ['x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){']) {
+    const started = Date.now();
+    check(src, { relPath: 'x.ts', config });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 1000, `a ${src.length}-byte word run took ${elapsed}ms`);
+  }
+});
+
+// The scan still has to find the signatures a per-line anchor would lose: a
+// method whose name is preceded by `$`, and one that is not the first match on
+// its line.
+test('finds signatures whatever the identifier is preceded by', () => {
+  assert.ok(ids('class C { $sink(a, b, c, d, e, f, g) {\n  return a;\n} }').includes('obvious/too-many-params'));
+  assert.ok(ids('const f = () => { g(a, b, c, d, e, f) {\n  return a;\n} }').includes('obvious/too-many-params'));
+});

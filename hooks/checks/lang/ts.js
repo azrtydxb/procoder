@@ -72,8 +72,23 @@ const LINE_RULES = [
 // try { ... } catch (e) { }  — with only whitespace or a comment in the block.
 const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
 
+// Method-shorthand and call-like branch — `foo(a) {`, `async foo(a) {` — is the
+// only one not pinned to a keyword, so `\w+` may start anywhere. `(?<!\w)` pins
+// it to the start of an identifier, which is what makes the scan linear: inside
+// an unbroken word run every other offset now fails on the lookbehind instead of
+// re-running the greedy `\w+` to the end of the run, which was quadratic (8KB
+// 54ms, 50KB 2,230ms, 100KB 9,041ms). It excludes no signature that was matched
+// before: starting mid-identifier could only ever reach the same `\w+` end, so
+// the match at the identifier's start is the same match, on the same line, with
+// the same parameter text. `\w` deliberately, not `[\w$]` — a `$` may precede an
+// identifier (`$foo(a) {`), and a run mixing `$` in stays linear anyway because
+// each word run still admits one starting offset.
+//
+// Spans stay bounded as in go.js and rust.js; jvm.js and dotnet.js anchor per
+// line instead, which does not fit here — a TS signature may be nested in an
+// expression or wrap its parameters across lines.
 const FUNCTION_SIGNATURE =
-  /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?\w+\s*)\(([^)]{0,500})\)\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/g;
+  /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?(?<!\w)\w+\s*)\(([^)]{0,500})\)\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/g;
 
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
