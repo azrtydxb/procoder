@@ -75,6 +75,39 @@ level) when you want procoder back.
 one hunts what previous changes left behind, the other maps where untrusted
 data enters and what validates it.
 
+See [`examples/`](examples/) for a worked before/after pair per rung, run
+through the real check engine.
+
+## Examples and install docs
+
+[`examples/`](examples/) has one before/after pair per rung — each `before.ts`
+trips its rung through `node bin/procoder.js check`, each `after.ts` is clean.
+
+[`docs/install.md`](docs/install.md) has exact, copy-pasteable install steps
+for every supported host: Claude Code, Cursor, Windsurf, Cline, Kiro, Qoder,
+opencode, openclaw, Codex/Copilot, pi, MCP, and CLI/CI-only.
+
+## MCP
+
+For hosts that speak MCP but not Claude Code plugins, `procoder-mcp/server.js`
+is a dependency-free JSON-RPC 2.0 (stdio) server exposing the same engine as
+the hooks: `procoder_doctrine` (the rungs at a given level), `procoder_check`
+(run the engine against a file), and `procoder_baseline` (read the ratchet
+baseline). Point an `mcpServers` config at it:
+
+```json
+{
+  "mcpServers": {
+    "procoder": {
+      "command": "node",
+      "args": ["/path/to/procoder/procoder-mcp/server.js"]
+    }
+  }
+}
+```
+
+See [`docs/install.md`](docs/install.md#mcp) for the full method list.
+
 ## Configuration
 
 Environment variables:
@@ -85,6 +118,24 @@ Environment variables:
 | `PROCODER_NO_HOOK` | Set to `1` to disable all procoder hooks (activation, level tracking, subagent propagation) without uninstalling the plugin. |
 | `CLAUDE_CONFIG_DIR` | Overrides where procoder persists the active level (`<dir>/.procoder-active`). Defaults to `~/.claude`. |
 | `PROCODER_HOST` | Selects the hook wire protocol for non-Claude-Code hosts. One of `codex`, `copilot`, `qoder`. Unset (or any other value) uses the native Claude Code protocol. `codex` is also auto-detected via `CODEX_HOME`. |
+
+`.procoder.toml` configures the check engine itself (level, thresholds, and
+exclusions):
+
+```toml
+[exclude]
+paths = ["vendor/", "generated/"]
+rules = ["scripts/legacy-parser.js:obvious/complexity"]
+```
+
+`[exclude] paths` excludes whole paths (directory prefixes) from every check.
+`[exclude] rules` is narrower and exact-path-only: each entry is
+`path:rule-id`, and `path` must match a file exactly — no directory prefixes,
+no globs. It silences one named rule (e.g. `obvious/complexity`) on one named
+file, everywhere else that rule still applies. Because the match is exact
+rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
+new files added later under the same directory — narrowing enforcement always
+takes a second, deliberate edit per file.
 
 ## Statusline
 
@@ -121,8 +172,11 @@ source — so hand-editing one of these is not an option.
 | `.kiro/steering/procoder.md` | Kiro |
 | `.qoder/rules/procoder.md` | Qoder |
 | `.agents/rules/procoder.md` | Generic `.agents`-convention tooling |
-| `.opencode/command/procoder.md` | OpenCode |
 | `.openclaw/skills/procoder/SKILL.md` | OpenClaw |
 
-Run `npm run sync` after editing the doctrine to regenerate all of the above,
-or `npm run sync:check` to verify there's no drift.
+`scripts/sync-rules.js` also ports each of the ten `commands/*.toml` files to
+`.opencode/command/<name>.md` and `.openclaw/commands/<name>.md` — opencode
+reads `AGENTS.md` for the doctrine itself and these for the slash commands.
+
+Run `npm run sync` after editing the doctrine or a command to regenerate all
+of the above, or `npm run sync:check` to verify there's no drift.
