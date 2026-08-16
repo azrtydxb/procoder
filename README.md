@@ -268,9 +268,29 @@ symlinked directory is judged by the name it was reached through.
 ## Statusline
 
 procoder ships a statusline script that prints the active level (e.g.
-`[PROCODER:STRICT]`), or nothing when procoder is off or inactive. Add it to
-your Claude Code settings, pointing at wherever the plugin is installed on
-your machine:
+`[PROCODER:STRICT]`), or nothing when procoder is off or inactive. One command
+wires it up:
+
+```bash
+procoder statusline install
+```
+
+It writes the `statusLine` block into your Claude Code settings
+(`$CLAUDE_CONFIG_DIR/settings.json`, or `~/.claude/settings.json`), resolving
+the script path from where this copy of procoder actually lives and picking the
+`.sh` or the `.ps1` for your platform. Everything else in that file is left as
+it was, the previous version is copied to a timestamped `.backup-` file first,
+and running it twice changes nothing the second time. A `statusLine` that is not
+procoder's is reported, not replaced — pass `--force` if you mean to replace it.
+
+```bash
+procoder statusline status     # what is configured today
+procoder statusline uninstall  # remove procoder's entry, leave everything else
+```
+
+If you would rather edit the file yourself — or the installer declined because
+your install path contains characters a shell would interpret — the block it
+writes is just:
 
 ```json
 {
@@ -281,8 +301,9 @@ your machine:
 }
 ```
 
-A PowerShell equivalent, `procoder-statusline.ps1`, is included for Windows —
-use `powershell -File /path/to/procoder/hooks/procoder-statusline.ps1`.
+Substitute the real install path, quoted or escaped to suit your shell. On
+Windows the equivalent is
+`powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
 
 ## Other platforms
 

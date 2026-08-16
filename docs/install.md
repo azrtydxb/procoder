@@ -16,8 +16,38 @@ claude plugin install procoder
 (Replace the marketplace source with a local path if you're installing from a
 clone: `claude plugin marketplace add ./procoder`.)
 
-To see the active level in your status line, add this to Claude Code's
-settings, pointing at wherever the plugin is installed on your machine:
+To see the active level in your status line:
+
+```bash
+procoder statusline install
+```
+
+That edits Claude Code's settings for you — `$CLAUDE_CONFIG_DIR/settings.json`,
+or `~/.claude/settings.json` — and works out the script path itself, which
+matters because Claude Code plugin installs do not live at a fixed, predictable
+location. It picks `procoder-statusline.sh` (via bash) or
+`procoder-statusline.ps1` (via powershell) for your platform.
+
+It is careful with that file, because it is yours and procoder only owns one key
+in it: every other key keeps its value and its position, the previous version is
+copied to `settings.json.backup-<timestamp>` before anything is written, and the
+new file is written to a temp file and renamed, so an interrupted run cannot
+leave a truncated `settings.json` behind. If the file is not valid JSON, the
+command says so and changes nothing rather than overwriting what it could not
+read. If a `statusLine` is already configured and it is not procoder's, it
+reports both and stops; `--force` replaces it.
+
+```bash
+procoder statusline status     # what is configured today
+procoder statusline uninstall  # remove procoder's entry, leave everything else
+```
+
+### Doing it by hand
+
+The command is the recommended path, but the block is small enough to write
+yourself — and you will need to, if your install path contains characters a
+shell would interpret (`$`, a backtick, a double quote, a backslash), because
+the installer refuses to build a command around one and prints this instead:
 
 ```json
 {
@@ -28,10 +58,9 @@ settings, pointing at wherever the plugin is installed on your machine:
 }
 ```
 
-`/path/to/procoder` is a placeholder — substitute the actual install path on
-your machine (Claude Code plugin installs do not live at a fixed, predictable
-location). A PowerShell equivalent, `procoder-statusline.ps1`, is included for
-Windows — use `powershell -File /path/to/procoder/hooks/procoder-statusline.ps1`.
+`/path/to/procoder` is a placeholder — substitute the actual install path,
+quoted or escaped to suit your shell. On Windows, the command is
+`powershell -NoProfile -File C:\path\to\procoder\hooks\procoder-statusline.ps1`.
 
 ## Cursor
 
@@ -206,11 +235,13 @@ entries are still reported, they just do not fail the build.
 `hooks/procoder-statusline.sh` (or the `.ps1` equivalent) prints nothing on
 purpose whenever it can't read
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-active`, or the file's content
-isn't one of `pragmatic`, `strict`, or `paranoid`. Confirm: the settings
-`statusLine.command` points at the actual install path of
-`procoder-statusline.sh` (see the Claude Code section above — plugin installs
-don't live at a fixed path); the level file exists and holds a real level, not
-`off` or empty; and the script is readable and executable at that path.
+isn't one of `pragmatic`, `strict`, or `paranoid`. Confirm: `procoder statusline
+status` reports procoder's command as configured — if it reports nothing, or
+somebody else's statusline, run `procoder statusline install`; the level file
+exists and holds a real level, not `off` or empty; and the script is readable at
+the path the command names. A settings file written by hand against an older
+install can point at a path that no longer exists — re-running the install
+command rewrites it from where procoder lives now.
 
 **A wall of findings on first use.**
 
