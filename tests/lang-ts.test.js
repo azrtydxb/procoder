@@ -230,3 +230,65 @@ test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`spawn('ls', ['${PAD}', dir])`).includes('safe/shell-injection'));
   assert.ok(!ids(`execFile('git', ['log', '${PAD}', branch])`).includes('safe/shell-injection'));
 });
+
+// Defect: a sink whose arguments are wholly constant carries nothing
+// untrusted, and a rung-1 rule that fires on obviously-safe code is what gets
+// the whole pack turned off. An identifier, a nested call or an interpolation
+// is data, and those still report.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('spawn("sh", ["-c", "ls -la"], { shell: true })').includes('safe/shell-injection'));  // procoder: literal safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(!ids('exec("ls " + "-la")').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(!ids('eval("1 + 1")').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+});
+
+test('the same sinks still report anything that is not a constant', () => {
+  assert.ok(ids('spawn("sh", [cmd], { shell: true })').includes('safe/shell-injection'));  // procoder: literal safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('spawn("sh", ["-c", buildCommand()], { shell: true })').includes('safe/shell-injection'));  // procoder: literal safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('exec("ls " + dir)').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('exec(`ls ${dir}`)').includes('safe/shell-injection'));  // procoder: literal safe/sql-injection, safe/shell-injection scanner input for that rule, not an instance of it
+  assert.ok(ids('eval(payload)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+});
+
+// Defect: `q = q + id` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('function f(db, id) {\n  let q = "SELECT id=";\n  q = q + id;\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(db, id) {\n  const b = `x${id}`;\n  const a = b;\n  db.query(a);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(dir) {\n  const c = `ls ${dir}`;\n  const cmd = c;\n  exec(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('function f(db, id) {\n  let q = "SELECT id=";\n  q += id;\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(db, id) {\n  let q = `SELECT ${id}`;\n  q += " LIMIT 1";\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function f(db) {\n  let q = "SELECT a";\n  q += " FROM t";\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('function f(id) {\n  const q = "SELECT " + id;\n  function g(q) {\n    db.query(q);\n  }\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function f(id) {\n  const q = "SELECT " + id;\n  rows.forEach((q) => {\n    db.query(q);\n  });\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(id) {\n  const q = "SELECT " + id;\n  function g(other) {\n    db.query(q);\n  }\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(id) {\n  const q = "SELECT 1";\n  function g(q) {\n    q = q + id;\n    db.query(q);\n  }\n}')
+    .includes('safe/sql-injection'));
+});
+
+// A branch header binds nothing, so the names in it must keep the taint they
+// carry in — the shadow applies to parameter lists, not to every `(...)` that
+// precedes a block.
+test('an if or while header does not shadow the name it tests', () => {
+  assert.ok(ids('function f(db, id) {\n  const q = "SELECT " + id;\n  if (q) {\n    db.query(q);\n  }\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(db, id) {\n  const q = "SELECT " + id;\n  while (q.length) {\n    db.query(q);\n  }\n}')
+    .includes('safe/sql-injection'));
+});

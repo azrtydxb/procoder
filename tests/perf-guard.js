@@ -26,6 +26,20 @@
 // copied into each pack's test, and the copies had drifted to four different
 // bounds for one property.
 
+// The shape none of the units above could express: a comment. comments.js
+// blanks one to a run of spaces of the same width, so a single-line license
+// header hands every pattern a whitespace run as long as the file — and a
+// pattern that may *start* inside that run rescans it from each offset, which
+// is quadratic and invisible to a guard whose inputs are all code. A
+// terminated 64KB header cost the ts pack 1,611ms and the rust pack 1,935ms;
+// at 512KB it was 111s and 124s. Both are pinned now, and this is what keeps
+// them pinned. Every pack gets it, with the delimiters its language uses:
+// wrong delimiters would measure a line of ordinary code and prove nothing.
+const COMMENT_STYLE = {
+  c: ['/* ', ' */'],
+  py: ['"""', '"""'],
+};
+
 const SIZE = 100 * 1024;
 const PERF_MULTIPLE = 40;
 const PERF_FLOOR_MS = 5;
@@ -45,16 +59,30 @@ function lineOf(unit) {
   return unit.repeat(Math.ceil(SIZE / unit.length)).slice(0, SIZE);
 }
 
-// `spec` is { assert, check, relPath, config, baseline, units }. `baseline` is
-// a benign unit — linear by construction — and `units` are the adversarial
-// ones. Sources given whole (the word runs ts guards against) are passed as
-// `sources` instead and used as-is rather than repeated to SIZE.
+// One terminated comment, SIZE wide, on a single line.
+function commentLineOf(style) {
+  const [open, close] = COMMENT_STYLE[style] || COMMENT_STYLE.c;
+  return open + lineOf('Copyright 2026 Example. All rights reserved. ')
+    .slice(0, SIZE - open.length - close.length) + close;
+}
+
+// `spec` is { assert, check, relPath, config, baseline, units, comment }.
+// `baseline` is a benign unit — linear by construction — and `units` are the
+// adversarial ones. Sources given whole (the word runs ts guards against) are
+// passed as `sources` instead and used as-is rather than repeated to SIZE.
+// `comment` names the pack's comment style for the single-line-comment input
+// every pack is timed on; it defaults to the C form the other five share.
 function assertLinear(spec) {
   const timeOf = (text) => bestOf(RUNS, () => spec.check(text, {
     relPath: spec.relPath, config: spec.config,
   }));
 
   const budget = Math.max(timeOf(lineOf(spec.baseline)), PERF_FLOOR_MS) * PERF_MULTIPLE;
+
+  const comment = timeOf(commentLineOf(spec.comment));
+  spec.assert.ok(comment < budget,
+    `a ${SIZE}-byte single-line comment took ${comment}ms (budget ${budget}ms)`);
+
   for (const unit of spec.units || []) {
     const elapsed = timeOf(lineOf(unit));
     spec.assert.ok(elapsed < budget,

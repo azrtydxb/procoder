@@ -197,6 +197,7 @@ test('stays linear on a very long single line', () => {
     check,
     relPath: 'x.py',
     config,
+    comment: 'py',
     baseline: 'pass  ',
     units: [
       'yaml.load(',
@@ -238,5 +239,61 @@ test('taint clears on a literal reassignment and does not leave its block', () =
   assert.ok(!ids('def f(cur, uid):\n    q = "SELECT * FROM t WHERE id=" + uid\n    q = "SELECT * FROM t"\n    cur.execute(q)\n')
     .includes('safe/sql-injection'));
   assert.ok(!ids('def a(uid):\n    q = "SELECT " + uid\n\n\ndef b(cur, q):\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: `os.system("ls /tmp")` reported safe/shell-injection. Nothing
+// untrusted is in it — the command is a literal — and a rung-1 rule that fires
+// on obviously-safe code is what gets the whole pack turned off. A call whose
+// arguments are wholly constant carries no data, so the finding is discharged;
+// an identifier, a nested call, an f-string or a concatenation is data and the
+// finding stands.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('os.system("ls /tmp")').includes('safe/shell-injection'));
+  assert.ok(!ids('os.popen("ls -la")').includes('safe/shell-injection'));
+  assert.ok(!ids('subprocess.run("ls -la", shell=True)').includes('safe/shell-injection'));
+  assert.ok(!ids('eval("1 + 1")').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  assert.ok(!ids('pickle.loads(b"payload")').includes('safe/unsafe-deserialize'));
+});
+
+test('the same sinks still report anything that is not a constant', () => {
+  assert.ok(ids('os.system("rm " + target)').includes('safe/shell-injection'));
+  assert.ok(ids('os.system(cmd)').includes('safe/shell-injection'));
+  assert.ok(ids('os.system(f"rm {target}")').includes('safe/shell-injection'));
+  assert.ok(ids('os.system(build_command())').includes('safe/shell-injection'));
+  assert.ok(ids('subprocess.run(cmd, shell=True)').includes('safe/shell-injection'));
+  assert.ok(ids('eval(user_input)').includes('safe/dynamic-eval'));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  assert.ok(ids('pickle.loads(payload)').includes('safe/unsafe-deserialize'));
+});
+
+// Defect: `q = q + uid` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('def f(cur, uid):\n    q = "SELECT id="\n    q = q + uid\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def f(cur, uid):\n    b = f"x{uid}"\n    a = b\n    cur.execute(a)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def f(cur, uid):\n    q = f"SELECT {uid}"\n    q = q + " LIMIT 1"\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('def f(cur, uid):\n    q = "SELECT id="\n    q += uid\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def f(cur, uid):\n    q = f"SELECT {uid}"\n    q += " LIMIT 1"\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('def f(cur):\n    q = "SELECT a"\n    q += " FROM t"\n    cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('def outer(uid):\n    q = f"SELECT {uid}"\n    def inner(q):\n        cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def outer(uid):\n    q = f"SELECT {uid}"\n    def inner(other):\n        cur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('def outer(uid):\n    q = "SELECT 1"\n    def inner(q):\n        q = q + uid\n        cur.execute(q)\n')
     .includes('safe/sql-injection'));
 });

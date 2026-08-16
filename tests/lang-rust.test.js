@@ -219,3 +219,45 @@ test('the safe forms stay silent however long the arguments are', () => {
   assert.ok(!ids(`Command::new("git").env("P", "${PAD}").arg("-c").arg(input);`).includes('safe/shell-injection'));
   assert.ok(!ids(`let jitter: Wrapper<${PAD}> = rand::random();`).includes('safe/weak-random'));
 });
+
+// Defect: a sink whose arguments are wholly constant carries nothing
+// untrusted, and a rung-1 rule that fires on obviously-safe code is what gets
+// the whole pack turned off. An identifier, a nested call or a format! is
+// data, and those still report.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('Command::new("sh").arg("-c").arg("ls /tmp").spawn();').includes('safe/shell-injection'));
+  assert.ok(!ids('Command::new("bash").arg("-c").arg("ls -la").status();').includes('safe/shell-injection'));
+});
+
+test('the same sink still reports anything that is not a constant', () => {
+  assert.ok(ids('Command::new("sh").arg("-c").arg(user_input).spawn();').includes('safe/shell-injection'));
+  assert.ok(ids('Command::new("sh").arg("-c").arg(&format!("rm {}", dir)).spawn();').includes('safe/shell-injection'));
+});
+
+// Defect: `q = q + id` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let mut q = String::from("SELECT id=");\n    q = q + id;\n    sqlx::query(&q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let b = format!("x{}", id);\n    let a = b;\n    sqlx::query(&a);\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let mut q = String::from("SELECT id=");\n    q += id;\n    sqlx::query(&q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let mut q = format!("SELECT {}", id);\n    q += " LIMIT 1";\n    sqlx::query(&q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('fn f(pool: &Pool) {\n    let mut q = String::from("SELECT a");\n    q += " FROM t";\n    sqlx::query(&q);\n}')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('fn f(pool: &Pool, id: &str) {\n    let q = format!("SELECT {}", id);\n    fn g(q: String) {\n        sqlx::query(&q);\n    }\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('fn f(pool: &Pool, id: &str) {\n    let q = format!("SELECT {}", id);\n    fn g(other: String) {\n        sqlx::query(&q);\n    }\n}')
+    .includes('safe/sql-injection'));
+});

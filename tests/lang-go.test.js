@@ -146,3 +146,46 @@ test('taint clears on a literal reassignment and does not leave its block', () =
   assert.ok(!ids('func a(id string) {\n\tq := "SELECT " + id\n\t_ = q\n}\nfunc b(db *sql.DB, q string) {\n\tdb.Query(q)\n}')
     .includes('safe/sql-injection'));
 });
+
+// Defect: a sink whose arguments are wholly constant carries nothing
+// untrusted, and a rung-1 rule that fires on obviously-safe code is what gets
+// the whole pack turned off. An identifier, a nested call or a Sprintf is
+// data, and those still report.
+test('a data sink whose arguments are wholly constant stays silent', () => {
+  assert.ok(!ids('exec.Command("sh", "-c", "ls /tmp")').includes('safe/shell-injection'));
+  assert.ok(!ids('exec.Command("bash", "-c", "ls -la")').includes('safe/shell-injection'));
+});
+
+test('the same sink still reports anything that is not a constant', () => {
+  assert.ok(ids('exec.Command("sh", "-c", userInput)').includes('safe/shell-injection'));
+  assert.ok(ids('exec.Command("sh", "-c", "rm "+dir)').includes('safe/shell-injection'));
+  assert.ok(ids('exec.Command("sh", "-c", fmt.Sprintf("rm %s", dir))').includes('safe/shell-injection'));
+});
+
+// Defect: `q = q + id` cleared the taint at the moment it should have been
+// introduced — the right-hand side is two names with no literal, so the source
+// patterns missed it and the clear-on-any-other-assignment rule fired.
+test('an assignment whose right-hand side is a tainted name carries the taint', () => {
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := "SELECT id="\n\tq = q + id\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tb := fmt.Sprintf("x%s", id)\n\ta := b\n\tdb.Query(a)\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('an append carries the taint of the whole value it builds', () => {
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := "SELECT id="\n\tq += id\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := fmt.Sprintf("SELECT %s", id)\n\tq += " LIMIT 1"\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('func f(db *sql.DB) {\n\tq := "SELECT a"\n\tq += " FROM t"\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+});
+
+// Defect: a parameter is a fresh binding. One that happens to share a name
+// with a tainted variable in an enclosing scope must start clean.
+test('a parameter shadowing a tainted name starts clean', () => {
+  assert.ok(!ids('func f(db *sql.DB, id string) {\n\tq := "SELECT " + id\n\tg := func(q string) {\n\t\tdb.Query(q)\n\t}\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := "SELECT " + id\n\tg := func(other string) {\n\t\tdb.Query(q)\n\t}\n}')
+    .includes('safe/sql-injection'));
+});

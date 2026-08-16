@@ -4,7 +4,7 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, taintFindings } = require('./taint');
+const { CONCAT, skipConstant, taintFindings } = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -19,7 +19,7 @@ const LINE_RULES = [
     fix: 'propagate with ? and a typed error',
   },
   {
-    id: 'safe/sql-injection', rung: 'SAFE',
+    id: 'safe/sql-injection', rung: 'SAFE', dataSink: true,
     re: /\bquery\w*\s*\(\s*&?format!|\bexecute\s*\(\s*&?format!/,
     message: 'SQL built with format!',
     fix: 'use bind parameters',
@@ -48,7 +48,7 @@ const LINE_RULES = [
 // ran past 500 characters before the `= rand::random()`.
 const SPAN_RULES = [
   {
-    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement',
+    id: 'safe/shell-injection', rung: 'SAFE', within: 'statement', dataSink: true,
     anchor: /Command::new\s*\(\s*"(?:sh|bash|cmd|powershell)"\s*\)/g,
     needles: [/\.arg\s*\(\s*"-c"/g],
     message: 'shell invoked with an interpolated command',
@@ -77,7 +77,7 @@ const SPAN_RULES = [
 // reaches sqlx. Shell gets no taint sink: `Command::new("sh").arg("-c")` is
 // already reported on the invocation itself, whatever the argument is.
 const TAINT = {
-  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?=(?!=)/,
+  assign: /^\s*(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?\+?=(?!=)/,
   sources: [/\bformat!\s*\(/, ...CONCAT],
   sinks: [
     {
@@ -89,7 +89,16 @@ const TAINT = {
   ],
 };
 
-const UNSAFE_BLOCK = /^\s*(?:.*\s)?unsafe\s*\{/;
+// `unsafe {` at the start of a line or preceded by whitespace — which is what
+// `^\s*(?:.*\s)?unsafe\s*\{` said, at a cost that was quadratic in line
+// length: `^\s*` may end anywhere in a leading whitespace run and `.*\s` then
+// re-scans the rest of the line for each of those ends. comments.js blanks a
+// comment to a run of spaces, so a `/* … */` license header on one line is
+// exactly that input: a terminated 64KB header cost 1,935ms and 512KB cost
+// 124,363ms. Two alternatives with nothing to backtrack over match the same
+// lines: `}unsafe {` was excluded before, for want of the whitespace, and
+// still is.
+const UNSAFE_BLOCK = /(?:^|\s)unsafe\s*\{/;
 const SAFETY_COMMENT = /\/\/\s*SAFETY:|\/\/!\s*SAFETY:/i;
 // Head up to the parameter list's `(`, tail from where that list closes to the
 // block-opening `{`; shape.js counts the parameters in between without
@@ -194,7 +203,9 @@ function check(source, { relPath, config } = {}) {
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
 
-  const inline = lineRuleFindings(LINE_RULES, codeLines, { skip: expectedPanic });
+  const inline = lineRuleFindings(LINE_RULES, codeLines, {
+    skip: (rule, line, lineNo) => expectedPanic(rule, line, lineNo) || skipConstant(rule, line),
+  });
 
   return [
     ...inline,
