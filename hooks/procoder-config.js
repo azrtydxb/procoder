@@ -32,10 +32,13 @@ function isDeactivationCommand(text) {
   return t === 'stop procoder' || t === 'normal mode';
 }
 
-// Only a message that STARTS with the command counts, so discussing the command
-// in prose does not silently change the level.
+// `/procoder:level <level>` is the form the host actually routes; the bare
+// `/procoder <level>` is kept because the README and muscle memory still say it,
+// and a level switch that reads as typed but does nothing is the worst failure
+// shape there is. Only a message that STARTS with the command counts, so
+// discussing either form in prose does not silently change the level.
 function parseLevelCommand(text) {
-  const m = /^\/procoder\s+(\S+)\s*$/i.exec(String(text || '').trim());
+  const m = /^\/procoder(?::level)?\s+(\S+)\s*$/i.exec(String(text || '').trim());
   return m ? normalizeLevel(m[1]) : null;
 }
 
