@@ -124,7 +124,7 @@ function cargoPackageOf(absFile) {
   return null;
 }
 
-// One `file:line:col: warning: text` diagnostic, already matched.
+// One diagnostic, as {file, line, message}.
 //
 // `--message-format short` does NOT print the lint name: clippy 0.1.93 emits
 // ``crate-a/src/lib.rs:6:5: warning: unneeded `return` statement`` and nothing
@@ -133,9 +133,59 @@ function cargoPackageOf(absFile) {
 // to STDOUT — moving to it would give up the stderr reading this integration
 // exists to guarantee. The trailing-`[rule]` form is still matched because
 // rustc prints it in its long format; the gap is recorded, not papered over.
-function clippyFinding(m) {
-  const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(m[3]);
-  return externalFinding(Number(m[2]), m[3], 'clippy', ruleMatch && ruleMatch[1]);
+function clippyFinding(d) {
+  const ruleMatch = /\[([\w:-]+)\]\s*$/.exec(d.message);
+  return externalFinding(d.line, d.message, 'clippy', ruleMatch && ruleMatch[1]);
+}
+
+// `--message-format short`: the whole diagnostic on one line.
+const CLIPPY_SHORT = /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/;
+// rustc's long rendering: the message, then ` --> file:line:col` under it.
+// Neither pattern reads `error[E0425]:` as a diagnostic — a crate that does not
+// compile is a crate clippy did not lint, so that output must stay unreadable
+// rather than answer for it.
+const CLIPPY_LONG_MESSAGE = /^(?:warning|error):\s*(.+)$/;
+const CLIPPY_LONG_LOCATION = /^\s*-->\s+(\S+?):(\d+):\d+\s*$/;
+
+// Every diagnostic in clippy's output as {file, line, message}, in WHICHEVER
+// of the two formats cargo printed it — because asking for one format is not
+// the same as getting it. cargo caches each compilation unit's diagnostics and,
+// for a unit it considers fresh, REPLAYS them in the format that originally
+// compiled it: `--message-format short` does not re-render a cache some other
+// run filled. Verified against cargo 1.93.1 / clippy 0.1.93 — after a plain
+// `cargo clippy` by hand, procoder's own run gets rustc's long rendering on
+// stderr instead. Reading only the short form meant running your own linter
+// silently blinded procoder: either the whole output became unreadable and
+// every clippy finding was dropped, or — with one recompiled unit emitting a
+// short line for another file — the run read as answered and clean, deleting
+// the Rust pack's obvious/* rules for a file that had a warning all along.
+// Forcing a fresh compile instead would rebuild the crate on every edit, which
+// no 1.5s hook budget can pay.
+//
+// A message line with no location under it is not a diagnostic: that is how
+// cargo's own "warning: `x` (lib) generated 1 warning" tally stays out.
+function clippyDiagnostics(lines) {
+  const found = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const short = CLIPPY_SHORT.exec(lines[i]);
+    if (short) {
+      found.push({ file: short[1], line: Number(short[2]), message: short[3] });
+      continue;
+    }
+    const head = CLIPPY_LONG_MESSAGE.exec(lines[i]);
+    const at = head && CLIPPY_LONG_LOCATION.exec(lines[i + 1] || '');
+    if (at) found.push({ file: at[1], line: Number(at[2]), message: head[1] });
+  }
+  return found;
+}
+
+// Whether a path clippy reported names the file under inspection. Reported
+// paths are relative to the crate root; the target is absolute.
+function sameFile(reported, absPath) {
+  const norm = (s) => String(s).replace(/\\/g, '/');
+  const r = norm(reported);
+  const a = norm(absPath);
+  return a === r || a.endsWith(`/${r}`);
 }
 
 const TOOLS = {
@@ -231,13 +281,6 @@ const TOOLS = {
   // a fact about the file actually being written.
   rust: (() => {
     let rustTarget = null;
-    const DIAGNOSTIC = /^([^:]+):(\d+):\d+:\s*(?:warning|error):\s*(.+)$/;
-    const sameFile = (reported, absPath) => {
-      const norm = (s) => String(s).replace(/\\/g, '/');
-      const r = norm(reported);
-      const a = norm(absPath);
-      return a === r || a.endsWith(`/${r}`);
-    };
     return {
       name: 'cargo',
       // cargo clippy writes its diagnostics to stderr, not stdout, and exits 0
@@ -254,14 +297,14 @@ const TOOLS = {
       },
       parse: (output) => {
         const text = String(output);
-        const diagnostics = text.split('\n').map((line) => DIAGNOSTIC.exec(line)).filter(Boolean);
+        const diagnostics = clippyDiagnostics(text.split('\n'));
         // `--quiet` means a clean crate prints nothing at all, so any non-empty
         // output carrying no diagnostic is output we could not read: a compile
         // error, a lock-wait notice, a panic. Throwing says so; returning []
         // would claim the crate is clean and skip the pack.
         if (!diagnostics.length && text.trim()) throw new Error('no clippy diagnostic in output');
         return diagnostics
-          .filter((m) => !rustTarget || sameFile(m[1], rustTarget))
+          .filter((d) => !rustTarget || sameFile(d.file, rustTarget))
           .map(clippyFinding);
       },
     };

@@ -73,6 +73,69 @@ test('clippy parse discards findings attributed to a different file', () => {
   assert.match(parsed[0].message, /unused variable/);
 });
 
+// --- cached replays ---------------------------------------------------------
+//
+// cargo caches diagnostics per compilation unit and replays them, on a unit it
+// considers fresh, in the format that ORIGINALLY compiled it — `--message-format
+// short` on the replaying run does not re-render them. Verified against cargo
+// 1.93.1 / clippy 0.1.93: after a plain `cargo clippy` by hand, procoder's own
+// `cargo clippy --message-format short --quiet` prints rustc's long rendering
+// on stderr, byte for byte the text below. So running your own linter is
+// enough to make procoder unable to read its answer.
+const CACHED_LONG_REPLAY = [
+  'warning: unneeded `return` statement',
+  ' --> src/lib.rs:2:5',
+  '  |',
+  '2 |     return x + 1;',
+  '  |     ^^^^^^^^^^^^',
+  '  |',
+  '  = help: for further information visit https://rust-lang.github.io/rust-clippy/index.html#needless_return',
+  '  = note: `-W clippy::needless-return` implied by `-W clippy::all`',
+  '  = help: to override `-W clippy::all` add `#[allow(clippy::needless_return)]`',
+  'help: remove `return`',
+  '  |',
+  '2 -     return x + 1;',
+  '2 +     x + 1',
+  '  |',
+  '',
+  '',
+].join('\n');
+
+test('clippy parse reads a cached replay in the long format, not only the short one', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  const parsed = rust.parse(CACHED_LONG_REPLAY);
+  assert.strictEqual(parsed.length, 1, 'the replayed diagnostic was dropped');
+  assert.strictEqual(parsed[0].line, 2);
+  assert.strictEqual(parsed[0].rung, 'TRUE');
+  assert.match(parsed[0].message, /unneeded `return` statement/);
+});
+
+test('a long-format replay for another file is still attributed away', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/main.rs');
+  assert.deepStrictEqual(rust.parse(CACHED_LONG_REPLAY), []);
+});
+
+test('a long-format id matches the short-format id for the same finding', () => {
+  // The same warning must not fingerprint differently depending on whether
+  // cargo recompiled or replayed: a baseline entry keyed on one id would stop
+  // matching the other, and a suppressed finding would silently come back.
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  const [long] = rust.parse(CACHED_LONG_REPLAY);
+  const [short] = rust.parse('src/lib.rs:2:5: warning: unneeded `return` statement');
+  assert.strictEqual(long.id, short.id);
+});
+
+test('output carrying no diagnostic in either format is still unreadable', () => {
+  const rust = toolFor('a.rs');
+  rust.argv('/repo/src/lib.rs');
+  // cargo's own chatter is not a diagnostic: throwing is how the runner is told
+  // to fall back to the pack. Returning [] would claim the crate is clean.
+  assert.throws(() => rust.parse('error: could not compile `x` (lib)\nwarning: 1 warning emitted\n'));
+});
+
 test('each tool entry can parse its own output format', () => {
   const ruff = toolFor('a.py');
   const parsed = ruff.parse(JSON.stringify([
@@ -285,6 +348,24 @@ test('clippy (real): the parser reads what clippy actually prints, on stderr', {
   assert.strictEqual(parsed[0].rung, 'TRUE');
   assert.match(parsed[0].id, /^true\/clippy/);
   assert.ok(parsed.every((f) => f.line > 0));
+});
+
+test('clippy (real): a cache primed by a hand-run cargo clippy is still readable', {
+  skip: missing('cargo'),
+}, () => {
+  // The foot-gun in full: run `cargo clippy` yourself, and every later run
+  // replays the cached diagnostics in THAT run's format however procoder asks
+  // for them. Nothing warns, and nothing recompiles until the source changes.
+  const repo = tempRepo({
+    'Cargo.toml': '[package]\nname = "cratea"\nversion = "0.1.0"\nedition = "2021"\n\n[lints.clippy]\nall = "warn"\n',
+    'src/lib.rs': 'pub fn f(x: i32) -> i32 {\n    return x + 1;\n}\n',
+  });
+  const primed = spawnSync('cargo', ['clippy'], { cwd: repo, encoding: 'utf8', timeout: 120000 });
+  assert.ok(!primed.error, `cargo did not run: ${primed.error && primed.error.message}`);
+  const parsed = toolFor('a.rs').parse(realStream(toolFor('a.rs'), repo, 'src/lib.rs'));
+  assert.ok(parsed.length >= 1, 'a replayed diagnostic was dropped — procoder went blind');
+  assert.ok(parsed.every((f) => f.line > 0));
+  assert.match(parsed[0].id, /^true\/clippy/);
 });
 
 test('two different eslint rules firing on the same line get distinct ids — a baselined finding must not silently swallow a different rule at the same location', () => {
