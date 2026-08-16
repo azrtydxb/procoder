@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // procoder — level persistence and the host-specific hook stdout protocol.
 
 const fs = require('fs');

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // procoder — level resolution and shared path helpers.
 // Pure: no file writes, no stdout. Safe to require from any hook.
 

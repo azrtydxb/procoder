@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // procoder — renders the doctrine for a given intensity level.
 //
 // The doctrine is authored once in skills/procoder/SKILL.md. Blocks that only
