@@ -135,6 +135,16 @@ function main(argv) {
     return 2;
   }
 
+  // A mistyped or renamed path used to exit 0, which in CI is indistinguishable
+  // from "all clean" and turns the gate off permanently. An existing path that
+  // yields no checkable files (empty, or entirely excluded) is still a clean run
+  // — only a path that does not exist at all is an error.
+  const missing = targets.filter((t) => !fs.existsSync(path.resolve(t)));
+  if (missing.length > 0) {
+    process.stderr.write(`procoder: no such path: ${missing.join(', ')}\n`);
+    return 2;
+  }
+
   const files = expand(targets);
   if (files.length === 0) return 0;
 

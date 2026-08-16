@@ -115,6 +115,22 @@ test('verify passes when a duplicate violation is deleted — shrinking is fine'
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
+// A mistyped or renamed path used to exit 0, silently disabling the gate.
+test('a path that does not exist is an error, not a clean run', () => {
+  const repo = repoWith({ 'a.ts': 'const x = 1;\n' });
+  const result = cli(repo, ['check', 'hokks']);
+  assert.strictEqual(result.code, 2);
+  assert.match(result.out, /hokks/);
+});
+
+test('a directory holding only excluded files is still a clean run', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
+    'src/a.ts': 'eval(x);\n',
+  });
+  assert.strictEqual(cli(repo, ['check', 'src']).code, 0);
+});
+
 test('unknown subcommand prints usage and exits non-zero', () => {
   const repo = repoWith({});
   const result = cli(repo, ['frobnicate']);
