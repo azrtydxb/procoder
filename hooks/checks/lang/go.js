@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // procoder — Go pack.
 
-const { finding } = require('../finding');
-const { analyzeBraces, countParams, estimateComplexity, shapeFindings, stripNoise } = require('../shape');
+const {
+  analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
+} = require('../shape');
 
 const EXTENSIONS = ['.go'];
 
@@ -15,6 +16,12 @@ const EXTENSIONS = ['.go'];
 const IGNORED_ERROR = /,\s*_\s*:?=\s*[\w.]+\(|\b_\s*=\s*\w+\.(?:Close|Write|Exec)\s*\(/;
 
 const LINE_RULES = [
+  {
+    id: 'true/ignored-error', rung: 'TRUE',
+    re: IGNORED_ERROR,
+    message: 'error discarded into _',
+    fix: 'handle it, wrap it with context, or return it',
+  },
   {
     id: 'safe/sql-injection', rung: 'SAFE',
     re: /\b(?:Query|QueryRow|Exec)\w*\s*\(\s*(?:fmt\.Sprintf|["'`][^"'`]*["'`]\s*\+)/,
@@ -72,53 +79,31 @@ const DEFER_LOOKAHEAD = 5;
 
 const FUNC_SIGNATURE = /func\s+(?:\([^)]*\)\s*)?\w*\s*\(([^)]*)\)[^{\n]*\{/g;
 
+const DEFERRED_CLOSE = /defer\s+\w+(?:\.\w+)*\.Close\s*\(/;
+
+// A nearby `defer x.Close()` discharges the unclosed-resource rule.
+function closedNearby(rule, lines, lineNo) {
+  if (rule.id !== 'true/unclosed-resource') return false;
+  return DEFERRED_CLOSE.test(lines.slice(lineNo, lineNo + DEFER_LOOKAHEAD).join('\n'));
+}
+
 function check(source, { relPath, config } = {}) {
-  const findings = [];
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
   const stripped = stripNoise(text);
-
-  lines.forEach((line, index) => {
-    if (IGNORED_ERROR.test(line)) {
-      findings.push(finding({
-        rung: 'TRUE', id: 'true/ignored-error', line: index + 1,
-        message: 'error discarded into _',
-        fix: 'handle it, wrap it with context, or return it',
-      }));
-    }
-
-    for (const rule of LINE_RULES) {
-      if (!rule.re.test(line)) continue;
-      if (rule.id === 'true/unclosed-resource') {
-        const ahead = lines.slice(index + 1, index + 1 + DEFER_LOOKAHEAD).join('\n');
-        if (/defer\s+\w+(?:\.\w+)*\.Close\s*\(/.test(ahead)) continue;
-      }
-      findings.push(finding({
-        rung: rule.rung, id: rule.id, line: index + 1,
-        message: rule.message, fix: rule.fix,
-      }));
-    }
-  });
-
   const { maxDepth, blocks } = analyzeBraces(text);
-  const signatures = new Map();
-  for (const match of stripped.matchAll(FUNC_SIGNATURE)) {
-    signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
-  }
 
-  const measured = blocks
-    .filter((block) => signatures.has(block.startLine))
-    .map((block) => ({
-      ...block,
-      params: countParams('(' + signatures.get(block.startLine) + ')'),
-      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
-    }));
-
-  findings.push(...shapeFindings({
-    blocks: measured, maxDepth, thresholds: config.thresholds, kind: 'func',
-  }));
-
-  return findings;
+  return [
+    ...lineRuleFindings(LINE_RULES, lines, {
+      skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo),
+    }),
+    ...shapeFindings({
+      blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNC_SIGNATURE)),
+      maxDepth,
+      thresholds: config.thresholds,
+      kind: 'func',
+    }),
+  ];
 }
 
 module.exports = { check, EXTENSIONS };

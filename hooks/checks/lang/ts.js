@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // procoder — TypeScript / JavaScript pack.
 
-const { finding } = require('../finding');
-const { analyzeBraces, countParams, estimateComplexity, shapeFindings, stripNoise } = require('../shape');
+const {
+  analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
+  shapeFindings, signaturesFrom, stripNoise,
+} = require('../shape');
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
@@ -61,46 +63,6 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 const FUNCTION_SIGNATURE =
   /(?:function\s+\w*|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?|(?:async\s+)?\w+\s*)\(([^)]*)\)\s*(?::[^{=]+)?(?:=>)?\s*\{/g;
 
-function lineRuleFindings(lines, codeLines) {
-  const findings = [];
-  lines.forEach((line, index) => {
-    for (const rule of LINE_RULES) {
-      const subject = rule.onCode ? codeLines[index] : line;
-      if (!rule.re.test(subject)) continue;
-      findings.push(finding({
-        rung: rule.rung, id: rule.id, line: index + 1,
-        message: rule.message, fix: rule.fix,
-      }));
-    }
-  });
-  return findings;
-}
-
-function swallowedFindings(stripped) {
-  return Array.from(stripped.matchAll(SWALLOWED), (match) => finding({
-    rung: 'TRUE', id: 'true/swallowed-error',
-    line: stripped.slice(0, match.index).split('\n').length,
-    message: 'error swallowed by an empty catch',
-    fix: 'log with context and rethrow, or handle it explicitly',
-  }));
-}
-
-// Attaches params and complexity to the brace blocks that start on a signature line.
-function measureFunctions(lines, stripped, blocks) {
-  const signatures = new Map();
-  for (const match of stripped.matchAll(FUNCTION_SIGNATURE)) {
-    signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
-  }
-
-  return blocks
-    .filter((block) => signatures.has(block.startLine))
-    .map((block) => ({
-      ...block,
-      params: countParams('(' + signatures.get(block.startLine) + ')'),
-      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
-    }));
-}
-
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
@@ -108,10 +70,10 @@ function check(source, { relPath, config } = {}) {
   const { maxDepth, blocks } = analyzeBraces(text);
 
   return [
-    ...lineRuleFindings(lines, stripped.split(/\r?\n/)),
-    ...swallowedFindings(stripped),
+    ...lineRuleFindings(LINE_RULES, lines, { codeLines: stripped.split(/\r?\n/) }),
+    ...emptyCatchFindings(stripped, SWALLOWED, 'error swallowed by an empty catch'),
     ...shapeFindings({
-      blocks: measureFunctions(lines, stripped, blocks),
+      blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNCTION_SIGNATURE)),
       maxDepth,
       thresholds: config.thresholds,
       kind: 'function',

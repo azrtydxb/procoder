@@ -2,7 +2,10 @@
 // procoder — Java / Kotlin pack.
 
 const { finding } = require('../finding');
-const { analyzeBraces, countParams, estimateComplexity, shapeFindings, stripNoise } = require('../shape');
+const {
+  analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
+  shapeFindings, signaturesFrom, stripNoise,
+} = require('../shape');
 
 const EXTENSIONS = ['.java', '.kt', '.kts'];
 
@@ -73,64 +76,39 @@ const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*
 const METHOD_SIGNATURE_LINE =
   /^\s*(?:(?:public|private|protected|internal|static|final|abstract|synchronized|native|strictfp|fun)\s+)*[\w<>[\],.]+\s+\w+\s*\(([^)]*)\)\s*(?:throws\s+[\w,.\s]+)?\{\s*$/;
 
-function check(source, { relPath, config } = {}) {
+// An XML factory is only a finding when nothing nearby hardens it.
+function xxeFindings(lines) {
   const findings = [];
+  lines.forEach((line, index) => {
+    if (!XXE_FACTORY.test(line)) return;
+    const nearby = lines.slice(index, index + 1 + XXE_LOOKAHEAD).join('\n');
+    if (XXE_HARDENED.test(nearby)) return;
+    findings.push(finding({
+      rung: 'SAFE', id: 'safe/xxe-risk', line: index + 1,
+      message: 'XML parser created without external entities disabled',
+      fix: 'setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)',
+    }));
+  });
+  return findings;
+}
+
+function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
   const stripped = stripNoise(text);
-
-  lines.forEach((line, index) => {
-    for (const rule of LINE_RULES) {
-      if (rule.re.test(line)) {
-        findings.push(finding({
-          rung: rule.rung, id: rule.id, line: index + 1,
-          message: rule.message, fix: rule.fix,
-        }));
-      }
-    }
-
-    if (XXE_FACTORY.test(line)) {
-      const nearby = lines.slice(index, index + 1 + XXE_LOOKAHEAD).join('\n');
-      if (!XXE_HARDENED.test(nearby)) {
-        findings.push(finding({
-          rung: 'SAFE', id: 'safe/xxe-risk', line: index + 1,
-          message: 'XML parser created without external entities disabled',
-          fix: 'setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)',
-        }));
-      }
-    }
-  });
-
-  for (const match of text.matchAll(SWALLOWED)) {
-    findings.push(finding({
-      rung: 'TRUE', id: 'true/swallowed-error',
-      line: text.slice(0, match.index).split('\n').length,
-      message: 'exception swallowed by an empty catch',
-      fix: 'log with context and rethrow, or handle it explicitly',
-    }));
-  }
-
   const { maxDepth, blocks } = analyzeBraces(text);
-  const strippedLines = stripped.split(/\r?\n/);
-  const signatures = new Map();
-  strippedLines.forEach((line, index) => {
-    const match = METHOD_SIGNATURE_LINE.exec(line);
-    if (match) signatures.set(index + 1, match[1]);
-  });
 
-  const measured = blocks
-    .filter((block) => signatures.has(block.startLine))
-    .map((block) => ({
-      ...block,
-      params: countParams('(' + signatures.get(block.startLine) + ')'),
-      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
-    }));
-
-  findings.push(...shapeFindings({
-    blocks: measured, maxDepth, thresholds: config.thresholds, kind: 'method',
-  }));
-
-  return findings;
+  return [
+    ...lineRuleFindings(LINE_RULES, lines),
+    ...xxeFindings(lines),
+    ...emptyCatchFindings(text, SWALLOWED, 'exception swallowed by an empty catch'),
+    ...shapeFindings({
+      blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, METHOD_SIGNATURE_LINE)),
+      maxDepth,
+      thresholds: config.thresholds,
+      kind: 'method',
+    }),
+  ];
 }
 
 module.exports = { check, EXTENSIONS };

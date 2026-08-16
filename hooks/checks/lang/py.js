@@ -2,7 +2,9 @@
 // procoder — Python pack.
 
 const { finding } = require('../finding');
-const { analyzeIndent, countParams, estimateComplexity, shapeFindings } = require('../shape');
+const {
+  analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings,
+} = require('../shape');
 
 const EXTENSIONS = ['.py'];
 
@@ -62,53 +64,55 @@ const BROAD_EXCEPT = /^\s*except\s+(?:Exception|BaseException)\b[^:]*:\s*$/;
 const SILENT_BODY = /^\s*(?:pass|\.\.\.)\s*$/;
 const DEF_LINE = /^\s*(?:async\s+)?def\s+\w+\s*\(([^)]*)\)/;
 
-function check(source, { relPath, config } = {}) {
+function exceptFindings(lines) {
   const findings = [];
-  const lines = String(source || '').split(/\r?\n/);
-
   lines.forEach((line, index) => {
-    const lineNo = index + 1;
-
-    for (const rule of LINE_RULES) {
-      if (rule.re.test(line)) {
-        findings.push(finding({
-          rung: rule.rung, id: rule.id, line: lineNo,
-          message: rule.message, fix: rule.fix,
-        }));
-      }
-    }
-
     if (BARE_EXCEPT.test(line)) {
       findings.push(finding({
-        rung: 'TRUE', id: 'true/bare-except', line: lineNo,
+        rung: 'TRUE', id: 'true/bare-except', line: index + 1,
         message: 'bare except catches SystemExit and KeyboardInterrupt too',
         fix: 'catch the specific exception you can actually handle',
       }));
-    } else if (BROAD_EXCEPT.test(line) && SILENT_BODY.test(lines[index + 1] || '')) {
+      return;
+    }
+    if (BROAD_EXCEPT.test(line) && SILENT_BODY.test(lines[index + 1] || '')) {
       findings.push(finding({
-        rung: 'TRUE', id: 'true/swallowed-error', line: lineNo,
+        rung: 'TRUE', id: 'true/swallowed-error', line: index + 1,
         message: 'exception silently discarded',
         fix: 'log with context and re-raise, or handle it explicitly',
       }));
     }
   });
+  return findings;
+}
 
-  const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
-  const measured = blocks.map((block) => {
+// Python has no signature-opening brace to key on, so every indent block is
+// measured and the def line, when there is one, supplies the parameters.
+function measureBlocks(lines, blocks) {
+  return blocks.map((block) => {
     const signature = DEF_LINE.exec(lines[block.startLine - 1] || '');
-    const body = lines.slice(block.startLine - 1, block.endLine).join('\n');
     return {
       ...block,
       params: signature ? countParams('(' + signature[1] + ')') : 0,
-      complexity: estimateComplexity(body),
+      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
     };
   });
+}
 
-  findings.push(...shapeFindings({
-    blocks: measured, maxDepth, thresholds: config.thresholds, kind: 'function',
-  }));
+function check(source, { relPath, config } = {}) {
+  const lines = String(source || '').split(/\r?\n/);
+  const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
 
-  return findings;
+  return [
+    ...lineRuleFindings(LINE_RULES, lines),
+    ...exceptFindings(lines),
+    ...shapeFindings({
+      blocks: measureBlocks(lines, blocks),
+      maxDepth,
+      thresholds: config.thresholds,
+      kind: 'function',
+    }),
+  ];
 }
 
 module.exports = { check, EXTENSIONS };

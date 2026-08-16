@@ -161,6 +161,77 @@ function shapeFindings({ blocks = [], maxDepth = 0, thresholds, kind = 'function
   return findings;
 }
 
+// Applies a pack's line-rule table. `onCode` on a rule runs it against the
+// noise-stripped line instead of the raw one: set it where the pattern
+// describes code shape, so a regex literal or a string that merely quotes the
+// pattern is not a hit. `skip(rule, line, lineNo)` lets a pack discharge a rule
+// it has extra context for, such as a lookahead that finds the missing guard.
+function lineRuleFindings(rules, lines, { codeLines = lines, skip } = {}) {
+  const findings = [];
+  lines.forEach((line, index) => {
+    for (const rule of rules) {
+      if (!rule.re.test(rule.onCode ? codeLines[index] : line)) continue;
+      if (skip && skip(rule, line, index + 1)) continue;
+      findings.push(finding({
+        rung: rule.rung, id: rule.id, line: index + 1,
+        message: rule.message, fix: rule.fix,
+      }));
+    }
+  });
+  return findings;
+}
+
+// Signature line number → its parameter text. Packs supply either a global
+// regex scanned across the whole stripped source, or a line-anchored one that
+// must be exec'd per line to stay clear of catastrophic backtracking.
+function signaturesFrom(stripped, re) {
+  const signatures = new Map();
+  if (re.global) {
+    for (const match of stripped.matchAll(re)) {
+      signatures.set(stripped.slice(0, match.index).split('\n').length, match[1]);
+    }
+    return signatures;
+  }
+  stripped.split(/\r?\n/).forEach((line, index) => {
+    const match = re.exec(line);
+    if (match) signatures.set(index + 1, match[1]);
+  });
+  return signatures;
+}
+
+// Attaches params and complexity to the blocks that start on a signature line,
+// dropping the blocks that are not functions at all.
+function measureFunctions(lines, blocks, signatures) {
+  return blocks
+    .filter((block) => signatures.has(block.startLine))
+    .map((block) => ({
+      ...block,
+      params: countParams('(' + signatures.get(block.startLine) + ')'),
+      complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
+    }));
+}
+
+// A catch block whose body is nothing but whitespace or comments. The caller
+// chooses the text: stripped source where comments should not rescue it, raw
+// where the pattern spells out the comment forms itself.
+function emptyCatchFindings(text, re, message) {
+  return Array.from(text.matchAll(re), (match) => finding({
+    rung: 'TRUE', id: 'true/swallowed-error',
+    line: text.slice(0, match.index).split('\n').length,
+    message,
+    fix: 'log with context and rethrow, or handle it explicitly',
+  }));
+}
+
 module.exports = {
-  stripNoise, analyzeBraces, analyzeIndent, countParams, estimateComplexity, shapeFindings,
+  stripNoise,
+  analyzeBraces,
+  analyzeIndent,
+  countParams,
+  estimateComplexity,
+  shapeFindings,
+  lineRuleFindings,
+  signaturesFrom,
+  measureFunctions,
+  emptyCatchFindings,
 };
