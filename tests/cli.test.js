@@ -546,3 +546,89 @@ test('the plugin command prints nothing, quietly, once the plugin is removed', P
   assert.strictEqual(String(r.stdout), '');
   assert.strictEqual(String(r.stderr), '');
 });
+
+// `--append`: the user's own statusline keeps working and the badge joins it,
+// instead of --force being the only offered path.
+
+// Reads all of stdin and echoes it back, which is what makes the shared-stdin
+// assertion below real: a composition that pipes the session JSON into only one
+// of the two commands leaves this one printing MINE: and nothing after it.
+function repoWithMine() {
+  const repo = repoWith({ 'mine.sh': 'printf "MINE:%s" "$(cat)"\n' });
+  const command = `bash "${path.join(repo, 'mine.sh')}"`;
+  fs.writeFileSync(settingsIn(repo),
+    JSON.stringify({ model: 'opus', statusLine: { type: 'command', command } }, null, 2) + '\n');
+  return { repo, mine: { type: 'command', command } };
+}
+
+test('statusline install --append runs both commands, ours last', POSIX_ONLY, () => {
+  const { repo, mine } = repoWithMine();
+  const result = cli(repo, ['statusline', 'install', '--append']);
+  assert.strictEqual(result.code, 0, result.out);
+  atLevel(repo, 'strict');
+
+  const entry = readSettings(repo).statusLine;
+  assert.deepStrictEqual(entry.procoderOriginal, mine, 'the original has to be recorded verbatim');
+  const r = runStatusLine(entry.command, repo, '{"cwd":"/tmp/x"}');
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.strictEqual(String(r.stdout).trim(), 'MINE:{"cwd":"/tmp/x"} [PROCODER:STRICT]');
+});
+
+// The subtle one. Claude Code hands the statusline JSON on stdin, and stdin can
+// only be read once, so a naive `a | b` or `a; b` gives one command the session
+// context and the other an empty pipe. Both parts must see the same bytes.
+test('both composed commands receive the same stdin', POSIX_ONLY, () => {
+  const { repo } = repoWithMine();
+  assert.strictEqual(cli(repo, ['statusline', 'install', '--append']).code, 0);
+  atLevel(repo, 'paranoid');
+
+  const session = '{"cwd":"/some/where","session_id":"abc"}';
+  const r = runStatusLine(readSettings(repo).statusLine.command, repo, session);
+  assert.strictEqual(r.status, 0, String(r.stderr));
+  assert.ok(String(r.stdout).includes(`MINE:${session}`),
+    `the existing command must see the whole session JSON, got: ${r.stdout}`);
+  assert.ok(String(r.stdout).includes('[PROCODER:PARANOID]'), 'and ours must still run');
+});
+
+test('uninstall after --append restores the original command byte for byte', POSIX_ONLY, () => {
+  const { repo, mine } = repoWithMine();
+  const before = fs.readFileSync(settingsIn(repo), 'utf8');
+  assert.strictEqual(cli(repo, ['statusline', 'install', '--append']).code, 0);
+
+  const result = cli(repo, ['statusline', 'uninstall']);
+  assert.strictEqual(result.code, 0, result.out);
+  assert.deepStrictEqual(readSettings(repo).statusLine, mine);
+  assert.strictEqual(readSettings(repo).model, 'opus');
+  assert.strictEqual(fs.readFileSync(settingsIn(repo), 'utf8'), before,
+    'the settings file has to come back exactly as it was');
+});
+
+test('statusline status reports composed as its own state', POSIX_ONLY, () => {
+  const { repo } = repoWithMine();
+  assert.match(cli(repo, ['statusline', 'status']).out, /not procoder/i);
+  assert.strictEqual(cli(repo, ['statusline', 'install', '--append']).code, 0);
+
+  const status = cli(repo, ['statusline', 'status']);
+  assert.strictEqual(status.code, 0);
+  assert.match(status.out, /composed/i);
+  assert.match(status.out, /mine\.sh/, 'it must name the statusline it is composed with');
+});
+
+test('--append with no statusline configured is a plain install', POSIX_ONLY, () => {
+  const repo = repoWith({});
+  assert.strictEqual(cli(repo, ['statusline', 'install', '--append']).code, 0);
+  const entry = readSettings(repo).statusLine;
+  assert.strictEqual(entry.procoderOriginal, undefined);
+  assert.match(entry.command, /procoder-statusline/);
+});
+
+test('statusline install --append twice is a no-op the second time', POSIX_ONLY, () => {
+  const { repo } = repoWithMine();
+  assert.strictEqual(cli(repo, ['statusline', 'install', '--append']).code, 0);
+  const first = fs.readFileSync(settingsIn(repo), 'utf8');
+
+  const again = cli(repo, ['statusline', 'install', '--append']);
+  assert.strictEqual(again.code, 0, again.out);
+  assert.match(again.out, /already/i);
+  assert.strictEqual(fs.readFileSync(settingsIn(repo), 'utf8'), first);
+});

@@ -19,7 +19,7 @@ const {
 } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <paths...>
-       procoder statusline <install|uninstall|status> [--force]
+       procoder statusline <install|uninstall|status> [--append] [--force]
 
   check     report findings not present in the baseline; exit 1 if any of them
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
@@ -32,9 +32,11 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] <pa
                         left behind after the finding it silenced was fixed
 
   statusline install    add procoder's statusLine to your Claude Code settings
-  statusline uninstall  remove it again, leaving any other statusLine alone
+  statusline uninstall  remove it again, restoring any statusLine it composed with
   statusline status     print what statusLine is configured today
 
+  --append (statusline install only) keep the statusLine already configured and
+                        print the badge after it, instead of replacing it
   --force  (statusline install only) replace a statusLine that is not procoder's
 `;
 
@@ -307,6 +309,25 @@ function statuslineCommand(script) {
     : `bash "${script}"`;
 }
 
+// Claude Code hands the statusline command its session JSON on stdin, and
+// stdin can be read exactly once: `theirs | ours` or `theirs; ours` gives one
+// of the two the session context and the other an empty pipe, which for a
+// git-aware prompt reading `.cwd` means a statusline that quietly loses its
+// directory. So stdin is read once, into a variable, and replayed into both.
+//
+// Both command lines arrive as arguments rather than spliced into this text:
+// the existing one is the user's, of unknown shape, and shQuote is what makes
+// any shape safe. `eval` runs each as the shell line it already was.
+//
+// Ours goes last — the badge is appended to their statusline, not the other way
+// round — and the separating space appears only when both actually printed,
+// because ours prints nothing at all when procoder is inactive.
+const COMPOSE = 'i=$(cat); u=$(printf %s "$i" | eval "$1"); p=$(printf %s "$i" | eval "$2"); '
+  + '[ -n "$u" ] && [ -n "$p" ] && u="$u "; printf "%s%s\\n" "$u" "$p"';
+
+const composeCommand = (theirs, ours) =>
+  `bash -c ${shQuote(COMPOSE)} procoder-statusline ${shQuote(theirs)} ${shQuote(ours)}`;
+
 const settingsPath = () => path.join(getClaudeDir(), 'settings.json');
 
 // Ours is any statusLine whose command names our script, at whatever path: an
@@ -314,6 +335,12 @@ const settingsPath = () => path.join(getClaudeDir(), 'settings.json');
 // touch at all.
 const isOurs = (entry) => !!entry && typeof entry === 'object'
   && String(entry.command || '').includes('procoder-statusline');
+
+// The statusLine procoder wrapped, kept verbatim beside the composed command
+// rather than reconstructed by parsing it back out: uninstall then restores the
+// user's own entry as the object it was, and a wrapper this file learns to
+// write differently later cannot strand a command nobody can un-wrap.
+const wrapped = (entry) => (isOurs(entry) ? entry.procoderOriginal : undefined);
 
 // Throws on anything this command will not write to. Callers run under
 // runStatusline's catch, which turns the message into a clean non-zero exit.
@@ -356,7 +383,8 @@ function refuseClobber(current, desired) {
   process.stderr.write(
     'procoder: a statusLine is already configured, and it is not procoder\'s:\n'
     + `  ${describe(current)}\nprocoder would set:\n  ${desired.command}\n`
-    + 'Left as it is. Re-run with --force to replace it.\n');
+    + 'Left as it is. Re-run with --append to keep it and add the badge after it, '
+    + 'or with --force to replace it.\n');
   return 1;
 }
 
@@ -372,16 +400,51 @@ function refuseUnsafePath(script, file) {
   return 1;
 }
 
-function runInstall(force) {
+// What `install` would write, given what is there now.
+//
+// Composition is sticky: once procoder is wrapping somebody else's statusline,
+// a later plain `install` re-wraps rather than dropping their command on the
+// floor — that is how the version fix above reaches a composed entry too, and
+// `uninstall` stays the only way back to theirs.
+//
+// An existing entry with no string command is not something to compose with, so
+// it falls through to the plain entry and meets the usual clobber refusal.
+function desiredEntry(script, current, append) {
+  const ours = statuslineCommand(script);
+  const theirs = wrapped(current) || (append && !isOurs(current) ? current : undefined);
+  if (!theirs || typeof theirs.command !== 'string') return { type: 'command', command: ours };
+  return {
+    type: 'command',
+    command: composeCommand(theirs.command, ours),
+    procoderOriginal: theirs,
+  };
+}
+
+const sameEntry = (a, b) => a.type === b.type && a.command === b.command
+  && JSON.stringify(a.procoderOriginal) === JSON.stringify(b.procoderOriginal);
+
+// The composed command is one long POSIX shell line, and PowerShell is not a
+// POSIX shell. Refused rather than approximated: a wrapper that mangles the
+// user's own statusline is worse than not offering the mode.
+function refuseAppendOnWindows() {
+  process.stderr.write('procoder: --append builds a POSIX shell command and is not supported on '
+    + 'Windows. Install without it to replace the statusLine, or compose the two by hand.\n');
+  return 1;
+}
+
+function runInstall({ force, append }) {
   const script = statuslineScript();
   const file = settingsPath();
   if (UNSAFE_IN_QUOTES.test(script)) return refuseUnsafePath(script, file);
+  if (append && isWindows) return refuseAppendOnWindows();
 
   const data = readSettings(file);
-  const desired = { type: 'command', command: statuslineCommand(script) };
   const current = data.statusLine;
-  if (current && !isOurs(current) && !force) return refuseClobber(current, desired);
-  if (current && current.type === desired.type && current.command === desired.command) {
+  const desired = desiredEntry(script, current, append);
+  if (current && !isOurs(current) && !desired.procoderOriginal && !force) {
+    return refuseClobber(current, desired);
+  }
+  if (current && sameEntry(current, desired)) {
     process.stdout.write(`procoder: statusline already installed in ${file} — nothing to do.\n`);
     return 0;
   }
@@ -406,17 +469,35 @@ function runUninstall() {
     return 1;
   }
 
+  // A composed entry is only half ours: removing it would take the user's own
+  // statusline with it, so the recorded original goes back in its place — the
+  // same object, so their command comes back byte for byte.
+  const original = wrapped(current);
+  if (original) {
+    process.stdout.write(`procoder: restoring the statusLine procoder composed with:\n  ${describe(original)}\n`);
+    saveSettings(file, { ...data, statusLine: original });
+    return 0;
+  }
+
   delete data.statusLine;
   saveSettings(file, data);
   return 0;
 }
 
+// Four states, said apart: nothing configured, ours, somebody else's, and ours
+// wrapped around somebody else's. Collapsing the last two into "installed"
+// would hide the one case where uninstall does something other than delete.
+function describeState(current) {
+  if (!current) return 'no statusLine configured — not installed';
+  const original = wrapped(current);
+  if (original) return `installed, composed with an existing statusLine: ${describe(original)}`;
+  return `${isOurs(current) ? 'installed' : 'a statusLine that is not procoder\'s'}: ${describe(current)}`;
+}
+
 function runStatus() {
   const file = settingsPath();
-  const current = readSettings(file).statusLine;
-  const state = !current ? 'no statusLine configured — not installed'
-    : `${isOurs(current) ? 'installed' : 'a statusLine that is not procoder\'s'}: ${describe(current)}`;
-  process.stdout.write(`procoder: ${file}\nprocoder: ${state}\n`);
+  process.stdout.write(
+    `procoder: ${file}\nprocoder: ${describeState(readSettings(file).statusLine)}\n`);
   return 0;
 }
 
@@ -434,7 +515,7 @@ function runStatusline(args) {
     return 2;
   }
   try {
-    return run(args.includes('--force'));
+    return run({ force: args.includes('--force'), append: args.includes('--append') });
   } catch (e) {
     process.stderr.write(`procoder: ${e.message}\n`);
     return 1;
