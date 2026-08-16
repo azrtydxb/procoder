@@ -8,6 +8,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm test
+      # Drift check runs first: it must judge the committed tree, never a tree
+      # some later step regenerated.
       - name: Generated rule files must match the doctrine
         run: npm run sync:check
+      - run: npm test

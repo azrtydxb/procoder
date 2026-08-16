@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { render, TARGETS } = require('../scripts/sync-rules');
 
@@ -30,20 +31,34 @@ test('cursor target gets .mdc frontmatter, others do not', () => {
   assert.ok(!out.get('.clinerules/procoder.md').startsWith('---\nalwaysApply'));
 });
 
-test('--check exits 0 when files are in sync', () => {
-  execFileSync('node', [path.join(root, 'scripts/sync-rules.js')], { cwd: root });
-  assert.doesNotThrow(() => execFileSync(
-    'node', [path.join(root, 'scripts/sync-rules.js'), '--check'], { cwd: root }));
+// The writing CLI must never run against the tracked tree: `npm test` runs
+// before `npm run sync:check` on some paths, and a test that regenerates the
+// rule files would repair the very drift the CI gate exists to catch.
+test('every generated file on disk matches render()', () => {
+  for (const [rel, content] of render()) {
+    // assert.ok, not strictEqual: a mismatch here would dump both full
+    // doctrine renderings into the test output.
+    assert.ok(fs.readFileSync(path.join(root, rel), 'utf8') === content,
+      `${rel} is out of sync with the doctrine — run: npm run sync`);
+  }
 });
 
-test('--check exits non-zero after a generated file drifts', () => {
-  const victim = path.join(root, '.clinerules', 'procoder.md');
-  const saved = fs.readFileSync(victim, 'utf8');
+test('--check exits 0 when in sync and non-zero on real drift', () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-sync-'));
   try {
-    fs.writeFileSync(victim, saved + '\nhand-edited drift\n');
+    for (const dir of ['scripts', 'hooks', 'skills']) {
+      fs.cpSync(path.join(root, dir), path.join(scratch, dir), { recursive: true });
+    }
+    const cli = path.join(scratch, 'scripts/sync-rules.js');
+
+    execFileSync('node', [cli], { cwd: scratch });
+    assert.doesNotThrow(() => execFileSync('node', [cli, '--check'], { cwd: scratch }));
+
+    const victim = path.join(scratch, '.clinerules', 'procoder.md');
+    fs.appendFileSync(victim, '\nhand-edited drift\n');
     assert.throws(() => execFileSync(
-      'node', [path.join(root, 'scripts/sync-rules.js'), '--check'], { cwd: root, stdio: 'pipe' }));
+      'node', [cli, '--check'], { cwd: scratch, stdio: 'pipe' }));
   } finally {
-    fs.writeFileSync(victim, saved);
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
