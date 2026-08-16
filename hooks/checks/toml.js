@@ -16,7 +16,9 @@
 // to put them: inline tables, dates, arrays of tables, and multi-line strings.
 // Each of those, and every value this parser cannot read exactly — an unknown
 // escape, an unterminated string, a bare unquoted word — is warned to stderr
-// with file and line and the key is left unset. Nothing is ever guessed at:
+// with file and line and the key is left unset. A key or table header the file
+// defines twice — which TOML forbids — is refused the same way, both values
+// dropped rather than either one kept. Nothing is ever guessed at:
 // a config that silently loads a value the file does not say would enforce
 // something other than what its author wrote, which is worse than a default.
 //
@@ -210,15 +212,26 @@ function tableAt(root, dottedName) {
   return table;
 }
 
-// Stores one key — bare or dotted — in `table`. A forbidden name anywhere in
-// the path drops the assignment entirely: tableAt hands back a detached table
-// for a forbidden part, and the final part is checked here.
-function assign(table, dottedKey, value) {
+// The table and final name one key — bare or dotted — refers to, or null if a
+// forbidden name appears anywhere in the path: tableAt hands back a detached
+// table for a forbidden part, and the final part is checked here.
+function slotFor(table, dottedKey) {
   const parts = dottedKey.split('.');
   const key = parts.pop();
-  if (FORBIDDEN_KEYS.has(key)) return;
-  const target = parts.length ? tableAt(table, parts.join('.')) : table;
-  target[key] = value;
+  if (FORBIDDEN_KEYS.has(key)) return null;
+  return { target: parts.length ? tableAt(table, parts.join('.')) : table, key };
+}
+
+function assign(table, dottedKey, value) {
+  const slot = slotFor(table, dottedKey);
+  if (slot) slot.target[slot.key] = value;
+}
+
+// Takes back a value already stored — how a key that turns out to be defined
+// twice ends up unset rather than holding one of its two values.
+function unassign(table, dottedKey) {
+  const slot = slotFor(table, dottedKey);
+  if (slot) delete slot.target[slot.key];
 }
 
 // Config syntax this parser can't handle must never vanish quietly — see the
@@ -285,6 +298,22 @@ function resolveValue(lines, i, firstValue) {
   };
 }
 
+// Tracks which key paths a file has already defined, and reports the second
+// sighting of one — and every later sighting, so each warns on its own line.
+// TOML forbids defining a key twice; see openSection and parseToml for why the
+// answer here is to refuse both values rather than keep either. A key under a
+// detached section (prefix null) is stored nowhere, so it defines nothing.
+function definitionTracker() {
+  const seen = new Set();
+  return (prefix, key) => {
+    if (prefix === null) return false;
+    const keyPath = prefix ? `${prefix}.${key}` : key;
+    if (seen.has(keyPath)) return true;
+    seen.add(keyPath);
+    return false;
+  };
+}
+
 // A bracket line that is not a header this parser understands — `[[x]]` above
 // all. Its keys must not land in the previous table, or an unrelated section
 // could quietly add paths to [exclude], so warn and hand back a detached
@@ -297,22 +326,73 @@ function detachBadHeader(name, lineNumber, line) {
   return Object.create(null);
 }
 
+// The table a bracket line opens, and the key-path prefix its keys live under.
+// A `prefix` of null means the section is detached: its keys are stored
+// nowhere and define nothing.
+//
+// A repeated `[table]` is refused whole rather than merged into the first one.
+// TOML forbids defining a table twice, so there is no reading of the file that
+// is the author's intent; merging would invent one. Refusing the repeat can
+// only leave keys unset, and an unset key in this config means its strict
+// default — so the file can never end up enforcing less than it says.
+function openSection(result, headers, at, line) {
+  const header = TABLE_HEADER.exec(line);
+  if (!header) return { table: detachBadHeader(at.name, at.line, line), prefix: null };
+  if (headers.has(header[1])) {
+    warn(at.name, at.line, `duplicate table header, section ignored: ${line}`);
+    return { table: Object.create(null), prefix: null };
+  }
+  headers.add(header[1]);
+  return { table: tableAt(result, header[1]), prefix: header[1] };
+}
+
+// One `key = value` line, from its first line to the last one its value
+// occupies — returned, because an array spanning lines has to be consumed
+// whatever becomes of the key, or the rest of it is read as config in its own
+// right. `ctx` carries the file name for warnings, the table and prefix the
+// key belongs to, and the duplicate tracker.
+//
+// A key already defined has BOTH values refused, not just the second. A
+// duplicate means the file states two things and TOML permits neither, so any
+// surviving value is a guess about which one the author meant. Left unset, the
+// key falls back to its default, and every setting this config has is at its
+// strict end when unset — so refusal cannot quietly enforce less than the
+// author read in their own file, which last-wins silently did.
+function readPair(lines, i, pair, ctx) {
+  const startLine = i + 1;
+  const resolved = resolveValue(lines, i, pair[2].trim());
+
+  if (ctx.isDuplicate(ctx.prefix, pair[1])) {
+    warn(ctx.name, startLine, `duplicate key, both values ignored: ${pair[1]}`);
+    unassign(ctx.table, pair[1]);
+    return resolved.endLine;
+  }
+
+  const refusal = reasonOf(resolved.value);
+  if (refusal) warn(ctx.name, startLine, refusal);
+  else assign(ctx.table, pair[1], resolved.value);
+  return resolved.endLine;
+}
+
 // procoder — .procoder.toml is the only file this parser ever reads (see
 // config.js); `fileName` names it in warnings and defaults to that.
 function parseToml(text, fileName) {
   const name = fileName || '.procoder.toml';
   const result = Object.create(null);
+  const headers = new Set();
+  const isDuplicate = definitionTracker();
   let table = result;
+  let prefix = '';
   const lines = String(text || '').split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = stripComment(lines[i]).trim();
     if (!line) continue;
 
-    const header = TABLE_HEADER.exec(line);
-    if (header) { table = tableAt(result, header[1]); continue; }
-
-    if (line[0] === '[') { table = detachBadHeader(name, i + 1, line); continue; }
+    if (line[0] === '[') {
+      ({ table, prefix } = openSection(result, headers, { name, line: i + 1 }, line));
+      continue;
+    }
 
     const pair = KEY_VALUE.exec(line);
     if (!pair) {
@@ -320,16 +400,7 @@ function parseToml(text, fileName) {
       continue;
     }
 
-    const startLine = i + 1;
-    const resolved = resolveValue(lines, i, pair[2].trim());
-    i = resolved.endLine;
-    const refusal = reasonOf(resolved.value);
-    if (refusal) {
-      warn(name, startLine, refusal);
-      continue;
-    }
-
-    assign(table, pair[1], resolved.value);
+    i = readPair(lines, i, pair, { name, table, prefix, isDuplicate });
   }
 
   return result;
