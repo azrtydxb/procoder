@@ -1,0 +1,11 @@
+const password = "hunter2correcthorse";
+logger.info(`auth ${token}`)
+log.debug(f"user email {user.email}")
+// const x = compute(a, b);
+// if (x > 3) {
+//   send(x);
+// }
+// TODO: fix this later
+/* eslint-disable */
+// eslint-disable-next-line no-eval
+// @deprecated use createUser instead

@@ -1,0 +1,16 @@
+const key = process.env.API_KEY;
+password = os.environ["DB_PASSWORD"]
+const token = await secrets.get("stripe");
+logger.info(`user ${user.id} logged in`)
+console.log("password reset requested for this account")
+// TODO(pascal): drop the shim
+// TODO INFRA-4821: drop the shim
+// @deprecated remove after v3.0
+// procoder: remove after the 2026-10 migration
+// This exists because the upstream API returns 200 on failure.
+// It only happens on the legacy ingest path, not the new one.
+// See INFRA-4821 for the vendor ticket with the vendor's own team.
+// Remove once they ship the fix upstream.
+// eslint-disable-next-line no-eval -- sandboxed evaluator, input is a literal
+x = compute()  # noqa: E501 - URL cannot be wrapped
+//nolint:errcheck // Close() on a read-only handle cannot fail
