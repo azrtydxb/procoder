@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // procoder — orchestrates one file's checks.
 //
-// Order: exclusion → size guard → read → SAFE/TRUE rules (always) →
-// shape rules (unless the project's own linter covers them) → universal pack
-// (always) → touched-range narrowing → baseline suppression → sort → cap.
+// Order: exclusion → size guard → read → universal pack (always, on the raw
+// source) → SAFE/TRUE rules → shape rules (unless the project's own linter
+// covers them) → touched-range narrowing → baseline suppression → sort → cap.
 
 const fs = require('fs');
 const path = require('path');
@@ -18,12 +18,34 @@ const { MANIFEST_FILES, checkManifest } = require('./deps');
 const MAX_FINDINGS = 5;
 
 // The hook runs on every write and the harness kills it at 2s, so the budget is
-// real: past it the user gets a stall and no findings at all. A file this large
-// is a bundle or a fixture, not something a human is reading; a line this long
-// is minified. Both are skipped so the scanners never meet the input they are
-// quadratic on.
+// real: past it the user gets a stall and no findings at all.
 const BUDGET_MS = 2000;
-const MAX_FILE_BYTES = 256 * 1024;
+
+// Total-size skip. Cost of everything that survives the line guard below is
+// linear in file size: measured end to end on many-short-line files, 1MB costs
+// 34ms, 4MB costs 122ms, 8MB costs 250ms, 16MB costs 507ms. 4MB is about 6% of
+// the budget and larger than any file a human edits, so that is where the skip
+// sits — not 256KB, which was inherited from when a long line could blow the
+// budget, and which threw away every finding on an ordinary large source.
+const MAX_FILE_BYTES = 4 * 1024 * 1024;
+
+// Line-length guard for the SHAPE path only.
+//
+// Cost: the language packs do not see the content of a line this long, so their
+// shape and SAFE rules miss anything on it. Justification: analyzeBraces and
+// measureFunctions are still quadratic in line length — measured on one minified
+// line, 50KB costs 299ms, 100KB costs 1177ms, 200KB costs 4592ms and 400KB costs
+// 18337ms, four times the cost per doubling. 200KB alone is more than twice the
+// whole budget.
+//
+// The universal pack is deliberately NOT subject to this guard: it is the rung-1
+// path (secrets, PII in logs, rot), its rules are line-oriented regexes with no
+// length sensitivity, and it measures flat — 12ms on a 5MB single line. Blanking
+// long lines for it meant a hardcoded credential on a minified or generated line
+// was never reported at all, which is exactly where a leaked key hides.
+//
+// procoder: guard, not a fix. Drop it when analyzeBraces/measureFunctions are
+// linear in line length — they slice the source per brace and per block.
 const MAX_LINE_BYTES = 4096;
 
 // Findings this many lines either side of the touched region still belong to
@@ -74,10 +96,18 @@ function checkFile(absPath, {
     return { relPath, findings: [], skipped: 'unreadable' };
   }
 
-  const scanned = blankLongLines(source);
+  // Only the shape path gets the blanked copy. See MAX_LINE_BYTES above.
+  const shaped = blankLongLines(source);
   const findings = [];
+
+  // The universal pack runs first and on the raw source: no linter checks for
+  // credentials in source, PII in logs, or a deprecation with no removal
+  // trigger, and rung 1 must not be the stage that loses its budget to a slow
+  // linter subprocess further down.
+  findings.push(...checkUniversal(source, { relPath, config }));
+
   // Narrowed to the touched region when the caller could identify one. The
-  // universal pack below is deliberately excluded: a credential committed
+  // universal pack above is deliberately excluded: a credential committed
   // anywhere in the file is a leak regardless of which line was edited.
   const local = [];
 
@@ -87,7 +117,7 @@ function checkFile(absPath, {
   // injection, shell injection or disabled TLS verification by default.
   const tool = resolveFor(relPath, { repoRoot });
   let toolAnswered = false;
-  if (tool) {
+  if (tool && Date.now() < deadline) {
     const result = runToolResult(tool, {
       repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
     });
@@ -97,7 +127,7 @@ function checkFile(absPath, {
 
   const pack = packFor(relPath);
   if (pack && Date.now() < deadline) {
-    const packFindings = pack.check(scanned, { relPath, config });
+    const packFindings = pack.check(shaped, { relPath, config });
     // A linter that timed out or crashed answered nothing, so the pack covers
     // the whole file rather than leaving a hole where the shape rules were.
     local.push(...(toolAnswered
@@ -109,10 +139,6 @@ function checkFile(absPath, {
   findings.push(...(ranges
     ? local.filter((f) => ranges.some(([lo, hi]) => f.line >= lo && f.line <= hi))
     : local));
-
-  // The universal pack runs regardless: no linter checks for credentials in
-  // source, PII in logs, or a deprecation with no removal trigger.
-  findings.push(...checkUniversal(scanned, { relPath, config }));
 
   // Dependency manifests get one extra pass: a floating range or an absent
   // lockfile is a rung-1 finding no language pack looks for.

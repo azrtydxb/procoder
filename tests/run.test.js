@@ -47,6 +47,14 @@ const NOT_CONFIGURED = '[project]\nname = "x"\n';
 
 const shimTest = { skip: process.platform === 'win32' ? 'needs a POSIX shim' : false };
 
+// One minified line of the given size — the input the shape scanners are
+// quadratic on, and the one a leaked credential hides in.
+function minifiedLine(bytes) {
+  let line = '';
+  while (line.length < bytes) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
+  return line;
+}
+
 test('a configured linter never displaces the SAFE rung', shimTest, () => {
   const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
   const out = withShim('ruff', RUFF_OK, () =>
@@ -200,9 +208,23 @@ test('applyBaseline false reports findings the baseline would suppress', () => {
 });
 
 test('a file past the size cap is skipped, not scanned', () => {
-  const repo = repoWith({ 'bundle.ts': 'const x = 1;\n'.repeat(30000) });
+  const repo = repoWith({ 'bundle.ts': 'const x = 1;\n'.repeat(400000) });
   const out = checkFile(path.join(repo, 'bundle.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.strictEqual(out.skipped, 'too-large');
+});
+
+// The old 256KB cap threw away every finding on an ordinary large source. The
+// cap exists for files no human edits, so a 400KB one must still be scanned.
+test('a large but ordinary source is scanned, not skipped', () => {
+  const repo = repoWith({
+    'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,
+  });
+  const started = Date.now();
+  const out = checkFile(path.join(repo, 'big.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(Date.now() - started < 2000, 'a 400KB source blew the budget');
+  assert.strictEqual(out.skipped, null);
+  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
 });
 
 test('a minified file finishes well inside the 2s budget', () => {
@@ -227,6 +249,26 @@ test('a long line does not stall a file of otherwise normal lines', () => {
   const ids = out.findings.map((f) => f.id);
   assert.ok(ids.includes('safe/dynamic-eval'));
   assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
+});
+
+// The line guard blanks long lines before the scanners see them. It must not
+// blank them before the universal pack, which is the rung-1 path: a minified
+// bundle or a generated file is exactly where a leaked key hides.
+test('a secret on a minified line is still reported', () => {
+  const long = `function f(a,b){return a&&b?a:b;}`.repeat(300);
+  const repo = repoWith({ 'bundle.js': `${long}var k="AKIAIOSFODNN7EXAMPLE";${long}\n` });
+  const out = checkFile(path.join(repo, 'bundle.js'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'),
+    'the long line was blanked before the universal pack saw it');
+});
+
+test('a long line stays cheap: the shape path never sees it', () => {
+  const repo = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
+  const started = Date.now();
+  checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — the shape path is quadratic in line length`);
 });
 
 test('touched narrows the language pack to the edited region', () => {
