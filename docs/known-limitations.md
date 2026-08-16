@@ -42,30 +42,42 @@ silences nothing. Limits, all verified:
 | Reach is one line, or two for the standalone form | There is no block or file form, deliberately. A fixture file that is nothing but violating input cannot be marked line by line without changing the input — `tests/fixtures/` is excluded by path in `.procoder.toml` for exactly that reason, and that is the one case the marker cannot serve. |
 | No wildcard | There is no bare or `*` form; the bare form is routed to `alone/blanket-suppression` and reported. |
 
-## The self-scan, and what is held out
+## The self-scan, and what is ignored
 
 `tests/dogfood.test.js` derives its file list from `git ls-files`, so a file is
-in the gate the day it lands. Two categories are held out:
-`docs/superpowers/` (planning documents for work already executed) and
-`examples/*/before.*` (files whose documented purpose is to violate a rung,
-paired with an `after.*` that does not; `examples/README.md` and every
-`after.*` stay in the scan).
+in the gate the day it lands. Its `HELD_OUT` list is now empty: the two
+categories that used to be on it — `docs/superpowers/` and
+`examples/*/before.*` — are covered by a `.procoderignore` next to each
+instead, which is honoured by the real `procoder check` a user runs and not
+only by the test.
 
-Measured today, `procoder check` over the whole tracked tree reports **66**
-findings: 56 in `docs/superpowers/`, 10 in `examples/*/before.*`, and none
-anywhere else. The scan minus the two hold-outs is clean, and that is the hard
-gate the test enforces.
+Measured today, `procoder check .` over the whole repository reports **0**
+findings and skips 1902 files across three ignore files (1893 under
+`.claude/` and `.superpowers/`, 5 planning documents, 4 `examples/*/before.*`).
+Before those files existed it reported 2820, of which 2754 came from untracked
+agent scratch.
 
 What this does *not* give you:
 
-- The two `HELD_OUT` entries have no expiry test. Only the `PENDING` list —
-  temporary hold-outs, currently empty — is checked for still having the
-  finding that put it there. A `HELD_OUT` path that went clean would not be
-  noticed.
-- `docs/superpowers/` is held out because procoder still cannot tell a
+- An ignore file has no expiry test either, and it is now the only mechanism
+  holding these paths out. Only the `PENDING` list in `tests/dogfood.test.js`
+  — temporary hold-outs, currently empty — is checked for still having the
+  finding that put it there. A `.procoderignore` covering a path that has gone
+  clean, or that no longer exists, is not reported. The per-run stderr line
+  naming each ignore file and its file count is what makes it visible.
+- `docs/superpowers/` is ignored because procoder still cannot tell a
   document quoting a violation from a file committing one, at the scale of a
   1500-line planning document. The line marker solves that case by case; it
   was not applied to historical documents.
+- `examples/*/before.*` are ignored by path, so an ordinary audit does not
+  report ten deliberate violations. They are still checked on every test run,
+  through `procoder check --no-ignore`, and `examples/*/after.*` stays in the
+  ordinary gate.
+- `.claude/` is not in procoder's built-in defaults, so every user starting a
+  scan at their repository root will see findings from whatever their agent
+  tooling leaves there, until they write an ignore file of their own. That is
+  deliberate: `.claude/` also holds hand-written hooks and scripts, and a
+  default exclusion would un-gate them silently for everybody.
 
 ## `cargo clippy` cannot be scoped to one file
 

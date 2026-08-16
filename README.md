@@ -286,6 +286,28 @@ Per ignore file, not per file: the case this exists for is a large generated
 subtree, and a line per file would bury the findings it was meant to make room
 for. `check`, `baseline` and `verify` share the engine, so a file one of them
 ignores is ignored by all three and the ratchet cannot disagree with itself.
+
+To answer "why is this file not being checked?", or to check an ignored file
+deliberately, pass `--no-ignore`:
+
+```bash
+procoder check --no-ignore src/gen/api.ts
+```
+
+It turns off every `.procoderignore` for that run and nothing else —
+`.procoder.toml`'s `[exclude] paths` still applies, so the flag cannot become a
+way into `node_modules/` by accident.
+
+procoder uses this on itself. Three ignore files, each sitting next to what it
+describes: `/.procoderignore` covers `.claude/` and `.superpowers/` (agent
+scratch, untracked, and `.claude/worktrees/` is a full second copy of the repo);
+`docs/superpowers/.procoderignore` covers planning documents for work already
+executed, which quote rule ids and sample violations by the hundred; and
+`examples/.procoderignore` covers `before.*` only — those files violate a rung
+on purpose, while every `after.*` stays gated as ordinary source. The examples
+are still proved on every run, because `tests/examples.test.js` checks the
+`before.*` files with `--no-ignore`.
+
 Symlinks are not resolved: a path is matched exactly as it was written, so a
 symlinked directory is judged by the name it was reached through.
 
