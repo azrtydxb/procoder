@@ -149,6 +149,79 @@ rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
 new files added later under the same directory — narrowing enforcement always
 takes a second, deliberate edit per file.
 
+### `.procoderignore`
+
+A `.procoderignore` file may sit in **any** directory and excludes paths in that
+directory and everything beneath it — so a large generated subtree is excluded
+by one file next to it, instead of a central list that grows stale far from what
+it describes.
+
+```
+# gen/.procoderignore
+*.gen.ts        # any depth below gen/
+/vendor/        # only gen/vendor/, not gen/pkg/vendor/
+build/          # a directory of that name, at any depth
+!keep.gen.ts    # ...except this one
+```
+
+The syntax is a **subset** of `.gitignore`, and this list is exhaustive —
+anything not on it is not supported:
+
+| Supported | Meaning |
+|---|---|
+| `# comment`, blank lines | Skipped. Leading and trailing whitespace is trimmed. |
+| `name` | Matches `name` — and everything under it if it is a directory — at any depth below the ignore file. |
+| `a/b.ts` | A slash anywhere anchors the pattern to the ignore file's own directory. |
+| `/vendor` | A leading slash anchors it too. |
+| `build/` | A trailing slash matches only a directory's contents, never a file of that name. |
+| `*` | Any run of characters within one path segment. |
+| `**` | Any run of characters across segments; `**/` also matches zero directories, so `b/**/*.ts` covers `b/x.ts`. |
+| `!pattern` | Negation — puts a path back into the gate. |
+
+**Not supported**, and treated as literal characters rather than silently doing
+something else: `?`, character classes (`[a-z]`), and backslash escapes. A line
+that cannot be compiled is dropped and matches nothing; a `.procoderignore` that
+cannot be read, or is full of nonsense, ignores nothing and never fails a hook.
+
+**Precedence**, in order:
+
+1. `.procoder.toml`'s `[exclude] paths` is decided first and its verdict is
+   final. A `!` in a `.procoderignore` cannot re-include what the root config
+   excluded — the root config is the project-wide contract, and a subdirectory
+   may narrow further but never contradict it.
+2. Otherwise the last matching pattern wins, and a deeper `.procoderignore`'s
+   patterns are applied after a shallower one's — so the deepest file decides,
+   as in git.
+3. Only ignore files in the path's own ancestor directories are ever read, so a
+   `.procoderignore` cannot affect, or reach above, its own directory. A pattern
+   naming a parent (`../`) is dropped.
+
+`.procoderignore` is a **pure path filter**: there is no `path:rule-id` form.
+Silencing one rule on one file stays a deliberate, exact-path edit in
+`.procoder.toml`, where it is visible in one place and `verify
+--unused-exclusions` can tell you when it has gone stale.
+
+**`.gitignore` is deliberately not read.** A file being untracked says something
+about version control, not about whether it should ship — and the PostToolUse
+hook fires on files git has never seen. Inheriting those patterns would narrow
+the gate by reusing a file written for another purpose, silently, which is the
+one thing this project refuses to do. Ignoring a path from procoder takes a line
+in a file whose name says so.
+
+Because an ignore file narrows enforcement, `procoder check` reports what it
+covered — one line on stderr per ignore file that actually skipped something:
+
+```
+procoder: 412 files skipped by gen/.procoderignore — not checked.
+```
+
+Per ignore file, not per file: the case this exists for is a large generated
+subtree, and a line per file would bury the findings it was meant to make room
+for. `check`, `baseline` and `verify` share the engine, so a file one of them
+ignores is ignored by all three and the ratchet cannot disagree with itself.
+Symlinks are not resolved: a path is matched exactly as it was written, so a
+symlinked directory is judged by the name it was reached through.
+
 ## Statusline
 
 procoder ships a statusline script that prints the active level (e.g.
