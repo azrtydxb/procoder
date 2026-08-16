@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { check, EXTENSIONS } = require('../hooks/checks/lang/go');
 const { DEFAULTS } = require('../hooks/checks/config');
+const { assertLinear } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const ids = (src) => check(src, { relPath: 'x.go', config }).map((f) => f.id);
@@ -96,24 +97,52 @@ test('the clean fixture is silent and the dirty one is not', () => {
     { relPath: 'dirty.go', config }).length >= 5);
 });
 
-// Perf guard: every rule here must stay linear in line length. Each unit below
-// is an adversarial prefix — repeated, it makes any unbounded span in a rule
-// re-scan to end of line from every offset, which is the quadratic shape that
-// took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
-// in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
-// a loaded CI machine; the hook's whole budget is 2s.
+// Perf guard — see tests/perf-guard.js for the bound and why it is relative.
+// The unbroken word run is not decoration: the taint assignment pattern's
+// first draft nested `\w*` inside an optional `[\w*.[\]]+`, and two quantifiers
+// over the same characters cost 4,887ms on 100KB of it and 75,263ms at 400KB.
 test('stays linear on a very long single line', () => {
-  const units = [
-    "func f(a) x ",
-    "Query(\"x\" ",
-    "func (a, ",
-    "x := f(a, b) + \"s\" + c; ",
-  ];
-  for (const unit of units) {
-    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const started = Date.now();
-    check(line, { relPath: 'x.go', config });
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
-  }
+  assertLinear({
+    assert,
+    check,
+    relPath: 'x.go',
+    config,
+    baseline: 'return  ',
+    units: [
+      'func f(a) x ',
+      'Query("x" ',
+      'func (a, ',
+      'x := f(a, b) + "s" + c; ',
+      'q := "SELECT " + id ',
+      'db.Query(q) ',
+    ],
+    sources: ['x'.repeat(100 * 1024), 'x'.repeat(100 * 1024) + ' := 1'],
+  });
+});
+
+// Local taint: the assign-then-use form, at least as common as the inline one.
+// Reported at the sink, naming the line the value was built on.
+test('tracks a Sprintf or concatenated string from its assignment to a sink', () => {
+  const src = 'func f(db *sql.DB, id string) {\n\tq := "SELECT * FROM t WHERE id=" + id\n\tdb.Query(q)\n}';
+  const hit = check(src, { relPath: 'x.go', config }).find((f) => f.id === 'safe/sql-injection');
+  assert.ok(hit, 'no safe/sql-injection for the assign-then-use form');
+  assert.strictEqual(hit.line, 3, 'reported at the sink, not the assignment');
+  assert.match(hit.message, /line 2/);
+
+  assert.ok(ids('func f(db *sql.DB, id string) {\n\tq := fmt.Sprintf("SELECT * FROM t WHERE id=%s", id)\n\tdb.Exec(q)\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('a placeholder or literal-only query variable stays silent', () => {
+  assert.ok(!ids('func f(db *sql.DB, id string) {\n\tq := "SELECT * FROM t WHERE id = $1"\n\tdb.Query(q, id)\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('func f(db *sql.DB) {\n\tq := "SELECT " + "a, b" + " FROM t"\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+});
+
+test('taint clears on a literal reassignment and does not leave its block', () => {
+  assert.ok(!ids('func f(db *sql.DB, id string) {\n\tq := "SELECT * FROM t WHERE id=" + id\n\tq = "SELECT * FROM t"\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('func a(id string) {\n\tq := "SELECT " + id\n\t_ = q\n}\nfunc b(db *sql.DB, q string) {\n\tdb.Query(q)\n}')
+    .includes('safe/sql-injection'));
 });

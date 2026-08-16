@@ -64,6 +64,31 @@ class CleanExamples {
     void go() throws Exception {
     }
 
+    // Assign-then-use, done right: the shape local taint tracking reads, with
+    // the value bound to a name before it reaches the sink. A bound
+    // placeholder, a value built only from literals, a binding cleared by a
+    // literal reassignment, and a tainted value that never reaches a sink.
+    void lookupUserBound(PreparedStatement stmt, String id) throws Exception {
+        String q = "SELECT * FROM t WHERE id = ?";
+        stmt.executeQuery(q);
+    }
+
+    void listColumns(Statement stmt) throws Exception {
+        String q = "SELECT " + "id, name" + " FROM t";
+        stmt.executeQuery(q);
+    }
+
+    void rebuildQuery(Statement stmt, String id) throws Exception {
+        String q = "SELECT * FROM t WHERE id = " + id;
+        q = "SELECT * FROM t";
+        stmt.executeQuery(q);
+    }
+
+    void describeDir(String dir) {
+        String cmd = "ls " + dir;
+        log.info(cmd);
+    }
+
     // Documentation that warns against a practice must not be flagged for the
     // practice: every rule jvm.js has, named in prose, still silent.
     //

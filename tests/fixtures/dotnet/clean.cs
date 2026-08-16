@@ -95,6 +95,35 @@ class CleanExamples
     {
     }
 
+    // Assign-then-use, done right: the shape local taint tracking reads, with
+    // the value bound to a name before it reaches the sink. A bound
+    // placeholder, a value built only from literals, a binding cleared by a
+    // literal reassignment, and a tainted value that never reaches a sink.
+    void LookupUserBound(SqlConnection c, string id)
+    {
+        var q = "SELECT * FROM t WHERE id = @id";
+        var cmd = new SqlCommand(q, c);
+    }
+
+    void ListColumns(SqlConnection c)
+    {
+        var q = "SELECT " + "id, name" + " FROM t";
+        var cmd = new SqlCommand(q, c);
+    }
+
+    void RebuildQuery(SqlConnection c, string id)
+    {
+        var q = "SELECT * FROM t WHERE id = " + id;
+        q = "SELECT * FROM t";
+        var cmd = new SqlCommand(q, c);
+    }
+
+    void DescribeDir(string dir)
+    {
+        var arg = "ls " + dir;
+        logger.LogInformation(arg);
+    }
+
     // Documentation that warns against a practice must not be flagged for the
     // practice: every rule dotnet.js has, named in prose, still silent.
     //

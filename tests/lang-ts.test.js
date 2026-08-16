@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { check, EXTENSIONS } = require('../hooks/checks/lang/ts');
 const { DEFAULTS } = require('../hooks/checks/config');
+const { assertLinear } = require('./perf-guard');
 
 const config = { ...DEFAULTS, root: '/tmp' };
 const ids = (src) => check(src, { relPath: 'x.ts', config }).map((f) => f.id);
@@ -137,41 +138,31 @@ test('the clean fixture is silent and the dirty one is not', () => {
     { relPath: 'dirty.ts', config }).length >= 6);
 });
 
-// Perf guard: every rule here must stay linear in line length. Each unit below
-// is an adversarial prefix — repeated, it makes any unbounded span in a rule
-// re-scan to end of line from every offset, which is the quadratic shape that
-// took .NET's safe/shell-injection rule 4.7s on this input. Linear runs finish
-// in ~10ms, so 1s separates "linear" from "regression" with plenty of slack for
-// a loaded CI machine; the hook's whole budget is 2s.
+// Perf guard — see tests/perf-guard.js for the bound and why it is relative.
+// The last two units are the taint scan's own adversarial shapes: a statement
+// stream of assignments and sinks, and an assignment whose right-hand side is
+// a concatenation. The word runs are the ones FUNCTION_SIGNATURE used to retry
+// its `\w+` branch over from every offset (54ms at 8KB, 9,041ms at 100KB), and
+// that the Go pack's taint assignment pattern later cost 4,887ms on.
 test('stays linear on a very long single line', () => {
-  const units = [
-    "spawn(",
-    "a ? b ? c ",
-    "?",
-    "query(`x ",
-    "exec(\"x\" ",
-    "var x = f(a, b) + \"s\" + c; ",
-  ];
-  for (const unit of units) {
-    const line = unit.repeat(Math.ceil((100 * 1024) / unit.length)).slice(0, 100 * 1024);
-    const started = Date.now();
-    check(line, { relPath: 'x.ts', config });
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `100KB line took ${elapsed}ms for unit ${JSON.stringify(unit)}`);
-  }
-});
-
-// FUNCTION_SIGNATURE used to retry its `\w+` branch from every offset of an
-// unbroken word run: 54ms at 8KB, 9,041ms at 100KB. Pinning that branch to the
-// start of an identifier made it linear — 100KB now costs single-digit ms, so
-// 1s is regression, not slow CI.
-test('stays linear on an unbroken word run', () => {
-  for (const src of ['x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){']) {
-    const started = Date.now();
-    check(src, { relPath: 'x.ts', config });
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < 1000, `a ${src.length}-byte word run took ${elapsed}ms`);
-  }
+  assertLinear({
+    assert,
+    check,
+    relPath: 'x.ts',
+    config,
+    baseline: 'let a = 1; ',
+    units: [
+      'spawn(',
+      'a ? b ? c ',
+      '?',
+      'query(`x ',
+      'exec("x" ',
+      'var x = f(a, b) + "s" + c; ',
+      'const q = "SELECT " + id; db.query(q); ',
+      'const a = "x" + b; ',
+    ],
+    sources: ['x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){'],
+  });
 });
 
 // The scan still has to find the signatures a per-line anchor would lose: a
@@ -180,4 +171,38 @@ test('stays linear on an unbroken word run', () => {
 test('finds signatures whatever the identifier is preceded by', () => {
   assert.ok(ids('class C { $sink(a, b, c, d, e, f, g) {\n  return a;\n} }').includes('obvious/too-many-params'));
   assert.ok(ids('const f = () => { g(a, b, c, d, e, f) {\n  return a;\n} }').includes('obvious/too-many-params'));
+});
+
+// Local taint: the assign-then-use form, at least as common as the inline one.
+// Reported at the sink, naming the line the value was built on.
+test('tracks a string built by concatenation from its assignment to a sink', () => {
+  const src = 'function f(db, id) {\n  const q = "SELECT * FROM t WHERE id=" + id;\n  db.query(q);\n}';
+  const sql = check(src, { relPath: 'x.ts', config });
+  const hit = sql.find((f) => f.id === 'safe/sql-injection');
+  assert.ok(hit, `no safe/sql-injection: ${sql.map((f) => f.id).join(', ')}`);
+  assert.strictEqual(hit.line, 3, 'reported at the sink, not the assignment');
+  assert.match(hit.message, /line 2/);
+
+  assert.ok(ids('function f(id) {\n  const q = `SELECT * FROM t WHERE id=${id}`;\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(ids('function f(dir) {\n  const cmd = "ls " + dir;\n  exec(cmd);\n}')
+    .includes('safe/shell-injection'));
+  assert.ok(ids('function f(dir) {\n  const cmd = `ls ${dir}`;\n  execSync(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('a parameterized or literal-only variable reaching a sink stays silent', () => {
+  assert.ok(!ids('function f(db, id) {\n  const q = "SELECT * FROM t WHERE id = ?";\n  db.query(q, [id]);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function f(db) {\n  const q = "SELECT " + "a, b" + " FROM t";\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function f() {\n  const cmd = "ls -la";\n  exec(cmd);\n}')
+    .includes('safe/shell-injection'));
+});
+
+test('taint clears on a literal reassignment and does not leave its block', () => {
+  assert.ok(!ids('function f(db, id) {\n  let q = "SELECT t WHERE id=" + id;\n  q = "SELECT * FROM t";\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('function a(id) {\n  const q = "SELECT " + id;\n}\nfunction b(db, q) {\n  db.query(q);\n}')
+    .includes('safe/sql-injection'));
 });

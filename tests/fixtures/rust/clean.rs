@@ -78,3 +78,19 @@ fn debug_print(x: i32) {
 /// - no leftover `println!("here")` or `dbg!(value)`
 /// - never `unsafe { ptr::read(p) }` without a SAFETY note
 pub fn documented_clean() {}
+
+fn lookup_user_bound(pool: &Pool, id: &str) {
+    let q = "SELECT * FROM t WHERE id = $1";
+    sqlx::query(q).bind(id);
+}
+
+fn list_columns(pool: &Pool) {
+    let q = "SELECT ".to_string() + "id, name";
+    sqlx::query(&q);
+}
+
+fn rebuild_query(pool: &Pool, id: &str) {
+    let mut q = format!("SELECT * FROM t WHERE id = {}", id);
+    q = "SELECT * FROM t".to_string();
+    sqlx::query(&q);
+}

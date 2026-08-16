@@ -40,3 +40,8 @@ fn debug_print(x: i32) {
     println!("here {}", x);
     dbg!(x);
 }
+
+fn lookup_user_tainted(pool: &Pool, id: &str) {
+    let q = format!("SELECT * FROM t WHERE id = {}", id);
+    sqlx::query(&q);
+}

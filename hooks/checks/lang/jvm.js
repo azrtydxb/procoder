@@ -3,6 +3,7 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -60,6 +61,35 @@ const LINE_RULES = [
     fix: 'delete it, or route through the project logger',
   },
 ];
+
+// Local taint (taint.js): the assign-then-use form of the two rules above.
+// `String q = "SELECT ... id=" + id;` then `stmt.executeQuery(q);` is the
+// shape a Java codebase actually has, and the line rule cannot see it.
+//
+// The assignment pattern carries an optional type, so both `String q = …` and
+// a plain `q = …` reassignment are read; Kotlin's `val`/`var` sit in the same
+// modifier list. The shell sink is pinned to `getRuntime().exec(` rather than
+// a bare `exec(`, which is far too common a method name to key on.
+const JVM_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+
+const TAINT = {
+  assign: /^\s*(?:(?:final|val|var|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  sources: [/\bString\.format\s*\(/, /"[^"\n]*\$[A-Za-z_{]/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`\b(?:executeQuery|executeUpdate|createQuery|rawQuery|execute)\s*\(\s*${JVM_NAME}\s*[,)]`),
+      message: 'SQL built by concatenation or format reaches a statement',
+      fix: 'use PreparedStatement with bound parameters',
+    },
+    {
+      id: 'safe/shell-injection',
+      re: new RegExp(String.raw`getRuntime\s*\(\s*\)\s*\.\s*exec\s*\(\s*${JVM_NAME}\s*[,)]`),
+      message: 'shell command built by concatenation or format',
+      fix: 'call the binary directly with a separate argument list',
+    },
+  ],
+};
 
 // XML factories created without hardening are the classic XXE hole, but the
 // hardening call almost always lands on the next line or two, not the same
@@ -120,8 +150,13 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
+  const inline = lineRuleFindings(LINE_RULES, lines);
+
   return [
-    ...lineRuleFindings(LINE_RULES, lines),
+    ...inline,
+    ...taintFindings({
+      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...xxeFindings(lines),
     ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({

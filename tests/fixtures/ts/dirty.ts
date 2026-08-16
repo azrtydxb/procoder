@@ -125,3 +125,15 @@ function big(a, b, c, d, e) {
   work();
   work();
 }
+
+// Assign-then-use: the same two violations the inline forms above commit,
+// written the way real code writes them.
+export function lookupUserTainted(db: any, id: string) {
+  const q = "SELECT * FROM users WHERE id = " + id;
+  return db.query(q);
+}
+
+export function runTainted(dir: string) {
+  const cmd = `ls ${dir}`;
+  return exec(cmd);
+}

@@ -94,3 +94,19 @@ func startup() {
 //	no leftover fmt.Println("here")
 //	panic("unreachable") belongs in main, not in a library
 func documentedClean() {}
+
+func lookupUserBound(db *sql.DB, id string) (*sql.Rows, error) {
+	q := "SELECT * FROM t WHERE id = $1"
+	return db.Query(q, id)
+}
+
+func listColumns(db *sql.DB) (*sql.Rows, error) {
+	q := "SELECT " + "id, name" + " FROM t"
+	return db.Query(q)
+}
+
+func rebuildQuery(db *sql.DB, id string) (*sql.Rows, error) {
+	q := "SELECT * FROM t WHERE id = " + id
+	q = "SELECT * FROM t"
+	return db.Query(q)
+}

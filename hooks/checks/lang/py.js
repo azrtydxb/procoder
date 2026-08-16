@@ -3,9 +3,10 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   SIGNATURE_LOOKBACK,
-  analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings,
+  analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings, stripNoise,
 } = require('../shape');
 
 const EXTENSIONS = ['.py'];
@@ -54,6 +55,34 @@ const LINE_RULES = [
     fix: 'delete it, or route through the project logger',
   },
 ];
+
+// Local taint (taint.js): the assign-then-use form of the SQL rule above.
+// Scope is the indentation column the name was bound at, so a name bound in
+// one `def` is gone by the next — Python has no block scope, so a value bound
+// inside an `if` and used after it is a deliberate miss, erring toward silence.
+//
+// `text` is in the line rule's verb list and not here: as a bare
+// `text(value)` it is far too common an identifier to key a finding on. Shell
+// and eval get no taint sink — `os.system(`, `shell=True`, `eval(` and
+// `exec(` are already reported on the sink itself whatever the argument is.
+const TAINT = {
+  indent: true,
+  assign: /^\s*([A-Za-z_][\w]*)\s*=(?!=)/,
+  sources: [
+    /\bf["'][^"'\n]*\{/,
+    /["'][^"'\n]*["']\s*%\s*[A-Za-z_({[]/,
+    /["'][^"'\n]*["']\s*\.\s*format\s*\(\s*[^)\s]/,
+    ...CONCAT,
+  ],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: /\b(?:executemany|execute|raw)\s*\(\s*([A-Za-z_][\w]*)\s*[,)]/i,
+      message: 'SQL built by f-string, % or concatenation reaches a cursor',
+      fix: 'pass parameters as the second argument instead',
+    },
+  ],
+};
 
 const BARE_EXCEPT = /^\s*except\s*:\s*$/;
 const BROAD_EXCEPT = /^\s*except\s+(?:Exception|BaseException)\b[^:]*:\s*$/;
@@ -185,9 +214,14 @@ function measureBlocks(lines, blocks) {
 function check(source, { relPath, config } = {}) {
   const lines = stripComments(source, 'py').split(/\r?\n/);
   const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
+  const inline = lineRuleFindings(LINE_RULES, lines);
 
   return [
-    ...lineRuleFindings(LINE_RULES, lines),
+    ...inline,
+    ...taintFindings({
+      lines, stripped: stripNoise(String(source || ''), 'py').split(/\r?\n/),
+      spec: TAINT, existing: inline,
+    }),
     ...mutableDefaultFindings(lines),
     ...exceptFindings(lines),
     ...shapeFindings({

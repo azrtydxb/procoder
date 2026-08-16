@@ -74,4 +74,18 @@ class DirtyExamples
     void Go()
     {
     }
+
+    // Assign-then-use: the same two violations the inline forms above commit,
+    // written the way real code writes them.
+    void LookupUserTainted(SqlConnection c, string id)
+    {
+        var q = "SELECT * FROM t WHERE id = " + id;
+        var cmd = new SqlCommand(q, c);
+    }
+
+    void RunTainted(string dir)
+    {
+        var arg = "ls " + dir;
+        Process.Start(arg);
+    }
 }

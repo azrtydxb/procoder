@@ -77,3 +77,28 @@ export function documented(value: string) {
 
 // A pattern that spells a sink is a matcher for it, not a call to it.
 export const SINK_PATTERN = /dangerouslySetInnerHTML|\.innerHTML\s*=|document\.write\(/;
+
+// Assign-then-use, done right: the shape local taint tracking reads, with the
+// value bound to a name before it reaches the sink. All four stay silent —
+// a bound placeholder, a value built only from literals, a binding cleared by
+// a literal reassignment, and a tainted value that never reaches a sink.
+function lookupUserBound(db: any, id: string) {
+  const q = "SELECT * FROM users WHERE id = ?";
+  return db.query(q, [id]);
+}
+
+function listColumns(db: any) {
+  const q = "SELECT " + "id, name" + " FROM users";
+  return db.query(q);
+}
+
+function rebuildQuery(db: any, id: string) {
+  let q = "SELECT * FROM users WHERE id = " + id;
+  q = "SELECT * FROM users";
+  return db.query(q);
+}
+
+function describeDir(dir: string) {
+  const cmd = "ls " + dir;
+  logger.info(cmd);
+}

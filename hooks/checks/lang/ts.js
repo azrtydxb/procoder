@@ -2,6 +2,7 @@
 // procoder — TypeScript / JavaScript pack.
 
 const { stripComments } = require('./comments');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -73,6 +74,41 @@ const LINE_RULES = [
   },
 ];
 
+// Local taint (taint.js): the assign-then-use form of the two rules above.
+//
+// The verb lists are deliberately not the line rules'. `exec` sits in the SQL
+// rule's list there, which is why `exec("ls " + dir)` is reported as both
+// safe/sql-injection and safe/shell-injection — one of the two is always
+// wrong. A new mechanism does not have to inherit that, so `exec` belongs to
+// the shell sink only, and the SQL sink keeps the verbs that are only ever
+// SQL. `execSync` is spelled before `exec` so the alternation prefers it.
+//
+// safe/xss-sink and safe/dynamic-eval get no taint sink on purpose: both line
+// rules already fire on the sink itself whatever the argument is
+// (`.innerHTML =`, `eval(`), so a taint sink for them would report a second
+// time for the same line and nothing new — the duplicate rung 4 forbids.
+const JS_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+
+const TAINT = {
+  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*=(?![=>])/,
+  sources: [/`[^`\n]*\$\{/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`\b(?:query|execute|raw)\s*\(\s*${JS_NAME}\s*[,)]`, 'i'),
+      message: 'SQL built by interpolation or concatenation reaches a query',
+      fix: 'use a parameterized query with bound values',
+    },
+    {
+      id: 'safe/shell-injection',
+      re: new RegExp(
+        String.raw`(?:\bchild_process\.|(?<![.\w$]))(?:execSync|exec)\s*\(\s*${JS_NAME}\s*[,)]`),
+      message: 'shell command built by interpolation or concatenation',
+      fix: 'use execFile/spawn with an argument array and shell:false',
+    },
+  ],
+};
+
 // try { ... } catch (e) { }  — with only whitespace or a comment in the block.
 const SWALLOWED = /catch\s*\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
 
@@ -120,9 +156,14 @@ function check(source, { relPath, config } = {}) {
   const code = stripComments(text, 'js');
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
+  const codeLines = code.split(/\r?\n/);
+  const inline = lineRuleFindings(LINE_RULES, codeLines, { codeLines: stripped.split(/\r?\n/) });
 
   return [
-    ...lineRuleFindings(LINE_RULES, code.split(/\r?\n/), { codeLines: stripped.split(/\r?\n/) }),
+    ...inline,
+    ...taintFindings({
+      lines: codeLines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...emptyCatchFindings(code, SWALLOWED, 'error swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, FUNCTION_SIGNATURE)),

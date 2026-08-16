@@ -2,6 +2,7 @@
 // procoder — C# / .NET pack.
 
 const { stripComments } = require('./comments');
+const { CONCAT, taintFindings } = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -72,6 +73,37 @@ const LINE_RULES = [
   },
 ];
 
+// Local taint (taint.js): the assign-then-use form of the two rules above.
+// `var q = "SELECT ... id=" + id;` then `new SqlCommand(q, conn)` is the shape
+// the line rule cannot see.
+//
+// FromSqlInterpolated stays out of the sink list for the same reason it stays
+// out of the line rule: it is EF Core's *safe* API, and it takes the
+// interpolated string by design. The sink accepts either `(` or `=` after the
+// verb, so `cmd.CommandText = q;` is read as well as `new SqlCommand(q, c)`;
+// the argument must end the statement or the argument list, so a tainted name
+// that is only the receiver of a further call is not counted.
+const CS_NAME = String.raw`([A-Za-z_@]\w*)`;
+
+const TAINT = {
+  assign: /^\s*(?:(?:readonly|const|public|private|protected|internal|static|var)\s+)*(?:[\w<>[\],.?]+\s+)?([A-Za-z_@]\w*)\s*=(?![=>])/,
+  sources: [/\$"[^"\n]*\{/, /\b[Ss]tring\.Format\s*\(/, ...CONCAT],
+  sinks: [
+    {
+      id: 'safe/sql-injection',
+      re: new RegExp(String.raw`(?:SqlCommand|CommandText|ExecuteSqlRaw|FromSqlRaw)\s*(?:\(|=)\s*${CS_NAME}\s*(?:[,)]|$)`),
+      message: 'SQL built by interpolation or concatenation reaches a command',
+      fix: 'use parameters (cmd.Parameters.AddWithValue) or FromSqlInterpolated',
+    },
+    {
+      id: 'safe/shell-injection',
+      re: new RegExp(String.raw`\bProcess\.Start\s*\(\s*${CS_NAME}\s*[,)]`),
+      message: 'shell command built by interpolation or concatenation',
+      fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
+    },
+  ],
+};
+
 const SWALLOWED = /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*\s*|\/\*[\s\S]*?\*\/\s*)*\}/g;
 // Anchored to a single line, with `\s` allowed only inside a generic
 // argument list so `Dictionary<string, int>` is measured — see jvm.js for
@@ -96,8 +128,13 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
+  const inline = lineRuleFindings(LINE_RULES, lines);
+
   return [
-    ...lineRuleFindings(LINE_RULES, lines),
+    ...inline,
+    ...taintFindings({
+      lines, stripped: stripped.split(/\r?\n/), spec: TAINT, existing: inline,
+    }),
     ...emptyCatchFindings(code, SWALLOWED, 'exception swallowed by an empty catch'),
     ...shapeFindings({
       blocks: measureFunctions(lines, blocks, signaturesFrom(stripped, METHOD_SIGNATURE_LINE)),
