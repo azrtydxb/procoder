@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   analyzeBraces, analyzeIndent, countParams, estimateComplexity, shapeFindings,
+  signaturesFrom, stripNoise,
 } = require('../hooks/checks/shape');
 const { DEFAULTS } = require('../hooks/checks/config');
 
@@ -66,6 +67,21 @@ test('shapeFindings fires only above the configured thresholds', () => {
   assert.ok(ids.includes('obvious/too-many-params'));
   assert.ok(ids.includes('obvious/complexity'));
   assert.ok(ids.includes('obvious/nesting-depth'));
+});
+
+// A 2MB single-line minified file. Line numbering used to re-slice the whole
+// source per match, so cost was quadratic: ~1.3s here, over the 2s whole-file
+// hook budget on its own. Linear line indexing runs it in tens of ms; the
+// bound is set an order of magnitude above that so a loaded CI machine does
+// not flake, while a return to quadratic scaling still fails.
+test('signaturesFrom stays linear on a huge single-line file', () => {
+  const unit = 'function f(a,b){return a+b}';
+  const src = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
+  const re = /function\s+\w*\(([^)]*)\)\s*\{/g;
+
+  const start = Date.now();
+  signaturesFrom(stripNoise(src), re);
+  assert.ok(Date.now() - start < 500, 'signaturesFrom scaled worse than linearly');
 });
 
 test('does not catastrophically backtrack on a long line', () => {
