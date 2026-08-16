@@ -16,12 +16,9 @@ test('plugin.json points at the hooks config that exists', () => {
 test('every hook command references a script that ships', () => {
   const hooks = readJson('hooks/claude-hooks.json');
   const events = Object.keys(hooks.hooks);
-  // PostToolUse is deliberately absent: it runs procoder-check.js, which the
-  // check-engine plan ships. Declaring it now would spawn a missing script on
-  // every Write/Edit. That plan re-adds this declaration with the script.
   assert.deepStrictEqual(
     events.sort(),
-    ['SessionStart', 'SubagentStart', 'UserPromptSubmit']
+    ['PostToolUse', 'SessionStart', 'SubagentStart', 'UserPromptSubmit']
   );
   for (const event of events) {
     for (const group of hooks.hooks[event]) {
