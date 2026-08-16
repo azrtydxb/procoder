@@ -131,6 +131,33 @@ test('a directory holding only excluded files is still a clean run', () => {
   assert.strictEqual(cli(repo, ['check', 'src']).code, 0);
 });
 
+// A baseline from an older procoder suppresses nothing. Reporting the whole
+// backlog as new is the adoption failure the ratchet exists to prevent, so the
+// format change has to be said out loud.
+const V1_BASELINE = JSON.stringify({ version: 1, fingerprints: ['deadbeef'] });
+
+test('verify against a stale baseline explains the format change instead of failing on counts', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  const result = cli(repo, ['verify', 'a.ts']);
+  assert.strictEqual(result.code, 2);
+  assert.match(result.out, /baseline.*format|re-run `procoder baseline/i);
+  assert.doesNotMatch(result.out, /not in the baseline/i);
+});
+
+test('check against a stale baseline says to re-baseline', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  assert.match(cli(repo, ['check', 'a.ts']).out, /fingerprint format changed/i);
+});
+
+test('re-baselining over a stale baseline replaces it with the current format', () => {
+  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });
+  assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
+  const written = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
+  assert.strictEqual(written.version, 2);
+  assert.ok(!written.fingerprints.includes('deadbeef'), 'stale entries must not survive');
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
+});
+
 test('unknown subcommand prints usage and exits non-zero', () => {
   const repo = repoWith({});
   const result = cli(repo, ['frobnicate']);
