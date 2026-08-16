@@ -1,0 +1,60 @@
+// tests/resolve.test.js
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { hasTool, isConfigured, resolveFor, runTool } = require('../hooks/checks/resolve');
+const { TOOLS } = require('../hooks/checks/registry');
+
+function tempRepo(files = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-res-'));
+  for (const [rel, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), content);
+  }
+  return dir;
+}
+
+test('hasTool finds node and does not find a nonsense binary', () => {
+  assert.strictEqual(hasTool('node'), true);
+  assert.strictEqual(hasTool('procoder-definitely-not-a-real-binary'), false);
+});
+
+test('isConfigured requires one of the tool config files', () => {
+  assert.strictEqual(isConfigured(tempRepo({ '.eslintrc.json': '{}' }), TOOLS.ts), true);
+  assert.strictEqual(isConfigured(tempRepo({ 'ruff.toml': '' }), TOOLS.py), true);
+  assert.strictEqual(isConfigured(tempRepo(), TOOLS.ts), false);
+});
+
+test('resolveFor yields null when the tool is unconfigured', () => {
+  assert.strictEqual(resolveFor('a.py', { repoRoot: tempRepo() }), null);
+});
+
+test('resolveFor yields null for a file type with no tool', () => {
+  assert.strictEqual(resolveFor('a.cs', { repoRoot: tempRepo({ '.eslintrc': '{}' }) }), null);
+});
+
+test('runTool returns an empty array when the binary is missing', () => {
+  const fake = { name: 'procoder-missing-binary', argv: () => ['x'], parse: () => [{}] };
+  assert.deepStrictEqual(runTool(fake, { repoRoot: '/tmp', absPath: '/tmp/x', timeoutMs: 500 }), []);
+});
+
+test('runTool honours the timeout and returns an empty array', () => {
+  const slow = { name: 'node', argv: () => ['-e', 'setTimeout(()=>{}, 10000)'], parse: () => [{}] };
+  const started = Date.now();
+  const out = runTool(slow, { repoRoot: '/tmp', absPath: '/tmp/x', timeoutMs: 400 });
+  assert.deepStrictEqual(out, []);
+  assert.ok(Date.now() - started < 3000, 'runTool did not abandon the slow process');
+});
+
+test('runTool parses stdout through the tool parser', () => {
+  const echo = {
+    name: 'node',
+    argv: () => ['-e', 'process.stdout.write(JSON.stringify([{filename:"a.py",location:{row:3},code:"E1",message:"boom"}]))'],
+    parse: TOOLS.py.parse,
+  };
+  const out = runTool(echo, { repoRoot: '/tmp', absPath: '/tmp/a.py', timeoutMs: 2000 });
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].line, 3);
+});
