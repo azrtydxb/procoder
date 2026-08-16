@@ -12,6 +12,7 @@ const { resolveFor, runTool } = require('./resolve');
 const { checkUniversal } = require('./universal');
 const { loadBaseline, suppress } = require('./baseline');
 const { sortFindings, capFindings } = require('./finding');
+const { MANIFEST_FILES, checkManifest } = require('./deps');
 
 const MAX_FINDINGS = 5;
 
@@ -45,6 +46,12 @@ function checkFile(absPath, {
   // The universal pack runs regardless: no linter checks for credentials in
   // source, PII in logs, or a deprecation with no removal trigger.
   findings.push(...checkUniversal(source, { relPath, config }));
+
+  // Dependency manifests get one extra pass: a floating range or an absent
+  // lockfile is a rung-1 finding no language pack looks for.
+  if (MANIFEST_FILES.has(path.basename(relPath))) {
+    findings.push(...checkManifest(absPath, source));
+  }
 
   const scoped = findings.filter((f) => !isRuleExcluded(config, relPath, f.id));
 
