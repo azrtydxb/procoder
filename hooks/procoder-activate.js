@@ -7,8 +7,15 @@
 
 const { normalizeLevel } = require('./procoder-config');
 const { getProcoderInstructions } = require('./procoder-instructions');
-const { clearLevel, setLevel, readLevel, writeHookOutput } = require('./procoder-runtime');
+const { clearLevel, setLevel, readLevel, readHookInput, writeHookOutput } = require('./procoder-runtime');
 const { updateNotice } = require('./procoder-update-check');
+
+// Before anything that can exit: the host writes the SessionStart payload into
+// this process's stdin, and every early return below would otherwise close the
+// read end under it and fail its write with EPIPE. Nothing in the payload
+// changes what this hook emits — `source` is already filtered by the matcher in
+// claude-hooks.json — so it is read and dropped.
+readHookInput();
 
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 

@@ -5,7 +5,6 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execHook } = require('./hook-stdin');
 
 const root = path.join(__dirname, '..');
 const hook = (name) => path.join(root, 'hooks', name);
@@ -15,9 +14,13 @@ test('a full session lifecycle: activate, switch level, deactivate', () => {
   const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
   const levelFile = path.join(dir, '.procoder-active');
 
-  // execHook, not execFileSync's `input:`: procoder-activate.js never reads
-  // stdin, so a piped payload races its exit — see tests/hook-stdin.js.
-  const start = execHook(hook('procoder-activate.js'), { env });
+  // The payload goes in on stdin exactly as Claude Code writes it: this
+  // process writes into the child's pipe while it runs, so a hook that does
+  // not drain stdin fails the write with EPIPE right here.
+  const start = execFileSync('node', [hook('procoder-activate.js')], {
+    encoding: 'utf8', env,
+    input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: dir }),
+  });
   assert.match(start, /SAFE/);
   assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'strict');
 

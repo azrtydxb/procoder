@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const tty = require('tty');
 const { getLevelFilePath, normalizeLevel, getDefaultLevel } = require('./procoder-config');
 
 // Host detection mirrors ponytail: the same hook scripts are reused across
@@ -66,28 +67,78 @@ function clearLevel() {
 // is worth failing the session over; callers treat {} as "no payload".
 function parseHookPayload(data) {
   try {
-    return JSON.parse(data) || {};
+    // A payload that is valid JSON but not an object (`7`, `"x"`, `null`) is no
+    // more usable than none, and callers reach straight for properties.
+    const parsed = JSON.parse(data);
+    return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (e) {
     debugWarn('unparseable hook payload', e);
     return {};
   }
 }
 
-// Reads the hook payload Claude Code writes to stdin. Any malformed or absent
-// input yields {} so callers can use plain property access without guards.
-function readHookInput() {
-  return new Promise((resolve) => {
-    const chunks = [];
+// Well inside the 2s PostToolUse budget. Only an fd 0 that answers EAGAIN gets
+// anywhere near it; a normal pipe or file never waits at all.
+const READ_DEADLINE_MS = 1000;
+
+// Synchronous sleep, so an EAGAIN retry does not burn a core spinning. Node has
+// no sleepSync; Atomics.wait on a buffer nobody else can notify is the stdlib
+// spelling of one.
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Drains fd 0 to EOF. readFileSync(0) would do this in one line but gives up
+// everything it already read the moment fd 0 answers EAGAIN — which is exactly
+// how a non-blocking stdin says "not yet", not "nothing". Reading it by hand is
+// what makes a slow writer cost a retry instead of the whole payload.
+function drainStdin() {
+  const chunks = [];
+  const buffer = Buffer.alloc(65536);
+  const deadline = Date.now() + READ_DEADLINE_MS;
+  for (;;) {
+    let bytes;
     try {
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (chunk) => chunks.push(chunk));
-      process.stdin.on('end', () => resolve(parseHookPayload(chunks.join(''))));
-      process.stdin.on('error', () => resolve({}));
+      bytes = fs.readSync(0, buffer, 0, buffer.length, null);
     } catch (e) {
-      debugWarn('could not read hook input', e);
-      resolve({});
+      // EOF is how Windows reports a closed pipe. EAGAIN means the writer has
+      // not caught up yet; past the deadline we keep what already arrived
+      // rather than hold the session open for a writer that may never come.
+      // Anything else (EBADF on a closed fd 0) is the caller's {} to return.
+      if (e.code === 'EOF') break;
+      if (e.code !== 'EAGAIN') throw e;
+      if (Date.now() >= deadline) break;
+      sleepSync(5);
+      continue;
     }
-  });
+    if (bytes === 0) break;
+    chunks.push(Buffer.from(buffer.subarray(0, bytes)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+// Reads the hook payload Claude Code writes to stdin, and must be called by
+// EVERY hook entry point before it can exit: the host writes the payload into a
+// pipe, so a hook that exits with bytes still in it closes the read end under
+// the writer and fails the caller's write with EPIPE. Reading and discarding is
+// a complete use of the payload for a hook that has no use for its contents.
+//
+// Four states, one shape of answer — an object, never a throw:
+//   payload present  parsed, whatever its size
+//   stdin empty      EOF straight away  → {}
+//   stdin closed     readSync EBADF     → {}
+//   interactive tty  no payload is coming and reading would block the session
+//                    (or throw EAGAIN once Node marks the tty non-blocking), so
+//                    it is not read at all
+function readHookInput() {
+  try {
+    if (tty.isatty(0)) return {};
+    const raw = drainStdin();
+    return raw.trim() ? parseHookPayload(raw) : {};
+  } catch (e) {
+    debugWarn('could not read hook input', e);
+    return {};
+  }
 }
 
 const hookSpecificOutput = (event, context) =>
