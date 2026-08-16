@@ -5,7 +5,7 @@
   "license": "MIT",
   "engines": { "node": ">=18" },
   "main": "./hooks/procoder-runtime.js",
-  "files": ["hooks/", "skills/", "commands/", "scripts/", "AGENTS.md", "LICENSE"],
+  "files": ["hooks/", "skills/", "commands/", "scripts/", ".claude-plugin/", "AGENTS.md", "LICENSE"],
   "scripts": {
     "test": "node --test tests/*.test.js",
     "sync": "node scripts/sync-rules.js",

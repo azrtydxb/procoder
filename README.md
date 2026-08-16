@@ -72,6 +72,7 @@ Environment variables:
 | `PROCODER_DEFAULT_LEVEL` | Overrides the default level (`strict`) for new sessions. Must be one of `off`, `pragmatic`, `strict`, `paranoid`. |
 | `PROCODER_NO_HOOK` | Set to `1` to disable all procoder hooks (activation, level tracking, subagent propagation) without uninstalling the plugin. |
 | `CLAUDE_CONFIG_DIR` | Overrides where procoder persists the active level (`<dir>/.procoder-active`). Defaults to `~/.claude`. |
+| `PROCODER_HOST` | Selects the hook wire protocol for non-Claude-Code hosts. One of `codex`, `copilot`, `qoder`. Unset (or any other value) uses the native Claude Code protocol. `codex` is also auto-detected via `CODEX_HOME`. |
 
 ## Statusline
 
