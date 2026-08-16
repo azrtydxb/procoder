@@ -24,3 +24,6 @@ Initial release.
   CI drift gate (`npm run sync:check`).
 - Worked before/after examples for every rung (`examples/`) and per-host
   install instructions (`docs/install.md`).
+- Known limitations, verified against the current source and written up
+  plainly rather than left for users to discover: see
+  [`docs/known-limitations.md`](docs/known-limitations.md).

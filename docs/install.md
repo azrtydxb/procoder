@@ -171,6 +171,57 @@ procoder baseline <paths...>  # record current findings as accepted
 procoder verify <paths...>    # exit 1 if any finding isn't in the baseline — the CI ratchet
 ```
 
+## Troubleshooting
+
+**The PostToolUse hook doesn't seem to run — no findings ever appear.**
+
+- Check `PROCODER_NO_HOOK`. Every hook entry point (`procoder-activate.js`,
+  `procoder-check.js`, `procoder-subagent.js`, `procoder-mode-tracker.js`)
+  exits immediately, before doing anything, when `PROCODER_NO_HOOK=1` is set
+  in the environment. This is meant for CI and test runs that shell out to
+  Claude Code without wanting procoder in the loop — if it's set in your
+  interactive shell by habit or by a dotfile, the hook is a silent no-op.
+- Check the level file: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-active`.
+  If it holds `off` (written by `/procoder off` or the deactivation phrase),
+  the hook still runs but treats the session as inactive. Delete the file or
+  set a real level with `/procoder <level>` to re-activate.
+- Check that the plugin's hooks are actually registered — `claude plugin
+  list` should show `procoder` installed, and `hooks/claude-hooks.json` in
+  the installed plugin should be the source Claude Code loaded. A plugin
+  installed from a stale local path (`claude plugin marketplace add
+  ./procoder` pointed at an old checkout) registers hooks from that old
+  checkout, not your current source tree.
+
+**The statusline shows nothing.**
+
+`hooks/procoder-statusline.sh` (or the `.ps1` equivalent) prints nothing on
+purpose whenever it can't read
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.procoder-active`, or the file's content
+isn't one of `pragmatic`, `strict`, or `paranoid`. Confirm: the settings
+`statusLine.command` points at the actual install path of
+`procoder-statusline.sh` (see the Claude Code section above — plugin installs
+don't live at a fixed path); the level file exists and holds a real level, not
+`off` or empty; and the script is readable and executable at that path.
+
+**A wall of findings on first use.**
+
+Expected on any repo with pre-existing debt — procoder was not run at
+whatever earlier point that debt was written. This is what `procoder
+baseline <paths...>` is for: it records every current finding as accepted, so
+only new and changed code is gated going forward. See [Known
+limitations](known-limitations.md) for what the baseline's fingerprinting
+does and doesn't protect against.
+
+**`procoder verify` exits 2 instead of 0 or 1.**
+
+Exit 2 means "cannot verify," not "the ratchet grew." It happens when the
+baseline file (`.procoder-baseline.json` by default) was written by an older,
+incompatible version of procoder — the fingerprint format changed between
+baseline format versions and old entries cannot be migrated, so nothing in
+the stale file is honored. The fix is exactly what the stderr message says:
+run `procoder baseline <paths...>` to write a current-format baseline, then
+re-run `verify`.
+
 ## Host reference
 
 | Host | File it reads | Supports levels |
