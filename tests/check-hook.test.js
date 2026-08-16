@@ -73,3 +73,13 @@ test('the hook completes within its 2s budget on a large file', () => {
   runHook(repo, path.join(repo, 'big.ts'));
   assert.ok(Date.now() - started < 2000, 'hook exceeded its budget');
 });
+
+test('the hook completes within its 2s budget on a minified file', () => {
+  let line = '';
+  while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
+  const repo = repoWith({ 'min.ts': line });
+  const started = Date.now();
+  runHook(repo, path.join(repo, 'min.ts'));
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2000, `hook took ${elapsed}ms on a 200KB single-line file`);
+});

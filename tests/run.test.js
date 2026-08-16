@@ -172,6 +172,36 @@ test('applyBaseline false reports findings the baseline would suppress', () => {
   assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
 });
 
+test('a file past the size cap is skipped, not scanned', () => {
+  const repo = repoWith({ 'bundle.ts': 'const x = 1;\n'.repeat(30000) });
+  const out = checkFile(path.join(repo, 'bundle.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  assert.strictEqual(out.skipped, 'too-large');
+});
+
+test('a minified file finishes well inside the 2s budget', () => {
+  let line = '';
+  while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
+  const repo = repoWith({ 'min.ts': line });
+  const started = Date.now();
+  const out = checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 2000, `checkFile took ${elapsed}ms`);
+  assert.strictEqual(out.skipped, null);
+});
+
+test('a long line does not stall a file of otherwise normal lines', () => {
+  const repo = repoWith({
+    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,
+  });
+  const started = Date.now();
+  const out = checkFile(path.join(repo, 'mixed.ts'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  assert.ok(Date.now() - started < 2000, 'the long line was scanned anyway');
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(ids.includes('safe/dynamic-eval'));
+  assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
+});
+
 test('relPath is repo-relative and uses forward slashes', () => {
   const repo = repoWith({ 'src/deep/a.ts': 'eval(a);\n' });
   const out = checkFile(path.join(repo, 'src/deep/a.ts'), { repoRoot: repo, config: loadConfig(repo) });

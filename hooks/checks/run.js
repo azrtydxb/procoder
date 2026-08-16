@@ -17,9 +17,28 @@ const { MANIFEST_FILES, checkManifest } = require('./deps');
 
 const MAX_FINDINGS = 5;
 
+// The hook runs on every write and the harness kills it at 2s, so the budget is
+// real: past it the user gets a stall and no findings at all. A file this large
+// is a bundle or a fixture, not something a human is reading; a line this long
+// is minified. Both are skipped so the scanners never meet the input they are
+// quadratic on.
+const BUDGET_MS = 2000;
+const MAX_FILE_BYTES = 256 * 1024;
+const MAX_LINE_BYTES = 4096;
+
+// Minified content defeats the shape scanners' line-oriented assumptions and
+// costs more than the whole budget. Blanked rather than dropped: line numbers
+// on everything else must survive.
+function blankLongLines(source) {
+  if (source.length <= MAX_LINE_BYTES) return source;
+  return source.split('\n').map((l) => (l.length > MAX_LINE_BYTES ? '' : l)).join('\n');
+}
+
 function checkFile(absPath, {
   repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
+  budgetMs = BUDGET_MS,
 } = {}) {
+  const deadline = Date.now() + budgetMs;
   const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
 
   if (isExcluded(config, relPath)) {
@@ -28,11 +47,15 @@ function checkFile(absPath, {
 
   let source;
   try {
+    if (fs.statSync(absPath).size > MAX_FILE_BYTES) {
+      return { relPath, findings: [], skipped: 'too-large' };
+    }
     source = fs.readFileSync(absPath, 'utf8');
   } catch (e) {
     return { relPath, findings: [], skipped: 'unreadable' };
   }
 
+  const scanned = blankLongLines(source);
   const findings = [];
 
   // The project's own linter defines this project's shape thresholds, so its
@@ -42,14 +65,16 @@ function checkFile(absPath, {
   const tool = resolveFor(relPath, { repoRoot });
   let toolAnswered = false;
   if (tool) {
-    const result = runToolResult(tool, { repoRoot, absPath });
+    const result = runToolResult(tool, {
+      repoRoot, absPath, timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2))),
+    });
     findings.push(...result.findings);
     toolAnswered = result.ok;
   }
 
   const pack = packFor(relPath);
-  if (pack) {
-    const packFindings = pack.check(source, { relPath, config });
+  if (pack && Date.now() < deadline) {
+    const packFindings = pack.check(scanned, { relPath, config });
     // A linter that timed out or crashed answered nothing, so the pack covers
     // the whole file rather than leaving a hole where the shape rules were.
     findings.push(...(toolAnswered
@@ -59,11 +84,11 @@ function checkFile(absPath, {
 
   // The universal pack runs regardless: no linter checks for credentials in
   // source, PII in logs, or a deprecation with no removal trigger.
-  findings.push(...checkUniversal(source, { relPath, config }));
+  findings.push(...checkUniversal(scanned, { relPath, config }));
 
   // Dependency manifests get one extra pass: a floating range or an absent
   // lockfile is a rung-1 finding no language pack looks for.
-  if (MANIFEST_FILES.has(path.basename(relPath))) {
+  if (MANIFEST_FILES.has(path.basename(relPath)) && Date.now() < deadline) {
     findings.push(...checkManifest(absPath, source));
   }
 
@@ -81,4 +106,4 @@ function checkFile(absPath, {
   };
 }
 
-module.exports = { checkFile, MAX_FINDINGS };
+module.exports = { checkFile, MAX_FINDINGS, MAX_FILE_BYTES, MAX_LINE_BYTES };
