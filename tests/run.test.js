@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { checkFile } = require('../hooks/checks/run');
 const { loadConfig } = require('../hooks/checks/config');
 const { writeBaseline, fingerprint } = require('../hooks/checks/baseline');
@@ -17,6 +18,89 @@ function repoWith(files) {
   }
   return dir;
 }
+
+// A shim binary on PATH stands in for the project's linter. PATH is restored
+// afterwards, and hasTool keys its cache on PATH, so scenarios do not leak.
+function withShim(name, script, fn) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-bin-'));
+  fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = bin + path.delimiter + saved;
+  try {
+    // First execution of a freshly written binary costs hundreds of ms on macOS
+    // (the OS inspects it once). Absorb that here so it is not charged to the
+    // tool's timeout budget.
+    execFileSync(path.join(bin, name), [], {
+      stdio: 'ignore', timeout: 10000, env: { ...process.env, PROCODER_WARMUP: '1' },
+    });
+    return fn();
+  } finally {
+    process.env.PATH = saved;
+  }
+}
+
+const RUFF_OK = '#!/bin/sh\necho \'[{"code":"F401","message":"unused import","location":{"row":1}}]\'\n';
+const RUFF_SLOW = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
+const UNSAFE_PY = 'import os\nos.system("rm " + user_input)\neval(payload)\ndef f(a,b,c,d,e,g,h):\n    return 1\n';
+const CONFIGURED = '[project]\nname = "x"\n\n[tool.ruff]\nline-length = 100\n';
+const NOT_CONFIGURED = '[project]\nname = "x"\n';
+
+const shimTest = { skip: process.platform === 'win32' ? 'needs a POSIX shim' : false };
+
+test('a configured linter never displaces the SAFE rung', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
+  const out = withShim('ruff', RUFF_OK, () =>
+    checkFile(path.join(repo, 'a.py'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(ids.includes('safe/shell-injection'), 'shell injection was deferred to ruff');
+  assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to ruff');
+  assert.ok(ids.includes('true/ruff'), 'the configured linter did not run');
+});
+
+test('a configured linter does displace the built-in shape rules', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
+  const config = loadConfig(repo);
+  const withTool = withShim('ruff', RUFF_OK, () =>
+    checkFile(path.join(repo, 'a.py'), { repoRoot: repo, config, maxFindings: Infinity }));
+  assert.ok(!withTool.findings.some((f) => f.id.startsWith('obvious/')),
+    'shape rules should defer to the project linter');
+
+  const alone = checkFile(path.join(repo, 'a.py'),
+    { repoRoot: repo, config, maxFindings: Infinity });
+  assert.ok(alone.findings.some((f) => f.id === 'obvious/too-many-params'),
+    'shape rules should run when no linter is configured');
+});
+
+test('a present but unconfigured linter leaves the pack in charge', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': NOT_CONFIGURED, 'a.py': UNSAFE_PY });
+  const out = withShim('ruff', RUFF_OK, () =>
+    checkFile(path.join(repo, 'a.py'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(!ids.includes('true/ruff'), 'ran a linter the project has not configured');
+  assert.ok(ids.includes('safe/shell-injection'));
+});
+
+test('a configured but absent linter leaves the pack in charge', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
+  const out = checkFile(path.join(repo, 'a.py'),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(!ids.includes('true/ruff'));
+  assert.ok(ids.includes('safe/dynamic-eval'));
+});
+
+test('a linter that times out falls back to the pack, not to silence', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
+  const config = loadConfig(repo);
+  const out = withShim('ruff', RUFF_SLOW, () =>
+    checkFile(path.join(repo, 'a.py'), { repoRoot: repo, config, maxFindings: Infinity }));
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(ids.includes('safe/shell-injection'), 'a timed-out linter produced silence');
+  assert.ok(ids.includes('obvious/too-many-params'),
+    'nothing answered for the shape rules, so the pack should have');
+});
 
 test('runs both the language pack and the universal pack', () => {
   const repo = repoWith({ 'src/a.ts': 'el.innerHTML = x;\n// TODO: later\n' });

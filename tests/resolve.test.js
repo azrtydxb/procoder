@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { hasTool, isConfigured, resolveFor, runTool } = require('../hooks/checks/resolve');
+const { hasTool, isConfigured, resolveFor, runTool, runToolResult } = require('../hooks/checks/resolve');
 const { TOOLS } = require('../hooks/checks/registry');
 
 function tempRepo(files = {}) {
@@ -27,6 +27,15 @@ test('isConfigured requires one of the tool config files', () => {
   assert.strictEqual(isConfigured(tempRepo(), TOOLS.ts), false);
 });
 
+test('a shared manifest is not evidence unless it names the tool', () => {
+  assert.strictEqual(isConfigured(tempRepo({ 'pyproject.toml': '[project]\nname="x"\n' }), TOOLS.py), false);
+  assert.strictEqual(isConfigured(tempRepo({ 'pyproject.toml': '[tool.ruff]\n' }), TOOLS.py), true);
+  assert.strictEqual(isConfigured(tempRepo({ 'setup.cfg': '[metadata]\n' }), TOOLS.py), false);
+  assert.strictEqual(isConfigured(tempRepo({ 'Cargo.toml': '[package]\nname="x"\n' }), TOOLS.rust), false);
+  assert.strictEqual(isConfigured(tempRepo({ 'Cargo.toml': '[lints.clippy]\n' }), TOOLS.rust), true);
+  assert.strictEqual(isConfigured(tempRepo({ 'clippy.toml': '' }), TOOLS.rust), true);
+});
+
 test('resolveFor yields null when the tool is unconfigured', () => {
   assert.strictEqual(resolveFor('a.py', { repoRoot: tempRepo() }), null);
 });
@@ -46,6 +55,20 @@ test('runTool honours the timeout and returns an empty array', () => {
   const out = runTool(slow, { repoRoot: '/tmp', absPath: '/tmp/x', timeoutMs: 400 });
   assert.deepStrictEqual(out, []);
   assert.ok(Date.now() - started < 3000, 'runTool did not abandon the slow process');
+});
+
+test('runToolResult reports an abnormal exit as not ok', () => {
+  const missing = { name: 'procoder-missing-binary', argv: () => ['x'], parse: () => [] };
+  assert.strictEqual(runToolResult(missing, { repoRoot: '/tmp', absPath: '/tmp/x', timeoutMs: 500 }).ok, false);
+
+  const slow = { name: 'node', argv: () => ['-e', 'setTimeout(()=>{}, 10000)'], parse: () => [] };
+  assert.strictEqual(runToolResult(slow, { repoRoot: '/tmp', absPath: '/tmp/x', timeoutMs: 400 }).ok, false);
+});
+
+test('runToolResult reports a clean exit with no output as ok', () => {
+  const clean = { name: 'node', argv: () => ['-e', 'process.stdout.write("[]")'], parse: () => [] };
+  const out = runToolResult(clean, { repoRoot: '/tmp', absPath: '/tmp/a.py', timeoutMs: 2000 });
+  assert.deepStrictEqual(out, { findings: [], ok: true });
 });
 
 test('runTool parses stdout through the tool parser', () => {

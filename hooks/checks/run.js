@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // procoder — orchestrates one file's checks.
 //
-// Order: exclusion → read → language pack (or the project's own linter) →
-// universal pack (always) → baseline suppression → sort → cap.
+// Order: exclusion → read → SAFE/TRUE rules (always) → shape rules (unless the
+// project's own linter covers them) → universal pack (always) → baseline
+// suppression → sort → cap.
 
 const fs = require('fs');
 const path = require('path');
 const { isExcluded, isRuleExcluded } = require('./config');
 const { packFor } = require('./registry');
-const { resolveFor, runTool } = require('./resolve');
+const { resolveFor, runToolResult } = require('./resolve');
 const { checkUniversal } = require('./universal');
 const { loadBaseline, suppress } = require('./baseline');
 const { sortFindings, capFindings } = require('./finding');
@@ -34,13 +35,26 @@ function checkFile(absPath, {
 
   const findings = [];
 
-  // Prefer the project's own linter; fall back to the built-in pack.
+  // The project's own linter defines this project's shape thresholds, so its
+  // findings replace the pack's obvious/* rules. They never replace the pack's
+  // SAFE rules: rung 1 is non-negotiable, and eslint/ruff do not check for SQL
+  // injection, shell injection or disabled TLS verification by default.
   const tool = resolveFor(relPath, { repoRoot });
+  let toolAnswered = false;
   if (tool) {
-    findings.push(...runTool(tool, { repoRoot, absPath }));
-  } else {
-    const pack = packFor(relPath);
-    if (pack) findings.push(...pack.check(source, { relPath, config }));
+    const result = runToolResult(tool, { repoRoot, absPath });
+    findings.push(...result.findings);
+    toolAnswered = result.ok;
+  }
+
+  const pack = packFor(relPath);
+  if (pack) {
+    const packFindings = pack.check(source, { relPath, config });
+    // A linter that timed out or crashed answered nothing, so the pack covers
+    // the whole file rather than leaving a hole where the shape rules were.
+    findings.push(...(toolAnswered
+      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
+      : packFindings));
   }
 
   // The universal pack runs regardless: no linter checks for credentials in
