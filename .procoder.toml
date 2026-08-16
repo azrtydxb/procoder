@@ -3,6 +3,17 @@
 # and dirty.txt are inputs whose whole purpose is to be scanned by the tests,
 # not by the scan. A marker in them would change the input and break the test
 # that reads them, so this is the one case the line marker cannot serve.
+#
+# examples/*/before.* is deliberately NOT listed here, though it is the obvious
+# candidate: those files violate a rung on purpose, paired with an after.* that
+# does not. The reason is mechanical, not stylistic — checkFile() applies these
+# path exclusions itself, so listing examples/ makes `procoder check
+# examples/safe/before.ts` report nothing, and tests/examples.test.js asserts
+# exactly the opposite (verified: it fails with "before.ts does not trip SAFE").
+# An exclusion here would delete the teaching material's only proof that it
+# still teaches. The examples tree is held out of the self-scan in
+# tests/dogfood.test.js instead, where it is one line with a reason next to it
+# and the real `procoder check` still sees the files.
 paths = ["tests/fixtures/", "AGENTS.md", ".cursor/", ".windsurf/", ".clinerules/", ".kiro/", ".qoder/", ".agents/", ".opencode/", ".openclaw/"]
 
 # No rule exclusions. The three that used to exempt hooks/checks/patterns/
