@@ -34,6 +34,8 @@ const EXPECTATIONS = {
   'procoder.toml': { descriptionContains: 'intensity level', promptContains: '/procoder' },
   'procoder-help.toml': { descriptionContains: 'rungs', promptContains: 'procoder-help skill' },
   'procoder-deps.toml': { descriptionContains: 'dependencies', promptContains: 'procoder-deps skill' },
+  'procoder-debt.toml': { descriptionContains: 'removal trigger', promptContains: 'procoder-debt skill' },
+  'procoder-gain.toml': { descriptionContains: 'measured progress', promptContains: 'procoder-gain skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {
