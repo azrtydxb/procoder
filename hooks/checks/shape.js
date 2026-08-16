@@ -8,27 +8,30 @@
 // false positives on shape checks become the top complaint.
 
 const { finding } = require('./finding');
+const { stripComments } = require('./lang/comments');
 
-// A regex literal, recognised only where an expression may start — after an
-// operator, an opening bracket, a comma, a colon or a statement end. That
-// restriction is what keeps `a / b / c` from being read as a regex. Its body
-// is quantifier braces and alternation bars, not code: counted as structure it
-// reports nesting and branching that the file does not contain.
-const REGEX_LITERAL =
-  /(^|[(,=:[!&|?{};])(\s*)\/((?:[^/\\\n[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+)\/([a-z]*)/g;
+const blankInside = (m) => m[0] + ' '.repeat(Math.max(0, m.length - 2)) + m[0];
 
 // Removes string, comment and regex content so their braces do not count.
 // Replaces rather than deletes, so line numbers survive.
+//
+// Comments and strings cannot be found by two independent passes in either
+// order: a `"` inside a comment breaks a string-first pass, and a `/*` inside a
+// string — a glob, a regex, a URL — breaks a comment-first one, blanking
+// everything up to the next `*/` and fusing whole functions together. Only a
+// single left-to-right scan that knows which construct it is inside gets both
+// right, and comments.js already is that scan for the six packs, so it is
+// reused rather than written a second time. It deliberately keeps string
+// literals (the packs' sink rules need them); blanking those afterwards is
+// safe, because no quote out of a comment or a regex survives its pass.
 function stripNoise(source) {
-  return String(source || '')
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + m.slice(p.length).replace(/./g, ' '))
-    .replace(REGEX_LITERAL, (m, pre, gap, body, flags) =>
-      pre + gap + '/' + ' '.repeat(body.length) + '/' + flags)
-    .replace(/#[^\n]*/g, (m) => m.replace(/./g, ' '))
-    .replace(/"(?:[^"\\\n]|\\.)*"/g, (m) => '"' + ' '.repeat(Math.max(0, m.length - 2)) + '"')
-    .replace(/'(?:[^'\\\n]|\\.)*'/g, (m) => "'" + ' '.repeat(Math.max(0, m.length - 2)) + "'")
-    .replace(/`(?:[^`\\]|\\.)*`/g, (m) => m.replace(/[^\n]/g, ' '));
+  return stripComments(source, 'js')
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, blankInside)
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, blankInside)
+    .replace(/`(?:[^`\\]|\\.)*`/g, (m) => m.replace(/[^\n]/g, ' '))
+    // `#` comments, for the packs whose language has them. Last, because by now
+    // any `#` inside a string or a comment is already blank.
+    .replace(/#[^\n]*/g, (m) => m.replace(/./g, ' '));
 }
 
 // A `{` sitting in expression position opens a data literal, not a block. That

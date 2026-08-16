@@ -27,6 +27,54 @@ test('analyzeBraces ignores braces inside strings and comments', () => {
   assert.strictEqual(analyzeBraces(src).maxDepth, 1);
 });
 
+// A `/*` inside a string literal is not a comment opener. Blanking from there
+// to the next `*/` fused two brace blocks into one and invented an 88-line
+// function; any glob, regex or URL carrying `/*` in a string could do it, and
+// the corruption runs as far as the next `*/` in the file.
+test('a /* inside a string does not open a block comment', () => {
+  const src = [
+    'function a() {',                                        // 1
+    '  const cfg = { toml: "paths = [\\"**/*.generated.ts\\"]" };',
+    '}',                                                     // 3
+    'function b() {',                                        // 4
+    '  return 1; /* a real comment */',
+    '}',                                                     // 6
+  ].join('\n');
+  const { blocks } = analyzeBraces(src);
+  assert.ok(blocks.some((b) => b.startLine === 1 && b.endLine === 3),
+    'the string swallowed the first function');
+  assert.ok(blocks.some((b) => b.startLine === 4 && b.endLine === 6),
+    `two blocks were fused into one: ${JSON.stringify(blocks)}`);
+});
+
+test('stripNoise blanks strings, comments and regexes without moving a line', () => {
+  const src = [
+    'const u = "http://host/*path";',
+    'const re = /a{2,3}|b/g;',
+    "// a comment with an apostrophe: don't",
+    '/* block { } */',
+    'go();',
+  ].join('\n');
+  const out = stripNoise(src).split('\n');
+  assert.strictEqual(out.length, 5);
+  assert.strictEqual(out[0], 'const u = "' + ' '.repeat('http://host/*path'.length) + '";');
+  assert.strictEqual(out[1], 'const re = /' + ' '.repeat('a{2,3}|b'.length) + '/g;');
+  assert.strictEqual(out[2].trim(), '');
+  assert.strictEqual(out[3].trim(), '');
+  assert.strictEqual(out[4], 'go();');
+});
+
+test('a quote inside a comment does not swallow the code below it', () => {
+  const src = [
+    "// don't count these: { { {",
+    'function a() {',
+    '  go();',
+    '}',
+  ].join('\n');
+  assert.strictEqual(analyzeBraces(src).maxDepth, 1);
+  assert.ok(analyzeBraces(src).blocks.some((b) => b.startLine === 2 && b.endLine === 4));
+});
+
 test('analyzeIndent reports depth for indentation languages', () => {
   const src = [
     'def a():',
