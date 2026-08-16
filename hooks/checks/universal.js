@@ -202,6 +202,63 @@ function commentedCodeFindings(lines) {
   return findings;
 }
 
+// The line-level literal marker — see markers.LITERAL_MARKER for the shape and
+// the reasoning. Two scopes, and only two:
+//
+//   trailing   `assert(ids('AKIA…'))  // procoder: literal safe/hardcoded-secret test input`
+//              applies to that line. The described pattern and the marker share
+//              a line, which is the common case: an assertion, a table row, a
+//              config value naming a rule id.
+//   standalone `// procoder: literal safe/hardcoded-secret the key below is documentation`
+//              applies to the next line as well. Needed because YAML
+//              frontmatter, markdown tables and fenced examples cannot carry a
+//              trailing comment without changing what they mean or render.
+//
+// Not a block form: a block is a region an author stops reading, and the whole
+// failure being fixed here is text no one re-reads. Two lines is the widest
+// scope that still forces a decision per occurrence.
+//
+// Which rules can it silence? All of them, safe/hardcoded-secret included. A
+// marker that cannot cover a credential cannot cover this project's own test
+// fixtures and doctrine pages, which is where the false positives are — it
+// would be a mechanism that solves none of the cases it was built for. The
+// safety is not in withholding rules from it; it is that the marker must name
+// the rule, must state a reason, reaches one or two lines, and is opt-in text
+// an author writes in the diff, right next to the value: a line reading
+// `procoder: literal safe/hardcoded-secret it is only an example` beside a live
+// key is louder in review than the key. A form that could not be abused could
+// not be used either.
+function markedLines(lines) {
+  const marked = new Map();
+  lines.forEach((line, index) => {
+    const m = markers.LITERAL_MARKER.exec(line);
+    if (!m) return;
+    const ids = m[1].split(',').map((id) => id.trim());
+    const last = markers.LITERAL_MARKER_ALONE.test(line.slice(0, m.index)) ? index + 2 : index + 1;
+    for (let lineNo = index + 1; lineNo <= last; lineNo += 1) {
+      if (!marked.has(lineNo)) marked.set(lineNo, new Set());
+      ids.forEach((id) => marked.get(lineNo).add(id));
+    }
+  });
+  return marked;
+}
+
+// Drops the findings an author marked as descriptions. Exported because the
+// marker has to reach every pack's findings, not just this one's: most of what
+// a test file or a doctrine page quotes is an injection sink or a debug
+// statement. checkFile applies it once over the whole set.
+//
+// The `indexOf` guard is what keeps this free on the files that have no marker
+// at all, which is nearly all of them: no split, no regex, no allocation.
+function filterMarkedLiterals(source, findings) {
+  if (!findings.length || String(source).indexOf('procoder:') < 0) return findings;
+  const marked = markedLines(String(source).split(/\r?\n/));
+  if (!marked.size) return findings;
+  return findings.filter((f) => !(marked.get(f.line) || EMPTY_SET).has(f.id));
+}
+
+const EMPTY_SET = new Set();
+
 function checkUniversal(source, { relPath, config } = {}) {
   const lines = String(source || '').split(/\r?\n/);
   const findings = [];
@@ -215,7 +272,7 @@ function checkUniversal(source, { relPath, config } = {}) {
   });
 
   findings.push(...commentedCodeFindings(lines));
-  return findings;
+  return filterMarkedLiterals(source, findings);
 }
 
-module.exports = { checkUniversal };
+module.exports = { checkUniversal, filterMarkedLiterals };

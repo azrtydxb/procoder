@@ -204,3 +204,87 @@ test('finds a credential on a 300KB minified line', () => {
   assert.ok(findings.some((f) => f.id === 'safe/hardcoded-secret'),
     'a hardcoded AWS key on a 300KB line went unreported');
 });
+
+// ---------------------------------------------------------------------------
+// The literal marker: text that describes a pattern, marked as such.
+//
+// MARK is assembled at runtime rather than written out, so that the lines of
+// this section are not themselves markers — the tests below feed marker text
+// to the pack as *data*, and a real marker in the test source would silence
+// the very findings these tests assert on. Likewise the AWS key: split, so it
+// is a credential only once the pack sees it.
+const MARK = 'procoder' + ': literal ';
+const KEY = 'AKIA' + 'IOSFODNN7EXAMPLE';
+
+test('a trailing literal marker silences the rules it names, on its line only', () => {
+  assert.deepStrictEqual(
+    ids(`const k = "${KEY}"; // ${MARK}safe/hardcoded-secret sample key in a doc`), []);
+
+  // Trailing, so it reaches no further than the line it sits on.
+  assert.ok(ids(`const a = 1; // ${MARK}safe/hardcoded-secret sample key in a doc\nconst k = "${KEY}";`)
+    .includes('safe/hardcoded-secret'));
+});
+
+test('a standalone literal marker reaches the following line, and no further', () => {
+  assert.deepStrictEqual(
+    ids(`// ${MARK}safe/hardcoded-secret the key below is documentation\nconst k = "${KEY}";`), []);
+
+  assert.ok(ids(`// ${MARK}safe/hardcoded-secret the key below is documentation\nconst a = 1;\nconst k = "${KEY}";`)
+    .includes('safe/hardcoded-secret'));
+});
+
+test('a literal marker silences nothing it did not name', () => {
+  assert.ok(ids(`const k = "${KEY}"; // ${MARK}alone/orphan-todo wrong rule named here`)
+    .includes('safe/hardcoded-secret'));
+  assert.deepStrictEqual(
+    ids(`// TODO: later ${MARK}alone/orphan-todo describes an unowned marker`), []);
+});
+
+test('a literal marker may name several rules', () => {
+  assert.deepStrictEqual(
+    ids(`// TODO: later, deprecated too // ${MARK}alone/orphan-todo, alone/deprecated-no-trigger both described here`),
+    []);
+});
+
+test('a bare literal marker is a blanket suppression and suppresses nothing', () => {
+  const found = ids(`const k = "${KEY}"; // procoder` + ': literal');
+  assert.ok(found.includes('alone/blanket-suppression'), 'a marker naming no rule must be reported');
+  assert.ok(found.includes('safe/hardcoded-secret'), 'a marker naming no rule must silence nothing');
+});
+
+test('a literal marker with no reason is unexplained and suppresses nothing', () => {
+  const found = ids(`const k = "${KEY}"; // ${MARK}safe/hardcoded-secret`);
+  assert.ok(found.includes('alone/unexplained-suppression'), 'a marker with no reason must be reported');
+  assert.ok(found.includes('safe/hardcoded-secret'), 'a marker with no reason must silence nothing');
+});
+
+test('a well-formed literal marker is not itself reported as a suppression', () => {
+  assert.deepStrictEqual(
+    ids(`// ${MARK}alone/orphan-todo this line is a marker and nothing else`), []);
+});
+
+// The marker is only useful if it reaches the language packs too: most of what
+// a test file or a doctrine page describes is an injection sink or a debug
+// statement, not a credential. checkFile applies this to every finding it has.
+test('filterMarkedLiterals applies the same marker to findings from any pack', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `const q = "SELECT 1"; // ${MARK}safe/sql-injection the query above is a doc example\nconst r = "SELECT 2";`;
+  const findings = [
+    { id: 'safe/sql-injection', line: 1 },
+    { id: 'safe/sql-injection', line: 2 },
+    { id: 'safe/xss-sink', line: 1 },
+  ];
+  assert.deepStrictEqual(
+    filterMarkedLiterals(source, findings).map((f) => `${f.id}:${f.line}`),
+    ['safe/sql-injection:2', 'safe/xss-sink:1']);
+});
+
+test('marker scanning is cheap on a large marker-free file', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = Array.from({ length: 20000 }, (_, i) => `const a${i} = compute(${i});`).join('\n');
+  const findings = [{ id: 'safe/hardcoded-secret', line: 1 }];
+  const start = Date.now();
+  for (let i = 0; i < 20; i += 1) filterMarkedLiterals(source, findings);
+  const ms = Date.now() - start;
+  assert.ok(ms < 200, `marker scan cost ${ms}ms over 20 passes of a 20k-line file`);
+});
