@@ -5,6 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { stripComments } = require('../hooks/checks/lang/comments');
+const { cpuMs } = require('./perf-guard');
 
 // The blanked stand-in for a piece of source: same width, so offsets and line
 // numbers on either side of it are unchanged.
@@ -65,9 +66,8 @@ test('never throws on odd input', () => {
 test('stays linear on a very long single line', () => {
   for (const unit of ['a = "x"; // c ', 'b = /re/ + `t${x}` ', '/* c */ q("s" + v) ']) {
     const line = unit.repeat(Math.ceil((400 * 1024) / unit.length)).slice(0, 400 * 1024);
-    const started = Date.now();
-    stripComments(line, 'js');
-    const elapsed = Date.now() - started;
+    // CPU milliseconds, not wall: see tests/perf-guard.js.
+    const elapsed = cpuMs(() => stripComments(line, 'js'));
     assert.ok(elapsed < 1000, `400KB line took ${elapsed}ms for ${JSON.stringify(unit)}`);
   }
 });

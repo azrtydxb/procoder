@@ -7,6 +7,7 @@ const path = require('path');
 const {
   loadConfig, isExcluded, isRuleExcluded, excludeReason, DEFAULTS, findRepoRoot,
 } = require('../hooks/checks/config');
+const { cpuMs } = require('./perf-guard');
 
 function tempRepo(files = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cfg-'));
@@ -350,9 +351,10 @@ test('resolving a deep tree with several ignore files stays far inside the budge
   }
   const cfg = loadConfig(tempRepo(files));
 
-  const started = Date.now();
-  for (let i = 0; i < 2000; i += 1) isExcluded(cfg, `${dir}/f${i}.gen.ts`);
-  const elapsed = Date.now() - started;
+  // CPU milliseconds, not wall: see tests/perf-guard.js.
+  const elapsed = cpuMs(() => {
+    for (let i = 0; i < 2000; i += 1) isExcluded(cfg, `${dir}/f${i}.gen.ts`);
+  });
   assert.ok(elapsed < 200, `2000 lookups took ${elapsed}ms`);
 });
 

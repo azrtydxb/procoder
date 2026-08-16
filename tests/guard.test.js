@@ -22,10 +22,17 @@ test('pre-commit template exits non-zero on findings', () => {
 });
 
 test('pre-commit template is valid bash', () => {
-  const file = path.join(os.tmpdir(), `procoder-pc-${Date.now()}.sh`);
-  fs.writeFileSync(file, preCommit);
-  assert.doesNotThrow(() => execFileSync('bash', ['-n', file]));
-  fs.unlinkSync(file);
+  // mkdtemp, not a timestamped name in the shared tmpdir: Date.now() is not a
+  // unique key, and a path another process can predict is not this test's to
+  // write.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-pc-'));
+  try {
+    const file = path.join(dir, 'pre-commit.sh');
+    fs.writeFileSync(file, preCommit);
+    assert.doesNotThrow(() => execFileSync('bash', ['-n', file]));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('CI template runs check and enforces the ratchet via the CLI', () => {
