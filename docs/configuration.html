@@ -23,7 +23,8 @@ description: .procoder.toml, .procoderignore, the literal line marker, the ratch
 <p>
   Sits at the repository root and configures rung severities, shape thresholds
   and exclusions. Every key is optional; the values below for
-  <code>[thresholds]</code> and <code>[baseline]</code> are the defaults.
+  <code>[thresholds]</code>, <code>[limits]</code> and <code>[baseline]</code>
+  are the defaults.
 </p>
 
 <pre><code>[rungs]
@@ -41,6 +42,9 @@ complexity = 10
 [exclude]
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
+
+[limits]
+max_file_bytes = 2097152
 
 [baseline]
 file = ".procoder-baseline.json"</code></pre>
@@ -62,6 +66,24 @@ file = ".procoder-baseline.json"</code></pre>
   rather than a prefix, a rule-scoped exclusion cannot silently widen to cover
   files added later under the same directory. Narrowing enforcement always takes a
   second, deliberate edit.
+</p>
+
+<p>
+  <strong><code>[limits] max_file_bytes</code></strong> is the largest file the
+  engine will open. A file above it is skipped — and said so on stderr by the
+  hook and by every subcommand, because "too large to check" and "nothing wrong"
+  must never arrive as the same silence.
+</p>
+
+<p>
+  2 MB is a <em>measured</em> ceiling, not a preference: above it the checks miss
+  the hook's 2 s budget, and well above it they exhaust the stack. So the key
+  clamps <strong>downward only</strong>. A smaller value — a slower machine, or a
+  project wanting a tighter guarantee — is honoured. A larger one is refused with
+  a warning naming file and line, and the built-in ceiling is used instead, as is
+  anything that is not a positive number of bytes. Config may always narrow what
+  procoder trusts itself to do inside the budget; it may never widen it past what
+  measurement supports.
 </p>
 
 <div class="note">

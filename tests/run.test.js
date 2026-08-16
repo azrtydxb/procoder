@@ -489,6 +489,22 @@ test('one byte past the cap is skipped with a reason', () => {
   assert.deepStrictEqual(out.findings, []);
 });
 
+// A project on slower hardware can ask for a tighter guarantee than the
+// measured ceiling. It must be the engine that honours it, not just the config
+// that records it.
+test('a project may clamp the size cap downward and the engine obeys', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[limits]\nmax_file_bytes = 4096\n',
+    'gen.ts': grow('const x = 1;\n', 8192),
+    'small.ts': 'const x = 1;\n',
+  });
+  const config = loadConfig(repo);
+  assert.strictEqual(checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config }).skipped,
+    'too-large');
+  assert.strictEqual(checkFile(path.join(repo, 'small.ts'), { repoRoot: repo, config }).skipped,
+    null, 'a file inside the tightened cap is still checked');
+});
+
 // RED against the 4MB cap: a 4MB source is inside it, so this was `null` and the
 // engine spent ~1.8s of a 2s budget on it once the project's linter was in play.
 test('the cap is set below the size that cannot be handled in budget', () => {

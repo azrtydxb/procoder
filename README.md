@@ -186,6 +186,9 @@ complexity = 10
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
 
+[limits]
+max_file_bytes = 2097152
+
 [baseline]
 file = ".procoder-baseline.json"
 ```
@@ -195,6 +198,13 @@ findings advisory — and the active level modulates it. The keys are the four
 rung names verbatim, `true` included: it is a bare key, not a boolean. A line
 the parser cannot recognize is warned about on stderr and skipped, never
 silently dropped.
+
+`[limits] max_file_bytes` is the largest file the engine will open — anything
+above it is skipped and said so on stderr, never counted clean. 2 MB is a
+measured ceiling, not a preference: past it the checks miss the hook's 2 s
+budget. The key clamps **downward only**. A smaller value is honoured; a larger
+one is refused with a warning naming file and line, and the built-in ceiling is
+used instead.
 
 Two narrower instruments sit under it. A `.procoderignore` file may sit in
 **any** directory and excludes paths beneath it, using a documented subset of

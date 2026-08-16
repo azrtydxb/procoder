@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { excludeReason, isRuleExcluded } = require('./config');
+const { excludeReason, isRuleExcluded, MAX_FILE_BYTES } = require('./config');
 const { packFor } = require('./registry');
 const { resolveFor, runToolResult } = require('./resolve');
 const { checkUniversal, filterMarkedLiterals } = require('./universal');
@@ -49,7 +49,10 @@ const BUDGET_MS = 2000;
 // pack's share of the budget from the linter below, and to derive MAX_FILE_BYTES.
 const PACK_MS_PER_MB = 200;
 
-// Total-size skip.
+// Total-size skip. Lives in config.js because `[limits] max_file_bytes` lets a
+// project clamp it downward, and the clamp has to be applied — and warned about
+// — once, where the config is read. The derivation stays here, with the numbers
+// it was derived from.
 //
 // This came down from 4MB, which measurement did not support. The old comment
 // claimed 4MB cost 122ms; measured end to end through the hook process it costs
@@ -67,7 +70,8 @@ const PACK_MS_PER_MB = 200;
 // to be 1.9x slower than this one to breach. At 4MB the same composition sat at
 // 90% and any machine 1.15x slower breached it. 2MB is still larger than any
 // file a human edits, and far above the 256KB this cap once used.
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
+//
+// The constant itself is `MAX_FILE_BYTES`, imported from config.js above.
 
 // Line-length guard for the SPAN-derived shape metrics only — function length,
 // nesting depth and complexity.
@@ -185,8 +189,12 @@ function touchedRanges(source, texts) {
 function readSource(absPath, relPath, config) {
   const excluded = excludeReason(config, relPath);
   if (excluded) return { skipped: excluded };
+  // `[limits] max_file_bytes`, already clamped downward by config.js. The
+  // fallback covers a hand-built config object — every caller in this repo goes
+  // through loadConfig, but a missing section must never lift the cap.
+  const cap = (config.limits && config.limits.max_file_bytes) || MAX_FILE_BYTES;
   try {
-    if (fs.statSync(absPath).size > MAX_FILE_BYTES) return { skipped: 'too-large' };
+    if (fs.statSync(absPath).size > cap) return { skipped: 'too-large' };
     return { source: fs.readFileSync(absPath, 'utf8') };
   } catch (e) {
     return { skipped: 'unreadable' };

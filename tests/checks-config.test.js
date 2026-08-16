@@ -355,3 +355,61 @@ test('resolving a deep tree with several ignore files stays far inside the budge
   const elapsed = Date.now() - started;
   assert.ok(elapsed < 200, `2000 lookups took ${elapsed}ms`);
 });
+
+// --- [limits] max_file_bytes ------------------------------------------------
+//
+// The built-in ceiling is a MEASURED limit, not a preference: past 2MB the
+// engine either eats the whole hook budget or overflows the stack. So the key
+// clamps downward only — a project on slower hardware may ask for less, and no
+// project may ask for more than measurement says is survivable.
+
+function captureStderr(fn) {
+  const originalWrite = process.stderr.write;
+  let captured = '';
+  process.stderr.write = (chunk) => { captured += chunk; return true; };
+  try {
+    return { value: fn(), captured };
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+}
+
+test('max_file_bytes defaults to the built-in ceiling', () => {
+  assert.strictEqual(loadConfig(tempRepo()).limits.max_file_bytes,
+    DEFAULTS.limits.max_file_bytes);
+});
+
+test('a max_file_bytes below the ceiling is honoured', () => {
+  const { value, captured } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '[limits]\nmax_file_bytes = 262144\n',
+  })));
+  assert.strictEqual(value.limits.max_file_bytes, 262144);
+  assert.strictEqual(captured, '', 'a value inside the ceiling is not worth a warning');
+});
+
+test('a max_file_bytes above the ceiling is refused, warned about, and clamped', () => {
+  const { value, captured } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '# a comment\n[limits]\nmax_file_bytes = 8388608\n',
+  })));
+  assert.strictEqual(value.limits.max_file_bytes, DEFAULTS.limits.max_file_bytes,
+    'config must never raise a limit measurement says is unsafe');
+  assert.match(captured, /max_file_bytes/);
+  assert.match(captured, /\.procoder\.toml:3\b/, 'the warning must name file and line');
+});
+
+test('a non-numeric max_file_bytes is refused, not coerced', () => {
+  const { value, captured } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '[limits]\nmax_file_bytes = "lots"\n',
+  })));
+  assert.strictEqual(value.limits.max_file_bytes, DEFAULTS.limits.max_file_bytes);
+  assert.match(captured, /max_file_bytes/);
+});
+
+test('a zero or negative max_file_bytes is refused, not obeyed', () => {
+  // Obeying it would skip every file in the repo and report nothing wrong —
+  // the config key turned into a silent kill switch for the whole gate.
+  const { value } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '[limits]\nmax_file_bytes = 0\n',
+  })));
+  assert.strictEqual(value.limits.max_file_bytes, DEFAULTS.limits.max_file_bytes);
+});

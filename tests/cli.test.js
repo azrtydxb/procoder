@@ -298,6 +298,31 @@ test('check says a file was skipped for size instead of counting it clean', () =
   assert.match(result.out, /big\.ts/);
 });
 
+// `verify` is the CI gate, and it is the one place a silently skipped file
+// costs the most: the ratchet compares present findings against the baseline,
+// so a file nothing looked at contributes nothing and the build goes green.
+// `check` said so all along; verify and baseline did not.
+test('verify and baseline say a file was skipped for size', () => {
+  const repo = repoWith({ 'big.ts': 'const x = 1;\n' });
+  fs.truncateSync(path.join(repo, 'big.ts'), MAX_FILE_BYTES + 1);
+  const baselined = cli(repo, ['baseline', 'big.ts']);
+  assert.match(baselined.out, /skipped/i, 'baseline recorded nothing and said nothing');
+  const verified = cli(repo, ['verify', 'big.ts']);
+  assert.strictEqual(verified.code, 0, 'a size skip reports, it does not fail the build');
+  assert.match(verified.out, /skipped/i, 'the ratchet held over a file nothing looked at');
+  assert.match(verified.out, /big\.ts/);
+});
+
+// ...and the same restraint as `check`: deliberate config is not news, on any
+// subcommand.
+test('verify stays quiet about a deliberately excluded path', () => {
+  const repo = repoWith({
+    '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
+    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  assert.doesNotMatch(cli(repo, ['verify', 'src']).out, /skipped/i);
+});
+
 // An excluded path is deliberate config, not news.
 test('check stays quiet about a deliberately excluded path', () => {
   const repo = repoWith({

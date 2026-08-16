@@ -63,10 +63,25 @@ function expand(targets) {
   return files;
 }
 
+// Every skip this process makes, reported through one place so no subcommand
+// can forget. `check` said so all along; `baseline` and `verify` did not, and
+// verify is where it costs the most — the ratchet compares present findings
+// against the baseline, so a file nothing looked at contributes nothing and the
+// build goes green over an unchecked file. Deduplicated by path because a
+// verify walks the same files twice (see unusedRuleExclusions) and one skip is
+// one piece of news, not two.
+const skipsReported = new Set();
+const ignoredCounts = new Map();
+
 // maxFindings Infinity throughout: the CLI reports and records everything,
 // unlike the hook, which shows a top-5 sample inside its time budget.
 function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
-  return checkFile(absPath, { repoRoot, config, maxFindings: Infinity, applyBaseline });
+  const out = checkFile(absPath, { repoRoot, config, maxFindings: Infinity, applyBaseline });
+  if (out.skipped && !skipsReported.has(out.relPath)) {
+    skipsReported.add(out.relPath);
+    reportSkip(out.relPath, out.skipped);
+  }
+  return out;
 }
 
 function runBaseline(files, repoRoot, config) {
@@ -77,6 +92,7 @@ function runBaseline(files, repoRoot, config) {
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
     entries.push(...fingerprintsFor(findings, relPath, lines));
   }
+  reportIgnored();
   writeBaseline(repoRoot, config, entries);
   process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
   return 0;
@@ -157,6 +173,7 @@ function reportUnusedExclusions(files, repoRoot, config, unusedExclusions) {
 function runVerify(files, repoRoot, config, { unusedExclusions = false } = {}) {
   const baseline = loadBaseline(repoRoot, config);
   const present = presentFindings(files, repoRoot, config);
+  reportIgnored();
 
   const { ok, added, delta } = growthCheck(baseline, present.keys());
   if (!ok) {
@@ -204,39 +221,38 @@ function summarize(blocking, advisory, level) {
 // reported once per ignore file rather than once per skipped file: the case the
 // feature exists for is a large generated subtree, and a line per file would
 // bury the findings it was supposed to make room for.
-function reportSkip(relPath, skipped, ignored) {
+function reportSkip(relPath, skipped) {
   if (skipped === 'excluded') return;
   if (skipped.startsWith('ignored:')) {
     const file = skipped.slice('ignored:'.length);
-    ignored.set(file, (ignored.get(file) || 0) + 1);
+    ignoredCounts.set(file, (ignoredCounts.get(file) || 0) + 1);
     return;
   }
   process.stderr.write(`procoder: skipped ${relPath} (${skipped}) — not checked.\n`);
 }
 
-function reportIgnored(ignored) {
-  for (const [file, count] of ignored) {
+function reportIgnored() {
+  for (const [file, count] of ignoredCounts) {
     process.stderr.write(
       `procoder: ${count} file${count === 1 ? '' : 's'} skipped by ${file} — not checked.\n`);
   }
+  ignoredCounts.clear();
 }
 
 function runCheck(files, repoRoot, config) {
   const level = readLevel();
-  const ignored = new Map();
   let blocking = 0;
   let advisory = 0;
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
-    if (skipped) { reportSkip(relPath, skipped, ignored); continue; }
-    if (findings.length === 0) continue;
+    if (skipped || findings.length === 0) continue;
     const gating = findings.filter((f) => isBlocking(f, level, config)).length;
     blocking += gating;
     advisory += findings.length - gating;
     process.stdout.write(formatFindings(findings, relPath) + '\n');
   }
 
-  reportIgnored(ignored);
+  reportIgnored();
   if (blocking + advisory === 0) return 0;
   process.stdout.write(summarize(blocking, advisory, level));
   return blocking > 0 ? 1 : 0;

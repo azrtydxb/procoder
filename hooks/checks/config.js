@@ -5,8 +5,16 @@ const fs = require('fs');
 const path = require('path');
 const { parseToml } = require('./toml');
 
+// The largest file the engine will open. A measured ceiling, not a preference:
+// past it the engine either eats the whole 2s hook budget or overflows the
+// stack building the finding list. run.js carries the derivation and the
+// numbers behind it; it lives here because `[limits] max_file_bytes` lets a
+// project clamp it, and a clamp belongs where the config is read.
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
 const DEFAULTS = {
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
+  limits: { max_file_bytes: MAX_FILE_BYTES },
   thresholds: { function_lines: 40, nesting_depth: 3, params: 4, complexity: 10 },
   // Rungs 1-2 are facts (it is injectable, or it is not); rungs 3-4 are
   // judgment. Only `pragmatic` acts on the difference — see procoder-check.js.
@@ -33,11 +41,53 @@ function mergeSection(defaults, override) {
   return out;
 }
 
+// The 1-based line a key sits on, for a warning that has to name one. The TOML
+// parser keeps no line numbers, and threading them through every value it
+// returns would be a large change for one key. Falls back to line 1 rather than
+// suppressing the warning: a warning with a slightly wrong line still reaches
+// the author, a swallowed one does not.
+function lineOf(text, re) {
+  const at = String(text).split(/\r?\n/).findIndex((line) => re.test(line));
+  return at === -1 ? 1 : at + 1;
+}
+
+const MAX_FILE_BYTES_LINE = /^\s*(?:limits\s*\.\s*)?max_file_bytes\s*=/;
+
+// `[limits] max_file_bytes` clamps the size cap DOWNWARD ONLY.
+//
+// The built-in ceiling is a measurement, not a taste: above it the engine
+// misses the hook budget or crashes, and either way the file is not checked. So
+// a smaller value — a slower machine, a project wanting a tighter guarantee —
+// is honoured, and a larger one is refused with a warning naming file and line.
+// Config may always narrow what procoder trusts itself to do; it may never
+// widen it past what measurement supports.
+//
+// Anything that is not a positive whole number of bytes is refused the same
+// way. Zero and negatives especially: obeyed literally they would skip every
+// file in the repo and report nothing wrong, turning one config line into a
+// silent kill switch for the whole gate.
+function fileBytesLimit(raw, text, file) {
+  const value = raw.limits && raw.limits.max_file_bytes;
+  if (value === undefined || value === null) return MAX_FILE_BYTES;
+  const at = `${file}:${lineOf(text, MAX_FILE_BYTES_LINE)}`;
+  if (typeof value !== 'number' || !Number.isFinite(value) || Math.floor(value) < 1) {
+    process.stderr.write(`procoder: ${at}: max_file_bytes must be a positive number of bytes, ignored: ${JSON.stringify(value)}\n`);
+    return MAX_FILE_BYTES;
+  }
+  if (value > MAX_FILE_BYTES) {
+    process.stderr.write(`procoder: ${at}: max_file_bytes ${value} is above the measured ceiling ${MAX_FILE_BYTES} — using ${MAX_FILE_BYTES}. Files above it cannot be checked inside the hook budget.\n`);
+    return MAX_FILE_BYTES;
+  }
+  return Math.floor(value);
+}
+
 function loadConfig(repoRoot) {
   let raw = {};
+  let text = '';
   const file = path.join(repoRoot, '.procoder.toml');
   try {
-    raw = parseToml(fs.readFileSync(file, 'utf8'));
+    text = fs.readFileSync(file, 'utf8');
+    raw = parseToml(text);
   } catch (e) {
     // Having no config is the normal case, and defaults are the whole point of
     // having them. Having one that cannot be read is not: silently falling back
@@ -55,6 +105,7 @@ function loadConfig(repoRoot) {
         : DEFAULTS.exclude.paths.slice(),
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
+    limits: { max_file_bytes: fileBytesLimit(raw, text, '.procoder.toml') },
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
     rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
@@ -243,5 +294,6 @@ function isRuleExcluded(config, relPath, id) {
 }
 
 module.exports = {
-  DEFAULTS, loadConfig, isExcluded, excludeReason, isRuleExcluded, findRepoRoot, IGNORE_FILE,
+  DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, isRuleExcluded,
+  findRepoRoot, IGNORE_FILE,
 };
