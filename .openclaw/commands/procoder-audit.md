@@ -1,0 +1,13 @@
+---
+description: Audit the whole repository against procoder's four rungs.
+---
+
+<!-- DO NOT EDIT. Generated from skills/procoder/SKILL.md by scripts/sync-rules.js.
+     Hand edits are overwritten and fail CI. Edit the source instead. -->
+
+Use the procoder-audit skill. Arguments (optional path scope; default the whole
+repository): $ARGUMENTS
+
+Run the deterministic engine over the scope before forming judgment findings.
+Report the rung table, the ranked top 15 in the skill's one-line format, and the
+three systemic patterns. Ask before writing a baseline.

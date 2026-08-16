@@ -6,7 +6,12 @@
   "engines": { "node": ">=18" },
   "bin": { "procoder": "./bin/procoder.js" },
   "main": "./hooks/procoder-runtime.js",
-  "files": ["hooks/", "skills/", "commands/", "scripts/", ".claude-plugin/", "AGENTS.md", "LICENSE"],
+  "files": [
+    "hooks/", "skills/", "commands/", "scripts/", "bin/", "procoder-mcp/",
+    ".claude-plugin/", ".opencode/", ".openclaw/", "pi-extension/",
+    "AGENTS.md", "LICENSE"
+  ],
+  "pi": { "skills": ["./skills"], "extensions": ["./pi-extension/index.js"] },
   "scripts": {
     "test": "node --test tests/*.test.js",
     "sync": "node scripts/sync-rules.js",
