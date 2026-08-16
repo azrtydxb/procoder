@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 function withTempClaudeDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
@@ -201,14 +201,22 @@ test('Qoder host emits hookSpecificOutput only when context is non-empty', () =>
   }
 });
 
-test('writeHookOutput survives a closed stdout without crashing', () => {
+test('writeHookOutput survives a closed stdout without crashing', async () => {
+  const runtimePath = require.resolve('../hooks/procoder-runtime');
   const script =
-    "const rt = require(" + JSON.stringify(require.resolve('../hooks/procoder-runtime')) + ");" +
-    "rt.writeHookOutput('SessionStart', 'strict', 'X'.repeat(200000));";
-  const child = spawnSync('node', ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
-  // Reader closes immediately; a large write guarantees the pipe is still open-and-broken.
-  assert.strictEqual(child.status, 0, `exited ${child.status}: ${child.stderr}`);
-  assert.ok(!/EPIPE/.test(String(child.stderr)), 'EPIPE surfaced on stderr');
+    `const rt = require(${JSON.stringify(runtimePath)});` +
+    `setTimeout(() => { rt.writeHookOutput('SessionStart', 'strict', 'X'.repeat(1000000)); }, 100);`;
+
+  const child = spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+
+  child.stdout.destroy();   // close the read end — subsequent writes get EPIPE
+
+  const code = await new Promise((resolve) => child.on('close', resolve));
+
+  assert.strictEqual(code, 0, `child exited ${code}; stderr: ${stderr}`);
+  assert.ok(!/EPIPE/.test(stderr), `EPIPE surfaced on stderr: ${stderr}`);
 });
 
 test('error listener count does not grow across re-requires', () => {
