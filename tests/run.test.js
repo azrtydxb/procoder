@@ -102,6 +102,33 @@ test('a linter that times out falls back to the pack, not to silence', shimTest,
     'nothing answered for the shape rules, so the pack should have');
 });
 
+test('a linter that crashes without parseable output falls back to the pack', shimTest, () => {
+  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
+  const crash = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\necho "ruff: internal error"\nexit 2\n';
+  const out = withShim('ruff', crash, () =>
+    checkFile(path.join(repo, 'a.py'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(ids.includes('safe/shell-injection'), 'a crashed linter produced silence');
+  assert.ok(ids.includes('obvious/too-many-params'),
+    'nothing answered for the shape rules, so the pack should have');
+});
+
+test('the same preference applies to the other ecosystems', shimTest, () => {
+  const repo = repoWith({
+    '.eslintrc.json': '{}',
+    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',
+  });
+  const eslint = '#!/bin/sh\necho \'[{"messages":[{"line":1,"ruleId":"no-unused-vars","message":"unused"}]}]\'\n';
+  const out = withShim('eslint', eslint, () =>
+    checkFile(path.join(repo, 'a.ts'),
+      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
+  const ids = out.findings.map((f) => f.id);
+  assert.ok(ids.includes('true/eslint'), 'the configured linter did not run');
+  assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to eslint');
+  assert.ok(ids.includes('safe/xss-sink'), 'the XSS sink was deferred to eslint');
+});
+
 test('runs both the language pack and the universal pack', () => {
   const repo = repoWith({ 'src/a.ts': 'el.innerHTML = x;\n// TODO: later\n' });
   const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
