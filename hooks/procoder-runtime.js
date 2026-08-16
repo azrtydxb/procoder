@@ -10,16 +10,24 @@ const isCodex = !!process.env.CODEX_HOME || process.env.PROCODER_HOST === 'codex
 const isCopilot = process.env.PROCODER_HOST === 'copilot';
 const isQoder = process.env.PROCODER_HOST === 'qoder';
 
+// Every failure this module can hit is recoverable — a read-only config dir, a
+// stdout the host closed early — and none of them may break the session. That
+// is not a reason for them to vanish: PROCODER_DEBUG=1 surfaces them, so a
+// broken install is diagnosable instead of merely quiet.
+function debugWarn(what, error) {
+  if (process.env.PROCODER_DEBUG) {
+    process.stderr.write(`procoder: ${what}: ${(error && error.message) || error}\n`);
+  }
+}
+
 // A closed stdout surfaces as an async 'error' event, not a synchronous throw —
 // try/catch alone cannot catch it, and an uncaught EPIPE would crash the hook.
 // Marked on the stream because tests re-require this module, and an unguarded
 // listener per load would cross Node's maxListeners and print a warning.
-try {
-  if (!process.stdout.__procoderEpipeGuarded) {
-    process.stdout.__procoderEpipeGuarded = true;
-    process.stdout.on('error', () => {});
-  }
-} catch (e) { /* best-effort */ }
+if (process.stdout && !process.stdout.__procoderEpipeGuarded) {
+  process.stdout.__procoderEpipeGuarded = true;
+  process.stdout.on('error', (e) => debugWarn('stdout error', e));
+}
 
 function readLevel() {
   try {
@@ -38,7 +46,9 @@ function setLevel(level) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, normalized + '\n');
   } catch (e) {
-    // Best-effort: a read-only config dir must not break the session.
+    // A read-only config dir must not break the session; the level simply does
+    // not persist past it, and the default applies on the next read.
+    debugWarn('could not persist level', e);
   }
 }
 
@@ -46,7 +56,9 @@ function clearLevel() {
   try {
     fs.unlinkSync(getLevelFilePath());
   } catch (e) {
-    // Already gone, or unwritable. Either way there is nothing to do.
+    // Already gone is success. Anything else left the file in place, which the
+    // next readLevel will report for itself.
+    if (e.code !== 'ENOENT') debugWarn('could not clear level', e);
   }
 }
 
@@ -100,7 +112,9 @@ function writeHookOutput(event, level, context = '') {
     process.stdout.write(JSON.stringify(
       { hookSpecificOutput: { hookEventName: event, additionalContext: context } }));
   } catch (e) {
-    // EPIPE at hook exit must not surface as a hook failure.
+    // EPIPE at hook exit must not surface as a hook failure: the host has
+    // stopped listening, so there is no one left to deliver this to.
+    debugWarn('could not write hook output', e);
   }
 }
 

@@ -35,10 +35,16 @@ function mergeSection(defaults, override) {
 
 function loadConfig(repoRoot) {
   let raw = {};
+  const file = path.join(repoRoot, '.procoder.toml');
   try {
-    raw = parseToml(fs.readFileSync(path.join(repoRoot, '.procoder.toml'), 'utf8'));
+    raw = parseToml(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    // No config, or unreadable. Defaults are the whole point of having them.
+    // Having no config is the normal case, and defaults are the whole point of
+    // having them. Having one that cannot be read is not: silently falling back
+    // would run every check under settings the author never chose, so say so.
+    if (e.code !== 'ENOENT') {
+      process.stderr.write(`procoder: cannot read ${file} (${e.message}) — using defaults\n`);
+    }
   }
 
   return {

@@ -46,8 +46,9 @@ function main() {
 
   for (const [rel, content] of render()) {
     const abs = path.join(ROOT, rel);
-    let current = null;
-    try { current = fs.readFileSync(abs, 'utf8'); } catch (e) { /* absent counts as drift */ }
+    // An absent target counts as drift; an unreadable one is a real failure and
+    // should stop the sync rather than be quietly rewritten.
+    const current = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : null;
 
     if (current === content) continue;
     if (check) { drifted.push(rel); continue; }
