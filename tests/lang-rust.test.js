@@ -48,6 +48,41 @@ test('does not flag unwrap inside a #[cfg(test)] module placed mid-file', () => 
     'only the unwrap after the test module should fire');
 });
 
+// A brace inside a string or a comment is not structure. Counting it extends
+// the test region to end of file and blinds the checker to real library code.
+const withTestBody = (bodyLine) => [
+  '#[cfg(test)]',
+  'mod tests {',
+  '    #[test]',
+  '    fn t() {',
+  `        ${bodyLine}`,
+  '        parse("x").unwrap();',
+  '    }',
+  '}',
+  '',
+  'fn after_tests(input: &str) -> i32 {',
+  '    parse(input).unwrap()',
+  '}',
+].join('\n');
+
+test('an unbalanced brace in a test string does not extend the test region', () => {
+  const found = check(withTestBody('let s = "looks like a { brace";'), { relPath: 'x.rs', config });
+  const unwraps = found.filter((f) => f.id === 'true/unwrap-in-library');
+  assert.deepStrictEqual(unwraps.map((f) => f.line), [11], 'only the library unwrap after the module');
+});
+
+test('an unbalanced brace in a test comment does not extend the test region', () => {
+  const found = check(withTestBody('// opening brace example: {'), { relPath: 'x.rs', config });
+  const unwraps = found.filter((f) => f.id === 'true/unwrap-in-library');
+  assert.deepStrictEqual(unwraps.map((f) => f.line), [11]);
+});
+
+test('a balanced brace in a test string keeps the region intact', () => {
+  const found = check(withTestBody('let s = format!("{}", v);'), { relPath: 'x.rs', config });
+  const unwraps = found.filter((f) => f.id === 'true/unwrap-in-library');
+  assert.deepStrictEqual(unwraps.map((f) => f.line), [11]);
+});
+
 test('flags unsafe blocks without a safety comment', () => {
   assert.ok(ids('unsafe { ptr::read(p) }').includes('safe/unsafe-block'));
   assert.ok(!ids('// SAFETY: p is non-null and aligned, checked above.\nunsafe { ptr::read(p) }').includes('safe/unsafe-block'));

@@ -84,13 +84,18 @@ function blockCloseIndex(lines, openIndex) {
   return lines.length - 1;
 }
 
-function testRegions(lines) {
+// Braces are counted on noise-stripped lines, as shape.js does: a `{` inside a
+// string or a comment is not structure, and counting one leaves the depth
+// unbalanced and runs the region to end of file. The attributes themselves are
+// matched on the raw lines, since stripNoise blanks `#`-prefixed lines and
+// would erase `#[cfg(test)]` before it could be seen.
+function testRegions(lines, codeLines) {
   const regions = [];
   lines.forEach((line, index) => {
     if (!TEST_ATTR.test(line)) return;
-    const openIndex = blockOpenIndex(lines, index);
+    const openIndex = blockOpenIndex(codeLines, index);
     if (openIndex === -1) return;
-    regions.push([index + 1, blockCloseIndex(lines, openIndex) + 1]);
+    regions.push([index + 1, blockCloseIndex(codeLines, openIndex) + 1]);
   });
   return regions;
 }
@@ -125,7 +130,7 @@ function check(source, { relPath, config } = {}) {
   const stripped = stripNoise(text);
   const { maxDepth, blocks } = analyzeBraces(text);
 
-  const tests = testRegions(lines);
+  const tests = testRegions(lines, stripped.split(/\r?\n/));
   const isTestFile = TEST_PATH.test(String(relPath || ''));
   const expectedPanic = (rule, line, lineNo) => rule.id === 'true/unwrap-in-library'
     && (isTestFile || inRegions(tests, lineNo) || LOCK_UNWRAP.test(line));
