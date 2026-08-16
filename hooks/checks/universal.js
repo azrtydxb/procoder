@@ -34,20 +34,18 @@ const LOG_CALL = /\b(?:console\.(?:log|info|warn|error|debug)|logger?\.(?:log|in
 const SECRET_WORD = /\b(?:token|password|passwd|secret|api[_-]?key|authorization|auth[_-]?header|cookie|session[_-]?id|credential|private[_-]?key)\b/i;
 const PII_WORD = /\b(?:email|e-mail|ssn|social[_-]?security|phone[_-]?number|date[_-]?of[_-]?birth|dob|home[_-]?address|street[_-]?address|passport|credit[_-]?card|card[_-]?number|iban)\b/i;
 
-// Every `[^x]*` span below is capped at SPAN_MAX instead of running to the end
-// of the line. Unbounded, each one is quadratic in line length: an unclosed `${`
-// or `(` makes the scanner walk to end-of-line from every start position, so a
-// 300KB minified line cost ~36s — sixteen times the whole hook budget, which
-// means no findings at all. Capped, the work per start position is constant and
-// the pass is linear. 200 characters is longer than any real interpolated
-// expression or argument list; a span longer than that is minified noise, and
-// the remaining arms of LOOKS_LIKE_CODE still classify it.
-const SPAN_MAX = 200;
-
 // Interpolation or concatenation of a variable into the logged string — a bare
 // literal mentioning the word is fine ("password reset requested").
-const INTERPOLATED = new RegExp(
-  `\\$\\{[^}]{0,${SPAN_MAX}}\\}|%[sdv]|\\{\\}|\\{[a-z_][\\w.]*\\}|["'\`]\\s*[+,]\\s*\\w|\\bf["']`, 'i');
+//
+// The `${` arm does not require the closing brace. A regex that does — an
+// unbounded `[^}]*\}` — walks to end-of-line from every `${` on the line, which
+// is quadratic: a 300KB minified line cost ~36s, sixteen times the whole hook
+// budget. What the brace actually delimits is read by interpolatedExpressions
+// below, in one forward pass; this is only the cheap gate in front of it, and a
+// `${` with no close yields no expression there, so opening the gate on the
+// two characters alone adds no finding.
+const INTERPOLATED =
+  /\$\{|%[sdv]|\{\}|\{[a-z_][\w.]*\}|["'`]\s*[+,]\s*\w|\bf["']/i;
 
 const COMMENT_LINE = /^\s*(?:\/\/|#|--|\*(?!\/))\s?(.*)$/;
 // A commented line is CODE, not prose, when it ends in a code terminator or
@@ -63,15 +61,42 @@ const COMMENT_LINE = /^\s*(?:\/\/|#|--|\*(?!\/))\s?(.*)$/;
 // cannot start with a digit, which is what separates a unit from a variable.
 const INLINE_CODE_SPAN = /`[^`]*`/g;
 const IDENT = '[A-Za-z_$][\\w$]*';
+// The subscript span stays bounded at 40: an index expression genuinely is
+// short, and unlike the spans below this one is inside a `*` loop, where a
+// second unbounded span would multiply rather than add.
 const ASSIGN_TARGET = `${IDENT}(?:\\s*\\.\\s*${IDENT}|\\s*\\[[^\\]]{0,40}\\])*`;
 const LOOKS_LIKE_CODE = new RegExp(
   '[;{}]\\s*$' +
   '|^\\s*(?:if|for|while|return|const|let|var|def|func|fn|class|import|from|public|private)\\b' +
-  `|^\\s*${ASSIGN_TARGET}\\s*(?:[-+*/%|&^]|\\?\\?|\\|\\||&&|<<|>>)?=[^=]` +
-  // `\w` rather than `\w+`: for a boolean test the two are equivalent (any
-  // match of `\w+\(` has one starting at its last word character), but the
-  // greedy `\w+` re-walked the whole line from every position.
-  `|\\w\\([^)]{0,${SPAN_MAX}}\\)\\s*[;{]?\\s*$`);
+  `|^\\s*${ASSIGN_TARGET}\\s*(?:[-+*/%|&^]|\\?\\?|\\|\\||&&|<<|>>)?=[^=]`);
+
+// The fourth arm of the above, which no regex can express without an unbounded
+// `[^)]*` between the parens: the line ends in a call. That span is what the
+// 200-character ceiling was capping, and capping it meant a call with a longer
+// argument list simply stopped counting as code.
+//
+// Walked by index instead: find the closing paren the line ends on, then the
+// last `)` before it, then any `(` after that with a word character in front.
+// indexOf only moves forward, so the line is read a constant number of times
+// however many parens it holds.
+//
+// Deliberately NOT bracket-matched the way shape.js's paramSpans matches a
+// signature. The span must contain no `)` at all, so `f(g(x))` does not count
+// — which reads like an accident of the old regex but is what keeps prose out:
+// a doctrine line reading `never db.Query(fmt.Sprintf("…", id))` is a sentence
+// about a call, not a call. Matching brackets properly here turns two clean
+// fixtures into commented-out-code findings. Same reason the marker's reason
+// runs to end of line: the cheap rule is the one that stays right.
+const CALL_TAIL_END = /\)\s*[;{]?\s*$/;
+function endsInCall(text) {
+  const tail = CALL_TAIL_END.exec(text);
+  if (!tail) return false;
+  const head = text.slice(0, tail.index);
+  for (let at = head.indexOf('(', head.lastIndexOf(')') + 1); at >= 0; at = head.indexOf('(', at + 1)) {
+    if (at > 0 && /\w/.test(head[at - 1])) return true;
+  }
+  return false;
+}
 
 // A run this long, mostly code-shaped, is a commented-out block rather than a
 // paragraph of explanation that happens to mention a symbol. "Mostly" is a
@@ -87,9 +112,24 @@ const CODE_COMMENTS_MIN = 2;
 function interpolatedExpressions(line) {
   const exprs = [];
   let m;
-  const braceRe = new RegExp(`\\$\\{([^}]{0,${SPAN_MAX}})\\}|(?<!\\$)\\{([a-z_][\\w.]*)\\}`, 'gi');
-  while ((m = braceRe.exec(line))) exprs.push(m[1] || m[2]);
-  const concatRe = /["'`]\s*[+,]\s*([A-Za-z_][\w.]*)|([A-Za-z_][\w.]*)\s*\+\s*["'`]/g;
+  // `${…}` by index rather than by regex, and by the same rule the regex used:
+  // the span ends at the first `}`. indexOf only ever moves forward, so the
+  // whole line is read once however many opens have no close — where the
+  // regex, having no closing brace to stop at, re-read the tail from each one.
+  for (let at = line.indexOf('${'); at >= 0; at = line.indexOf('${', at)) {
+    const end = line.indexOf('}', at + 2);
+    if (end < 0) break;
+    exprs.push(line.slice(at + 2, end));
+    at = end + 1;
+  }
+  const braceRe = /(?<!\$)\{([a-z_][\w.]*)\}/gi;
+  while ((m = braceRe.exec(line))) exprs.push(m[1]);
+  // `\b` before the identifier arm, and it is load-bearing, not decoration:
+  // without it the scan restarts inside every run of word characters, and each
+  // restart walks the run to its end looking for the `+` — 43s on a 200KB run
+  // of them. A match cannot start mid-identifier anyway; an identifier does not
+  // begin after a digit or a letter.
+  const concatRe = /["'`]\s*[+,]\s*([A-Za-z_][\w.]*)|\b([A-Za-z_][\w.]*)\s*\+\s*["'`]/g;
   while ((m = concatRe.exec(line))) exprs.push(m[1] || m[2]);
   return exprs.join(' ');
 }
@@ -195,7 +235,8 @@ function commentedCodeFindings(lines) {
     }
     if (run === 0) runStart = index + 1;
     run += 1;
-    if (LOOKS_LIKE_CODE.test(comment[1].replace(INLINE_CODE_SPAN, ''))) codeComments += 1;
+    const text = comment[1].replace(INLINE_CODE_SPAN, '');
+    if (LOOKS_LIKE_CODE.test(text) || endsInCall(text)) codeComments += 1;
   });
 
   close();
@@ -214,9 +255,20 @@ function commentedCodeFindings(lines) {
 //              frontmatter, markdown tables and fenced examples cannot carry a
 //              trailing comment without changing what they mean or render.
 //
-// Not a block form: a block is a region an author stops reading, and the whole
-// failure being fixed here is text no one re-reads. Two lines is the widest
-// scope that still forces a decision per occurrence.
+// Not a block form, and this was reconsidered rather than inherited. A bounded
+// block — explicit start, explicit end, naming its rules and its reason —
+// would let a file that is entirely violating input (a fixture) be marked
+// instead of path-excluded in .procoder.toml. It is still refused. A block is
+// a region an author stops reading: everything added between the two markers
+// afterwards is covered by a decision nobody made, which is the blanket
+// disable this project's own rung 4 forbids, only with a reason attached to
+// make it feel examined. The path exclusion is the honest form of the same
+// thing — it is in one file, it names the directory, it is reviewable in one
+// place, and it does not travel with the code. Two lines is the widest scope
+// that still forces a decision per occurrence.
+//
+// No wildcard, for the same reason and deliberately: the bare form routes to
+// alone/blanket-suppression and is reported.
 //
 // Which rules can it silence? All of them, safe/hardcoded-secret included. A
 // marker that cannot cover a credential cannot cover this project's own test
@@ -233,38 +285,50 @@ function commentedCodeFindings(lines) {
 // left believing the line is marked. So the id is checked, and an unknown one
 // is reported rather than swallowed.
 //
-// A configured linter's own rule ids are the tool's to define and cannot be
-// enumerated, so `<rung>/<tool>:<rule>` is accepted on shape. Everything
-// without a colon is a built-in id and must be one of the real ones.
+// A configured linter's own *rule* ids are the tool's to define and cannot be
+// enumerated. The tool itself can be: registry.js invokes four, and only those
+// four ever appear on the left of the colon, always on rung TRUE. So the id is
+// checked as far as it can be — `true/<known tool>:<anything>` — and a
+// misspelt tool (`true/eslnit:no-eval`) is reported like any other typo
+// instead of being accepted on shape. The rule half stays open, which is the
+// honest limit: procoder does not know eslint's rule list.
 const KNOWN_RULE_IDS = new Set(markers.BUILTIN_RULE_IDS);
-const EXTERNAL_RULE_ID = /^(?:safe|true|obvious|alone)\/[\w@.-]+:\S+$/;
+const EXTERNAL_RULE_ID = new RegExp(`^true\\/(?:${markers.EXTERNAL_TOOLS.join('|')}):\\S+$`);
 
-// Which unknown ids have already been complained about. filterMarkedLiterals
-// runs twice over a file — once for this pack's own findings, once in run.js
-// over every pack's — and the same typo must not be reported twice.
+// Which unknown ids have already been complained about, keyed by file as well
+// as id and line: the same typo on the same line of two files is two mistakes
+// in two places, and warning once named neither of them.
+//
+// The bare `id@line` key is kept alongside because filterMarkedLiterals runs
+// twice over a file — once here for this pack's findings, once in run.js over
+// every pack's — and the second pass does not know the path. A file-aware
+// warning claims the bare key too, so the second pass stays quiet; a caller
+// that never supplies a path (a direct API call) dedups on it as before.
 const reported = new Set();
 
 // stderr, never stdout: the PostToolUse hook's stdout carries a JSON protocol,
 // and stderr is where config.js already reports an exclusion it is dropping.
-function unknownRuleId(id, lineNo) {
+function unknownRuleId(id, lineNo, relPath) {
   if (KNOWN_RULE_IDS.has(id) || EXTERNAL_RULE_ID.test(id)) return false;
-  const seen = `${id}@${lineNo}`;
+  const bare = `${id}@${lineNo}`;
+  const seen = relPath ? `${relPath}|${bare}` : bare;
   if (!reported.has(seen)) {
     reported.add(seen);
+    reported.add(bare);
     process.stderr.write(
-      `procoder: unknown rule id "${id}" in the literal marker on line ${lineNo} — it suppresses nothing\n`);
+      `procoder: unknown rule id "${id}" in the literal marker at ${relPath ? `${relPath}:${lineNo}` : `line ${lineNo}`} — it suppresses nothing\n`);
   }
   return true;
 }
 
-function markedLines(lines) {
+function markedLines(lines, relPath) {
   const marked = new Map();
   lines.forEach((line, index) => {
     const m = markers.LITERAL_MARKER.exec(line);
     if (!m) return;
     const ids = m[1].split(',')
       .map((id) => id.trim())
-      .filter((id) => !unknownRuleId(id, index + 1));
+      .filter((id) => !unknownRuleId(id, index + 1, relPath));
     const last = markers.LITERAL_MARKER_ALONE.test(line.slice(0, m.index)) ? index + 2 : index + 1;
     for (let lineNo = index + 1; lineNo <= last; lineNo += 1) {
       if (!marked.has(lineNo)) marked.set(lineNo, new Set());
@@ -281,9 +345,11 @@ function markedLines(lines) {
 //
 // The `indexOf` guard is what keeps this free on the files that have no marker
 // at all, which is nearly all of them: no split, no regex, no allocation.
-function filterMarkedLiterals(source, findings) {
+// `relPath` is optional and only names the file in an unknown-id warning:
+// run.js calls this without one, over findings from every pack at once.
+function filterMarkedLiterals(source, findings, relPath) {
   if (!findings.length || String(source).indexOf('procoder:') < 0) return findings;
-  const marked = markedLines(String(source).split(/\r?\n/));
+  const marked = markedLines(String(source).split(/\r?\n/), relPath);
   if (!marked.size) return findings;
   return findings.filter((f) => !(marked.get(f.line) || EMPTY_SET).has(f.id));
 }
@@ -303,7 +369,7 @@ function checkUniversal(source, { relPath, config } = {}) {
   });
 
   findings.push(...commentedCodeFindings(lines));
-  return filterMarkedLiterals(source, findings);
+  return filterMarkedLiterals(source, findings, relPath);
 }
 
 module.exports = { checkUniversal, filterMarkedLiterals };

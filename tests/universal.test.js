@@ -205,6 +205,41 @@ test('finds a credential on a 300KB minified line', () => {
     'a hardcoded AWS key on a 300KB line went unreported');
 });
 
+// Speed used to be bought with a 200-character ceiling on every `[^x]*` span,
+// which is a real blind spot rather than a safe approximation: an interpolated
+// expression or an argument list longer than that fell out of the check
+// entirely. The spans are walked left to right now — one pass, nothing capped —
+// so length is no longer what decides whether a line is examined.
+test('a long interpolated expression in a log call is still seen', () => {
+  const expr = 'user.' + 'profile.'.repeat(40) + 'password';
+  assert.ok(ids('logger.info(`auth ${' + expr + '}`)').includes('safe/secret-in-log'),  // procoder: literal safe/secret-in-log scanner input for that rule, not an instance of it
+    `a ${expr.length}-character interpolated credential went unreported`);
+});
+
+test('a commented-out call with a long argument list is still seen', () => {
+  const args = 'argument, '.repeat(30);
+  const block = [`// send(${args}payload)`, `// retry(${args}payload)`, '// note'].join('\n');
+  assert.ok(ids(block).includes('alone/commented-code'),
+    `commented-out calls with ${args.length}-character argument lists went unreported`);
+});
+
+// Nothing above may cost what the ceiling was bought to prevent. Same bound and
+// same reasoning as the 300KB test: the assertion is the growth rate.
+test('stays linear on a single 400KB line with unbounded spans in it', () => {
+  const rep = (unit) => unit.repeat(Math.ceil((400 * 1024) / unit.length));
+  const shapes = {
+    'unclosed interpolation': 'console.log(`token ${' + rep('a') + '`)',  // procoder: literal alone/debug-leftover, safe/secret-in-log scanner input for that rule, not an instance of it
+    'one huge closed argument list in a comment': '// send(' + rep('a,') + 'x)',
+    'many opens, one close': '// f(' + rep('a(') + ')',
+  };
+  for (const [what, source] of Object.entries(shapes)) {
+    const start = Date.now();
+    run(source);
+    const ms = Date.now() - start;
+    assert.ok(ms < 500, `${what}: took ${ms}ms on a 400KB line`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // The literal marker: text that describes a pattern, marked as such.
 //
@@ -361,6 +396,66 @@ test('an external linter rule id is accepted without a registry of its rules', (
 // The set is a list, and a list rots. Every check id the engine spells anywhere
 // under hooks/ must be in it, or a marker naming a genuine id would be reported
 // as a typo — the failure this fix exists to prevent, inverted.
+// The colon form was accepted on shape alone: `<rung>/<word>:<anything>`. The
+// rule half genuinely cannot be enumerated — it is the tool's — but the tool
+// half is a closed set, the same four registry.js can invoke, so half the id
+// can be checked and a misspelt tool is no longer the one marker mistake that
+// fails silently.
+test('a literal marker naming an unknown tool in a colon id warns', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const findings = [{ id: 'true/eslint:no-eval', line: 1 }];
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    `evil(); // ${MARK}true/eslnit:no-eval the tool name above is a typo`, findings));
+
+  assert.deepStrictEqual(result, findings, 'a misspelt tool must silence nothing');
+  assert.ok(stderr.includes('true/eslnit:no-eval'), `the misspelt tool went unreported: ${JSON.stringify(stderr)}`);
+});
+
+test('a colon id on a rung no external tool reports on warns', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const findings = [{ id: 'safe/hardcoded-secret', line: 1 }];
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    `const k = "${KEY}"; // ${MARK}safe/hardcoded-secret:x a colon id no pack can produce`, findings));
+
+  assert.deepStrictEqual(result, findings);
+  assert.ok(stderr.includes('safe/hardcoded-secret:x'), 'an unproducible colon id went unreported');
+});
+
+// The de-duplication key held the id and the line number and no file, so the
+// same typo on the same line of a second file was silently swallowed — and the
+// message never said which file to go and fix.
+test('the same unknown id on the same line of two files warns for each, by name', () => {
+  const source = `const k = "${KEY}"; // ${MARK}alone/no-such-rule-at-all a plausible id that does not exist`;
+  const { stderr } = withStderr(() => {
+    checkUniversal(source, { relPath: 'first.js', config });
+    checkUniversal(source, { relPath: 'second.js', config });
+  });
+
+  assert.ok(stderr.includes('first.js'), `the first file was not named: ${JSON.stringify(stderr)}`);
+  assert.ok(stderr.includes('second.js'), `the second file was not warned about: ${JSON.stringify(stderr)}`);
+  assert.strictEqual(stderr.split('\n').filter((l) => l).length, 2, 'one warning per file, no more');
+});
+
+// Two passes over the same file — the pack's own, then run.js's over every
+// pack's findings — must still warn once.
+test('the two passes over one file warn once between them', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `const k = "${KEY}"; // ${MARK}alone/no-such-rule-twice a plausible id that does not exist`;
+  const { stderr } = withStderr(() => {
+    const own = checkUniversal(source, { relPath: 'once.js', config });
+    assert.ok(own.length, 'the pack must produce the finding the second pass then filters');
+    filterMarkedLiterals(source, own);
+  });
+  assert.strictEqual(stderr.split('\n').filter((l) => l).length, 1, `warned twice: ${JSON.stringify(stderr)}`);
+});
+
+test('two different unknown ids on one line are both named', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `x(); // ${MARK}alone/typo-one, alone/typo-two two distinct typos here`;
+  const { stderr } = withStderr(() => filterMarkedLiterals(source, [{ id: 'alone/debug-leftover', line: 1 }]));
+  assert.ok(stderr.includes('alone/typo-one') && stderr.includes('alone/typo-two'), stderr);
+});
+
 test('every check id the engine can produce is in the known-id set', () => {
   const fs = require('fs');
   const path = require('path');
