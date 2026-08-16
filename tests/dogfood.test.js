@@ -43,18 +43,6 @@ const HELD_OUT = [
 // suppression rung 4 is about.
 const PENDING = [
   {
-    path: 'tests/checks-config.test.js',
-    why: 'obvious/function-too-long reports an 88-line function that is 10 lines '
-      + 'long: the glob "**/*.generated.ts" inside a string reads to shape.js\'s '
-      + 'comment stripper as the start of a block comment. Fixed in shape.js',
-  },
-  {
-    path: 'tests/lang-comments.test.js',
-    why: 'obvious/nesting-depth 5 on a file whose deepest block is 2: the fixture '
-      + 'strings contain comment markers and unbalanced braces, and the same '
-      + 'shape.js stripper counts them as code. Fixed in shape.js',
-  },
-  {
     path: 'tests/lang-py.test.js',
     why: 'two safe/dynamic-eval findings on Python fixture strings, needing the '
       + 'same literal markers the other pack tests now carry. The file is owned '

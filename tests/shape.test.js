@@ -477,3 +477,20 @@ test('does not catastrophically backtrack on a long line', () => {
   });
   assert.ok(ms < 500, `took too long on pathological input: ${ms}ms`);
 });
+
+// A destructuring pattern is data, not a block. LITERAL_BRACE only catches
+// literals in expression position (right of `=`), so a binding pattern — which
+// sits left of it — used to count as a level of nesting and invented rung-3
+// findings on flat code. The guards below must hold in both directions: real
+// nesting still counts, data still does not.
+test('binding patterns are data, not nesting', () => {
+  assert.strictEqual(analyzeBraces('function f() {\n  const { a } = obj;\n}\n').maxDepth, 1);
+  assert.strictEqual(analyzeBraces('import { x } from "y";\nfunction f() {\n  go();\n}\n').maxDepth, 1);
+  assert.strictEqual(analyzeBraces('function f() {\n  let { a, b } = obj;\n}\n').maxDepth, 1);
+
+  // Still counted: real blocks, object literals, and switch cases.
+  assert.strictEqual(analyzeBraces('function f() {\n  if (a) {\n    go();\n  }\n}\n').maxDepth, 2);
+  assert.strictEqual(analyzeBraces('function f() {\n  const a = { b: 1 };\n}\n').maxDepth, 1);
+  assert.strictEqual(
+    analyzeBraces('function f(){\nswitch(x){\ncase 1: {\nif(a){\ngo();\n}}}}\n').maxDepth, 4);
+});

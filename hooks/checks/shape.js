@@ -48,6 +48,14 @@ const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
 // and treating it as a block would count data literals as nesting again.
 const CASE_LABEL = /^\s*(?:case\b[^:]*|default)\s*:/;
 
+// `const { a } = obj` and `import { x } from …` open a binding pattern, not a
+// block. LITERAL_BRACE only catches literals in expression position — to the
+// right of `=` — so a destructuring pattern, which sits to the left of it,
+// slipped through and counted as a level of nesting. That reads a flat
+// function as one deeper than it is, which is the wrong direction: it invents
+// a rung-3 finding rather than missing one.
+const BINDING_BRACE = /\b(?:const|let|var|import|export)\s*$/;
+
 // Every brace on one line, in order, each tagged with whether it opens a block
 // rather than a data literal.
 //
@@ -76,7 +84,8 @@ function bracesInLine(line, lineNo) {
     const ch = line[i];
     if (ch === '}') braces.push({ open: false, lineNo });
     else if (ch === '{') {
-      const literal = LITERAL_BRACE.test(line.slice(Math.max(0, lastCode - 6), lastCode + 1));
+      const before = line.slice(Math.max(0, lastCode - 6), lastCode + 1);
+      const literal = LITERAL_BRACE.test(before) || BINDING_BRACE.test(before);
       braces.push({ open: true, lineNo, isBlock: !literal || labelOpensBlock(lastCode) });
     }
     if (!/\s/.test(ch)) lastCode = i;
