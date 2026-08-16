@@ -18,10 +18,10 @@ Initial release.
   `/procoder-gain`, `/procoder-guard`, `/procoder-help`.
 - An MCP server (`procoder-mcp/server.js`) exposing the doctrine and check
   engine over JSON-RPC for non-Claude-Code hosts.
-- Nine generated platform rule files (Cursor, Windsurf, Cline, Kiro, Qoder,
-  generic `.agents`, `AGENTS.md`, openclaw) plus ten command ports each for
-  opencode and openclaw, all rendered from the single doctrine source with a
-  CI drift gate (`npm run sync:check`).
+- Generated platform rule files for Cursor, Windsurf, Cline, Kiro, Qoder,
+  generic `.agents`, `AGENTS.md`, and openclaw — eight in all — plus ten
+  command ports each for opencode and openclaw, all rendered from the single
+  doctrine source with a CI drift gate (`npm run sync:check`).
 - Worked before/after examples for every rung (`examples/`) and per-host
   install instructions (`docs/install.md`).
 - Known limitations, verified against the current source and written up
