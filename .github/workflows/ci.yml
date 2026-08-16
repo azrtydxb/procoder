@@ -13,3 +13,7 @@ jobs:
       - name: Generated rule files must match the doctrine
         run: npm run sync:check
       - run: npm test
+      # The gate applies to the gate. Fix the source when this fails; do not
+      # baseline procoder's own findings or widen an exclusion to cover them.
+      - name: procoder checks itself
+        run: node bin/procoder.js check hooks bin scripts
