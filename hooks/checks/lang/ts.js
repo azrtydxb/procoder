@@ -32,6 +32,12 @@ const LINE_RULES = [
     fix: 'replace with a lookup table or a direct call',
   },
   {
+    id: 'safe/shell-injection', rung: 'SAFE',
+    re: /\b(?:child_process\.)?(?:exec|execSync)\s*\(\s*(?:`[^`]*\$\{|["'][^"']*["']\s*\+)|\b(?:spawn|execFile)\s*\([^)]*\bshell\s*:\s*true/,
+    message: 'shell invoked with an interpolated command',
+    fix: 'use execFile/spawn with an argument array and shell:false',
+  },
+  {
     id: 'safe/tls-disabled', rung: 'SAFE',
     re: /rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*["']?0/,
     message: 'TLS certificate verification disabled',

@@ -45,6 +45,12 @@ const LINE_RULES = [
     fix: 'validate against the proper CA instead',
   },
   {
+    id: 'safe/shell-injection', rung: 'SAFE',
+    re: /Process\.Start\s*\([^)]*(?:\$"|"[^"]*"\s*\+|\+\s*"[^"]*")|(?=.*UseShellExecute\s*=\s*true)(?=.*Arguments\s*=\s*\$")/,
+    message: 'shell invoked with an interpolated command',
+    fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
+  },
+  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /Console\.(?:WriteLine|Write)\s*\(|Debug\.WriteLine\s*\(/,
     message: 'leftover debugging statement',

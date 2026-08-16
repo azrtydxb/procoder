@@ -24,8 +24,34 @@ test('toolFor names the external tool preferred for each language', () => {
   assert.strictEqual(toolFor('a.py').name, 'ruff');
   assert.strictEqual(toolFor('a.ts').name, 'eslint');
   assert.strictEqual(toolFor('a.go').name, 'golangci-lint');
-  assert.strictEqual(toolFor('a.rs').name, 'clippy');
+  // The rust entry invokes the `cargo` binary (argv starts with 'clippy') —
+  // there is no standalone `clippy` binary on a normal PATH, only
+  // `cargo-clippy`, which cargo dispatches to internally.
+  assert.strictEqual(toolFor('a.rs').name, 'cargo');
   assert.strictEqual(toolFor('README.md'), null);
+});
+
+test('clippy argv invokes cargo clippy, not a nonexistent clippy binary', () => {
+  const rust = toolFor('a.rs');
+  const argv = rust.argv('/repo/src/main.rs');
+  assert.strictEqual(argv[0], 'clippy');
+});
+
+test('clippy parse discards findings attributed to a different file', () => {
+  const rust = toolFor('a.rs');
+  // cargo clippy cannot be scoped to a single file — it always compiles the
+  // whole crate — so its output can legitimately contain warnings from
+  // files other than the one being checked. argv() records which absolute
+  // path is under inspection; parse() must discard anything not from it.
+  rust.argv('/repo/src/main.rs');
+  const stdout = [
+    'src/main.rs:10:5: warning: unused variable: `x` [unused_variables]',
+    'src/other.rs:412:3: warning: needless return [clippy::needless_return]',
+  ].join('\n');
+  const parsed = rust.parse(stdout);
+  assert.strictEqual(parsed.length, 1);
+  assert.strictEqual(parsed[0].line, 10);
+  assert.match(parsed[0].message, /unused variable/);
 });
 
 test('each tool entry can parse its own output format', () => {
@@ -36,4 +62,36 @@ test('each tool entry can parse its own output format', () => {
   assert.strictEqual(parsed.length, 1);
   assert.strictEqual(parsed[0].line, 7);
   assert.match(parsed[0].message, /bare except/);
+});
+
+test('each finding id carries the tool\'s own rule id, not just the tool name', () => {
+  const ruff = toolFor('a.py');
+  const [ruffFinding] = ruff.parse(JSON.stringify([
+    { filename: 'a.py', location: { row: 7 }, code: 'E722', message: 'do not use bare except' },
+  ]));
+  assert.strictEqual(ruffFinding.id, 'true/ruff:E722');
+
+  const golangci = toolFor('a.go');
+  const [golangciFinding] = golangci.parse(JSON.stringify({
+    Issues: [{ Pos: { Line: 12 }, FromLinter: 'govet', Text: 'nilness' }],
+  }));
+  assert.strictEqual(golangciFinding.id, 'true/golangci-lint:govet');
+});
+
+test('two different eslint rules firing on the same line get distinct ids — a baselined finding must not silently swallow a different rule at the same location', () => {
+  const eslint = toolFor('a.ts');
+  const parsed = eslint.parse(JSON.stringify([
+    {
+      filePath: 'a.ts',
+      messages: [
+        { line: 10, ruleId: 'no-unused-vars', message: 'unused' },
+        { line: 10, ruleId: 'no-eval', message: 'eval is evil' },
+      ],
+    },
+  ]));
+  assert.strictEqual(parsed.length, 2);
+  const ids = parsed.map((f) => f.id);
+  assert.strictEqual(ids[0], 'true/eslint:no-unused-vars');
+  assert.strictEqual(ids[1], 'true/eslint:no-eval');
+  assert.notStrictEqual(ids[0], ids[1]);
 });

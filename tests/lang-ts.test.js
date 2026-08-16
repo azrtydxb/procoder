@@ -32,6 +32,14 @@ test('flags disabled TLS verification and weak randomness for tokens', () => {
   assert.ok(!ids('const jitter = Math.random() * 100;').includes('safe/weak-random'));
 });
 
+test('flags shell injection', () => {
+  assert.ok(ids('exec(`git log ${branch}`);').includes('safe/shell-injection'));
+  assert.ok(ids("execSync('rm -rf ' + dir);").includes('safe/shell-injection'));
+  assert.ok(ids("spawn('sh', [cmd], { shell: true });").includes('safe/shell-injection'));
+  assert.ok(!ids("execFile('git', ['log', branch]);").includes('safe/shell-injection'));
+  assert.ok(!ids("spawn('ls', [dir]);").includes('safe/shell-injection'));
+});
+
 test('flags swallowed errors and floating promises', () => {
   assert.ok(ids('try { go(); } catch (e) {}').includes('true/swallowed-error'));
   assert.ok(ids('try { go(); } catch (e) { /* ignore */ }').includes('true/swallowed-error'));

@@ -41,6 +41,12 @@ const LINE_RULES = [
     fix: 'trust the proper CA instead of accepting all certificates',
   },
   {
+    id: 'safe/shell-injection', rung: 'SAFE',
+    re: /Runtime\.getRuntime\(\)\.exec\s*\([^)]*\+|new\s+ProcessBuilder\s*\([^)]*"(?:sh|bash|cmd(?:\.exe)?|powershell)"[^)]*"(?:-c|\/c)"/,
+    message: 'shell invoked with an interpolated command',
+    fix: 'call the binary directly with a separate argument list',
+  },
+  {
     id: 'true/printstacktrace', rung: 'TRUE',
     re: /\.printStackTrace\s*\(\s*\)/,
     message: 'exception printed to stderr instead of handled',

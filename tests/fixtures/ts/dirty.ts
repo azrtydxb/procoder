@@ -37,6 +37,14 @@ function pickLabel(a: boolean, b: boolean) {
   return x;
 }
 
+function runGitLog(branch: string) {
+  exec(`git log ${branch}`);
+}
+
+function runShell(cmd: string) {
+  spawn('sh', [cmd], { shell: true });
+}
+
 function big(a, b, c, d, e) {
   work();
   work();

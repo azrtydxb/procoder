@@ -40,3 +40,11 @@ function pickLabel(a: boolean) {
 function fourParams(a: number, b: number, c: number, d: number) {
   return a + b + c + d;
 }
+
+function runGitLog(branch: string) {
+  execFile('git', ['log', branch]);
+}
+
+function runShell(dir: string) {
+  spawn('ls', [dir]);
+}
