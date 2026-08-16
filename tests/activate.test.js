@@ -11,18 +11,15 @@ const SUBAGENT = path.join(__dirname, '..', 'hooks', 'procoder-subagent.js');
 const MODE_TRACKER = path.join(__dirname, '..', 'hooks', 'procoder-mode-tracker.js');
 
 function run(script, env = {}) {
+  // The caller inspects dir after this returns, so cleanup is left to the OS
+  // temp reaper.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
-  try {
-    const stdout = execFileSync('node', [script], {
-      encoding: 'utf8',
-      input: '{}',
-      env: { ...process.env, CLAUDE_CONFIG_DIR: dir, ...env },
-    });
-    return { stdout, dir, levelFile: path.join(dir, '.procoder-active') };
-  } finally {
-    // dir is inspected by the caller before this runs only for sync assertions,
-    // so clean up lazily via the OS temp reaper instead of removing it here.
-  }
+  const stdout = execFileSync('node', [script], {
+    encoding: 'utf8',
+    input: '{}',
+    env: { ...process.env, CLAUDE_CONFIG_DIR: dir, ...env },
+  });
+  return { stdout, dir, levelFile: path.join(dir, '.procoder-active') };
 }
 
 test('activate emits the doctrine and persists the level', () => {
@@ -87,6 +84,49 @@ test('saying "stop procoder" then launching a subagent injects no doctrine', () 
     env,
   });
   assert.strictEqual(stdout, '');
+});
+
+test('deactivation survives a session restart, for the session and its subagents', () => {
+  // The session-start hook must not treat a persisted 'off' the way it treats
+  // PROCODER_DEFAULT_LEVEL=off: deleting the level file there would make the
+  // NEXT session read a missing file, fall back to the default, and re-activate.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  try {
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    const levelFile = path.join(dir, '.procoder-active');
+
+    execFileSync('node', [MODE_TRACKER],
+      { encoding: 'utf8', input: JSON.stringify({ prompt: 'stop procoder' }), env });
+    assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off');
+
+    // Session 2 starts.
+    const start = execFileSync('node', [HOOK], { encoding: 'utf8', input: '{}', env });
+    assert.ok(!/SAFE/.test(start), 'doctrine emitted after deactivation');
+    assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off',
+      'session start erased the persisted deactivation');
+
+    // A subagent launched in session 2 must stay silent too.
+    const sub = execFileSync('node', [SUBAGENT], { encoding: 'utf8', input: '{}', env });
+    assert.strictEqual(sub, '');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
+  try {
+    const levelFile = path.join(dir, '.procoder-active');
+    fs.writeFileSync(levelFile, 'paranoid\n');
+    execFileSync('node', [HOOK], {
+      encoding: 'utf8',
+      input: '{}',
+      env: { ...process.env, CLAUDE_CONFIG_DIR: dir, PROCODER_DEFAULT_LEVEL: 'off' },
+    });
+    assert.ok(!fs.existsSync(levelFile), 'env-level off left a stale persisted level behind');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('hooks exit 0 even when the config dir is unwritable', () => {
