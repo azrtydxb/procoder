@@ -35,6 +35,7 @@ const EXPECTATIONS = {
   'procoder-help.toml': { descriptionContains: 'rungs', promptContains: 'procoder-help skill' },
   'procoder-review.toml': { descriptionContains: 'diff', promptContains: 'procoder-review skill' },
   'procoder-audit.toml': { descriptionContains: 'whole repository', promptContains: 'procoder-audit skill' },
+  'procoder-rot.toml': { descriptionContains: 'dead, stale, and deprecated', promptContains: 'procoder-rot skill' },
 };
 
 test('each command is wired to the behavior its filename promises', () => {
