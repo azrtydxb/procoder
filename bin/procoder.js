@@ -178,13 +178,25 @@ function summarize(blocking, advisory, level) {
     : `\nprocoder: ${counts} — advisory only at this level, not failing the run.\n`;
 }
 
+// An `excluded` skip is the config doing its job — vendor/ is excluded on
+// purpose, and saying so once per file would bury the findings. `too-large` and
+// `unreadable` are different: a file that should have been gated was not, and
+// silence makes that indistinguishable from a clean pass. Said on stderr so it
+// survives a piped stdout, and it does not fail the run — an unchecked file is
+// news, not a violation.
+function reportSkip(relPath, skipped) {
+  if (skipped === 'excluded') return;
+  process.stderr.write(`procoder: skipped ${relPath} (${skipped}) — not checked.\n`);
+}
+
 function runCheck(files, repoRoot, config) {
   const level = readLevel();
   let blocking = 0;
   let advisory = 0;
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
-    if (skipped || findings.length === 0) continue;
+    if (skipped) { reportSkip(relPath, skipped); continue; }
+    if (findings.length === 0) continue;
     const gating = findings.filter((f) => isBlocking(f, level, config)).length;
     blocking += gating;
     advisory += findings.length - gating;

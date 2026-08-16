@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -31,14 +31,10 @@ function repoWith(files) {
 // the CLI then sees the default level (strict), not whatever the developer
 // running the suite happens to have set for themselves.
 function cli(repo, args, env = {}) {
-  const options = {
+  const r = spawnSync('node', [CLI, ...args], {
     cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
-  };
-  try {
-    return { code: 0, out: execFileSync('node', [CLI, ...args], options) };
-  } catch (e) {
-    return { code: e.status, out: String(e.stdout || '') + String(e.stderr || '') };
-  }
+  });
+  return { code: r.status, out: String(r.stdout || '') + String(r.stderr || '') };
 }
 
 function atLevel(repo, level) {
