@@ -53,6 +53,14 @@ class CleanExamples {
         log.info("here " + x);
     }
 
+    void runGitLog(String branch) throws Exception {
+        Runtime.getRuntime().exec(new String[]{"git", "log", branch});
+    }
+
+    void runShell(String cmd) throws Exception {
+        new ProcessBuilder("git", "log", cmd).start();
+    }
+
     void go() throws Exception {
     }
 }

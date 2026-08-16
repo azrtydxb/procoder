@@ -29,6 +29,13 @@ test('flags weak hashing and predictable randomness', () => {
   assert.ok(!ids('MessageDigest.getInstance("SHA-256")').includes('safe/weak-hash'));
 });
 
+test('flags shell injection', () => {
+  assert.ok(ids('Runtime.getRuntime().exec("git log " + branch);').includes('safe/shell-injection'));
+  assert.ok(ids('new ProcessBuilder("sh", "-c", cmd).start();').includes('safe/shell-injection'));
+  assert.ok(!ids('Runtime.getRuntime().exec(new String[]{"git", "log", branch});').includes('safe/shell-injection'));
+  assert.ok(!ids('new ProcessBuilder("git", "log", cmd).start();').includes('safe/shell-injection'));
+});
+
 test('flags swallowed exceptions', () => {
   assert.ok(ids('try { go(); } catch (Exception e) { }').includes('true/swallowed-error'));
   assert.ok(ids('catch (IOException e) { e.printStackTrace(); }').includes('true/printstacktrace'));

@@ -60,6 +60,17 @@ class DirtyExamples
         Console.WriteLine("here " + x);
     }
 
+    void RunGitLog(string branch)
+    {
+        Process.Start($"git log {branch}");
+    }
+
+    void RunShell(string cmd)
+    {
+        var psi = new ProcessStartInfo { FileName = "cmd.exe", Arguments = $"/c {cmd}", UseShellExecute = true };
+        Process.Start(psi);
+    }
+
     void Go()
     {
     }

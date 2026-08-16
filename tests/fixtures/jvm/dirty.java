@@ -56,6 +56,14 @@ class DirtyExamples {
         System.out.println("here " + x);
     }
 
+    void runGitLog(String branch) throws Exception {
+        Runtime.getRuntime().exec("git log " + branch);
+    }
+
+    void runShell(String cmd) throws Exception {
+        new ProcessBuilder("sh", "-c", cmd).start();
+    }
+
     void go() throws Exception {
     }
 }

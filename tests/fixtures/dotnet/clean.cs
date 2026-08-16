@@ -80,6 +80,17 @@ class CleanExamples
         _logger.LogInformation("here {X}", x);
     }
 
+    void RunGitLog(string branch)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "git",
+            ArgumentList = { "log", branch },
+            UseShellExecute = false,
+        };
+        Process.Start(psi);
+    }
+
     void Go()
     {
     }

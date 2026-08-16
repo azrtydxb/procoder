@@ -36,6 +36,14 @@ test('flags disabled certificate validation', () => {
   assert.ok(ids('ServerCertificateValidationCallback = (a, b, c, d) => true;').includes('safe/tls-disabled'));
 });
 
+test('flags shell injection', () => {
+  assert.ok(ids('Process.Start($"git log {branch}");').includes('safe/shell-injection'));
+  assert.ok(ids('Process.Start("cmd.exe", "/c " + cmd);').includes('safe/shell-injection'));
+  assert.ok(ids('var psi = new ProcessStartInfo { FileName = "cmd.exe", Arguments = $"/c {cmd}", UseShellExecute = true };').includes('safe/shell-injection'));
+  assert.ok(!ids('Process.Start("git", "log");').includes('safe/shell-injection'));
+  assert.ok(!ids('var psi = new ProcessStartInfo { FileName = "git", ArgumentList = { "log", branch }, UseShellExecute = false };').includes('safe/shell-injection'));
+});
+
 test('flags swallowed exceptions and leftover debugging', () => {
   assert.ok(ids('try { Go(); } catch (Exception) { }').includes('true/swallowed-error'));
   assert.ok(ids('Console.WriteLine("here");').includes('alone/debug-leftover'));
