@@ -301,3 +301,17 @@ test("the same shape reports when the fragment is not provably constant", () => 
   assert.ok(ids('String q = "SELECT * FROM t WHERE n = " + request.getName();\nstmt.executeQuery(q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
     .includes("safe/sql-injection"));
 });
+
+// Round 4. The file-level database gate was too coarse — see lang-ts.test.js.
+// `executeQuery` is never an ordinary method name; a bare `execute` is.
+test("a database-only call form is evidence without any SQL vocabulary", () => {
+  assert.ok(ids('class A {\n  Object find(Handle h, String name) {\n    String text = BASE + "@" + name;\n    return h.executeQuery(text);\n  }\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('import org.hibernate.Session;\nclass A {\n  Object find(Handle h, String name) {\n    String text = BASE + "@" + name;\n    return h.execute(text);\n  }\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a generic execute with no evidence anywhere stays silent", () => {
+  assert.ok(!ids('class A {\n  Object run(Step s, String n) {\n    String label = BASE + "@" + n;\n    return s.execute(label);\n  }\n}\n')
+    .includes("safe/sql-injection"));
+});

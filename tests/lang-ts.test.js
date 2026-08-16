@@ -393,3 +393,31 @@ test('a cross-line taint finding carries the build line as sourceLine', () => {
     { relPath: 'x.ts', config }).filter((f) => f.id === 'safe/sql-injection');
   assert.strictEqual(inline[0].sourceLine, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// Round 4. The file-level database gate that killed the Command-pattern false
+// positive was too coarse: a real injection in a file with no SQL vocabulary in
+// it went silent. A thin data-access module whose query text arrives as a
+// parameter or as a constant imported from elsewhere has the sink and not the
+// vocabulary. Per-call evidence first — the method's full call form — with a
+// database-driver import as the file-level tie-break the call cannot settle.
+test('an injection in a file with no SQL vocabulary still reports', () => {
+  assert.ok(ids("import { Client } from 'pg';\nimport { BASE } from './statements';\nexport async function find(client, name) {\n  const text = BASE + \"'\" + name + \"'\";\n  return client.execute(text);\n}\n")  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids("import { drizzle } from 'drizzle-orm';\nexport const find = (client, name) => client.execute(`row ${name}`);\n")  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('const orm = require("typeorm");\nfunction find(h, name) {\n  const text = BASE + name;\n  return h.query(text);\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+// The other direction, and the reason the gate exists at all: the same call
+// with no evidence anywhere — no SQL text, no handle receiver, no database
+// method form, no driver import — is the Command pattern, and stays silent.
+test('the driver-import tie-break does not fire without a driver', () => {
+  assert.ok(!ids("import { Step } from './steps';\nexport async function find(client, name) {\n  const text = BASE + \"'\" + name + \"'\";\n  return client.execute(text);\n}\n")
+    .includes('safe/sql-injection'));
+  // `pgup` and `upgrade` both contain the driver token `pg`; neither is a
+  // driver, and the word edges are what keep them out.
+  assert.ok(!ids("import { upgrade } from './pgup';\nfunction run(step, n) {\n  const label = `step ${n}`;\n  return step.execute(label);\n}\n")
+    .includes('safe/sql-injection'));
+});
