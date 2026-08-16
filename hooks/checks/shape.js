@@ -31,6 +31,13 @@ function stripNoise(source) {
     .replace(/`(?:[^`\\]|\\.)*`/g, (m) => m.replace(/[^\n]/g, ' '));
 }
 
+// A `{` sitting in expression position opens a data literal, not a block. That
+// distinction matters for depth: the fix for deep nesting is "invert the
+// conditions into guard clauses", and an object literal passed as an argument
+// has no condition to invert. Blocks — function bodies, callbacks, if/for/while
+// — still count, so callback pyramids are reported as before.
+const LITERAL_BRACE = /[(,=:[?&|!+]$|\breturn$/;
+
 function analyzeBraces(source) {
   const lines = stripNoise(source).split(/\r?\n/);
   const stack = [];
@@ -39,17 +46,24 @@ function analyzeBraces(source) {
   let maxDepth = 0;
 
   lines.forEach((line, index) => {
-    for (const ch of line) {
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
       if (ch === '{') {
-        depth += 1;
-        maxDepth = Math.max(maxDepth, depth);
-        stack.push(index + 1);
-      } else if (ch === '}') {
-        const startLine = stack.pop();
-        depth = Math.max(0, depth - 1);
-        if (startLine !== undefined) {
-          blocks.push({ startLine, endLine: index + 1, length: index + 1 - startLine + 1 });
+        const isBlock = !LITERAL_BRACE.test(line.slice(0, i).replace(/\s+$/, ''));
+        if (isBlock) {
+          depth += 1;
+          maxDepth = Math.max(maxDepth, depth);
         }
+        stack.push({ startLine: index + 1, isBlock });
+      } else if (ch === '}') {
+        const open = stack.pop();
+        if (open === undefined) continue;
+        if (open.isBlock) depth = Math.max(0, depth - 1);
+        blocks.push({
+          startLine: open.startLine,
+          endLine: index + 1,
+          length: index + 1 - open.startLine + 1,
+        });
       }
     }
   });
