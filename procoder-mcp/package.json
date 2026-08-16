@@ -2,7 +2,7 @@
   "name": "procoder-mcp",
   "version": "0.2.0",
   "description": "MCP server exposing procoder's four-rung ship gate.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "bin": { "procoder-mcp": "./server.js" },
   "files": ["server.js"]
 }
