@@ -396,6 +396,66 @@ test('an external linter rule id is accepted without a registry of its rules', (
 // The set is a list, and a list rots. Every check id the engine spells anywhere
 // under hooks/ must be in it, or a marker naming a genuine id would be reported
 // as a typo — the failure this fix exists to prevent, inverted.
+// The colon form was accepted on shape alone: `<rung>/<word>:<anything>`. The
+// rule half genuinely cannot be enumerated — it is the tool's — but the tool
+// half is a closed set, the same four registry.js can invoke, so half the id
+// can be checked and a misspelt tool is no longer the one marker mistake that
+// fails silently.
+test('a literal marker naming an unknown tool in a colon id warns', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const findings = [{ id: 'true/eslint:no-eval', line: 1 }];
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    `evil(); // ${MARK}true/eslnit:no-eval the tool name above is a typo`, findings));
+
+  assert.deepStrictEqual(result, findings, 'a misspelt tool must silence nothing');
+  assert.ok(stderr.includes('true/eslnit:no-eval'), `the misspelt tool went unreported: ${JSON.stringify(stderr)}`);
+});
+
+test('a colon id on a rung no external tool reports on warns', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const findings = [{ id: 'safe/hardcoded-secret', line: 1 }];
+  const { result, stderr } = withStderr(() => filterMarkedLiterals(
+    `const k = "${KEY}"; // ${MARK}safe/hardcoded-secret:x a colon id no pack can produce`, findings));
+
+  assert.deepStrictEqual(result, findings);
+  assert.ok(stderr.includes('safe/hardcoded-secret:x'), 'an unproducible colon id went unreported');
+});
+
+// The de-duplication key held the id and the line number and no file, so the
+// same typo on the same line of a second file was silently swallowed — and the
+// message never said which file to go and fix.
+test('the same unknown id on the same line of two files warns for each, by name', () => {
+  const source = `const k = "${KEY}"; // ${MARK}alone/no-such-rule-at-all a plausible id that does not exist`;
+  const { stderr } = withStderr(() => {
+    checkUniversal(source, { relPath: 'first.js', config });
+    checkUniversal(source, { relPath: 'second.js', config });
+  });
+
+  assert.ok(stderr.includes('first.js'), `the first file was not named: ${JSON.stringify(stderr)}`);
+  assert.ok(stderr.includes('second.js'), `the second file was not warned about: ${JSON.stringify(stderr)}`);
+  assert.strictEqual(stderr.split('\n').filter((l) => l).length, 2, 'one warning per file, no more');
+});
+
+// Two passes over the same file — the pack's own, then run.js's over every
+// pack's findings — must still warn once.
+test('the two passes over one file warn once between them', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `const k = "${KEY}"; // ${MARK}alone/no-such-rule-twice a plausible id that does not exist`;
+  const { stderr } = withStderr(() => {
+    const own = checkUniversal(source, { relPath: 'once.js', config });
+    assert.ok(own.length, 'the pack must produce the finding the second pass then filters');
+    filterMarkedLiterals(source, own);
+  });
+  assert.strictEqual(stderr.split('\n').filter((l) => l).length, 1, `warned twice: ${JSON.stringify(stderr)}`);
+});
+
+test('two different unknown ids on one line are both named', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const source = `x(); // ${MARK}alone/typo-one, alone/typo-two two distinct typos here`;
+  const { stderr } = withStderr(() => filterMarkedLiterals(source, [{ id: 'alone/debug-leftover', line: 1 }]));
+  assert.ok(stderr.includes('alone/typo-one') && stderr.includes('alone/typo-two'), stderr);
+});
+
 test('every check id the engine can produce is in the known-id set', () => {
   const fs = require('fs');
   const path = require('path');

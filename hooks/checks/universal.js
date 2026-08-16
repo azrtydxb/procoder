@@ -255,9 +255,20 @@ function commentedCodeFindings(lines) {
 //              frontmatter, markdown tables and fenced examples cannot carry a
 //              trailing comment without changing what they mean or render.
 //
-// Not a block form: a block is a region an author stops reading, and the whole
-// failure being fixed here is text no one re-reads. Two lines is the widest
-// scope that still forces a decision per occurrence.
+// Not a block form, and this was reconsidered rather than inherited. A bounded
+// block — explicit start, explicit end, naming its rules and its reason —
+// would let a file that is entirely violating input (a fixture) be marked
+// instead of path-excluded in .procoder.toml. It is still refused. A block is
+// a region an author stops reading: everything added between the two markers
+// afterwards is covered by a decision nobody made, which is the blanket
+// disable this project's own rung 4 forbids, only with a reason attached to
+// make it feel examined. The path exclusion is the honest form of the same
+// thing — it is in one file, it names the directory, it is reviewable in one
+// place, and it does not travel with the code. Two lines is the widest scope
+// that still forces a decision per occurrence.
+//
+// No wildcard, for the same reason and deliberately: the bare form routes to
+// alone/blanket-suppression and is reported.
 //
 // Which rules can it silence? All of them, safe/hardcoded-secret included. A
 // marker that cannot cover a credential cannot cover this project's own test
@@ -274,38 +285,50 @@ function commentedCodeFindings(lines) {
 // left believing the line is marked. So the id is checked, and an unknown one
 // is reported rather than swallowed.
 //
-// A configured linter's own rule ids are the tool's to define and cannot be
-// enumerated, so `<rung>/<tool>:<rule>` is accepted on shape. Everything
-// without a colon is a built-in id and must be one of the real ones.
+// A configured linter's own *rule* ids are the tool's to define and cannot be
+// enumerated. The tool itself can be: registry.js invokes four, and only those
+// four ever appear on the left of the colon, always on rung TRUE. So the id is
+// checked as far as it can be — `true/<known tool>:<anything>` — and a
+// misspelt tool (`true/eslnit:no-eval`) is reported like any other typo
+// instead of being accepted on shape. The rule half stays open, which is the
+// honest limit: procoder does not know eslint's rule list.
 const KNOWN_RULE_IDS = new Set(markers.BUILTIN_RULE_IDS);
-const EXTERNAL_RULE_ID = /^(?:safe|true|obvious|alone)\/[\w@.-]+:\S+$/;
+const EXTERNAL_RULE_ID = new RegExp(`^true\\/(?:${markers.EXTERNAL_TOOLS.join('|')}):\\S+$`);
 
-// Which unknown ids have already been complained about. filterMarkedLiterals
-// runs twice over a file — once for this pack's own findings, once in run.js
-// over every pack's — and the same typo must not be reported twice.
+// Which unknown ids have already been complained about, keyed by file as well
+// as id and line: the same typo on the same line of two files is two mistakes
+// in two places, and warning once named neither of them.
+//
+// The bare `id@line` key is kept alongside because filterMarkedLiterals runs
+// twice over a file — once here for this pack's findings, once in run.js over
+// every pack's — and the second pass does not know the path. A file-aware
+// warning claims the bare key too, so the second pass stays quiet; a caller
+// that never supplies a path (a direct API call) dedups on it as before.
 const reported = new Set();
 
 // stderr, never stdout: the PostToolUse hook's stdout carries a JSON protocol,
 // and stderr is where config.js already reports an exclusion it is dropping.
-function unknownRuleId(id, lineNo) {
+function unknownRuleId(id, lineNo, relPath) {
   if (KNOWN_RULE_IDS.has(id) || EXTERNAL_RULE_ID.test(id)) return false;
-  const seen = `${id}@${lineNo}`;
+  const bare = `${id}@${lineNo}`;
+  const seen = relPath ? `${relPath}|${bare}` : bare;
   if (!reported.has(seen)) {
     reported.add(seen);
+    reported.add(bare);
     process.stderr.write(
-      `procoder: unknown rule id "${id}" in the literal marker on line ${lineNo} — it suppresses nothing\n`);
+      `procoder: unknown rule id "${id}" in the literal marker at ${relPath ? `${relPath}:${lineNo}` : `line ${lineNo}`} — it suppresses nothing\n`);
   }
   return true;
 }
 
-function markedLines(lines) {
+function markedLines(lines, relPath) {
   const marked = new Map();
   lines.forEach((line, index) => {
     const m = markers.LITERAL_MARKER.exec(line);
     if (!m) return;
     const ids = m[1].split(',')
       .map((id) => id.trim())
-      .filter((id) => !unknownRuleId(id, index + 1));
+      .filter((id) => !unknownRuleId(id, index + 1, relPath));
     const last = markers.LITERAL_MARKER_ALONE.test(line.slice(0, m.index)) ? index + 2 : index + 1;
     for (let lineNo = index + 1; lineNo <= last; lineNo += 1) {
       if (!marked.has(lineNo)) marked.set(lineNo, new Set());
@@ -322,9 +345,11 @@ function markedLines(lines) {
 //
 // The `indexOf` guard is what keeps this free on the files that have no marker
 // at all, which is nearly all of them: no split, no regex, no allocation.
-function filterMarkedLiterals(source, findings) {
+// `relPath` is optional and only names the file in an unknown-id warning:
+// run.js calls this without one, over findings from every pack at once.
+function filterMarkedLiterals(source, findings, relPath) {
   if (!findings.length || String(source).indexOf('procoder:') < 0) return findings;
-  const marked = markedLines(String(source).split(/\r?\n/));
+  const marked = markedLines(String(source).split(/\r?\n/), relPath);
   if (!marked.size) return findings;
   return findings.filter((f) => !(marked.get(f.line) || EMPTY_SET).has(f.id));
 }
@@ -344,7 +369,7 @@ function checkUniversal(source, { relPath, config } = {}) {
   });
 
   findings.push(...commentedCodeFindings(lines));
-  return filterMarkedLiterals(source, findings);
+  return filterMarkedLiterals(source, findings, relPath);
 }
 
 module.exports = { checkUniversal, filterMarkedLiterals };

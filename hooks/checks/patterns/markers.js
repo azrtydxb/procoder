@@ -84,10 +84,23 @@ const LITERAL_MARKER =
 // every id literal under hooks/ and fails if one is missing, so a new check
 // cannot land without landing here too.
 //
-// The four bare `true/<tool>` ids are what registry.js emits when a configured
-// linter reports a finding with no rule id of its own. The tool's *own* rule
-// ids (`true/eslint:no-eval`) are the tool's to define and cannot be listed;
-// universal.js accepts those on shape instead.
+// The tools registry.js knows how to invoke, and therefore the only tool names
+// that can appear on the left of the colon in an external rule id. The rule
+// half is the tool's own and cannot be enumerated; this half can, so a marker
+// naming `true/eslnit:no-eval` is caught rather than accepted on shape.
+//
+// A list, for the same reason as the ids below: registry.js builds `true/
+// ${tool}` from a table of invocation recipes, not from an exported set. Kept
+// honest by the test that scrapes hooks/ for the tool names.
+const EXTERNAL_TOOLS = Object.freeze(['eslint', 'ruff', 'golangci-lint', 'clippy']);
+
+// The bare `true/<tool>` ids are what registry.js emits when a configured
+// linter reports a finding with no rule id of its own. They are generated from
+// EXTERNAL_TOOLS rather than spelled out, so the two cannot drift into
+// disagreeing about which tools exist. The tool's *own* rule ids
+// (`true/eslint:no-eval`) are the tool's to define and cannot be listed;
+// universal.js accepts those on shape, with the tool half checked against
+// EXTERNAL_TOOLS.
 const BUILTIN_RULE_IDS = Object.freeze([
   'safe/dynamic-eval', 'safe/floating-version', 'safe/hardcoded-secret',
   'safe/missing-lockfile', 'safe/pii-in-log', 'safe/secret-in-log',
@@ -102,7 +115,7 @@ const BUILTIN_RULE_IDS = Object.freeze([
   'alone/blanket-suppression', 'alone/commented-code', 'alone/debug-leftover',
   'alone/deprecated-no-trigger', 'alone/orphan-todo',  // procoder: literal alone/deprecated-no-trigger the id is itself deprecation-shaped
   'alone/unexplained-suppression',
-  'true/eslint', 'true/ruff', 'true/golangci-lint', 'true/clippy',
+  ...EXTERNAL_TOOLS.map((tool) => `true/${tool}`),
 ]);
 
 // What may precede a standalone marker: comment and markup punctuation only.
@@ -177,6 +190,7 @@ const STALE_DEPRECATION_FINDING = {
 
 module.exports = {
   BUILTIN_RULE_IDS,
+  EXTERNAL_TOOLS,
   LITERAL_MARKER,
   LITERAL_MARKER_ALONE,
   ORPHAN_MARKER,
