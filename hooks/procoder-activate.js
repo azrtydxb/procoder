@@ -2,11 +2,13 @@
 // procoder — SessionStart activation hook.
 //   1. Resolves the active level (env > persisted)
 //   2. Persists it so the statusline can read it
-//   3. Emits the level-filtered doctrine as session context
+//   3. Emits the level-filtered doctrine as session context, with an
+//      "update available" line in front of it when there is one
 
 const { normalizeLevel } = require('./procoder-config');
 const { getProcoderInstructions } = require('./procoder-instructions');
 const { clearLevel, setLevel, readLevel, writeHookOutput } = require('./procoder-runtime');
+const { updateNotice } = require('./procoder-update-check');
 
 if (process.env.PROCODER_NO_HOOK === '1') process.exit(0);
 
@@ -34,4 +36,12 @@ if (level === 'off') {
 }
 
 setLevel(level);
-writeHookOutput('SessionStart', level, getProcoderInstructions(level));
+
+// The notice rides in the session context rather than on stderr: stderr from a
+// SessionStart hook is not shown to the user unless the hook fails, so a notice
+// there would be seen by nobody. In the context, Claude can mention it once, in
+// the session it applies to. updateNotice() reads a cache and cannot throw, so
+// it adds no latency and cannot cost the session its doctrine.
+const notice = updateNotice();
+writeHookOutput('SessionStart', level,
+  (notice ? notice + '\n\n' : '') + getProcoderInstructions(level));
