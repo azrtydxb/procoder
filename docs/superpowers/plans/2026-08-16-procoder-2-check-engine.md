@@ -9,7 +9,9 @@
 **Tech Stack:** Node.js ≥18, CommonJS, zero runtime dependencies. Tests via `node --test` with per-language fixture pairs.
 
 **Spec:** [docs/superpowers/specs/2026-08-16-procoder-design.md](../specs/2026-08-16-procoder-design.md)
-**Depends on:** Plan 1 (`hooks/procoder-config.js`, `hooks/procoder-runtime.js`, `hooks/claude-hooks.json` already declares the PostToolUse entry).
+**Depends on:** Plan 1 (`hooks/procoder-config.js`, `hooks/procoder-runtime.js`).
+
+**Note:** Plan 1 deliberately does NOT declare the `PostToolUse` hook — declaring a hook whose script does not ship makes every `Write`/`Edit` spawn a missing file. Task 15 of this plan must therefore **add** the `PostToolUse` block to `hooks/claude-hooks.json` (matcher `Write|Edit`, timeout 2, command `node "${CLAUDE_PLUGIN_ROOT}/hooks/procoder-check.js"`) in the same commit that creates `procoder-check.js`, and update `tests/manifest.test.js` — which asserts the exact set of shipping events and that each declared script exists on disk — from three events to four.
 
 ## Global Constraints
 
