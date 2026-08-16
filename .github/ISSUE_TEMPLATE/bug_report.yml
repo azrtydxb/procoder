@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in procoder itself is broken — a crash, a wrong finding, a hook that doesn't fire.
+labels: [bug]
+body:
+  - type: input
+    id: procoder-version
+    attributes:
+      label: procoder version
+      description: From `.claude-plugin/plugin.json`, or `procoder --version` if you have the CLI.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: claude-code-version
+    attributes:
+      label: Claude Code version
+      description: Only relevant if this is a hook/plugin issue rather than a CLI-only one.
+      placeholder: "claude --version output, or N/A for CLI-only use"
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15 / Ubuntu 24.04 / Windows 11, and Node version if known"
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: Level
+      description: The active procoder level when this happened.
+      options:
+        - pragmatic
+        - strict (default)
+        - paranoid
+        - "off (still misbehaving somehow)"
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: File or snippet
+      description: The smallest file or code snippet that reproduces it. Paste it, don't just describe it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What the finding said (or what happened)
+      description: Exact output — the finding text, the stack trace, or "nothing happened" if that's the bug.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
