@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Ship gate for AI-written code: security, correctness, readability, and nothing stale left behind.",
   "license": "MIT",
+  "engines": { "node": ">=18" },
   "main": "./hooks/procoder-runtime.js",
   "files": ["hooks/", "skills/", "commands/", "scripts/", "AGENTS.md", "LICENSE"],
   "scripts": {

@@ -10,11 +10,15 @@ const SCRIPT = path.join(__dirname, '..', 'hooks', 'procoder-statusline.sh');
 
 function run(level) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
-  if (level) fs.writeFileSync(path.join(dir, '.procoder-active'), level + '\n');
-  return execFileSync('bash', [SCRIPT], {
-    encoding: 'utf8',
-    env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
-  }).trim();
+  try {
+    if (level) fs.writeFileSync(path.join(dir, '.procoder-active'), level + '\n');
+    return execFileSync('bash', [SCRIPT], {
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_CONFIG_DIR: dir },
+    }).trim();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test('renders the active level in caps', () => {

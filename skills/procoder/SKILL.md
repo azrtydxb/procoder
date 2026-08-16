@@ -209,7 +209,7 @@ A change isn't done until the thing it replaced is gone.
 Applies to the diff.
 <!-- /level -->
 <!-- level:paranoid -->
-Applies to every file touched, not only the changed lines.
+At paranoid, extend this to every file touched, not only the changed lines.
 <!-- /level -->
 
 ## Interop with ponytail

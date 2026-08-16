@@ -4,8 +4,8 @@ procoder is a [Claude Code](https://claude.com/claude-code) plugin that governs
 whether AI-written code is allowed to ship. Every response is checked against
 four rungs — **SAFE**, **TRUE**, **OBVIOUS**, **ALONE** — covering security at
 trust boundaries, error handling and edge cases, readability, and whether the
-code the change replaced was actually deleted. It pairs with the `ponytail`
-plugin: ponytail decides **what to write** (the minimal, YAGNI-first
+code the change replaced was actually deleted. It pairs with the
+[`ponytail`](https://github.com/dietrichgebert/ponytail) plugin: ponytail decides **what to write** (the minimal, YAGNI-first
 solution); procoder decides **whether it may ship**.
 
 ## The ladder
@@ -52,7 +52,9 @@ clone: `claude plugin marketplace add ./procoder`.)
 | `paranoid` | strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff. |
 
 Switch levels mid-session with `/procoder <level>`, or say "stop procoder" /
-"normal mode" to deactivate for the rest of the session.
+"normal mode" to deactivate. Deactivation is persisted, so it outlives the
+session and survives restarts — re-enable with `/procoder strict` (or any other
+level) when you want procoder back.
 
 ## Commands
 

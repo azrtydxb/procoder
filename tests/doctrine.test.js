@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { LEVELS } = require('../hooks/procoder-config');
 
 const doctrine = fs.readFileSync(
   path.join(__dirname, '..', 'skills', 'procoder', 'SKILL.md'), 'utf8');
@@ -35,13 +36,49 @@ test('both level-gated block types are present', () => {
   assert.match(doctrine, /<!-- level:paranoid -->/, 'no paranoid-gated block');
 });
 
+// Distinctive phrases, not bare topic words: "error" or "test" appear in any
+// coding prose, so a rule could be gutted without the check noticing.
 test('covers every spec requirement area', () => {
-  for (const topic of [
-    'trust boundar', 'parameterized', 'authorization', 'secret',
-    'PII', 'dependenc', 'error', 'test', 'naming', 'why',
-    'removal trigger', 'ponytail',
+  // Whitespace-flattened: the doctrine is hard-wrapped, so a phrase can
+  // straddle a line break.
+  const flat = doctrine.toLowerCase().replace(/\s+/g, ' ');
+  for (const phrase of [
+    'validate at the boundary, not downstream',
+    'allowlist not denylist',
+    'parameterized queries only',
+    'enforced server-side, per-request',
+    'fail loudly at startup when absent',
+    'correlation id',
+    'a new dependency is a new trust boundary',
+    'memory-hard kdf (argon2/bcrypt/scrypt)',
+    'no swallowed exceptions, no empty `catch`',
+    'money is never a float',
+    'a test that passes against a stub is not a test',
+    'coverage percentage is never a target',
+    'names say **what**, never **how**',
+    'comment the **why**',
+    'removal trigger',
+    'ponytail chooses **what to write**',
   ]) {
-    assert.match(doctrine.toLowerCase(), new RegExp(topic.toLowerCase()), `missing: ${topic}`);
+    assert.ok(flat.includes(phrase), `missing rule: ${phrase}`);
+  }
+});
+
+test('the four level names and their order are consistent everywhere they are documented', () => {
+  // Level semantics are hand-maintained in four places; nothing but this test
+  // stops one of them from drifting.
+  for (const rel of [
+    'skills/procoder/SKILL.md',
+    'README.md',
+    'commands/procoder.toml',
+    'skills/procoder-help/SKILL.md',
+  ]) {
+    const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8').toLowerCase();
+    for (const level of LEVELS) {
+      assert.match(text, new RegExp(`\\b${level}\\b`), `${rel} never names the level ${level}`);
+    }
+    assert.match(text, /pragmatic[\s\S]{0,400}?strict[\s\S]{0,400}?paranoid/,
+      `${rel} does not list pragmatic → strict → paranoid in ascending order`);
   }
 });
 
