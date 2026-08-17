@@ -260,10 +260,14 @@ build on a guess about deletion is how a tool gets switched off.
 
 ## Every rule the engine can report
 
-Forty-four rule ids, and this is all of them — the set that line markers and
-`[exclude] rules` entries are checked against. Rungs 5 (FAST) and
-6 (MEANT) appear nowhere below because **no deterministic check produces a
-finding at either**: they are doctrine the model reads, not gates CI runs.
+Forty-seven rule ids, and this is all of them — the set that line markers and
+`[exclude] rules` entries are checked against. Rungs 5 (FAST) and 6 (MEANT)
+have three between them, and that is the point: most of what those two rungs
+ask cannot be decided from the text of a file, so the engine checks the narrow
+part it can prove and leaves the rest as doctrine the model reads. What was
+built and deliberately dropped — a nested-scan rule that fired 58 times on
+CPython, all of it correct code — is on
+[what it misses](https://azrtydxb.github.io/procoder/limitations.html).
 
 Rung 1, SAFE — untrusted data reaching a sink, and credentials at rest:
 
@@ -325,6 +329,19 @@ Rung 4, ALONE — what a change left behind:
 | alone/deprecated-no-trigger | A deprecation mark with no removal condition. | <!-- procoder: literal alone/deprecated-no-trigger the rule described, not an instance -->
 | alone/blanket-suppression | A suppression naming no rule, or disabling a whole file. |
 | alone/unexplained-suppression | A suppression naming a rule but giving no reason. |
+
+Rung 5, FAST — cost that grows with the input rather than with the work:
+
+| Rule id | Reports |
+|---|---|
+| fast/query-in-loop | A database, cache or HTTP round trip inside a loop over a named collection — one call per item, where one call for the set would do. |
+| fast/blocking-in-async | A blocking sleep, synchronous HTTP call or subprocess on an async path, which stalls the thread everything else is waiting on. Node's `*Sync` calls are deliberately excluded: they are ordinary in a CLI. |
+
+Rung 6, MEANT — code that does something other than what was asked:
+
+| Rule id | Reports |
+|---|---|
+| meant/unimplemented-stub | A `todo!()` on a path that ships — a stub that compiles and then panics in front of whoever called it. Rust's `unimplemented!()` is excluded: it means "not supported", not "not written yet". |
 
 ## Configuration
 
