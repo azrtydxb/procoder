@@ -623,7 +623,47 @@ function hasSql(lines) {
 // still reports at the call whose own form says "database", and stays silent at
 // the one whose form says nothing. Ordered so the per-call regex runs only on a
 // line a rule has already matched in a file the gate would otherwise close.
+// The gate above asks about the *file*, and that is the other half of too
+// coarse: a module that legitimately runs SQL lends its evidence to every
+// `execute` in it, including `redis.execute(cmd)`, `runner.execute(step)`,
+// `cache.execute(cacheKey(id))` and `api.execute(q)`. Those receivers are
+// plainly not database handles, and the file's SQL says nothing about them.
+//
+// So the receiver is read at the call, and a call made on a receiver from this
+// list is not a database call whatever the file contains. This subtracts from
+// the file-level evidence only — an unknown receiver is unchanged, which is
+// what keeps a genuine injection through a real handle firing, and a file with
+// no database evidence at all is unchanged too, which is what keeps `execute`
+// as an ordinary method name silent.
+const NON_DB_RECEIVER = new RegExp([
+  String.raw`^(?:redis|valkey|memcache\w*|cache\w*|queue\w*|jobs?|runner|worker`,
+  String.raw`|scheduler|tasks?|api|rpc|grpc|http\w*|fetch|mail\w*|smtp|s3|bucket`,
+  String.raw`|kafka|rabbit\w*|amqp|broker|pubsub|topic|events?|bus|shell|cmd`,
+  String.raw`|child_process|proc|process|browser|page|elastic\w*|opensearch|solr`,
+  String.raw`|ldap|mq|nats|sqs|sns|celery|sidekiq)$`,
+].join(''), 'i');
+
+// A sink verb that doubles as an ordinary method name, with the receiver it is
+// called on. Pinned by a non-path character before the receiver, so an
+// unbroken word run admits one starting offset — the same pin, for the same
+// reason, as CONCAT.
+const RECEIVER_CALL = /(?:^|[^\w$.])([\w$]+)\s*[.:]+\s*(?:query|execute|exec|raw)\w*\s*\(/gi;
+
+// Is every candidate sink call on this line made on a receiver that is not a
+// database handle? A line with no such call at all answers no, and is left to
+// the evidence above.
+function nonDatabaseReceiver(line) {
+  RECEIVER_CALL.lastIndex = 0;
+  let seen = false;
+  for (let m = RECEIVER_CALL.exec(line); m; m = RECEIVER_CALL.exec(line)) {
+    if (!NON_DB_RECEIVER.test(m[1])) return false;
+    seen = true;
+  }
+  return seen;
+}
+
 function isDatabaseCall(line, ctx) {
+  if (nonDatabaseReceiver(line)) return false;
   return ctx.sql !== false || DB_METHOD.test(line);
 }
 
@@ -920,10 +960,125 @@ const CALL_OPEN = /^!?\(/;
 // `String.format(…)`, `"…".format(…)`, `fmt.Sprintf(…)`, `String.Format(…)`.
 const FORMATTERS = new Set(['format', 'sprintf']);
 
-function fragmentCall(text, word, end, scope) {
+// ---- What makes taint die -------------------------------------------------
+//
+// A wrapping call at a binding — `q = sanitizeSql(q)`, `const id =
+// mysql.escape(raw)`, `const safe = escapeHtml(x)` — was read as
+// taint-preserving, because the rebuild made *every* wrapping call preserving
+// so that a transformation at the sink (`db.query(q.trim())`) would keep it.
+// That reported the three shapes above, each of which is the correct code.
+//
+// Two directions were available, and they trade a false positive against a
+// false negative:
+//
+//   * Invert the default: a wrapping call *clears* unless it is a known
+//     preserving transformation (`trim`, `toUpperCase`, `strip`, `concat`,
+//     slicing). Zero false positives on any escaper, named or local — and a
+//     false negative on every call this file cannot see through, which is
+//     nearly all of them. `q = wrap(q)` for any project-local `wrap`, and
+//     `db.query(helper(q))`, both go silent. That is the whole taint scan
+//     giving up on one unknown call, and it is not a trade a rung-1 rule may
+//     make.
+//   * Allow-list the escapers: taint dies at a call whose callee is *named*
+//     as sanitising, or is a real driver escape in one of the six ecosystems.
+//     Everything else stays preserving, exactly as now.
+//
+// This takes the allow-list. What it costs is written down and is real: a
+// project-local sanitiser whose name carries no sanitising verb —
+// `clean(q)`, `safen(q)`, `harden(q)` — still reports, and that false positive
+// stays. The direction is deliberate: a miss here is a shipped injection,
+// a false positive here is one line a reader can see is wrong.
+//
+// The verb must *begin* the callee's last segment. Matching it anywhere would
+// take `notAnEscaper` — the unsafe twin of defect 1 — for an escaper, and a
+// helper whose name merely mentions escaping is not one.
+const SANITIZER_VERB = new RegExp([
+  String.raw`^(?:sanitiz|sanitis|escap|quot|purif`,
+  // Names where the verb is not first but the whole word is unambiguous:
+  // `htmlEscape`, `HtmlEncode`, `HTMLEscapeString`, `htmlspecialchars`,
+  // `addslashes`, `encodeForHTML`, `encode_text` (html_escape, Rust).
+  String.raw`|htmlescap|htmlencod|urlencod|htmlspecialchars|addslashes`,
+  String.raw`|encodefor|encode_text|encode_safe|encode_quoted)`,
+].join(''), 'i');
+
+// `escape`, `quote` and `sanitize` on their own are not evidence: the JS
+// global `escape()` is a URL encoder, a bare `quote()` is anybody's string
+// helper, and a bare `sanitize()` says nothing about what it sanitises *for* —
+// a form validator and an HTML escaper are both spelled that way, and only one
+// of them makes markup safe. Spelled bare, they count only on a receiver that
+// names the library — which is exactly how those libraries document them:
+// `mysql.escape`, `sqlstring.escape`, `conn.escape`, `DOMPurify.sanitize`.
+// Spelled with anything after the verb — `escapeHtml`, `sanitizeHtml`,
+// `escape_string` — the name is unambiguous and no receiver is needed.
+const BARE_VERB = /^(?:escape|escaped|quote|quoted|sanitize|sanitise|sanitized|sanitised)$/i;
+const ESCAPE_RECEIVER = new RegExp([
+  String.raw`(?:^|[.:])(?:mysql\d?|mysql2|sqlstring|mariadb|sqlite\d?|pg|pgp`,
+  String.raw`|knex|sequelize|conn|connection|pool|client|driver|cursor|cur`,
+  String.raw`|db|dbh|handle|escaper`,
+  // The HTML side: DOMPurify and the sanitiser objects framework code binds.
+  String.raw`|dompurify|purify|purifier|sanitizer|sanitiser|xss)$`,
+].join(''), 'i');
+
+// The per-ecosystem escapes whose names carry no verb at all, so nothing above
+// can reach them. Each is the documented way its ecosystem escapes a value it
+// cannot bind:
+//
+//   * Python — `html.escape`, `markupsafe.escape`, `saxutils.escape`,
+//     `cgi.escape`; `psycopg.sql.Literal` / `sql.Identifier`; `shlex.quote`
+//     and its `pipes.quote` predecessor; `bleach.clean`.
+//   * JS/TS — `pg-format`'s `format.literal` / `format.ident`.
+//   * Go — `strconv.Quote`. (`pq.QuoteLiteral`, `pq.QuoteIdentifier` and
+//     `template.HTMLEscapeString` are already named by their verb.)
+//   * Java — OWASP `Encode.forHtml` and friends. (`StringEscapeUtils.escapeSql`
+//     and `HtmlUtils.htmlEscape` are named by their verb.)
+//   * Rust — `ammonia::clean`, `html_escape::encode_text`.
+//   * C# — `HttpUtility.HtmlEncode`, `SqlCommandBuilder.QuoteIdentifier` are
+//     named by their verb; `SqlParameter` is not a wrapping call at all and
+//     needs no entry, and neither does Java's `PreparedStatement` — both are
+//     the parameterized path, where no value is concatenated to begin with.
+const NAMED_CLEANER = new RegExp([
+  String.raw`(?:^|[.:])(?:`,
+  String.raw`html[.:]+escape|markupsafe[.:]+escape|saxutils[.:]+escape|cgi[.:]+escape`,
+  String.raw`|sql[.:]+(?:Literal|Identifier)|format[.:]+(?:literal|ident)`,
+  String.raw`|shlex[.:]+quote|pipes[.:]+quote|strconv[.:]+Quote`,
+  String.raw`|bleach[.:]+clean|ammonia[.:]+clean`,
+  String.raw`|Encode[.:]+for\w+`,
+  String.raw`)$`,
+].join(''), 'i');
+
+// How far back a callee path is read. A path longer than this gives the
+// sanitiser test up rather than the linear-scan budget — the same bound, for
+// the same reason, as HEAD_LOOKBACK above.
+const PATH_LOOKBACK = 64;
+const PATH_CHAR = /[\w$.:]/;
+
+// The dotted (or `::`-separated) callee path whose last segment starts at
+// `at`. Read backwards, so nothing is copied and nothing is rescanned.
+function calleePath(text, at, end) {
+  const floor = Math.max(0, at - PATH_LOOKBACK);
+  let i = at;
+  while (i > floor && PATH_CHAR.test(text[i - 1])) i -= 1;
+  return text.slice(i, end);
+}
+
+// Does a call to `path` remove whatever the value carried?
+function isSanitizer(path) {
+  if (NAMED_CLEANER.test(path)) return true;
+  const cut = Math.max(path.lastIndexOf('.'), path.lastIndexOf(':'));
+  const last = path.slice(cut + 1);
+  if (!SANITIZER_VERB.test(last)) return false;
+  return BARE_VERB.test(last) ? ESCAPE_RECEIVER.test(path.slice(0, Math.max(cut, 0))) : true;
+}
+
+// A sanitising call is opaque in the one direction that matters: whatever went
+// in, what comes out is not data. So the whole argument list is skipped — with
+// `q = sanitizeSql(q)` the `q` inside must not be judged on its own, or the
+// value would be data again on the very statement that cleaned it.
+function fragmentCall(text, at, end, scope) {
   const from = skipSpace(text, end);
   const open = text[from] === '!' ? from + 1 : from;
-  if (!FORMATTERS.has(word.toLowerCase()) && scope.strict) return -1;
+  if (isSanitizer(calleePath(text, at, end))) return closeBracket(text, open);
+  if (!FORMATTERS.has(text.slice(at, end).toLowerCase()) && scope.strict) return -1;
   return text.slice(open + 1, closeBracket(text, open)).trim() ? end - 1 : -1;
 }
 
@@ -936,7 +1091,7 @@ function fragmentWord(text, at, scope) {
   const from = skipSpace(text, end);
   const after = text.slice(from, from + 2);
   if (PATH_SEGMENT.test(after)) return end - 1;
-  if (CALL_OPEN.test(after)) return fragmentCall(text, text.slice(at, end), end, scope);
+  if (CALL_OPEN.test(after)) return fragmentCall(text, at, end, scope);
   if (after[0] === '[' && scope.consts && scope.consts.has(text.slice(at, end))) {
     return closeBracket(text, from);
   }

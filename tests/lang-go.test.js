@@ -308,3 +308,34 @@ test('a configured client is silent', () => {
     assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
   }
 });
+
+// What makes taint die — see taint.js.
+test("a named escaper at a binding kills the taint", () => {
+  assert.ok(!ids('q := "SELECT * FROM t WHERE id=" + r.FormValue("id")\nq = SanitizeSQL(q)\ndb.Query(q)\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('id := pq.QuoteLiteral(r.FormValue("id"))\ndb.Query("SELECT * FROM t WHERE id=" + id)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('c := pq.QuoteIdentifier(r.FormValue("c"))\ndb.Query("SELECT * FROM t ORDER BY " + c)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('v := strconv.Quote(r.FormValue("v"))\ndb.Query("SELECT * FROM t WHERE v=" + v)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a wrapping call that is not an escaper keeps the taint", () => {
+  assert.ok(ids('func notAnEscaper(v string) string { return v }\n\nfunc f(db *sql.DB, r *http.Request) {\n\tq := "SELECT * FROM t WHERE id=" + r.FormValue("id")\n\tq = notAnEscaper(q)\n\tdb.Query(q)\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('db.Query("SELECT * FROM t WHERE id=" + rawID)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a receiver that is not a database handle does not inherit the file SQL", () => {
+  assert.ok(!ids('db.Query("SELECT 1")\ncmd := "job:" + r.FormValue("id")\nrunner.Exec(cmd)\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('db.Query("SELECT 1")\nk := "u:" + r.FormValue("id")\ncache.Query(k)\n')
+    .includes("safe/sql-injection"));
+});
+
+test("a real handle in the same file still fires", () => {
+  assert.ok(ids('db.Query("SELECT 1")\nq := "SELECT * FROM t WHERE id=" + r.FormValue("id")\ndb.Exec(q)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

@@ -495,3 +495,37 @@ test('a timeout, or a call this line does not close, is silent', () => {
     assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
   }
 });
+
+// What makes taint die — see taint.js. A wrapping call at a binding was read as
+// taint-preserving, so each correct escape below reported.
+test('a named escaper at a binding kills the taint', () => {
+  assert.ok(!ids('q = "SELECT * FROM t WHERE id=" + request.args["id"]\nq = sanitize_sql(q)\ncur.execute(q)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('ident = conn.escape_string(request.args["c"])\ncur.execute("SELECT * FROM t WHERE c=" + ident)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('name = sql.Identifier(request.args["c"])\ncur.execute("SELECT * FROM t ORDER BY " + name)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('lit = sql.Literal(request.args["v"])\ncur.execute("SELECT * FROM t WHERE v=" + lit)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+test('a wrapping call that is not an escaper keeps the taint', () => {
+  assert.ok(ids('def not_an_escaper(v):\n    return v\n\nq = "SELECT * FROM t WHERE id=" + request.args["id"]\nq = not_an_escaper(q)\ncur.execute(q)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('cur.execute("SELECT * FROM t WHERE id=" + raw_id)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+test('a receiver that is not a database handle does not inherit the file SQL', () => {
+  assert.ok(!ids('cur.execute("SELECT 1")\ncmd = "job:" + request.args["id"]\nredis.execute(cmd)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('cur.execute("SELECT 1")\nkey = "u:" + request.args["id"]\ncache.execute(key)\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('cur.execute("SELECT 1")\nstep = "run:" + request.args["id"]\nrunner.execute(step)\n')
+    .includes('safe/sql-injection'));
+});
+
+test('a real handle in the same file still fires', () => {
+  assert.ok(ids('cur.execute("SELECT 1")\nq = "SELECT * FROM t WHERE id=" + request.args["id"]\ncur.execute(q)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
