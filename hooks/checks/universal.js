@@ -49,7 +49,30 @@ const CREDENTIAL_ASSIGN =
 // the one edit that must never happen: it destroys the credential the file was
 // carrying and leaves a placeholder that reads, to every later reader, like a
 // value somebody chose.
-const REDACTION_MARKER = /\[REDACTED[:\]]/;  // procoder: literal safe/redaction-marker the pattern the rule matches, not an instance of it
+//
+// Every spelling a redaction layer emits, case-insensitively: the bracket form
+// with or without a payload, an angle-bracket form, a suffixed word
+// (`[REDACTED_BY_SCANNER]`), and an unterminated one — which is what a
+// truncated write leaves behind, and the shape most likely to be read as
+// ordinary text by everyone after.
+const REDACTION_MARKER = /[[<]REDACTED(?:[:\]>_]|["'`]|\s*$)/i;  // procoder: literal safe/redaction-marker the pattern the rule matches, not an instance of it
+//
+// Where a marker MEANS something was destroyed: the position a value occupies.
+// After an `=` or a `=>`, or under a config key — JSON, YAML, dotenv, a TOML
+// pair, an object literal.
+//
+// The gate exists because the marker's own vocabulary is ordinary English. A
+// sentence that describes the mechanism — this project's own documentation,
+// its changelog, a test name, a comment above the code that writes one —
+// overwrote no credential, and reporting it made every page explaining
+// redaction carry a hand-written marker. Prose puts the word after a verb or a
+// preposition; a destroyed value sits where the value went.
+//
+// An unquoted key must start lower-case, which is what separates `password:`
+// from a sentence opening `Note:`. A quoted key needs no such test: prose does
+// not quote its nouns and then colon them.
+const MARKER_AS_VALUE =
+  /(?:=>|=)\s*["'`]?\s*$|(?:^|[,{[(])\s*(?:"[^"]*"|'[^']*'|[a-z_$][\w.$-]*)\s*:\s*["'`]?\s*$/;
 
 const PLACEHOLDER = /^(?:x{3,}|\.{3,}|<[^>]+>|\{\{.*\}\}|\$\{.*\}|changeme|placeholder|example|test|dummy|redacted|your[_-]?\w+)$/i;
 
@@ -181,7 +204,8 @@ function secretFindings(line, lineNo) {
 }
 
 function redactionFindings(line, lineNo) {
-  if (!REDACTION_MARKER.test(line)) return [];
+  const m = REDACTION_MARKER.exec(line);
+  if (!m || !MARKER_AS_VALUE.test(line.slice(0, m.index))) return [];
   return [finding({
     rung: 'SAFE', id: 'safe/redaction-marker', line: lineNo,
     message: 'a redaction marker written into the file',

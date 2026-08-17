@@ -744,3 +744,30 @@ test('ordinary bracketed text is not a redaction marker', () => {
   assert.ok(marked('const a = "[' + 'REDACTED:token]";\n'),
     'the real marker shape must still be caught');
 });
+
+// The false positive the limitations audit named. A marker means a real value
+// was overwritten, so the rule fires where a VALUE belongs — after an `=`, or
+// under a config key. Prose that merely names the mechanism overwrote nothing,
+// and every documentation page explaining it had to be marked by hand.
+test('a sentence about redaction is not a redaction marker', () => {
+  const marked = (source) => checkUniversal(source, { relPath: 'a.md', config })
+    .some((f) => f.id === 'safe/redaction-marker');
+  assert.ok(!marked('The scanner replaces the value with [' + 'REDACTED] before the model sees it.\n'));
+  assert.ok(!marked('- the write path emits <' + 'REDACTED> for every recognised key\n'));
+  assert.ok(!marked('// a [' + 'REDACTED] marker means the real value was never shown\n'));
+});
+
+// Every spelling a redaction layer emits, in the position that says a value
+// was destroyed: lower case, angle brackets, a suffixed word, an unterminated
+// marker from a truncated write, and the config formats a credential lives in.
+test('every marker spelling is caught where a value belongs', () => {
+  const marked = (source) => checkUniversal(source, { relPath: 'a.ts', config })
+    .some((f) => f.id === 'safe/redaction-marker');
+  assert.ok(marked('const a = "[' + 'redacted:token]";\n'), 'lower case');
+  assert.ok(marked('const a = "<' + 'REDACTED>";\n'), 'angle brackets');
+  assert.ok(marked('const a = "[' + 'REDACTED_BY_SCANNER]";\n'), 'a suffixed word');
+  assert.ok(marked('const a = "[' + 'REDACTED";\n'), 'unterminated');
+  assert.ok(marked('password: [' + 'REDACTED]\n'), 'a yaml value');
+  assert.ok(marked('API_KEY=[' + 'REDACTED]\n'), 'a dotenv value');
+  assert.ok(marked('  "token": "[' + 'REDACTED:aws]"\n'), 'a json value');
+});
