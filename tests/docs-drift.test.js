@@ -67,7 +67,11 @@ const prose = (rel) => docText(rel)
 // Failure mode of that choice: an id split across a line break, or hyphenated
 // differently, reads as absent. That direction is the safe one — it asks for a
 // mention that is already there rather than accepting one that is not.
-const RULE_ID = /\b(?:safe|true|obvious|alone)\/[a-z0-9-]+/g;
+// Derived from RUNGS rather than spelled out: a prefix listed here and not
+// there — or, as happened when rungs 5 and 6 grew an engine, there and not here
+// — makes the guard blind to a whole rung's ids, which is exactly the drift it
+// exists to catch.
+const RULE_ID = new RegExp(`\\b(?:${RUNGS.map((r) => r.toLowerCase()).join('|')})/[a-z0-9-]+`, 'g');
 
 function documentedRuleIds() {
   const ids = new Set();

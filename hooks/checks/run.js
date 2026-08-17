@@ -11,6 +11,7 @@ const { excludeReason, isRuleExcluded, MAX_FILE_BYTES } = require('./config');
 const { packFor } = require('./registry');
 const { resolveFor, runToolResult } = require('./resolve');
 const { checkUniversal, filterMarkedLiterals } = require('./universal');
+const { checkJudgment } = require('./judgment');
 const { loadBaseline, suppress } = require('./baseline');
 const { finding, sortFindings, capFindings } = require('./finding');
 const { MANIFEST_FILES, checkManifest } = require('./deps');
@@ -308,6 +309,22 @@ function narrowableFindings(relPath, source, shaped, opts) {
     } else {
       unchecked.push(`the ${path.extname(relPath).replace('.', '') || 'language'} rules`);
     }
+  }
+
+  // Rungs 5 and 6, on the shape copy for the same reason the pack's shape rules
+  // use it: every judgment rule here is derived from a BLOCK — a loop body, an
+  // async function's extent — and a block on a minified line spans the whole
+  // file. No linter answers for either rung, so nothing below removes these.
+  //
+  // Measured at 45ms for 400KB and 95ms at the 1MB cap, worst of the six packs'
+  // shapes — linear, and ~20% on top of the pack it follows. It is checked
+  // against the deadline before it starts and named in `unchecked` if there is
+  // none left, which is what keeps that 95ms out of the budget's tail on a host
+  // several times slower.
+  if (Date.now() < deadline) {
+    pushAll(local, checkJudgment(shaped, { relPath, config }));
+  } else {
+    unchecked.push('the cost and intent rules');
   }
 
   const tool = toolResults(relPath, { repoRoot, absPath, deadline, unchecked, toolAnswer });

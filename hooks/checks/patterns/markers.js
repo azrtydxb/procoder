@@ -161,6 +161,8 @@ const BUILTIN_RULE_IDS = Object.freeze([
   'alone/debug-leftover',
   'alone/deprecated-no-trigger', 'alone/orphan-todo',  // procoder: literal alone/deprecated-no-trigger the id is itself deprecation-shaped
   'alone/unexplained-suppression',
+  'fast/blocking-in-async', 'fast/query-in-loop',
+  'meant/unimplemented-stub',
   ...EXTERNAL_TOOLS.map((tool) => `true/${tool}`),
 ]);
 

@@ -626,7 +626,12 @@ test('every check id the engine can produce is in the known-id set', () => {
   const missing = new Set();
   for (const file of walk(path.join(__dirname, '..', 'hooks'))) {
     const text = fs.readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/'((?:safe|true|obvious|alone)\/[a-z][a-z-]*)'/g)) {
+    // The prefixes come from RUNGS, not from a list written out here: a rung
+    // this pattern does not name is a rung whose ids this guard cannot see, and
+    // rungs 5 and 6 shipped ids the day they got an engine.
+    const { RUNGS } = require('../hooks/checks/finding');
+    const idLiteral = new RegExp(`'((?:${RUNGS.map((r) => r.toLowerCase()).join('|')})/[a-z][a-z-]*)'`, 'g');
+    for (const m of text.matchAll(idLiteral)) {
       if (!known.has(m[1])) missing.add(`${m[1]} (${path.basename(file)})`);
     }
   }
