@@ -162,6 +162,24 @@ for (const [what, unsafe, safe] of SHAPES) {
   });
 }
 
+// A multi-line literal's interior is data, and quoting code is most of what one
+// is for. The scan reads statements across lines now, so a quoted assignment
+// inside a template literal looked exactly like a real one.
+test('code quoted inside a multi-line literal is not code', () => {
+  assert.ok(!ids('const doc = `\n  const q = "SELECT id=" + id;\n  db.query(q);\n`;')
+    .includes('safe/sql-injection'));
+  // The real thing on the same shape still fires.
+  assert.ok(ids('const doc = "x";\nconst q = "SELECT id=" + id;\ndb.query(q);')
+    .includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the unquoted twin the pack must still report
+});
+
+// A regex holding a backtick is not a template literal. This pack's own
+// JS_TEMPLATE is exactly that, and reading it as one blanked the code below it.
+test('a backtick inside a regex literal does not open a template', () => {
+  const src = 'const re = /x`y/;\nconst q = "SELECT id=" + id;\ndb.query(q);\n';
+  assert.ok(ids(src).includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the code after the regex, which must still be read as code
+});
+
 // A parameter arriving already tainted stays missed on purpose: reading every
 // parameter as data reports every data-access helper ever written, and nothing
 // in the file tells the constant caller from the untrusted one. See taint.js.

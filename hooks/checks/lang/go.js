@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // procoder — Go pack.
 
-const { stripComments } = require('./comments');
+const { blankStringInteriors, stripComments } = require('./comments');
 const {
   CONCAT, packContext, skipConstant, taintFindings, valuePattern,
 } = require('./taint');
@@ -156,7 +156,14 @@ function closedNearby(rule, lines, lineNo) {
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = stripComments(text, 'c').split(/\r?\n/);
-  const stripped = stripNoise(text);
+  // The structure input, and only it: a multi-line string's interior is data,
+  // and the taint scan reads statements off this text. The rule input above
+  // keeps every literal whole — see comments.js.
+  //
+  // stripNoise runs first, never after. Blanking takes the closing delimiter
+  // with it, and stripNoise reading the blanked text would then find an opener
+  // with no closer and eat forward to the next quote in the file.
+  const stripped = blankStringInteriors(stripNoise(text), 'c');
   const { maxDepth, blocks } = analyzeBraces(text);
 
   const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });

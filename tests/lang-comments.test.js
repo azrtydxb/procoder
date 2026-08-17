@@ -4,7 +4,7 @@
 // bodies) are not code, string literals are.
 const test = require('node:test');
 const assert = require('node:assert');
-const { stripComments } = require('../hooks/checks/lang/comments');
+const { blankStringInteriors, stripComments } = require('../hooks/checks/lang/comments');
 const { cpuMs } = require('./perf-guard');
 
 // The blanked stand-in for a piece of source: same width, so offsets and line
@@ -57,9 +57,51 @@ test('an unterminated quote stops at the line end', () => {
 });
 
 test('never throws on odd input', () => {
-  for (const src of [null, undefined, '', '"', '`', '/*', '/', "'''", '#']) {
+  for (const src of [null, undefined, '', '"', '`', '/*', '/', "'''", '#', '@"', 'r#"', 'r##']) {
     assert.doesNotThrow(() => stripComments(src, 'js'));
     assert.doesNotThrow(() => stripComments(src, 'py'));
+    assert.doesNotThrow(() => blankStringInteriors(src, 'js'));
+    assert.doesNotThrow(() => blankStringInteriors(src, 'py'));
+  }
+});
+
+// The other half of the same scan: where the *strings* are. A rule that reads
+// line structure — nesting depth, the taint scan's statements — must not read a
+// multi-line literal's interior as code. See comments.js.
+test('blanks the interior of a literal that spans lines, and nothing else', () => {
+  const cases = [
+    ['py', 'doc = """\n  q = "S" + id\n"""\nreal = 1\n', 'doc = """\n              \n   \nreal = 1\n'],
+    ['js', 'const t = `\n  q = "S";\n`;\nx();\n', 'const t = `\n          \n ;\nx();\n'],
+    ['c', 'var d = @"\n  a = ""b"";\n";\nreal();\n', 'var d = @"\n            \n ;\nreal();\n'],
+    ['c', 'let d = r#"\n  let q = "S";\n"#;\nreal();\n', 'let d = r#"\n              \n  ;\nreal();\n'],
+  ];
+  for (const [style, src, want] of cases) {
+    assert.strictEqual(blankStringInteriors(src, style), want, `style ${style}`);
+  }
+});
+
+test('a single-line literal is left whole — its content is what a sink runs', () => {
+  for (const style of ['js', 'py', 'c']) {
+    const src = 'q = "SELECT * FROM t" + id;\n';  // procoder: literal safe/sql-injection the single-line literal that must survive untouched
+    assert.strictEqual(blankStringInteriors(src, style), src);
+  }
+});
+
+// A quote inside a comment opens nothing, and a backtick inside a regex is not
+// a template literal — this project's own JS_TEMPLATE is exactly that, and
+// reading it as one blanked forty lines of real code below it.
+test('a literal opened inside a comment or a regex is not a literal', () => {
+  const commented = '# a """fake""" opener\nq = 1\n';
+  assert.strictEqual(blankStringInteriors(commented, 'py'), commented);
+  const regex = 'const re = /x`y/;\nconst q = "S";\n';
+  assert.strictEqual(blankStringInteriors(regex, 'js'), regex);
+});
+
+test('string-span scanning stays linear on a very long single line', () => {
+  for (const unit of ['a = "x"; ', 'b = `t${x}` ', 'c = @"v" ', 'd = r#"w"# ']) {
+    const line = unit.repeat(Math.ceil((400 * 1024) / unit.length)).slice(0, 400 * 1024);
+    const elapsed = cpuMs(() => blankStringInteriors(line, 'js'));
+    assert.ok(elapsed < 1000, `400KB line took ${elapsed}ms for ${JSON.stringify(unit)}`);
   }
 });
 

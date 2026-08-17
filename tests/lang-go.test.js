@@ -125,6 +125,15 @@ for (const [what, unsafe, safe] of SHAPES) {
   });
 }
 
+// A multi-line literal's interior is data, and quoting code is most of what one
+// is for. The scan reads statements across lines now, so a quoted assignment
+// inside a raw string looked exactly like a real one.
+test('code quoted inside a raw string is not code', () => {
+  assert.ok(!ids('doc := `\n  q := "SELECT id=" + id\n  db.Query(q)\n`\n').includes('safe/sql-injection'));
+  // The real thing on the same shape still fires.
+  assert.ok(ids('doc := "x"\nq := "SELECT id=" + id\ndb.Query(q)\n').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the unquoted twin the pack must still report
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'go');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.go'), 'utf8'),

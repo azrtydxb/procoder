@@ -2,7 +2,7 @@
 // procoder — Python pack.
 
 const { finding } = require('../finding');
-const { stripComments } = require('./comments');
+const { blankStringInteriors, stripComments } = require('./comments');
 const {
   CONCAT, packContext, skipConstant, taintFindings, valuePattern,
 } = require('./taint');
@@ -262,8 +262,20 @@ function measureBlocks(lines, blocks, texts) {
 // looks for it. See comments.js for the principle the six packs share.
 function check(source, { relPath, config } = {}) {
   const lines = stripComments(source, 'py').split(/\r?\n/);
-  const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
-  const stripped = stripNoise(String(source || ''), 'py');
+  // The structure input, and only it. A docstring's interior is indented prose
+  // and indented example code, and both of the rules that read line structure
+  // believed it: the depth scan counted a docstring's indentation as nesting —
+  // CPython's own test_enum.py reported a depth-6 finding that is a string —
+  // and the taint scan read a quoted `q = "SELECT " + uid` as an assignment.
+  // `lines` above keeps every literal whole, because an f-string *is* the SQL.
+  //
+  // stripNoise runs *first* on the way to the taint guide, never after. Blanking
+  // takes the closing delimiter with it — that is the point, an indented closing
+  // `"""` is a deep line to anything counting columns — and stripNoise reading
+  // the blanked text would then find an opener with no closer and eat forward to
+  // the next quote in the file.
+  const { maxDepth, blocks } = analyzeIndent(blankStringInteriors(source, 'py'), { tabWidth: 4 });
+  const stripped = blankStringInteriors(stripNoise(String(source || ''), 'py'), 'py');
   const texts = defParamText(stripped);
   const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, lines, {
