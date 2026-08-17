@@ -7,7 +7,7 @@ previous edition of this page disclosed something that has since been fixed,
 the entry is gone rather than kept as false modesty — a document that
 overstates weakness is as untrustworthy as one that hides it.
 
-## Taint tracking: one file, one name, forward only
+## Taint tracking: one file, forward only
 
 Binding a query to a variable before consuming it no longer defeats rung 1.
 `hooks/checks/lang/taint.js` carries a local dataflow pass, and all six packs
@@ -23,31 +23,32 @@ run it. Verified, each the same violation bound to a name first:
 | `var q = $"SELECT * FROM t WHERE id={id}";`<br>`var cmd = new SqlCommand(q);` | `safe/sql-injection` |
 | `const cmd = "ls " + dir;`<br>`exec(cmd);` | `safe/shell-injection` |
 
-Four shapes that used to be missed now hold in all six packs, verified in each:
-aliasing (`const b = a`), accumulation onto a name already holding the literal
-(`q = q + id`, `q += id`), interpolation into a template or f-string, and an
-*annotated* binding — `const q: string = …`, `let q: string = …` and Python's
-`q: str = …` are each measured now, as Go's `var q string = …`, Rust's
-`let q: String = …`, Java's `final String q = …` and C#'s `string q = …`
-already were. A parameter list binds fresh names, so a parameter no longer
-inherits an outer name's taint.
+The scan is no longer a line scan. Physical lines are joined into logical
+statements, a binding lives at the level it was *declared* at rather than the
+level it was written on, bindings are dotted paths resolved through their
+prefixes, and one pass learns which of the file's own functions return a
+tainted value so a second can use it. Nine shapes this page used to list as
+missed now hold, verified in **all six packs**: a field or property
+(`o.q = "SELECT id=" + id; db.query(o.q)`), a helper's return value
+(`const q = build(x)`), a value returned straight into the sink
+(`db.query(b(1))`), a binding made inside a branch (`if (x) { q = … }`), one
+built in a loop (`for (…) { q = q + p }`), a right-hand side a formatter
+wrapped onto the next line, a transformation at the sink (`db.query(q.trim())`),
+a container literal (`const parts = ["SELECT id=", id]` then `parts.join("")`),
+and an inner binding of the same name, which no longer clears the outer one.
+So do the four older ones: aliasing, accumulation (`q = q + id`, `q += id`),
+interpolation into a template or f-string, and an annotated binding.
 
-The scope is one file, one name, forward only, and everything outside it is a
-miss. Each row below is a two-to-five-line file that reports **nothing**:
+What remains missed is small, and each row is a file that reports **nothing**:
 
 | Shape that is missed | The file |
 |---|---|
-| A field or property | `o.q = "SELECT id=" + id;`<br>`db.query(o.q);` |
-| A helper's return value | `function build(id) { return "SELECT id=" + id; }`<br>`const q = build(x);`<br>`db.query(q);` |
-| A value returned straight into the sink | `function b(id) { return "SELECT id=" + id; }`<br>`db.query(b(1));` |
-| A binding made inside a branch | `let q = "SELECT";`<br>`if (x) { q = "SELECT id=" + id; }`<br>`db.query(q);` |
-| Built in a loop | `let q = "SELECT";`<br>`for (const p of ps) { q = q + p; }`<br>`db.query(q);` — the same `q = q + p` is caught when it is not inside a block |
-| A right-hand side that wraps to the next line | `const q =`<br>`  "SELECT id=" + id;`<br>`db.query(q);` |
-| Any transformation at the sink | `const q = "SELECT id=" + id;`<br>`db.query(q.trim());` |
-| A container | `const parts = ["SELECT id=", id];`<br>`const q = parts.join("");`<br>`db.query(q);` |
-| An inner binding of the same name, which clears the outer one permanently | `let q = "SELECT id=" + id;`<br>`function f() { let q = "static"; }`<br>`db.query(q);` |
-| A parameter arriving already tainted | `function f(q) { db.query(q); }` |
-| Anything cross-function or cross-file | there is no call graph and no resolver |
+| A parameter arriving already tainted | `function f(q) { db.query(q); }` — deliberate, and the single largest false positive available here. Nothing inside the file separates the untrusted caller from the one passing a constant, so reporting it would fire on every data-access helper ever written. Verified silent in all six. |
+| A transformation at the sink, **in Go only** | `q := "SELECT id=" + id`<br>`db.Query(strings.TrimSpace(q))` — `strings.TrimSpace(q)` is a free function, syntactically identical to `sanitize(q)`, and following it would be following every wrapper. The method form is caught: `db.Query(q.Trim())` reports. The other five packs catch both. |
+| A helper reached through a receiver | `self.build(id)` in Python, `this.build(id)` in Java, `R.build(1)` in JS — the return propagation is keyed by the function's own bare name, and a bound receiver prefix (`self`, `this`) ends the path lookup before it gets there. The bare call is caught in all six: `cur.execute(build(id))` and `stmt.executeQuery(build(id))` both report. |
+| A JS/TS method shorthand, as a helper | `class R { build(id) { return "SELECT id=" + id; } run(id) { db.query(this.build(id)); } }` reports nothing. The ts pack recognises `function build(` and `const build = (` as function definitions and deliberately not `build(a) {`, whose name is ambiguous with any call. Java, C#, Go, Rust and Python all measure their methods. |
+| A container read back by index or key | `const parts = ["SELECT id=", id]; db.query(parts[0] + parts[1]);` and `const m = { q: "SELECT id=" + id }; db.query(m["q"]);` are both silent. The container *literal* is a source, which is what makes the `join` form work; element-wise reads would need a real value model. `m.q` written as a dotted path is caught. |
+| Anything cross-file | there is no resolver. In-file call propagation is one level deep, by the callee's own name; `import { build } from "./b.js"; db.query(build(1));` is silent. |
 
 It errs towards missing on purpose, and the pure-literal cases hold: `const q =
 "SELECT * FROM t"`, `"SELECT " + "* FROM t"`, a template with no interpolation,
@@ -61,15 +62,18 @@ as is its shell twin (`const DIR = "/tmp"; exec("ls " + DIR);`). The analysis
 stays conservative in the safe direction — a name reassigned from input
 anywhere in the file, in any scope, taints again, verified.
 
-One shape is still a **false positive on correct code**:
+Three shapes are **false positives on correct code**. The first two are the
+price of the widened propagation, and both are new on this page:
 
 | Probe | Reported | Why it is wrong |
 |---|---|---|
-| `q = f"run job {x}"`<br>`pool.execute(q)` | `safe/sql-injection` | `execute` is not a database verb here. SQL rules are now gated on file-level database evidence, and one of the three things that count as evidence is a *receiver name* — `db.`, `cur.`, `conn.`, `stmt.`, `session.`, `pool.`, `repo.`, `tx.`. Those are ordinary names outside a database: a worker `pool`, an HTTP `session`, a git `repo`. Verified: `runner.execute(q)` and `cmd.execute(q)` on the same input are silent, `pool.execute(q)`, `session.execute(q)` and `repo.execute(…)` report. |
+| `let q = "SELECT id=" + id;`<br>`q = sanitizeSql(q);`<br>`db.query(q);` | `safe/sql-injection` | A right-hand side that names a tainted variable carries the taint on — that is what makes `q = q + id` work, and it cannot tell an escaper from any other wrapper. So the *fix* an author writes at the binding does not clear the finding, and neither does the driver's own escaper: `const q = "SELECT * FROM t WHERE id=" + mysql.escape(id); db.query(q);` reports too. Verified in all six packs, each with its own spelling — `sanitize(q)` in Python, Go, Rust, Java and C# alike. A literal reassignment *does* clear it (`q = "SELECT 1"`), so the discharge exists; it is only calls that cannot be judged. |
+| A cache, queue or job-runner call in a file that also talks to a database | `safe/sql-injection` | The database gate asks about the *file*, and once any evidence in it answers yes, every `execute`, `query` and `raw` call in that file is a SQL sink. Verified: a module importing `pg` and running one parameterized `pool.query(…)`, with `const cmd = 'SET user:' + key; redis.execute(cmd);` three lines below, reports `safe/sql-injection` against the redis call. So does `runner.execute(step)` in a file whose other function runs `cur.execute("SELECT 1")`. The return propagation carries it one call further — `cache.execute(cacheKey(id))` in the same file reports, built at the helper's `return`. Each of those three is silent in a file with no database evidence in it at all. |
+| `q = f"run job {x}"`<br>`pool.execute(q)` | `safe/sql-injection` | `execute` is not a database verb here. One of the three things that count as file-level evidence is a *receiver name* — `db.`, `cur.`, `conn.`, `stmt.`, `session.`, `pool.`, `repo.`, `tx.`. Those are ordinary names outside a database: a worker `pool`, an HTTP `session`, a git `repo`. Verified: `runner.execute(q)` and `cmd.execute(q)` on the same input are silent, `pool.execute(q)`, `session.execute(q)` and `repo.execute(…)` report. |
 
-The reverse of that gate is the matching **silent coverage loss**, and it is
-the newer of the two: a genuine injection in a file that contains no database
-vocabulary at all is now missed. Verified, two files that report **nothing**:
+The reverse of that gate is the matching **silent coverage loss**: a genuine
+injection in a file that contains no database vocabulary at all is missed.
+Verified, two files that report **nothing**:
 
 ```
 const q = base + req.query.id;
@@ -78,9 +82,15 @@ api.execute(q);
 
 and the same with `client.query(q)`. Neither `api` nor `client` is a canonical
 handle, and neither file holds a SQL keyword, a driver name or an ORM name, so
-the whole rule stands down. This bought back a large class of false positives
-on Command-pattern and job-runner code; the price is that a query assembled
-from fragments, in a file whose SQL lives elsewhere, is not seen at all.
+the whole rule stands down. Add one line of evidence and it comes back —
+`const { Client } = require('pg');` above the same `client.query(q)` reports.
+A per-call escape hatch exists for the unambiguous method forms
+(`executeQuery`, `rawQuery`, `QueryRowContext`, `CommandText`), but it only
+reaches the *line* rules: the taint sinks match `query`, `execute` and `raw` as
+whole words, so `api.executeQuery(q)` on a bound name is silent in a
+vocabulary-free file too, verified. This bought back a large class of false
+positives on Command-pattern and job-runner code; the price is that a query
+assembled from fragments, in a file whose SQL lives elsewhere, is not seen.
 
 `safe/xss-sink` fires on the *assignment target* (`el.innerHTML = …`), so it is
 reported whichever way the value arrives. Constant markup is silent now —
@@ -95,14 +105,25 @@ Use a real taint-tracking scanner for rung 1 if your threat model needs one.
 ## Heuristic scanning, not parsing
 
 `hooks/checks/shape.js` is a brace/indent counter, not a parser for any of the
-six languages it measures. Verified consequences:
+six languages it measures.
+
+Python's indent reading was rebuilt: nesting depth is now the height of a stack
+of enclosing indentation columns, with no unit, no division and nothing asked
+of a column but its order. `MAX_INDENT_STEP` and the commonest-step guess are
+gone with it, and `SIGNATURE_LOOKBACK` is deleted — each `def` matches its own
+closing paren. Three cases this page used to list are closed, verified: a
+`def` indented 9, 10 or 12 columns per level is silent where it used to report
+`nesting depth 7 (limit 3)`; a file mixing four-space and two-space regions
+reports `nesting depth 7` where it used to report nothing; and a `def` wrapped
+over 9 or 20 lines is measured (`20 parameters (limit 4)`) where 8 was the
+ceiling. Uniform 2-space, 4-space and tab files all measure correctly.
+
+What is left:
 
 | Case | Effect |
 |---|---|
-| **A function or method whose name is a control-flow keyword** | Invisible to every shape rule, in five of the six packs. `shape.js` refuses to read `if (`, `for (`, `switch (`, `catch (`, `using (`, `lock (`, `match (`, `with (`, `when (`, `case (` and their siblings as a signature — which removed 104 false positives from one 486-file TypeScript tree, and takes with it every real function that happens to bear one of those names. Verified, each a 6-parameter definition reporting **nothing**: C# `void match(…)`, `void lock(…)`, `void using(…)`; Java `void match(…)`, `void catch(…)`; Go `func match(…)`, `func with(…)`; Rust `fn r#match(…)`; JS/TS `function match(…)` and the class method `match(…)`, `with(…)`, `when(…)`, `case(…)`. Only the Python pack is unaffected — `def match(a…f)` reports `6 parameters (limit 4)` — because `def` anchors it. Capitalise the name (`void Match(…)`, C#'s and Java's own convention) and it is measured again. `match` as a method name is the realistic case: a matcher, a router, a `String`-like API. |
-| A Python `def` wrapped over more than `SIGNATURE_LOOKBACK` (10) lines | Python is the only pack still bounded here. One parameter per line, the last wrap Python measures is **8 parameters** (`def`, eight lines, `):` — ten lines); at 9 the function is invisible to all three Python function-shape rules. The five brace packs match a parameter list to its own `)`: a 400-parameter wrap is measured in JS/TS. |
-| Python indented more than 8 columns per level | `MAX_INDENT_STEP` is 8, so a wider step is not a candidate for the file's indent unit and the code falls back to `tabWidth` (4). **A false positive:** a `def` containing two real levels of `if` — real depth 3 — reports `nesting depth 7 (limit 3)` at 10 columns per level and `nesting depth 6` at 9. At 8 columns and narrower it is correct and silent. |
-| One Python file, two indent widths | The step is the *commonest* one in the file, so a region indented differently is measured against someone else's unit — and the error runs both ways. Verified in Python: a file of twelve four-space `def`s plus one nested **six** levels deep at two spaces reports **nothing**, and at seven levels reports `nesting depth 4` rather than 8. Uniform 2-space, 4-space and tab files all measure correctly. The five brace packs are not affected — they count braces, and the same mixed-width file in JS reports `nesting depth 7` and `8` correctly. |
+| **A JS/TS method shorthand named after a JS control-flow keyword** | Invisible to every shape rule. The keyword sweep is now scoped to the one pattern that cannot decide it by shape — the ts pack's bare-name head, `name(a, b) {` with nothing in front of it — and to the seven words that really are JS statements: `if`, `for`, `while`, `switch`, `case`, `catch`, `with`. Verified, each a 6-parameter class method reporting **nothing** in JS and TS, and each of `lock(…)`, `using(…)`, `match(…)`, `when(…)` measured on the same file. Every other pack is clear by construction, because its head demands a declarator or two tokens: C# `void using(…)` and `void lock(…)`, Java `void match(…)`, Go `func match(…)` and `func with(…)`, JS's own `function with(…)`, and Python's `def match(…)` all report `6 parameters (limit 4)`. A method literally named `with` or `catch` is the realistic remnant — a builder, a promise-like. |
+| A Rust raw identifier | `fn r#match(a0…a5)` and `fn r#try(a0…a5)` are invisible to every shape rule: the rust head reads `fn` then a word, and `r#` is not one. `fn matcher(a0…a5)` on the same file reports `6 parameters (limit 4)`. Raw identifiers are exactly how a Rust author names a function after a keyword, so this is the case the keyword sweep above was narrowed to avoid, arriving by a different route. |
 | A parameter list on a very long line | No ceiling remains. `obvious/too-many-params` is not span-derived, so the 4KB per-line shape guard no longer covers it: a 1,000-parameter single-line signature (over 8KB) is measured and reported in JS/TS. |
 
 Swapping in a real per-language parser is the fix; it has not happened in
@@ -133,8 +154,8 @@ verified:
 
 | Limit | Effect |
 |---|---|
-| The *rule* half of a colon id is never validated | The tool half now is: `true/nosuchtool:nosuchrule` and `safe/dynamic-eval:x` both warn on stderr, because neither `nosuchtool` nor `dynamic-eval` is a configured tool. What follows the colon is still accepted on shape alone — `true/eslint:no-such-rule-at-all` and `true/ruff:ZZ999` are both accepted in silence and both silence nothing. A typo in the rule half is the one marker mistake that is still a **silent no-op**. |
-| An unknown colon-free id is named, but only once per line number per run | A typo (`safe/dynamic-evall`) prints `procoder: unknown rule id "…" in the literal marker at line N — it suppresses nothing` on stderr, and the finding still reports. `unknownRuleId` in `universal.js` *can* key on the file and name it, but only when it is handed a `relPath`, and it also stores the file-less key alongside — so the pack's own file-less pass runs first, prints the file-less message, and de-duplicates the per-file pass that would have named it. Through the CLI the message therefore never says which file, and a typo on the same line of two files warns once. Verified: three files with the typo, on lines 1, 1 and 2, produce two warnings, neither naming a file. |
+| A well-shaped id for a rule that does not exist | The tool half of a colon id is a closed set and is checked: `true/nosuchtool:nosuchrule` and `safe/dynamic-eval:x` both warn on stderr. The rule half is now checked against that tool's own id **grammar**, which catches the realistic mistake — the cross-tool paste. Verified, each warning `unknown rule id … — it suppresses nothing`: `true/ruff:no-eval`, `true/eslint:E501`, `true/clippy:E501`. What is deliberately still accepted is a well-formed id for a rule nobody wrote: `true/eslint:no-such-rule-at-all` and `true/ruff:ZZ999` are both accepted in silence and both silence nothing. Closing that needs a registry procoder cannot hold — eslint's namespace is open by construction, and pinning ruff's linter prefixes would warn on every correct marker the week ruff adds one. So a one-character typo *inside* a real tool's namespace remains a **silent no-op**. |
+| The warning is per file and line, not per marker text | A typo (`safe/dynamic-evall`) prints `procoder: unknown rule id "…" in the literal marker at <file>:<line> — it suppresses nothing` on stderr, naming the file, and the finding still reports. Verified: three files carrying the same typo, on lines 1, 1 and 2, produce three warnings, each naming its own file. Two different unknown ids on one line each get their own warning, verified; only a repeat of the same id at the same place is de-duplicated. |
 | Reach is the finding's own one or two lines, never a region | There is no block or file form, deliberately. A fixture file that is nothing but violating input cannot be marked line by line without changing the input — `tests/fixtures/` is excluded by path in `.procoder.toml` for exactly that reason, and that is the one case the marker cannot serve. |
 | No wildcard | There is no bare or `*` form; the bare form is routed to `alone/blanket-suppression` and reported. |
 
@@ -240,7 +261,7 @@ Two costs remain, each verified:
 | Limitation | Verified |
 |---|---|
 | **A configured linter's thresholds replace procoder's, including where it has none.** `pub fn wide(a0..a5)` reports `[3 OBVIOUS] 6 parameters (limit 4)` with no `[lints.clippy]` in `Cargo.toml`. Add it and `procoder check src/lib.rs` exits **0**: clippy answered, the Rust pack's `obvious/*` rules are dropped, and clippy's own `too_many_arguments` threshold is 7. That is the design — the project's linter defines OBVIOUS — but the practical effect is that configuring clippy loses every 5- and 6-parameter report. |
-| **One whole-crate invocation per Rust file scanned.** `cargo clippy` has no file target, so a directory scan spawns it once per file. Measured on a 33-file crate: `procoder check .` costs 921ms warm, ~28ms per file, since cargo replays a cached build. A crate that takes longer than the per-file timeout to compile gets no clippy findings at all. |
+| **One whole-crate invocation per Rust file scanned.** `cargo clippy` has no file target, so a directory scan spawns it once per file. Measured today on a 33-file crate: `procoder check .` costs **970ms** warm, ~29ms per file, since cargo replays a cached build. A crate that takes longer than the per-file timeout to compile gets no clippy findings at all. |
 
 `eslint` and `ruff` were not installed on the machine this was verified on, so
 their integrations are undisclosed rather than cleared.
@@ -249,12 +270,18 @@ their integrations are undisclosed rather than cleared.
 
 Verified in `hooks/checks/registry.js` and `hooks/checks/resolve.js`. Every
 other supported external linter (eslint, ruff, golangci-lint) takes a single
-file as its target. `cargo clippy` has none — it always compiles and lints the
-whole crate. The hook still calls it with a file-scoped timeout, and that
-timeout shrinks as the file grows: `min(1500, max(250, floor(budget/2) −
-ceil(MB × 200)))` in `hooks/checks/run.js`, so 1000ms for a small file at the
-default 2s budget and 600ms for one at the 2MB cap. On anything but a small
-crate it will not finish. `parse()` additionally discards any finding whose
+file as its target. `cargo clippy` has none — it compiles and lints a whole
+package (`-p <name>`, read by walking up to the nearest `Cargo.toml` with a
+`[package]` name, so a workspace member does not drag in its siblings). The
+hook still calls it with a file-scoped timeout, and that timeout is no longer
+a size formula: `floor((deadline − now) × 0.6)` in `hooks/checks/run.js`, a
+share of whatever is left of the 2s budget at the moment the linter is
+invoked. A big file leaves less because the pack spent more, not because a
+per-MB constant said so — which is what makes the arithmetic hold on a slow
+host instead of only on the one it was measured on. Below 100ms nothing is
+spawned at all: the run names `clippy (no budget left for it)` and appends
+`true/budget-exhausted`. On anything but a small crate it will not finish.
+`parse()` additionally discards any finding whose
 reported path is not the file being checked: verified, a `&Vec` warning in
 `src/other.rs` is reported by `procoder check src/other.rs` and never by
 `procoder check src/lib.rs`.
@@ -352,9 +379,9 @@ differential runs. The narrowings that survived are real, and disclosed here:
 | 500-character span, signature head and tail | `go.js` (receiver, and the text between `)` and `{`), `rust.js` (generic list, and the same tail), `ts.js` (return type) | A 6-parameter function is measured with a 200-character tail or generic list, and not with a 700-character one — in Go, Rust and TS alike. Java and C# have no such span; their tails are anchored to end of line instead, and a method whose body opens on the signature's own line is measured correctly in both — `void m(int a, … int h) { return; }`, `void m(…) {}` and C#'s expression-bodied `void M(…) => a + b;` each report `8 parameters (limit 4)`. |
 | 20 findings per line | `hooks/checks/run.js` | Overflow is reported as its own finding (`true/findings-suppressed`) naming the count, never silently dropped. Verified: a line of 3000 minified `try{f()}catch(e){}` blocks reports 20 findings plus `line 1: 2980 further findings suppressed (cap 20 per line)`. No honest line reaches 20. |
 | 4KB per-line guard, span-derived shape rules only | `hooks/checks/run.js` | Function length, nesting depth and complexity are not measured on a line over 4KB, because a function on one line has no meaningful span. `obvious/too-many-params` is **not** guarded — it is exact on a minified line. The language packs' SAFE rules and the universal pack read the line unguarded: a credential 1,500 characters into a log call is still reported. |
-| 2MB per-file skip | `hooks/checks/config.js`, applied in `run.js` | This came down from 4MB, which measurement did not support. Larger files are not checked at all. Verified: a file of exactly 2,097,152 bytes is checked; at 2,097,153 `procoder check` exits 0 and prints `procoder: skipped over2mb.js (too-large) — not checked.` on stderr, while `procoder verify` over the same tree prints `1 file could not be checked (see above)` and **exits 2**. An unreadable file gets the same treatment and the same kind of line, and `check`, `baseline` and `verify` all report it — the skip notice moved into the shared funnel, so no command drops a file in silence any more. What remains is that `check` still exits **0** over a file it could not read: only `verify` treats an unread file as a hole in its own claim. |
-| `[limits] max_file_bytes`, downward only | `hooks/checks/config.js` | A project may lower the cap, never raise it. `max_file_bytes = 999999999` warns `.procoder.toml:2: max_file_bytes 999999999 is above the measured ceiling 2097152 — using 2097152`; `0`, `-5`, `"big"` and `true` each warn `must be a positive number of bytes, ignored` and fall back to 2MB. A cap that is simply *too low* used to be the sharp edge, and is not any more: `max_file_bytes = 10` skips every file including `.procoder.toml` itself, names each one on stderr, and `procoder verify` then prints `3 files could not be checked (see above) — the ratchet cannot hold over files nothing looked at. Raise or remove [limits] max_file_bytes, or exclude the path deliberately.` and **exits 2**. Verified end to end. |
-| 2s budget | `hooks/checks/run.js` | Checks after the deadline are skipped. The universal pack (rung 1) runs first, before any external linter, so it never loses its budget to one. Measured headroom on this machine: a 1MB single minified line costs 217ms end to end, a 50,000-line ordinary file 184ms, a 500KB minified line 129ms. A 512KB block comment in the ts and rust packs, which used to cost 124s, now costs 58ms; `tests/perf-guard.js` covers the shape. |
+| **1MB** per-file skip | `hooks/checks/config.js`, applied in `run.js` | This came down from 4MB to 2MB, and again to 1MB. The language pack is the one stage that cannot be abandoned part-way — everything after it is deadline-driven — so the size of what it is handed is the only lever on its cost, and the taint rebuild roughly doubled the ts pack's constant. 1MB of ordinary source costs the worst pack ~400ms of the 2000ms budget here, which still finishes on a host three times slower; 2MB did not. Larger files are not checked at all. Verified: a file of exactly 1,048,576 bytes is checked; at 1,048,577 `procoder check` exits 0 and prints `procoder: skipped over1mb.js (too-large) — not checked.` on stderr, while `procoder verify` over the same tree prints `1 file could not be checked (see above)` and **exits 2**. An unreadable file gets the same treatment and the same kind of line, and `check`, `baseline` and `verify` all report it. What remains is that `check` still exits **0** over a file it could not read: only `verify` treats an unread file as a hole in its own claim. |
+| `[limits] max_file_bytes`, downward only | `hooks/checks/config.js` | A project may lower the cap, never raise it. `max_file_bytes = 999999999` warns `.procoder.toml:2: max_file_bytes 999999999 is above the measured ceiling 1048576 — using 1048576`; `0`, `-5`, `"big"` and `true` each warn `must be a positive number of bytes, ignored` and fall back to 1MB. A cap that is simply *too low* is not the sharp edge it once was: `max_file_bytes = 10` skips every file including `.procoder.toml` itself, names each one on stderr, and `procoder verify` then prints `3 files could not be checked (see above) — the ratchet cannot hold over files nothing looked at. Raise or remove [limits] max_file_bytes, or exclude the path deliberately.` and **exits 2**. Verified end to end. |
+| 2s budget, and what it cuts | `hooks/checks/run.js` | Checks after the deadline are skipped. The order was reworked: the language pack now runs **before** the project's linter, and the linter is paid a *share* of what is left on the clock (0.6, floor 100ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. The per-MB reserve is deleted. Worst case at a 3× slowdown went from 1797ms to 1448ms of 2000ms, and holds to 6×. What the deadline does cut is now loud on both channels: a `true/budget-exhausted` finding appended **after** the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage — verified with a zero budget, `procoder: package.json: 0ms budget exhausted — not checked: the dependency manifest rules`. The universal pack (rung 1) runs first of all and can never be the stage that is cut. |
 
 The 200-character `SPAN_MAX` that used to bound the universal pack is gone.
 

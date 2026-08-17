@@ -193,7 +193,7 @@ paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
 
 [limits]
-max_file_bytes = 2097152
+max_file_bytes = 1048576
 
 [baseline]
 file = ".procoder-baseline.json"
@@ -216,9 +216,10 @@ reports a configured path exclusion whose path no longer exists, and fails on
 it under `--unused-exclusions`.
 
 `[limits] max_file_bytes` is the largest file the engine will open — anything
-above it is skipped and said so on stderr, never counted clean. 2 MB is a
-measured ceiling, not a preference: past it the checks miss the hook's 2 s
-budget. The key clamps **downward only**. A smaller value is honoured; a larger
+above it is skipped and said so on stderr, never counted clean. 1 MB is a
+measured ceiling, not a preference: it is where the slowest of the six language
+packs still finishes inside the hook's 2 s budget on a host three times slower
+than the one that measured it. The key clamps **downward only**. A smaller value is honoured; a larger
 one is refused with a warning naming file and line, and the built-in ceiling is
 used instead — as are zero, a negative, and anything that is not a positive
 number of bytes. Set it too low to admit any file and `procoder verify` says

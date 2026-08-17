@@ -20,7 +20,8 @@ npm install   # no runtime dependencies to fetch — see "Zero runtime dependenc
 | `npm run sync` | Regenerates the platform files from the doctrine | Run this, don't run `sync:check` to "fix" things — it only checks |
 
 CI (`.github/workflows/ci.yml`) runs `sync:check` first, then `npm test`, on
-Node 18/20/22 across Ubuntu and macOS. Both must pass locally before you open
+Node 20/22/24 across Ubuntu and macOS, with `fail-fast: false` so a red leg
+cannot hide the other five. Both must pass locally before you open
 a PR — there is no faster feedback loop than running them yourself.
 
 ## The doctrine is the single source

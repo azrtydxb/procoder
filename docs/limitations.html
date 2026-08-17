@@ -19,11 +19,19 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 <ul class="findings findings-display">
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> the SQL rules stand down in a file holding no database vocabulary <span class="arrow">→</span> <code>const q = base + req.query.id;</code> then <code>api.execute(q);</code> reports nothing, in exchange for the false positives that gate bought back</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a wrapping call at a binding cannot be told from an escaper <span class="arrow">→</span> <code>q = sanitizeSql(q);</code> before the sink still reports, in all six packs, and so does the driver's own <code>mysql.escape(id)</code></span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> taint follows one name in one file, forward only <span class="arrow">→</span> a field, a helper's return value, a branch, a loop or a container reaches the sink unreported</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> the database gate asks about the file, not the call <span class="arrow">→</span> in a module that also runs SQL, <code>redis.execute(cmd)</code> or <code>runner.execute(step)</code> on a built string reports <code>safe/sql-injection</code></span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> and the reverse of that gate <span class="arrow">→</span> <code>const q = base + req.query.id;</code> then <code>api.execute(q);</code> in a file holding no database vocabulary reports nothing at all</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a parameter arriving already tainted is deliberately not followed <span class="arrow">→</span> <code>function f(q) { db.query(q); }</code> is silent, because nothing in the file separates the untrusted caller from the constant one</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
@@ -31,15 +39,11 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   </li>
   <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/checks/shape.js</span> a control-flow head is not read as a signature, and neither is a function named after one <span class="arrow">→</span> a six-parameter <code>match(…)</code> or <code>lock(…)</code> is invisible to every shape rule in five of the six packs</span>
-  </li>
-  <li class="finding">
-    <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/checks/shape.js</span> Python's indent step is the commonest one in the file, capped at 8 columns <span class="arrow">→</span> a wider indent over-reports nesting, and a file with two indent widths under-reports one of them</span>
+    <span class="msg"><span class="loc">hooks/checks/shape.js</span> a JS method shorthand named after a JS statement is not read as a signature <span class="arrow">→</span> a six-parameter <code>with(…)</code> or <code>catch(…)</code> is invisible to every shape rule in the ts pack, as is Rust's <code>fn r#match(…)</code></span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[4 ALONE]</span>
-    <span class="msg"><span class="loc">.procoder.toml</span> a path exclusion is judged stale only when the path it names is gone <span class="arrow">→</span> one covering a tree that has since gone clean, or a glob matching nothing at all, is reported by nothing</span>
+    <span class="msg"><span class="loc">.procoder.toml</span> a <code>.procoderignore</code> has no expiry test of any kind <span class="arrow">→</span> one covering a tree that has since gone clean is reported by nothing; <code>[exclude] paths</code> now has a full one</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
@@ -58,16 +62,17 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     restated from
     <a href="{{ site.repo }}/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>,
     which is the only place a limitation is recorded, measured and dated. This
-    page is a twin by rung 4's definition and has drifted from that document
-    every time it has been audited — five times now, always into claiming a
-    defect that had already been fixed. This pass found five of the seven lines
-    above naming something the engine no longer does: a name holding a string
-    literal tainting what it was concatenated into, the credential rule missing
-    <code>dbPassword</code>, a Java or C# method whose body opens on the
-    signature line going unmeasured, a TypeScript annotated binding escaping
-    taint, and <code>[exclude] paths</code> reporting nothing at all. All five
-    are fixed and all five are gone. If the two disagree, the markdown is right
-    and this page is stale.
+    page is a twin by rung 4's definition, and it had drifted from that
+    document at every audit before this one — five in a row, always into
+    claiming a defect the engine had already stopped having. Every audit until
+    now ran alongside the agents doing the fixing; this one did not, which is
+    the only reason the two agree today. What went from this page in this pass:
+    taint following one name only — it now follows dotted paths, branches,
+    loops, containers and one level of the file's own returns, in all six
+    packs — and Python's indent step, whose 8-column cap and commonest-step
+    guess are both deleted. What arrived: two false positives the wider
+    propagation buys, named above. If the two ever disagree, the markdown is
+    right and this page is stale.
   </p>
 </div>
 
@@ -136,14 +141,17 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 </p>
 
 <p>
-  The 10 are the 7 <code>tests/fixtures/*/dirty.*</code> files — inputs whose
-  whole purpose is to be scanned by the tests rather than by the scan, where a
-  line marker would change the input the test reads — plus three files carrying
-  one named false positive each. That key was 46 files until recently, on the
+  The 9 held by <code>[exclude] paths</code> are the 7
+  <code>tests/fixtures/*/dirty.*</code> files — inputs whose whole purpose is to
+  be scanned by the tests rather than by the scan, where a line marker would
+  change the input the test reads — plus
+  <code>.opencode/command/rot.md</code> and <code>.openclaw/commands/rot.md</code>,
+  which carry one named finding each. That key was 46 files until recently, on the
   argument that <code>scripts/sync-rules.js</code> generates 32 of them from the
   doctrine. The argument was sound and the scope was not: 30 of the 32 held back
   no finding at all, because they are rendered from a source file that is itself
-  in the gate, so they are gated now too.
+  in the gate, so they are gated now too. The remaining two are the one false
+  positive, not a category.
 </p>
 
 <p>
@@ -184,16 +192,16 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <thead><tr><th>Section</th><th>What it covers</th></tr></thead>
   <tbody>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#taint-tracking-one-file-one-name-forward-only">Taint tracking</a></td>
-      <td>What binding a query to a variable now catches in all six languages, the eleven shapes it still misses, the database-evidence gate and what it silences, and the two rung-1 false positives — each a file you can paste.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#taint-tracking-one-file-forward-only">Taint tracking</a></td>
+      <td>The nine shapes the structural rebuild closed in all six languages, the six it still misses and why two of those are deliberate, the database-evidence gate in both directions, and the three rung-1 false positives — each a file you can paste.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
-      <td>The five verified cases where the brace and indent counter measures the wrong thing, or nothing — with the measured cut-off for each language, and the function names that make a signature invisible.</td>
+      <td>What Python's rebuilt indent reading fixed, and the three verified cases left where the brace and indent counter measures the wrong thing or nothing — the function names that make a signature invisible, and the one metric with no ceiling at all.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>
-      <td>What the marker reaches — including both lines of a finding reported at one line and built at another — and the four limits on it, among them the half of a rule id that is still accepted without being checked against anything.</td>
+      <td>What the marker reaches — including both lines of a finding reported at one line and built at another — and the four limits on it, among them the well-shaped rule id for a rule nobody wrote, which is accepted in silence on purpose.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-self-scan-and-what-is-ignored">The self-scan, and what is ignored</a></td>
@@ -205,7 +213,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#cargo-clippy-cannot-be-scoped-to-one-file">clippy cannot be scoped to one file</a></td>
-      <td>Why Rust lints usually lose their timeout, how that timeout shrinks with the file, and what covers the file instead.</td>
+      <td>Why Rust lints usually lose their timeout, how that timeout is now a share of what is left on the clock rather than a size formula, and what covers the file instead.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-ratchet-baseline-what-it-guarantees-and-what-it-doesnt">The ratchet baseline</a></td>
@@ -221,7 +229,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#deliberate-narrowings-from-performance-work">Deliberate narrowings</a></td>
-      <td>Every ceiling the performance work left behind — the two span lengths that survive, findings per line, the 4KB line and 2MB file guards, <code>max_file_bytes</code> clamped downward only, the time budget — and which of them now make <code>verify</code> exit 2 rather than pass green.</td>
+      <td>Every ceiling the performance work left behind — the two span lengths that survive, findings per line, the 4KB line and <strong>1MB</strong> file guards, <code>max_file_bytes</code> clamped downward only, and the reworked time budget that now appends <code>true/budget-exhausted</code> when it cuts a stage — and which of them make <code>verify</code> exit 2 rather than pass green.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-reports-near-the-edit-and-at-most-five-findings">The hook reports near the edit</a></td>

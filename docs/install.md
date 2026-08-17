@@ -360,7 +360,7 @@ in the stale file is honored. The fix is exactly what the stderr message says:
 run `procoder baseline <paths...>` to write a current-format baseline, then
 re-run `verify`.
 
-The second is a file in scope that could not be read at all — over the 2 MB
+The second is a file in scope that could not be read at all — over the 1 MB
 ceiling, unreadable, or excluded from being read by a `[limits] max_file_bytes`
 set too low to admit anything. `verify` prints how many such files there were,
 having already named each one, and stops at 2 rather than declaring a ratchet

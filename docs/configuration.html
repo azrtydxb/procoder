@@ -44,7 +44,7 @@ paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
 
 [limits]
-max_file_bytes = 2097152
+max_file_bytes = 1048576
 
 [baseline]
 file = ".procoder-baseline.json"</code></pre>
@@ -99,8 +99,10 @@ file = ".procoder-baseline.json"</code></pre>
 </p>
 
 <p>
-  2 MB is a <em>measured</em> ceiling, not a preference: above it the checks miss
-  the hook's 2 s budget, and well above it they exhaust the stack. So the key
+  1 MB is a <em>measured</em> ceiling, not a preference: it is the size at which
+  the slowest of the six language packs still finishes inside the hook's 2 s
+  budget on a host three times slower than the one that measured it, and well
+  above it the checks exhaust the stack. So the key
   clamps <strong>downward only</strong>. A smaller value — a slower machine, or a
   project wanting a tighter guarantee — is honoured. A larger one is refused with
   a warning naming file and line, and the built-in ceiling is used instead, as is
