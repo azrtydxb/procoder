@@ -84,14 +84,32 @@ const SCAN_BUDGET_MS = 2000;
 // refused and named rather than obeyed.
 const MAX_JOBS = 8;
 
-// One per core, minus one for this process, and never more than the ceiling:
-// the scan is CPU-bound, so more workers than cores only adds scheduling, and
-// the returns past eight are thin against the memory each child's heap costs.
+// How many cores this process may actually use — not how many the machine has.
+// The difference is a container: `os.cpus()` reports the HOST's cores through a
+// cgroup CPU quota, so a `docker run --cpus 1` node:24 image reports 10 and
+// `os.availableParallelism()` reports 1. Measured, on 4,000 files:
 //
-// `os.cpus()` returns an empty array on some hosts — it is documented to, and a
-// container is where it happens — so this floors at 1 rather than trusting it.
+//   --cpus 1   jobs=1 14.9s   jobs=4 35.0s   jobs=8 19.9s
+//   --cpus 4   jobs=1 15.3s   jobs=4 14.6s   jobs=8 11.1s
+//
+// So the default computed from `os.cpus()` made a one-core container 2.3x
+// SLOWER than not forking at all, which is the same shape of loss `--jobs 9999`
+// buys on a laptop — and nobody typed anything to get it. `availableParallelism`
+// has been in Node since 18.14 and this package requires 20.
+//
+// `os.cpus()` stays as the fallback, and is documented to be able to return an
+// empty array, so the floor of 1 is not decoration.
+function parallelism() {
+  if (typeof os.availableParallelism === 'function') return os.availableParallelism();
+  return (os.cpus() || []).length;
+}
+
+// One per usable core, minus one for this process, and never more than the
+// ceiling: the scan is CPU-bound, so more workers than cores only adds
+// scheduling, and the returns past eight are thin against the memory each
+// child's heap costs.
 function defaultJobs() {
-  return Math.max(1, Math.min(MAX_JOBS, (os.cpus() || []).length - 1));
+  return Math.max(1, Math.min(MAX_JOBS, parallelism() - 1));
 }
 
 // `--jobs` from a user, made safe. The precedent is `max_file_bytes` in

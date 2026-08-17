@@ -98,6 +98,15 @@ test('defaultJobs stays within one process per core', () => {
   assert.ok(jobs <= Math.max(1, (os.cpus() || []).length));
 });
 
+// The cores this process may USE, not the ones the machine has. A container
+// with a CPU quota reports the host's count through os.cpus() — `--cpus 1` on
+// node:24 says 10 — and forking eight workers there measured 2.3x slower than
+// not forking at all.
+test('the default is bounded by the parallelism actually available', () => {
+  assert.ok(defaultJobs() <= Math.max(1, os.availableParallelism()),
+    'the default outruns the cores this process is allowed');
+});
+
 // End to end, because the CLI is where the exit code lives and an async main()
 // that lost its rejection would exit 0 — a gate reading as a pass.
 test('the CLI reports the same findings and exit code at any --jobs', () => {
@@ -217,14 +226,20 @@ test('a worker that dies mid-slice loses no file and no finding', async () => {
 
 // The failure a dead worker never had: a LIVE one that answers nothing. Before
 // the watchdog there was no timeout anywhere in the pool, so this hung the
-// whole scan for as long as the child stayed up — a gate that never returns.
-// The budget is tiny here only to make the derived timeout small; the same
-// arithmetic runs at 2,000ms in production.
-test('a worker that hangs is killed, and its slice is scanned here', async () => {
-  const repo = bigRepo(6);
+// whole scan for as long as the child stayed up — a gate that never returns,
+// which is why this test carries a timeout of its own: without the fix it does
+// not fail, it never finishes.
+//
+// Over the threshold rather than forced, so that the hang is reachable on the
+// code this replaces too. The budget is zero only to keep the derived slice
+// bound at its startup floor and to make what each file reports deterministic
+// — at 1ms it is a coin flip whether the pack starts, and the two paths then
+// disagree for a reason that is not the one under test.
+test('a worker that hangs is killed, and its slice is scanned here', { timeout: 60000 }, async () => {
+  const repo = bigRepo(PARALLEL_MIN_FILES + 10);
   const files = filesIn(repo);
   const options = {
-    repoRoot: repo, config: loadConfig(repo), applyBaseline: false, budgetMs: 20,
+    repoRoot: repo, config: loadConfig(repo), applyBaseline: false, budgetMs: 0,
   };
   const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
 
@@ -304,7 +319,7 @@ test('a scan asked for 9999 jobs forks the ceiling, not 9999', async () => {
 // caller built by hand governed the files this process scanned and not the ones
 // a worker did — the same class of divergence as the budget.
 test('a worker checks against the caller\'s config, not the one on disk', async () => {
-  const repo = bigRepo(6);
+  const repo = bigRepo(PARALLEL_MIN_FILES + 10);
   const files = filesIn(repo);
   const config = loadConfig(repo);
   // An exclusion that exists only in the caller's object: nothing on disk says
