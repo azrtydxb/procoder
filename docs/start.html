@@ -87,14 +87,19 @@ procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit
 
 <p>
   In a CI job, <code>check --since &lt;ref&gt;</code> narrows the run to the files
-  git says changed — plus anything uncommitted or untracked — and exits
-  <strong>2</strong> naming the git command if git itself failed, rather than
-  checking nothing and passing green. <code>check --format json|sarif</code>
-  writes the run as a document instead of as lines: SARIF 2.1.0 carries the
-  ratchet's own fingerprint, so a code-scanning dashboard and the baseline agree
-  about what counts as one finding. Findings go to stdout, skip notices to
-  stderr. Both flags are <code>check</code>-only, and typed anywhere else they
-  exit 2.
+  git says changed — plus anything uncommitted or untracked, and including a
+  renamed, copied or retyped file at its new path — and exits <strong>2</strong>
+  naming the git command if git itself failed, rather than checking nothing and
+  passing green. <code>check --format json|sarif</code> writes the run as a
+  document instead of as lines: SARIF 2.1.0 carries the ratchet's own
+  fingerprint, so a code-scanning dashboard and the baseline agree about what
+  counts as one finding, and it names the files the run skipped as invocation
+  notifications so an unread file does not read as a clean one. Findings go to
+  stdout, skip notices to stderr. <code>--format</code> is
+  <code>check</code>-only and exits 2 typed anywhere else; <code>--since</code>
+  is written up under <code>check</code> but also narrows <code>verify</code> and
+  <code>baseline</code>, and it honours <code>--aging</code> and
+  <code>--unused-exclusions</code> rather than dropping them.
 </p>
 
 <p>
@@ -111,11 +116,14 @@ procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit
 
 <p>
   <code>--jobs &lt;n&gt;</code> sets how many worker processes a scan splits
-  across: one per core by default, capped at 8, and 1 — no workers at all — for
-  a run of fewer than 250 files, where forking costs more than it saves. The
-  report is identical either way, and a worker that dies has its slice rescanned
-  in this process rather than dropped. <code>--jobs 1</code> takes the pool out
-  of the picture.
+  across: one per usable core by default — a container's CPU quota is seen, not
+  the host's core count — capped at 8, and 1 — no workers at all — for a run of
+  fewer than 250 files, where forking costs more than it saves. A value over the
+  ceiling, or one that is not a usable count, is refused with a warning rather
+  than coerced in silence. The report is identical either way, every file runs at
+  the same budget in a worker as here, and a worker that dies or hangs has its
+  slice rescanned in this process rather than dropped. <code>--jobs 1</code>
+  takes the pool out of the picture.
 </p>
 
 <p>

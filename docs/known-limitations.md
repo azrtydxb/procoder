@@ -8,11 +8,17 @@ the entry is gone rather than kept as false modesty — a document that
 overstates weakness is as untrustworthy as one that hides it.
 
 Five audits running, this page went stale by keeping defects that had been
-fixed. This one inverted the failure: the engine grew a parallel scanner, two
-machine-readable formats, a `--since`, an `init`, two rungs and three rules,
-and the page said nothing about any of it. Silence about new surface is the
-same dishonesty in different clothes, and the sections below marked **new** are
-what that silence was hiding.
+fixed. The audit before this one inverted the failure: the engine grew a
+parallel scanner, two machine-readable formats, a `--since`, an `init`, two
+rungs and three rules, and the page said nothing about any of it. Silence about
+new surface is the same dishonesty in different clothes.
+
+This pass covers three engine changes. SARIF now names the files a run skipped
+and `--since` sees a rename; four rung-1 false positives on correct escaping are
+gone; and the parallel scan runs one budget, one config and a watchdog down both
+paths, with `--jobs` clamped. Ten rows are deleted rather than hedged. What
+replaced them is not shorter: an allow-list of escaper names is a decision to
+trust a name, and every name it trusts is a miss written up below.
 
 ## Rungs 5 and 6 have no engine behind them at all
 
@@ -97,43 +103,81 @@ as is its shell twin (`const DIR = "/tmp"; exec("ls " + DIR);`). The analysis
 stays conservative in the safe direction — a name reassigned from input
 anywhere in the file, in any scope, taints again, verified.
 
-Three shapes are **false positives on correct code**. The first two are the
-price of the widened propagation, and both are new on this page:
+### Where taint dies
+
+Four rung-1 false positives on correct code that this page used to list are
+gone, and the rows are deleted rather than hedged. Verified silent, each on the
+file the page used to say reported: `q = sanitizeSql(q)` before the sink;
+`mysql.escape(id)` concatenated into a query; `escapeHtml(x)` assigned to
+`innerHTML`; and `redis.execute(cmd)` in a module that also runs SQL.
+
+Two mechanisms did it, and the shape of each is what the remaining limitations
+are made of.
+
+**Taint dies at a call whose callee is *named* as sanitising, or is a known
+per-ecosystem driver escape** — and the sanitiser's whole argument list is
+skipped, so the value inside it is not judged on its own either. The verb has
+to *begin* the callee's last segment (`sanitizeSql`, `escapeHtml`,
+`quoteIdent`), and `escape`, `quote` and `sanitize` spelled bare count only on a
+receiver that names the library (`mysql.escape`, `DOMPurify.sanitize`). The
+list of per-ecosystem escapes with no verb in the name is in `SANITIZER_VERB`,
+`BARE_VERB`, `ESCAPE_RECEIVER` and `NAMED_CLEANER` in
+`hooks/checks/lang/taint.js`.
+
+**A call made on a receiver from `NON_DB_RECEIVER` is not a database call,
+whatever the file contains** — `redis`, `cache*`, `queue*`, `job`, `runner`,
+`api`, `http*`, `kafka`, `s3` and the rest. This subtracts from the file-level
+evidence only; an unknown receiver is unchanged.
+
+Both are allow-lists, and an allow-list is a decision to trust a name. Each of
+the five rows below is a **false negative** that decision buys — a real defect
+the scan now reports nothing for:
+
+| Trusted, and wrong | The file |
+|---|---|
+| **The wrong escaper for the sink** | `db.query(escapeHtml("SELECT * FROM t WHERE id=" + id));` is silent. The name says escaping; nothing asks escaping *for what*, and HTML escaping does not make a query safe. Every cross-context pairing goes the same way — `escapeSql` into `innerHTML`, `htmlEscape` into `exec`. |
+| **Escaping the assembled query rather than the value** | `q = "SELECT * FROM t WHERE id=" + id;` then `q = sanitizeSql(q);` then `db.query(q);` is silent, and it is not a fix: the injection is already in the string by the time the escaper sees it. Verified in JS, and in Python (`sanitize_sql(q)`) and Go (`escapeSql(q)`) alike. This is the same probe that used to be this page's first false positive; closing the false positive opened this. |
+| **Anything merely *named* `sanitizeX` / `escapeX` / `quoteX`** | `q = sanitizeNothingAtAll(q); db.query(q);` is silent. The allow-list is a naming convention, not a contract, and a function that only looks like an escaper is trusted exactly as far as one that is. |
+| **A sink nested inside a sanitiser's arguments** | `const out = escapeHtml(db.query("SELECT * FROM t WHERE id=" + id));` is silent. The sanitiser's whole argument list is skipped — which is what stops `q = sanitizeSql(q)` reporting — and the inner sink goes with it. The taint path still reaches it when the value was bound on an earlier line: with `const q = "SELECT id=" + id;` above, the same statement reports at the sink, built at line 1. |
+| **A real database handle named `cache`, `api` or `queue`** | `const cache = new Pool();` in a file importing `pg`, then `const q = "SELECT * FROM t WHERE id=" + id; cache.query(q);` — silent. So is the same file with the handle named `api` or `queue`. The receiver list is a guess about intent from a name, and a name is the one thing a project is free to choose badly. |
+
+Kept on purpose, and still **false positives on correct code**:
 
 | Probe | Reported | Why it is wrong |
 |---|---|---|
-| `let q = "SELECT id=" + id;`<br>`q = sanitizeSql(q);`<br>`db.query(q);` | `safe/sql-injection` | A right-hand side that names a tainted variable carries the taint on — that is what makes `q = q + id` work, and it cannot tell an escaper from any other wrapper. So the *fix* an author writes at the binding does not clear the finding, and neither does the driver's own escaper: `const q = "SELECT * FROM t WHERE id=" + mysql.escape(id); db.query(q);` reports too. Verified in all six packs, each with its own spelling — `sanitize(q)` in Python, Go, Rust, Java and C# alike. A literal reassignment *does* clear it (`q = "SELECT 1"`), so the discharge exists; it is only calls that cannot be judged. |
-| A cache, queue or job-runner call in a file that also talks to a database | `safe/sql-injection` | The database gate asks about the *file*, and once any evidence in it answers yes, every `execute`, `query` and `raw` call in that file is a SQL sink. Verified: a module importing `pg` and running one parameterized `pool.query(…)`, with `const cmd = 'SET user:' + key; redis.execute(cmd);` three lines below, reports `safe/sql-injection` against the redis call. So does `runner.execute(step)` in a file whose other function runs `cur.execute("SELECT 1")`. The return propagation carries it one call further — `cache.execute(cacheKey(id))` in the same file reports, built at the helper's `return`. Each of those three is silent in a file with no database evidence in it at all. |
-| `q = f"run job {x}"`<br>`pool.execute(q)` | `safe/sql-injection` | `execute` is not a database verb here. One of the three things that count as file-level evidence is a *receiver name* — `db.`, `cur.`, `conn.`, `stmt.`, `session.`, `pool.`, `repo.`, `tx.`. Those are ordinary names outside a database: a worker `pool`, an HTTP `session`, a git `repo`. Verified: `runner.execute(q)` and `cmd.execute(q)` on the same input are silent, `pool.execute(q)`, `session.execute(q)` and `repo.execute(…)` report. |
+| `let q = "SELECT id=" + id;`<br>`q = clean(q);`<br>`db.query(q);` | `safe/sql-injection` | A project-local sanitiser whose name carries no sanitising verb is not on the allow-list. `harden(q)` and `safen(q)` are the same shape, and `clean(q)` and `harden(q)` are both verified reporting. The direction is deliberate: the alternative is a wrapping call clearing taint by default, which is the whole scan giving up at the first unknown call. A miss here is a shipped injection; this is one line a reader can see is wrong. |
+| `q = f"run job {x}"`<br>`pool.execute(q)` | `safe/sql-injection` | `execute` is not a database verb here. One of the three things that count as file-level evidence is a *receiver name* — `db.`, `cur.`, `conn.`, `stmt.`, `session.`, `pool.`, `repo.`, `tx.` — and those are ordinary names outside a database: a worker `pool`, an HTTP `session`, a git `repo`. `pool` is not on the non-database list for the same reason it is on the evidence list. Verified: `runner.execute(q)` and `cmd.execute(q)` on the same input are silent, `pool.execute(q)`, `session.execute(q)` and `repo.execute(…)` report. |
 
-The reverse of that gate is the matching **silent coverage loss**: a genuine
-injection in a file that contains no database vocabulary at all is missed.
-Verified, two files that report **nothing**:
+The reverse of the database gate is the matching **silent coverage loss**: a
+genuine injection in a file that contains no database vocabulary at all is
+missed. Verified, a file that reports **nothing**:
 
 ```
 const q = base + req.query.id;
-api.execute(q);
+client.query(q);
 ```
 
-and the same with `client.query(q)`. Neither `api` nor `client` is a canonical
-handle, and neither file holds a SQL keyword, a driver name or an ORM name, so
-the whole rule stands down. Add one line of evidence and it comes back —
-`const { Client } = require('pg');` above the same `client.query(q)` reports.
-A per-call escape hatch exists for the unambiguous method forms
-(`executeQuery`, `rawQuery`, `QueryRowContext`, `CommandText`), but it only
-reaches the *line* rules: the taint sinks match `query`, `execute` and `raw` as
-whole words, so `api.executeQuery(q)` on a bound name is silent in a
+`client` is not a canonical handle and the file holds no SQL keyword, no driver
+name and no ORM name, so the whole rule stands down. Add one line of evidence
+and it comes back — `const { Client } = require('pg');` above the same
+`client.query(q)` reports, verified. The same file written with `api.execute(q)`
+is silent *either way* now, evidence or not, because `api` is on the
+non-database receiver list. A per-call escape hatch exists for the unambiguous
+method forms (`executeQuery`, `rawQuery`, `QueryRowContext`, `CommandText`), but
+it only reaches the *line* rules: the taint sinks match `query`, `execute` and
+`raw` as whole words, so `api.executeQuery(q)` on a bound name is silent in a
 vocabulary-free file too, verified. This bought back a large class of false
 positives on Command-pattern and job-runner code; the price is that a query
 assembled from fragments, in a file whose SQL lives elsewhere, is not seen.
 
 `safe/xss-sink` fires on the *assignment target* (`el.innerHTML = …`), so it is
-reported whichever way the value arrives. Constant markup is silent now —
+reported whichever way the value arrives. Constant markup is silent —
 `el.innerHTML = "<b>static</b>";`, the backtick form, and a name bound only to
-literal markup are each verified silent — but an **already-escaped value still
-reports**: `const safe = escapeHtml(x); el.innerHTML = safe;` is a finding, and
-so is `el.innerHTML = render(x);`. The rule cannot tell an escaper from any
-other call.
+literal markup are each verified silent — and an already-escaped value is silent
+too: `const safe = escapeHtml(x); el.innerHTML = safe;` and
+`el.innerHTML = escapeHtml("<b>" + name + "</b>");` both report nothing. Any
+*other* call still does: `el.innerHTML = render(x);` is a finding, verified. The
+rule tells a named escaper from an unnamed one, and nothing else.
 
 Use a real taint-tracking scanner for rung 1 if your threat model needs one.
 
@@ -402,7 +446,7 @@ What this does *not* give you:
   deliberate: `.claude/` also holds hand-written hooks and scripts, and a
   default exclusion would un-gate them silently for everybody.
 
-## The parallel scan, and the one thing it does not keep identical
+## The parallel scan, and the threshold that is the wrong shape
 
 `hooks/checks/scan.js` splits the file list into contiguous slices and hands
 each to a child process running `hooks/checks/worker.js`. The good properties
@@ -414,37 +458,99 @@ No file has been observed to go missing, and a short or unparseable result
 from a child is discarded wholesale rather than merged, so a truncated
 document cannot become a clean file.
 
-What is not identical is the **time budget**, and this is the finding that
-matters:
+Three divergences this page used to carry are closed, and are deleted rather
+than hedged:
 
-| Path | Budget per file |
+- **The time budget is one number down both paths.** `SLICE_BUDGET_MS` — the
+  600,000 ms a worker used to run each file at, against this process's
+  2,000 ms — is **deleted**. The parent puts `budgetMs` in the payload and
+  passes the same value on the sequential path, and a test pins it to
+  `BUDGET_MS` in `run.js`. Verified: `require('hooks/checks/scan.js')` exports
+  `SCAN_BUDGET_MS` at 2,000 and no `SLICE_BUDGET_MS` at all. So
+  `true/budget-exhausted` fires, or does not, for the same reason at any
+  `--jobs`. What made 600,000 ms reachable was never a large file — the most
+  adversarial 1 MB file built here costs well under the budget — it was a
+  **non-batchable linter**: `cargo clippy` has no `argvMany` or `parseMany`, so
+  it runs once per file, and 1.2 s of sequential clippy became six minutes
+  inside a worker that had no deadline to stop it.
+- **The worker no longer re-reads `.procoder.toml`.** The parent's config
+  object travels in the payload, so a caller-built config governs every file
+  rather than only the ones this process scanned, and a parse warning is printed
+  once rather than once per worker. Loading from disk survives as the fallback
+  for a payload that carries no config.
+- **A hung worker is no longer unhandled.** Worker *death* was already handled;
+  a live worker that never wrote a byte was not, and there was no timeout
+  anywhere in the pool, so the scan simply never returned. A slice now has a
+  derived bound — 5 s of startup grace plus two budgets per file — past which
+  the worker is `SIGKILL`ed, a line naming the timeout and the slice size goes
+  to stderr, and the slice is rescanned in this process, exactly as a dead
+  worker's already was.
+
+**`--jobs` is clamped**, on the same terms `max_file_bytes` has always had, and
+in `scanFiles` rather than in the CLI, so an API caller gets it too.
+`MAX_JOBS` is **8**. Verified, each by running it:
+
+| `--jobs` | What happens |
 |---|---|
-| This process — fewer than 250 files, `--jobs 1`, a single-core machine, or a dead worker's slice | `BUDGET_MS`, **2,000 ms** |
-| A live worker | `SLICE_BUDGET_MS`, **600,000 ms** |
+| `1`, `4`, `8` | honoured, silently |
+| `9`, `9999` | `procoder: --jobs 9999 is above the ceiling 8 — using 8. More workers than cores only take turns, and each one costs a process.` |
+| `0`, `-3`, `abc`, `NaN`, `Infinity`, empty | refused with `procoder: --jobs … is not a number of worker processes — want a whole number from 1 to 8; using 8`, and the default used |
 
-So the deadline that appends `true/budget-exhausted` and prints `Nms budget
-exhausted — not checked: <stage>` fires on the sequential path and effectively
-never on the parallel one. A repository large enough to be scanned in parallel
-reports differently from the same repository scanned with `--jobs 1`, and a
-slice whose worker died reports differently from its neighbours in the same
-run. `scan.js`'s own header claims the result "is IDENTICAL to the sequential
-one" and that "nothing about the report depends on how many cores the machine
-has"; for the budget that is not true. It could not be provoked on the machine
-this was measured on — the most adversarial 1 MB file built here costs 271 ms
-of the 2,000 ms — so this is a divergence stated from the code and the two
-constants, not one reproduced by a failing run.
+Two edges on that, both verified and neither fixed:
+
+- **A fractional value is floored, silently.** `--jobs 2.5` prints nothing and
+  scans with 2. `Math.floor(2.5)` is a usable count, so it never reaches the
+  refusal; only a value that floors below 1 does.
+- **The warning does not always name what you typed.** The CLI runs the flag
+  through `Number()` before `clampJobs` sees it, so `--jobs abc` warns about
+  `--jobs NaN` and `--jobs Infinity` warns about `--jobs null` — `clampJobs`
+  has code to show the value as written, and the conversion upstream defeats it.
+
+**The default job count is sized by `os.availableParallelism()`, not
+`os.cpus()`.** `os.cpus()` reports the *host's* core count straight through a
+cgroup CPU quota, so a container run at `--cpus 1` reported 10 and forked eight
+workers: measured on 4,000 files, `--cpus 1` cost 14.9 s sequential and 35.0 s
+at four jobs — the same shape of loss `--jobs 9999` used to buy on a laptop,
+with nobody typing anything to get it. `os.cpus()` remains the fallback, and the
+floor of 1 remains, because it is documented to be able to return nothing.
+
+### `PARALLEL_MIN_FILES` is 250, and a file count is the wrong threshold
+
+This one is **not fixed**, deliberately, and it is the sharpest thing on this
+page about the pool. Forking pays for itself when a file costs more than a fork
+does, so the crossover is a **work** threshold. `PARALLEL_MIN_FILES` counts
+files. Measured here, best of three runs each, through `scanFiles` directly so
+that the fork is reached below the threshold:
+
+| Input | Files | `--jobs 1` | 8 workers | Ratio |
+|---|---|---|---|---|
+| Real source (this repository's own language packs, cycled) | 50 | 334 ms | 391 ms | 0.85 |
+| | 75 | 638 ms | 535 ms | **1.19** |
+| | 100 | 814 ms | 667 ms | 1.22 |
+| | 250 | 2,127 ms | 1,168 ms | 1.82 |
+| Trivial one-liners (`const a0 = 0;`) | 250 | 18 ms | 108 ms | **0.17** |
+| | 1,000 | 67 ms | 120 ms | 0.56 |
+| | 2,500 | 142 ms | 188 ms | 0.75 |
+| | 4,000 | 226 ms | 200 ms | 1.13 |
+
+So real third-party source crosses over between **75 and 100** files, and
+trivial ones not until somewhere between **2,500 and 4,000** — where a
+250-file threshold is **six times slower** than not forking at all (108 ms
+against 18 ms). One constant cannot be right for both, and 250 is wrong for both
+in opposite directions: it leaves the 75-to-250 band of real source scanning
+sequentially when forking would have been up to 1.8× faster, and it forks a
+tree of trivial files ten times too early. Sizing it by bytes, or by a sampled
+cost per file, is the fix; it has not happened in 0.2.0.
 
 The rest of the pool's edges, each verified:
 
 | Limit | Measured |
 |---|---|
-| **Below 250 files nothing is forked**, and this repository has 209 tracked files | `procoder check .` over procoder itself is therefore always sequential, and the parallel path is not exercised by the self-scan. |
-| **Parallel is slower on small files** | 260 two-line files: `--jobs 1` costs 0.06 s, `--jobs 8` costs 0.11 s. The 250-file threshold is tuned for real source, and pays for itself only when a file costs more than a fork does. |
-| **`--jobs` is not validated or clamped** | `--jobs 0`, `--jobs abc` and `--jobs -3` are all accepted silently and fall back to the default or to sequential. `--jobs 9999` slices one file per child and spawns 260 processes at once: 2.15 s against 0.06 s sequential, a 35× loss, with no warning. |
-| **Workers inherit stderr, and reload config from disk** | A worker re-reads `.procoder.toml` for itself; only `noIgnore` travels in the payload. A config the parent computed some other way — a hand-built object from an API caller — is not what the worker uses. |
+| **Below 250 files nothing is forked**, and this repository has 209 tracked files | `procoder check .` over procoder itself is therefore always sequential, and the parallel path is not exercised by the self-scan. Tests reach the pool through a `forceParallel` option that exists for that reason and no other. |
 | **Linting is not parallel** | `runToolBatches` runs before the pool, in the parent, one spawn per tool for the whole run. A slow linter is wall clock nobody's cores help with. |
+| **Workers inherit stderr** | Anything a worker writes there arrives interleaved with the parent's own notices, unordered between slices. |
 
-## Machine-readable output: SARIF loses what the terminal says
+## Machine-readable output: what SARIF still loses
 
 `procoder check --format json` and `--format sarif` are built from the same
 per-file results the text path prints, so neither can report a finding the
@@ -463,16 +569,52 @@ over a tree holding one oversized file, one ignored file and one excluded file:
             {"file":"sub/x.js","reason":"excluded"}]
 ```
 
-**SARIF carries none of that.** Verified on the same tree, the document's
-`runs[0]` has exactly two keys, `tool` and `results`. There is no `skipped`,
-no `invocations`, no `summary`, and nothing anywhere recording the level the
-run was judged at. The consequences, in order of blast radius:
+**SARIF carries the skipped files too, now.** The row that used to head the
+table below — a file nobody read arriving at a dashboard identical to a clean
+one — is deleted, not hedged. Skips travel as
+`invocations[0].toolExecutionNotifications`, with the descriptors they name
+declared in `tool.driver.notifications`. Notifications rather than results: a
+file nobody opened has no finding in it, and inventing one would report a
+problem in an innocent file and fail every build that gates on result count.
+Verified on the same tree, plus an unreadable file:
+
+```
+"notifications": [{"id": "procoder/skipped/too-large", …}, …]
+"invocations": [{"executionSuccessful": false,
+                 "toolExecutionNotifications": [
+                   {"descriptor": {"id": "procoder/skipped/too-large"},
+                    "level": "error",
+                    "message": {"text": "big.js was not checked: larger than
+                                [limits] max_file_bytes (too-large)."},
+                    "locations": [{"physicalLocation":
+                                   {"artifactLocation": {"uri": "big.js"}}}]},
+                   …]}]
+```
+
+Five descriptor ids exist — `procoder/skipped/` plus `excluded`, `ignored`,
+`too-large`, `unreadable` and `other`. The level split is the one the CLI
+already makes on stderr and `verify` already gates on: deliberate scope loss
+(`[exclude] paths`, a `.procoderignore`) is **`warning`**; a file that was in
+scope and could not be read (over the size cap, unreadable) is **`error`**; and
+`executionSuccessful` is false exactly when an error-level notification exists —
+the same predicate `verify` uses when it refuses to claim a ratchet. Anything
+unrecognised maps to `other` at `error`, so a skip reason nobody mapped shows up
+as a hole rather than as a clean file. A run with nothing skipped emits no
+`invocations` and no `notifications` at all: the document is byte-identical to
+what it was before this existed.
+
+**`automationDetails` was deliberately not used**, and it is worth saying so,
+because it is the kind of thing someone will otherwise "fix". GitHub treats
+`runs[].automationDetails.id` as the category that groups one analysis with the
+next, so an id that appeared only on runs that skipped something would split a
+project's alert history in two the first time a file went unread.
+
+What SARIF still leaves out:
 
 | Lost in SARIF | Why it matters |
 |---|---|
-| **The skipped files** | A file procoder could not read — over `[limits] max_file_bytes`, unreadable, or held back by `[exclude] paths` — is indistinguishable in the document from a file that was scanned and found clean. A dashboard fed SARIF cannot tell coverage from silence. The notices are still printed, but on **stderr**, which a CI step uploading an artifact routinely discards. This is the silent coverage loss with the widest reach in this release. |
 | **The run's level** | `blocking` collapses into SARIF's `level: error` / `warning`. The same finding is `error` at `strict` and `warning` at `pragmatic`, and the document does not say which ran, so two dashboards over the same code can disagree with nothing to arbitrate them. |
-| **The exit code** | There is no `invocations` block, so a consumer cannot tell a failing run from a passing one without the process's own status. |
+| **The exit code** | `executionSuccessful` answers "could this run see everything it was asked to", not "did it pass". A run with findings and nothing skipped has no `invocations` block at all and reads as successful; the process's own status is still the only place the gate's verdict lives. |
 | **Anything the baseline accepted** | `check` applies the baseline, so an accepted finding is absent from both formats. A dashboard therefore shows fewer findings than the repository has, by design, with no count of the difference. |
 | **`note` severity is unused** | Every finding is `error` or `warning`. Deliberate — grading half of them to a level most dashboards hide by default would be a quiet way to lose them — but it means rung 3 and rung 4 arrive as warnings a busy dashboard treats as lint noise. |
 
@@ -484,11 +626,23 @@ staleness instruments — has no machine-readable form at all.
 
 ## `--since <ref>`: what it does not see
 
-`--since` asks git for three lists — `diff --diff-filter=ACM <ref>...HEAD`,
+`--since` asks git for three lists — `diff --diff-filter=ACMRT <ref>...HEAD`,
 the same against `HEAD` for uncommitted edits, and `ls-files --others` for
 untracked ones — and checks the union. Its commit message says it "cannot pass
-green on nothing"; run against it, that claim holds in three of the four ways
-it is tested and fails in the fourth.
+green on nothing"; run against it, that claim now holds every way it is tested
+here.
+
+The filter is `ACMRT`, and the two letters that are not in it are as deliberate
+as the ones that are. **`R`** is a rename, and `--name-only` gives the
+destination, so a renamed file is checked at the path it lives at now. **`C`**
+is a copy and **`T`** a type change: both are content arriving under a path
+nothing has checked. **`D`** stays out — a deleted file has no bytes to scan,
+and a rename's destination is already selected — and **`U`** (unmerged) with
+it. Verified end to end in a throwaway repository: after `git mv dirty.js
+renamed.js`, `procoder check --since HEAD~1` reports `renamed.js:1
+safe/sql-injection` and exits 1; a copy of the same file and a file turned into
+a symlink each report at the new path; a commit that only deletes a file still
+prints `no files changed since HEAD~1 — nothing to check.` and exits 0.
 
 Holds, verified:
 
@@ -502,35 +656,38 @@ Holds, verified:
 - A merge commit is handled: `...` is a merge base, so `--since <first
   parent>` over a merge picks up the side branch's files.
 
-Does not hold:
+`--since` is **not "check only" any more**, and any page still saying so is
+stale. `--aging` and `--unused-exclusions` are honoured rather than dropped.
+Verified in a throwaway repository, in the same second:
+`procoder verify --aging 0 --since HEAD~1` names the accepted finding with its
+date, path and rule and exits **1**, exactly as `procoder verify --aging 0 .`
+does — the baseline is what `--aging` judges, and no file selection narrows
+that.
 
-- **A rename takes the file out of `--since` entirely.** `--diff-filter=ACM`
-  excludes `R`, and git detects a rename by default, so a commit that renames
-  a file contributes nothing. Verified end to end: `git mv dirty.js
-  renamed.js`, then `procoder check --since HEAD~2` prints `no files changed
-  since HEAD~2 — nothing to check.` and exits **0**, while `procoder check
-  renamed.js` on the same tree reports a live `safe/sql-injection`. A rename
-  is exactly how code moves between reviews, and this is the one shape where
-  `--since` does pass green over a real finding.
+Does not hold, or holds only partly:
+
 - **A deletion is not checked, and nothing looks at what it left behind.** A
   commit that only removes a file exits 0 with `nothing to check` — correct
   for the deleted file, and the rung-4 question a deletion actually raises
   (who still calls it?) is `procoder rot`'s, which `--since` does not run.
-- **`--since` silently drops `--aging`, `--unused-exclusions` and the
-  whole-tree audits.** `runSince` calls the subcommand with `{ format }` only.
-  Verified against a baseline whose entries are older than the threshold:
-  `procoder verify --aging 0 .` reports `1 accepted finding older than 0 days`
-  and exits 1, while `procoder verify --aging 0 --since HEAD` on the same tree
-  in the same second prints `ratchet holds` and exits 0. Neither refused nor
-  warned — a flag that reads as running and does nothing, which is the shape
-  the CLI refuses everywhere else.
+- **`--unused-exclusions` under `--since` makes fewer claims than it looks
+  like it does.** It runs, but `wholeTree` is false, exactly as for any other
+  partial-scope run: "this glob matches nothing" and "everything this path
+  covers is clean" are claims about the tree, and a run over four changed files
+  has not seen it. Only the claim about what this run actually read is
+  enforced. Verified: `verify --unused-exclusions .` names two dead path
+  exclusions and exits 1, while `verify --unused-exclusions --since HEAD~1` on
+  the same tree names none and exits 0. Nothing is wrong there — but a CI job
+  that runs only the `--since` form will never be told a directory has been
+  quietly un-gated.
 - **`verify --since` is a partial ratchet against a whole baseline.** It
   compares the findings of the changed files against every accepted entry, so
   it cannot see growth in a file the diff did not touch. That is the point of
   the flag; it is worth knowing that a green `verify --since` is a much
   weaker claim than a green `verify .`.
-- `--since` is documented as `check`-only and is not enforced as such: it runs
-  on `baseline` and `verify` too, which is useful and undocumented.
+- `--since` is written up under `check` and is not enforced as such: it runs on
+  `baseline` and `verify` too, which is useful, and which the `--since` entry in
+  `--help` now half-documents by naming the two `verify` flags it honours.
 
 ## `procoder init`, the MCP server, and dated baseline entries
 
@@ -754,7 +911,7 @@ differential runs. The narrowings that survived are real, and disclosed here:
 | 4KB per-line guard, span-derived shape rules only | `hooks/checks/run.js` | Function length, nesting depth and complexity are not measured on a line over 4KB, because a function on one line has no meaningful span. `obvious/too-many-params` is **not** guarded — it is exact on a minified line. The language packs' SAFE rules and the universal pack read the line unguarded: a credential 1,500 characters into a log call is still reported. |
 | **1MB** per-file skip | `hooks/checks/config.js`, applied in `run.js` | This came down from 4MB to 2MB, and again to 1MB. The language pack is the one stage that cannot be abandoned part-way — everything after it is deadline-driven — so the size of what it is handed is the only lever on its cost, and the taint rebuild roughly doubled the ts pack's constant. 1MB of ordinary source costs the worst pack ~400ms of the 2000ms budget here, which still finishes on a host three times slower; 2MB did not. Larger files are not checked at all. Verified: a file of exactly 1,048,576 bytes is checked; at 1,048,577 `procoder check` exits 0 and prints `procoder: skipped over1mb.js (too-large) — not checked.` on stderr, while `procoder verify` over the same tree prints `1 file could not be checked (see above)` and **exits 2**. An unreadable file gets the same treatment and the same kind of line, and `check`, `baseline` and `verify` all report it. What remains is that `check` still exits **0** over a file it could not read: only `verify` treats an unread file as a hole in its own claim. |
 | `[limits] max_file_bytes`, downward only | `hooks/checks/config.js` | A project may lower the cap, never raise it. `max_file_bytes = 999999999` warns `.procoder.toml:2: max_file_bytes 999999999 is above the measured ceiling 1048576 — using 1048576`; `0`, `-5`, `"big"` and `true` each warn `must be a positive number of bytes, ignored` and fall back to 1MB. A cap that is simply *too low* is not the sharp edge it once was: `max_file_bytes = 10` skips every file including `.procoder.toml` itself, names each one on stderr, and `procoder verify` then prints `3 files could not be checked (see above) — the ratchet cannot hold over files nothing looked at. Raise or remove [limits] max_file_bytes, or exclude the path deliberately.` and **exits 2**. Verified end to end. |
-| 2s budget, and what it cuts | `hooks/checks/run.js` | Checks after the deadline are skipped. The order was reworked: the language pack now runs **before** the project's linter, and the linter is paid a *share* of what is left on the clock (0.6, floor 100ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. The per-MB reserve is deleted. Worst case at a 3× slowdown went from 1797ms to 1448ms of 2000ms, and holds to 6×. What the deadline does cut is now loud on both channels: a `true/budget-exhausted` finding appended **after** the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage — verified with a zero budget, `procoder: package.json: 0ms budget exhausted — not checked: the dependency manifest rules`. The universal pack (rung 1) runs first of all and can never be the stage that is cut. **This budget is not uniform any more**: a scan slice running in a worker process gets 600,000ms instead, so the deadline effectively never fires there — see the parallel-scan section above. |
+| 2s budget, and what it cuts | `hooks/checks/run.js` | Checks after the deadline are skipped. The order was reworked: the language pack now runs **before** the project's linter, and the linter is paid a *share* of what is left on the clock (0.6, floor 100ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. The per-MB reserve is deleted. Worst case at a 3× slowdown went from 1797ms to 1448ms of 2000ms, and holds to 6×. What the deadline does cut is now loud on both channels: a `true/budget-exhausted` finding appended **after** the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage — verified with a zero budget, `procoder: package.json: 0ms budget exhausted — not checked: the dependency manifest rules`. The universal pack (rung 1) runs first of all and can never be the stage that is cut. **This budget is uniform**: the parent puts it in the worker's payload and passes it on the sequential path too, so a scan slice in a worker runs each file at the same 2,000ms — see the parallel-scan section above. What it costs is stated there: on a project whose linter cannot be batched (`cargo clippy`), a slice that used to run clippy to completion now cuts it at its share of 2,000ms and says so. |
 
 The 200-character `SPAN_MAX` that used to bound the universal pack is gone.
 

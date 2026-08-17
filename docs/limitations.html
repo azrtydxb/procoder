@@ -22,28 +22,28 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <span class="msg"><span class="loc">hooks/checks/finding.js</span> rungs 5 and 6 have no engine behind them at all <span class="arrow">→</span> no <code>fast/</code> or <code>meant/</code> rule id exists anywhere in <code>hooks/</code>, so <code>[rungs] fast = "error"</code> is inert and CI can never gate on cost or on scope creep</span>
   </li>
   <li class="finding">
-    <span class="rung rung-hard">[2 TRUE]</span>
-    <span class="msg"><span class="loc">hooks/checks/report.js</span> SARIF carries no record of the files a run skipped <span class="arrow">→</span> <code>runs[0]</code> holds <code>tool</code> and <code>results</code> and nothing else, so a file that was too large to read is indistinguishable in the document from a file that was scanned and found clean</span>
-  </li>
-  <li class="finding">
-    <span class="rung rung-hard">[2 TRUE]</span>
-    <span class="msg"><span class="loc">bin/procoder.js</span> <code>--since</code> does not see a rename <span class="arrow">→</span> <code>--diff-filter=ACM</code> excludes <code>R</code>, so a commit that renames a file prints <code>no files changed — nothing to check</code> and exits 0 over a live <code>safe/sql-injection</code></span>
-  </li>
-  <li class="finding">
-    <span class="rung rung-hard">[2 TRUE]</span>
-    <span class="msg"><span class="loc">hooks/checks/worker.js</span> the time budget is not the same in a worker as in this process <span class="arrow">→</span> 600,000&nbsp;ms against 2,000&nbsp;ms, so the deadline that appends <code>true/budget-exhausted</code> fires on a sequential scan and effectively never on a parallel one</span>
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> an escaper is trusted by name, not by what it escapes for <span class="arrow">→</span> <code>db.query(escapeHtml("SELECT * FROM t WHERE id=" + id));</code> reports nothing, and neither does <code>sanitizeNothingAtAll(q)</code> before the sink</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a wrapping call at a binding cannot be told from an escaper <span class="arrow">→</span> <code>q = sanitizeSql(q);</code> before the sink still reports, in all six packs, and so does the driver's own <code>mysql.escape(id)</code></span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> escaping the assembled query passes as a fix <span class="arrow">→</span> <code>q = "SELECT id=" + id;</code> then <code>q = sanitizeSql(q);</code> then <code>db.query(q);</code> is silent, and the injection was already in the string</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> the database gate asks about the file, not the call <span class="arrow">→</span> in a module that also runs SQL, <code>redis.execute(cmd)</code> or <code>runner.execute(step)</code> on a built string reports <code>safe/sql-injection</code></span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a receiver name decides whether a call is a database call <span class="arrow">→</span> a real <code>pg</code> pool bound to <code>cache</code>, <code>api</code> or <code>queue</code> is never a SQL sink, whatever the file holds</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> and the reverse of that gate <span class="arrow">→</span> <code>const q = base + req.query.id;</code> then <code>api.execute(q);</code> in a file holding no database vocabulary reports nothing at all</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a project-local sanitiser is still a false positive <span class="arrow">→</span> <code>q = clean(q);</code> and <code>q = harden(q);</code> before the sink both report, kept on purpose: a wrapping call clearing taint by default is the scan giving up at the first unknown call</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> the reverse of the database gate <span class="arrow">→</span> <code>const q = base + req.query.id;</code> then <code>client.query(q);</code> in a file holding no database vocabulary reports nothing at all</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[5 FAST]</span>
+    <span class="msg"><span class="loc">hooks/checks/scan.js</span> <code>PARALLEL_MIN_FILES</code> counts files where the crossover is work <span class="arrow">→</span> real source pays for the fork at 75–100 files and trivial one-liners not until 2,500–4,000, where forking at 250 measured 108&nbsp;ms against 18&nbsp;ms sequential</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
@@ -51,7 +51,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/lang/ts.js</span> <code>safe/xss-sink</code> fires on the assignment target, not the value <span class="arrow">→</span> <code>const safe = escapeHtml(x); el.innerHTML = safe;</code> is reported, and it is correct code</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/ts.js</span> <code>safe/xss-sink</code> fires on the assignment target, not the value <span class="arrow">→</span> <code>el.innerHTML = render(x);</code> is reported however <code>render</code> is written, because only a callee <em>named</em> as an escaper discharges it</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
@@ -92,17 +92,20 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     which is the only place a limitation is recorded, measured and dated. This
     page is a twin by rung 4's definition. Five audits running it drifted the
     same way — into claiming a defect the engine had already stopped having.
-    This one drifted the other way, and worse: the engine grew a parallel
-    scanner, two machine-readable formats, a <code>--since</code>, an
+    The audit before this one drifted the other way, and worse: the engine grew
+    a parallel scanner, two machine-readable formats, a <code>--since</code>, an
     <code>init</code>, two rungs and three rules, and this page said nothing
     about any of it. Silence about new surface is the same dishonesty in
-    different clothes. What went from this page in this pass: the JS method
-    shorthand named after a statement and Rust's <code>fn r#match</code>, both
-    now measured; the template literal holding a quote, which no longer
-    desynchronises the brace scan; and <code>.procoderignore</code> having no
-    expiry test, which it now has. What arrived is everything above the taint
-    rows. If the two ever disagree, the markdown is right and this page is
-    stale.
+    different clothes. What went from this page in this pass: SARIF carrying no
+    record of a skipped file, which it now carries as invocation notifications;
+    <code>--since</code> missing a rename, now
+    <code>--diff-filter=ACMRT</code>; the worker's 600,000&nbsp;ms budget
+    against this process's 2,000&nbsp;ms, one number down both paths now; and
+    the two escaper false positives — <code>sanitizeSql(q)</code> at a binding,
+    and <code>redis.execute</code> in a file that also runs SQL. What arrived in
+    their place is what those fixes trust: an escaper judged by its name, and a
+    receiver judged by its name. If the two pages ever disagree, the markdown is
+    right and this one is stale.
   </p>
 </div>
 
@@ -243,7 +246,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#taint-tracking-one-file-forward-only">Taint tracking</a></td>
-      <td>The nine shapes the structural rebuild closed in all six languages, the six it still misses and why two of those are deliberate, the database-evidence gate in both directions, and the three rung-1 false positives — each a file you can paste.</td>
+      <td>The nine shapes the structural rebuild closed in all six languages, the six it still misses and why two of those are deliberate, the database-evidence gate in both directions, and where taint now dies — the five false negatives an escaper allow-list buys, and the two false positives kept on purpose. Each is a file you can paste.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
@@ -262,16 +265,16 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
       <td>Which paths are held out, by what, what each one now reports about itself, the two deliberate gaps in the ignore-file expiry test, and why no staleness report reaches a machine-readable format.</td>
     </tr>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-parallel-scan-and-the-one-thing-it-does-not-keep-identical">The parallel scan</a></td>
-      <td>What the worker pool does keep identical — verified, including a run in which every worker dies — and the one thing it does not: the per-file time budget, 2,000&nbsp;ms here and 600,000&nbsp;ms in a worker. Plus the unclamped <code>--jobs</code>, and why parallel is slower on small files.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-parallel-scan-and-the-threshold-that-is-the-wrong-shape">The parallel scan</a></td>
+      <td>The three divergences that are closed — one budget, one config, and a watchdog for a worker that hangs rather than dies — how <code>--jobs</code> is clamped and the two edges left in it, and the threshold that is the wrong shape: 250 <em>files</em> where the crossover is <em>work</em>, measured at both ends.</td>
     </tr>
     <tr>
-      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#machine-readable-output-sarif-loses-what-the-terminal-says">Machine-readable output</a></td>
-      <td>What the versioned JSON carries and SARIF does not — the skipped files, the run's level, the exit code — and why a dashboard fed SARIF cannot tell coverage from silence.</td>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#machine-readable-output-what-sarif-still-loses">Machine-readable output</a></td>
+      <td>How a skipped file now reaches SARIF — invocation notifications, the warning/error split, <code>executionSuccessful</code> — why <code>automationDetails</code> was deliberately not used, and what the document still leaves out: the run's level, the gate's verdict, anything the baseline accepted.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#since-ref-what-it-does-not-see"><code>--since &lt;ref&gt;</code></a></td>
-      <td>The three ways it does refuse to pass green on nothing, and the fourth where it does not: a rename leaves the file out of the diff entirely. Plus the flags it silently drops.</td>
+      <td>Why the filter is <code>ACMRT</code> and what each letter buys, why <code>D</code> stays out, and what is still weaker than it looks: a partial ratchet against a whole baseline, and <code>--unused-exclusions</code> making only the claims a partial scope supports.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#procoder-init-the-mcp-server-and-dated-baseline-entries"><code>init</code>, MCP, dated baselines</a></td>

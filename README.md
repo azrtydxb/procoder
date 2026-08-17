@@ -198,25 +198,36 @@ one. `sarif` is SARIF 2.1.0 for GitHub code scanning and anything else that
 speaks it, and it carries `partialFingerprints.procoderFingerprint`: the same
 fingerprint the ratchet uses, so a finding that moved down the file is not a new
 alert to triage again. Findings go to stdout and every skip notice stays on
-stderr, so the document stays parseable when you pipe it. `--format` belongs to
-`check`; typed at anything else it exits 2 rather than being ignored.
+stderr, so the document stays parseable when you pipe it. Both formats name the
+files the run skipped — JSON in a `skipped` array, SARIF as
+`invocations[0].toolExecutionNotifications` with `executionSuccessful` false
+when a file that was in scope could not be read — so an unread file cannot
+arrive at a dashboard looking like a clean one. `--format` belongs to `check`;
+typed at anything else it exits 2 rather than being ignored.
 
 `check --since <ref>` checks what git says changed: `git diff --name-only
---diff-filter=ACM <ref>...HEAD`, plus anything uncommitted and anything
-untracked. Paths given alongside narrow it to the intersection, so `--since main
-src/` is "what changed under src/". A git failure exits 2 and names the command
-that failed — the CI template used to do this in shell with `|| true`, where a
-first push made git fail, produced no files, and passed green having checked
-nothing. Zero changed files says `no files changed since <ref>` and exits
-0; silence and a clean scan of a hundred files must not look the same.
-
+--diff-filter=ACMRT <ref>...HEAD`, plus anything uncommitted and anything
+untracked. Renames, copies and type changes are included at their new path;
+deletions are not, having nothing left to read. Paths given alongside narrow it
+to the intersection, so `--since main src/` is "what changed under src/".
+`--aging` and `--unused-exclusions` still apply, judged over what this run read.
+A git failure exits 2 and names the command that failed — the CI template used
+to do this in shell with `|| true`, where a first push made git fail, produced
+no files, and passed green having checked nothing. Zero changed files says
+`no files changed since <ref>` and exits 0; silence and a clean scan of a
+hundred files must not look the same.
 
 `--jobs <n>` sets how many worker processes the scan splits across. The default
-is one per core, capped at 8, and **1 — this process, no workers — for a run of
-fewer than 250 files**, where forking costs more than it saves. The report is
-identical either way: slices are contiguous, reassembled in input order, and a
-worker that dies has its slice rescanned here rather than dropped. `--jobs 1`
-is the way to take the pool out of the picture entirely.
+is one per usable core — `os.availableParallelism()`, so a CPU quota is seen and
+a one-core container does not fork eight workers — capped at 8, and **1 — this
+process, no workers — for a run of fewer than 250 files**, where forking costs
+more than it saves. A value above 8 is refused with a warning naming the value
+and the ceiling; zero, negative and non-numeric are refused the same way and the
+default is used. The report is identical either way: slices are contiguous,
+reassembled in input order, every file runs at the same 2,000 ms budget, and a
+worker that dies — or hangs past a derived slice bound — has its slice rescanned
+here rather than dropped. `--jobs 1` is the way to take the pool out of the
+picture entirely.
 
 `--no-ignore` checks files a `.procoderignore` covers anyway — it answers "why
 is this file not being checked?". It deliberately does not reach `[exclude]

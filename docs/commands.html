@@ -124,7 +124,12 @@ description: The twelve /procoder slash commands — what each one does, grouped
 
 <p>
   Findings go to stdout and every skip notice stays on stderr, so the document
-  stays parseable when you pipe it. <code>--format</code> belongs to
+  stays parseable when you pipe it. Both formats also name the files the run
+  skipped: JSON in a <code>skipped</code> array, SARIF as
+  <code>invocations[0].toolExecutionNotifications</code>, with
+  <code>executionSuccessful</code> false when a file that was in scope could not
+  be read at all. A file nobody opened cannot arrive at a dashboard looking like
+  a file that was scanned and found clean. <code>--format</code> belongs to
   <code>check</code>; typed at any other subcommand it exits <strong>2</strong>
   rather than being quietly ignored.
 </p>
@@ -133,10 +138,21 @@ description: The twelve /procoder slash commands — what each one does, grouped
 
 <p>
   Checks what git says changed —
-  <code>git diff --name-only --diff-filter=ACM &lt;ref&gt;...HEAD</code>, plus
-  anything uncommitted and anything untracked. Paths given alongside narrow it to
-  the intersection, so <code>--since main src/</code> means "what changed under
-  <code>src/</code>".
+  <code>git diff --name-only --diff-filter=ACMRT &lt;ref&gt;...HEAD</code>, plus
+  anything uncommitted and anything untracked. Renames, copies and type changes
+  are included at their <em>new</em> path; deletions are not, having no bytes
+  left to scan. Paths given alongside narrow it to the intersection, so
+  <code>--since main src/</code> means "what changed under <code>src/</code>".
+</p>
+
+<p>
+  <code>--since</code> is not "check only": <code>--aging</code> and
+  <code>--unused-exclusions</code> are honoured rather than dropped, judged over
+  what this run read. The baseline is what <code>--aging</code> asks about and no
+  file selection narrows that, so it behaves exactly as it does on a whole-tree
+  run. <code>--unused-exclusions</code> makes only the claims a partial scope can
+  support — "this glob matches nothing" needs to have seen the tree, so under
+  <code>--since</code> it stays unmade.
 </p>
 
 <p>
@@ -163,13 +179,23 @@ description: The twelve /procoder slash commands — what each one does, grouped
 
 <p>
   A scan splits its file list into contiguous slices and hands each to a worker
-  process. The default is one per core, capped at 8, and <strong>1 — this
-  process, no workers — for a run of fewer than 250 files</strong>, where
-  forking costs more than it saves. The report is identical either way: slices
-  are reassembled in input order, and a worker that dies has its slice rescanned
-  here rather than dropped. <code>--jobs 1</code> takes the pool out of the
-  picture entirely. The value is not clamped, so a very large one spawns a
-  process per file and costs far more than it saves.
+  process. The default is one per <em>usable</em> core —
+  <code>os.availableParallelism()</code>, which sees a container's CPU quota
+  where <code>os.cpus()</code> reports the host's cores through it — capped at 8,
+  and <strong>1 — this process, no workers — for a run of fewer than 250
+  files</strong>, where forking costs more than it saves. The report is
+  identical either way: slices are reassembled in input order, every file runs
+  at the same 2,000&nbsp;ms budget whichever process reads it, and a worker that
+  dies, or hangs past a derived slice bound, has its slice rescanned here rather
+  than dropped. <code>--jobs 1</code> takes the pool out of the picture entirely.
+</p>
+
+<p>
+  The value is clamped. Anything from 1 to 8 is honoured silently; above the
+  ceiling it is refused with a warning naming the value and the ceiling; and
+  zero, a negative, a non-number or an empty value is refused the same way and
+  the default is used. Coercing a typo in a CI invocation into the default in
+  silence made it look exactly like not passing the flag at all.
 </p>
 
 <h3>Why is this not checked: <code>--no-ignore</code></h3>

@@ -57,6 +57,57 @@ gaps that reading exposed.
   intersection; and zero changed files is said out loud rather than exiting 0 in
   silence. Both flags are `check`-only and exit 2 typed anywhere else, because a
   flag that silently does nothing is how somebody concludes a check ran.
+- **SARIF names the files a run did not read.** `runs[0]` carried `tool` and
+  `results` and nothing else, so a file over the size cap, excluded by
+  `[exclude] paths`, covered by a `.procoderignore` or simply unreadable arrived
+  at a dashboard identical to a file that was scanned and found clean — in the
+  format that feeds GitHub code scanning. Skips now travel as
+  `invocations[0].toolExecutionNotifications` with their descriptors declared in
+  `driver.notifications`: deliberate scope loss is `warning`, an in-scope file
+  that could not be read is `error`, and `executionSuccessful` is false exactly
+  when an error-level notification exists — the same predicate `verify` gates
+  on. `automationDetails` was rejected: GitHub groups analyses by its id, and an
+  id that appeared only on runs with a skip would split a project's alert
+  history. A run with nothing skipped is byte-identical to before.
+- **`--since` sees a rename, and honours the flags it used to drop.** The filter
+  is `--diff-filter=ACMRT`: git reports a moved file as a rename rather than a
+  delete plus an add, so a commit that renamed a file carrying a live
+  `safe/sql-injection` checked nothing and passed — the exact claim `--since`
+  exists to make impossible. Renames, copies and type changes are checked at
+  their new path; `D` stays out deliberately, a deleted file having no bytes to
+  scan. `--aging` and `--unused-exclusions` are honoured rather than silently
+  dropped, so `--since` is no longer "check only".
+- **One budget, one config and a watchdog down both scan paths.** A worker ran
+  every file at 600,000 ms against this process's 2,000 ms, so
+  `true/budget-exhausted` fired sequentially and effectively never in parallel;
+  the budget travels in the payload now and a test pins it to `run.js`'s. What
+  made the large number reachable was a non-batchable linter — `cargo clippy`
+  runs per file — not a large file. A worker no longer re-reads `.procoder.toml`,
+  so a caller-built config governs every file. And a worker that *hangs* is
+  handled at last: a dead one always was, a live one that never answered hung
+  the whole scan with no timeout anywhere. A slice now has a derived bound, past
+  which the worker is killed and its slice scanned here.
+- **`--jobs` is clamped, and the default is sized by usable cores.** Under the
+  ceiling of 8 is honoured; over it is refused with a warning naming value and
+  ceiling; zero, negative and non-numeric are refused rather than coerced into
+  the default in silence, which made a typo in a CI invocation look exactly like
+  not passing the flag. Applied in `scanFiles`, so API callers get it too.
+  `defaultJobs()` reads `os.availableParallelism()` rather than `os.cpus()`,
+  which reports the *host's* cores straight through a cgroup quota: measured on
+  4,000 files, a `--cpus 1` container took 14.9 s sequential and 35.0 s at four
+  jobs, a loss nobody typed anything to get.
+- **Four rung-1 false positives on correct escaping are gone.** Taint now dies at
+  a call whose callee is *named* as sanitising, or is a known per-ecosystem
+  driver escape, and the sanitiser's whole argument list is skipped with it. So
+  `q = sanitizeSql(q)` before the sink, `mysql.escape(id)` concatenated into a
+  query, `escapeHtml(x)` assigned to `innerHTML`, and `redis.execute(cmd)` in a
+  module that also runs SQL are all silent. A call on a receiver that is plainly
+  not a database handle — `redis`, `cache*`, `queue*`, `api`, `runner` — is not a
+  SQL sink whatever the file contains. The cost is written down rather than
+  hidden: an allow-list trusts a name, so the wrong escaper for the sink, a
+  project-local escaper with no verb in its name, and a real handle somebody
+  called `cache` are each a miss. See
+  [docs/known-limitations.md](docs/known-limitations.md).
 - **`procoder init [--baseline]`.** Writes a starter `.procoder.toml` and says
   what it did; a config that already exists is left exactly as it is, since an
   `init` that overwrote one would be the only command here capable of deleting

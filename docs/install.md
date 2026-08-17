@@ -253,16 +253,21 @@ Four more flags:
 - `check --format text|json|sarif` — `json` is procoder's own versioned shape,
   `sarif` is SARIF 2.1.0 for code-scanning dashboards, carrying the same
   fingerprint the ratchet uses. `--format` belongs to `check`; typed at anything
-  else it exits 2. SARIF carries no record of the files the run skipped; the
-  JSON does.
+  else it exits 2. Both name the files the run skipped — JSON in `skipped`,
+  SARIF as `invocations[0].toolExecutionNotifications` — so an unread file does
+  not read as a clean one.
 - `check --since <ref>` — check what git says changed since `<ref>`, plus
   anything uncommitted or untracked. A git failure exits 2 rather than checking
-  nothing quietly. Renamed files are not in that list.
+  nothing quietly. Renames, copies and type changes are included at their new
+  path; deletions are not.
 - `verify --aging <days>` — fail when an accepted finding has been in the
-  baseline longer than that. Ignored when combined with `--since`.
-- `--jobs <n>` — how many worker processes the scan splits across. One per core
-  by default, capped at 8, and 1 for a run of fewer than 250 files. The report
-  is identical either way.
+  baseline longer than that. Honoured under `--since` too: the baseline is what
+  it judges, and no file selection narrows that.
+- `--jobs <n>` — how many worker processes the scan splits across. One per
+  usable core by default (a container's CPU quota, not the host's core count),
+  capped at 8, and 1 for a run of fewer than 250 files. A value over the ceiling
+  or one that is not a usable count is refused with a warning. The report is
+  identical either way.
 
 At `pragmatic`, `check` reports OBVIOUS, ALONE, FAST and MEANT findings but does
 not exit 1 on them — every rung whose `[rungs]` severity is `warn`; every other
