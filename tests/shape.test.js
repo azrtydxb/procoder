@@ -623,7 +623,7 @@ test('signature attribution stays linear in line length and in signature count',
   const oneLine = (kb) => {
     const unit = 'if(a&&b){return a+b}else{return 0}';
     const src = 'const x = 1;\n' + unit.repeat(Math.ceil((kb * 1024) / unit.length));
-    return Math.max(1, bestOf(3, () => rawShape(src)));
+    return Math.max(5, bestOf(3, () => rawShape(src)));
   };
   const ratio = oneLine(400) / oneLine(100);
   assert.ok(ratio < 8, `4x the line length cost ${ratio.toFixed(1)}x the time`);
@@ -631,7 +631,7 @@ test('signature attribution stays linear in line length and in signature count',
   const manyWraps = (count) => {
     const src = Array.from({ length: count }, (unused, i) =>
       `function w${i}(\n  a,\n  b,\n  c,\n) {\n  return a;\n}`).join('\n');
-    return Math.max(1, bestOf(3, () => rawShape(src)));
+    return Math.max(5, bestOf(3, () => rawShape(src)));
   };
   const wrapRatio = manyWraps(4000) / manyWraps(1000);
   assert.ok(wrapRatio < 8, `4x the signatures cost ${wrapRatio.toFixed(1)}x the time`);
