@@ -5,8 +5,8 @@ const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
 const {
-  SIGNATURE_LOOKBACK,
-  analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings, stripNoise,
+  analyzeIndent, countParams, estimateComplexity, lineRuleFindings, paramSpans, shapeFindings,
+  stripNoise,
 } = require('../shape');
 
 const EXTENSIONS = ['.py'];
@@ -123,44 +123,42 @@ const DEF_HEAD = /^\s*(?:async\s+)?def\s+\w+\s*\(/;
 // implicit `this` that was never counted.
 const RECEIVER = /^\s*(?:self|cls)\s*(?:,|$)/;
 
-// The parameter text of a `def`, read across the lines its list wraps over.
+// The parameter text of every `def` in the file, keyed by the line its `def`
+// starts on, however many lines its list wraps over.
+//
 // black wraps one parameter per line past the line width, so in formatted
 // Python a many-parameter signature is always wrapped — reading only the `def`
 // line saw an empty list for exactly the functions the params check exists to
-// catch. Same shape as shape.js's rescanner for the brace packs: take the
-// signature's own line plus its continuations, bounded by the same lookback so
-// an unclosed paren cannot walk the file.
+// catch. Following the continuations fixed that, but bounded: the walk stopped
+// after ten lines, so one parameter per line made an eight-parameter `def` the
+// widest this pack could see. Past that the list never closed, `defParams`
+// returned null, and the whole function dropped out of measurement — length,
+// complexity and mutable defaults with it. The five brace packs have no such
+// bound, so Python's most-wrapped — most-parametered — functions were the ones
+// nobody measured.
 //
-// One left-to-right scan tracking bracket depth, rather than a regex: `)` also
-// ends a default value or an annotation, and `[^)]*` stopped at the first of
-// them.
-const BRACKET = { '(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1 };
-
-// Index of the bracket that closes the signature within `text`, or -1. `state`
-// carries the depth across the lines a wrapped list spans.
-function closeIndex(text, state) {
-  for (let i = 0; i < text.length; i += 1) {
-    const step = BRACKET[text[i]] || 0;
-    if (step < 0 && state.depth === 0) return i;
-    state.depth += step;
-  }
-  return -1;
-}
-
-function defParams(lines, start) {
-  const head = DEF_HEAD.exec(lines[start] || '');
-  if (!head) return null;
-
-  const state = { depth: 0 };
-  let text = lines[start].slice(head[0].length);
-  let params = '';
-  for (let ln = start; ln - start < SIGNATURE_LOOKBACK; ln += 1) {
-    const close = closeIndex(text, state);
-    if (close !== -1) return params + text.slice(0, close);
-    params += text;
-    text = ' ' + (lines[ln + 1] === undefined ? '' : lines[ln + 1]);
-  }
-  return null;
+// The bound cannot simply be raised: a scan that walks from every `def` until
+// its list closes is quadratic on a file of unclosed parens, and two separate
+// quadratics have already come out of exactly that shape here. shape.js's
+// paramSpans answers where *every* `(` in the file closes and how many
+// top-level parameters it holds, in one left-to-right pass over the source —
+// so matching each `def` to its own `)` costs one map lookup and no search,
+// whatever the wrap. It is the same pass, by the same rule, the brace packs
+// already match their signatures with.
+//
+// Read off the noise-stripped source rather than the comment-stripped lines,
+// so a bracket or a comma inside a string literal cannot move the count.
+function defParamText(stripped) {
+  const spans = paramSpans(stripped);
+  const texts = new Map();
+  let at = 0;
+  stripped.split('\n').forEach((line, index) => {
+    const head = DEF_HEAD.exec(line);
+    const span = head && spans.get(at + head[0].length - 1);
+    if (span) texts.set(index, stripped.slice(at + head[0].length, span.end));
+    at += line.length + 1;
+  });
+  return texts;
 }
 
 // `x=[]`, `x={}`, `x=set()` — a default built once at definition time and
@@ -189,29 +187,26 @@ const notForSecurity = (rule, line) => rule.id === 'safe/weak-hash'
 // `def` at all, since a line rule tests one line and black puts each parameter
 // on its own.
 //
-// defParams already reads the whole list, across its continuations, by
-// tracking bracket depth rather than by matching a span — so the rule costs
-// one forward scan per `def` line with no ceiling on either. DEF_HEAD anchors
-// to the start of the line, which is where Python's grammar puts `def`
-// regardless.
-function mutableDefaultFindings(lines) {
+// defParamText already holds the whole list, across every continuation, from
+// the one paramSpans pass — so the rule costs one map walk with no ceiling on
+// the list and no scan per `def`. DEF_HEAD anchors to the start of the line,
+// which is where Python's grammar puts `def` regardless.
+function mutableDefaultFindings(texts) {
   const findings = [];
-  lines.forEach((line, index) => {
-    if (!DEF_HEAD.test(line)) return;
-    const params = defParams(lines, index);
-    if (params === null || !MUTABLE_DEFAULT.test(params)) return;
+  for (const [index, params] of texts) {
+    if (!MUTABLE_DEFAULT.test(params)) continue;
     findings.push(finding({
       rung: 'TRUE', id: 'true/mutable-default', line: index + 1,
       message: 'mutable default argument — shared across calls',
       fix: 'default to None and build the value inside the function',
     }));
-  });
+  }
   return findings;
 }
 
-function countDefParams(lines, start) {
-  const params = defParams(lines, start);
-  if (params === null) return 0;
+function countDefParams(texts, start) {
+  const params = texts.get(start);
+  if (params === undefined) return 0;
   return countParams('(' + params + ')') - (RECEIVER.test(params) ? 1 : 0);
 }
 
@@ -239,10 +234,10 @@ function exceptFindings(lines) {
 
 // Python has no signature-opening brace to key on, so every indent block is
 // measured and the def line, when there is one, supplies the parameters.
-function measureBlocks(lines, blocks) {
+function measureBlocks(lines, blocks, texts) {
   return blocks.map((block) => ({
     ...block,
-    params: countDefParams(lines, block.startLine - 1),
+    params: countDefParams(texts, block.startLine - 1),
     complexity: estimateComplexity(lines.slice(block.startLine - 1, block.endLine).join('\n')),
   }));
 }
@@ -254,9 +249,9 @@ function measureBlocks(lines, blocks) {
 function check(source, { relPath, config } = {}) {
   const lines = stripComments(source, 'py').split(/\r?\n/);
   const { maxDepth, blocks } = analyzeIndent(source, { tabWidth: 4 });
-  const ctx = packContext({
-    lines, stripped: stripNoise(String(source || ''), 'py').split(/\r?\n/), spec: TAINT,
-  });
+  const stripped = stripNoise(String(source || ''), 'py');
+  const texts = defParamText(stripped);
+  const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, lines, {
     skip: (rule, line) => notForSecurity(rule, line) || skipConstant(rule, line, ctx),
   });
@@ -264,10 +259,10 @@ function check(source, { relPath, config } = {}) {
   return [
     ...inline,
     ...taintFindings({ spec: TAINT, ctx, existing: inline }),
-    ...mutableDefaultFindings(lines),
+    ...mutableDefaultFindings(texts),
     ...exceptFindings(lines),
     ...shapeFindings({
-      blocks: measureBlocks(lines, blocks),
+      blocks: measureBlocks(lines, blocks, texts),
       maxDepth,
       thresholds: config.thresholds,
       kind: 'function',
