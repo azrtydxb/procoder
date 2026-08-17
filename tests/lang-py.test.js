@@ -384,3 +384,44 @@ test("the executemany call form is database evidence on its own", () => {
   assert.ok(!ids('def run(job, n):\n    label = BASE + n\n    return job.execute(label)\n')
     .includes("safe/sql-injection"));
 });
+
+// --- a wrapped `def` has no line budget ------------------------------------
+//
+// The signature used to be followed for a fixed ten lines, so one parameter per
+// line — what black produces — made the widest `def` this pack could see an
+// eight-parameter one. At nine the parameter list was never matched, and a
+// `def` whose list is not matched is not a function here at all: parameters,
+// length and complexity all skipped it. The five brace packs match a parameter
+// list to its own `)` and measure a 400-parameter wrap; Python now does too.
+const wrappedDef = (params, body) => [
+  'def handle(',
+  ...params.map((p) => `    ${p},`),
+  '):',
+  ...body,
+].join('\n');
+
+const numbered = (count) => Array.from({ length: count }, (unused, i) => `parameter_${i}`);
+
+test('a def wrapped past the old ten-line budget is still measured', () => {
+  for (const count of [9, 20, 400]) {
+    const found = paramFinding(wrappedDef(numbered(count), ['    return 1']));
+    assert.ok(found, `${count} wrapped parameters: not measured at all`);
+    assert.strictEqual(found.message, `${count} parameters (limit 4)`);
+    assert.strictEqual(found.line, 1, `${count} parameters: wrong line`);
+  }
+});
+
+test('a mutable default past the old ten-line budget is found', () => {
+  const src = wrappedDef([...numbered(30), 'into=[]'], ['    return into']);
+  assert.ok(ids(src).includes('true/mutable-default'), 'lost past the ten-line lookback');
+  const sound = wrappedDef([...numbered(30), 'into=None'], ['    return into']);
+  assert.ok(!ids(sound).includes('true/mutable-default'), 'a sound default must stay sound');
+});
+
+test('a widely wrapped def is measured whole, once, at its def line', () => {
+  const src = wrappedDef(numbered(12), Array.from({ length: 60 }, () => '    step()'));
+  const found = check(src, { relPath: 'x.py', config })
+    .filter((f) => f.id === 'obvious/function-too-long');
+  assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
+  assert.strictEqual(found[0].line, 1);
+});

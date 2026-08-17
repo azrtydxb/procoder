@@ -13,6 +13,39 @@ const { DEFAULTS } = require('../hooks/checks/config');
 // suite. See tests/perf-guard.js for why CPU time is what these bounds mean.
 const { bestOf } = require('./perf-guard');
 
+// Quadrupling the input costs ~4x when the scan is linear and ~16x when it is
+// quadratic, so 8 sits an equal distance from both. The same bound the two
+// ratio guards further down already use, for one property with one answer.
+const LINEAR_RATIO = 8;
+
+// A pathological input against benign code of the *same size*, which is
+// tests/perf-guard.js's shape: same function, same byte count, so every linear
+// cost is on both sides and only the blow-up is on one. 40x is that file's
+// PERF_MULTIPLE, and means the same thing here.
+const PERF_MULTIPLE = 40;
+
+// Why these are ratios and not millisecond bounds.
+//
+// `bestOf` already measures CPU time rather than wall clock, which is what
+// stopped a *loaded* machine flaking these. It does nothing about a *slow* one:
+// a host at a third of the speed spends three times the CPU on the same work,
+// so an absolute bound is a bound on the runner. `signaturesFrom stays linear
+// on a huge single-line file` asserted `< 500ms`, cost 108ms of CPU here, and
+// failed on the macOS CI runner at 548ms — red for the project's whole history,
+// on a scan that is linear and always was. Widening the number would only move
+// the next runner that trips it.
+//
+// A ratio between two input sizes is speed-free by construction: both points
+// are measured on whatever host is running, and only the *shape* of the growth
+// survives the division. That was tried once during the CPU-time fix and
+// rejected, because it read 4.6-15.4x under load — but it was measured with a
+// 100KB small point costing ~1ms, where per-run overhead and a single GC pause
+// are most of the number. Both points here are tens to hundreds of
+// milliseconds, and the ratio holds: measured on a 10-core box at 0, 16 and 48
+// competing spinners (4.8x oversubscription), signaturesFrom read 3.4, 3.2 and
+// 3.2, and analyzeBraces plus measureFunctions read 3.7, 3.3 and 3.3 — against
+// the 16 a quadratic returns.
+
 test('analyzeBraces reports nesting depth and block spans', () => {
   const src = [
     'function a() {',      // 1
@@ -173,35 +206,41 @@ test('a chain of control-flow blocks still counts as nesting', () => {
   assert.strictEqual(analyzeBraces(src).maxDepth, 5);
 });
 
-// A 2MB single-line minified file. Line numbering used to re-slice the whole
-// source per match, so cost was quadratic: ~1.3s here, over the 2s whole-file
-// hook budget on its own. Linear line indexing runs it in tens of ms; the
-// bound is set an order of magnitude above that so a loaded CI machine does
-// not flake, while a return to quadratic scaling still fails.
+// A minified single-line file. Line numbering used to re-slice the whole source
+// per match, so cost was quadratic: ~1.3s at 2MB, over the 2s whole-file hook
+// budget on its own. Linear line indexing runs 4MB in a quarter of a second, so
+// the quadratic term is what the two sizes are here to expose.
 test('signaturesFrom stays linear on a huge single-line file', () => {
   const unit = 'function f(a,b){return a+b}';
-  const src = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
   const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
+  const cost = (mb) => {
+    const stripped = stripNoise(unit.repeat(Math.ceil((mb * 1024 * 1024) / unit.length)));
+    return bestOf(3, () => signaturesFrom(stripped, re));
+  };
 
-  const ms = bestOf(3, () => signaturesFrom(stripNoise(src), re));
-  assert.ok(ms < 500, `signaturesFrom scaled worse than linearly: ${ms}ms`);
+  const small = cost(1);
+  const large = cost(4);
+  assert.ok(large / small < LINEAR_RATIO,
+    `4x the file cost ${(large / small).toFixed(1)}x the time (${small}ms → ${large}ms)`);
 });
 
-// A 400KB minified line, the size at which the two used to cost 2.0s and 44.8s
-// respectively — each on its own over the 2s whole-file hook budget. Both now
-// run in single-digit milliseconds. The bound is 500ms, two orders of magnitude
-// above that, so a loaded CI machine cannot flake it; a return to quadratic
-// scaling costs tens of seconds and fails it by a wide margin.
+// A minified line at 400KB and 1.6MB. At 400KB the two used to cost 2.0s and
+// 44.8s respectively — each on its own over the 2s whole-file hook budget.
 test('analyzeBraces and measureFunctions stay linear in line length', () => {
   const unit = 'function f(a,b){if(a&&b){return a+b}else{return 0}}';
-  const line = unit.repeat(Math.ceil((400 * 1024) / unit.length));
   const re = { head: /function\s+\w*\(/g, tail: /\s*\{/ };
+  const cost = (kb) => {
+    const line = unit.repeat(Math.ceil((kb * 1024) / unit.length));
+    return bestOf(3, () => {
+      const { blocks } = analyzeBraces(line);
+      measureFunctions([line], blocks, signaturesFrom(stripNoise(line), re));
+    });
+  };
 
-  const ms = bestOf(3, () => {
-    const { blocks } = analyzeBraces(line);
-    measureFunctions([line], blocks, signaturesFrom(stripNoise(line), re));
-  });
-  assert.ok(ms < 500, `shape analysis scaled worse than linearly: ${ms}ms`);
+  const small = cost(400);
+  const large = cost(1600);
+  assert.ok(large / small < LINEAR_RATIO,
+    `4x the line length cost ${(large / small).toFixed(1)}x the time (${small}ms → ${large}ms)`);
 });
 
 // --- signatures that wrap across lines -------------------------------------
@@ -698,13 +737,25 @@ test('an over-nested 2-space Python function is reported', () => {
   assert.strictEqual(depthFinding(deep('  ')).message, 'nesting depth 4 (limit 3)');
 });
 
+// Against the same byte count of ordinary code rather than against a
+// millisecond number, for the reason given at the head of this file: the
+// millisecond number bounded the runner. Backtracking is superlinear in the run
+// it backtracks over, so it cannot hide inside a multiple of the linear scan —
+// the pathological line measured 1.0-1.7x the benign one at 0 and 48 competing
+// spinners, and it is in fact usually the *cheaper* of the two, having no
+// braces and no branches in it.
 test('does not catastrophically backtrack on a long line', () => {
   const long = 'function a() { ' + 'x'.repeat(20000) + ' }';
-  const ms = bestOf(3, () => {
-    analyzeBraces(long);
-    estimateComplexity(long);
+  const unit = 'function f(a,b){if(a&&b){return a+b}else{return 0}}';
+  const benign = unit.repeat(Math.ceil(long.length / unit.length)).slice(0, long.length);
+  const cost = (src) => bestOf(3, () => {
+    analyzeBraces(src);
+    estimateComplexity(src);
   });
-  assert.ok(ms < 500, `took too long on pathological input: ${ms}ms`);
+
+  const ms = cost(long);
+  const budget = cost(benign) * PERF_MULTIPLE;
+  assert.ok(ms < budget, `took ${ms}ms on pathological input (budget ${budget}ms)`);
 });
 
 // A destructuring pattern is data, not a block. LITERAL_BRACE only catches
@@ -1047,4 +1098,92 @@ test('an over-threshold function named after a keyword reports once', () => {
   const found = findings('ts', src, 'a.ts').filter((f) => f.id === 'obvious/complexity');
   assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
   assert.strictEqual(found[0].line, 1);
+});
+
+// --- depth is structural, not a column count -------------------------------
+//
+// Dividing a column by a single inferred unit answers "how many units wide is
+// this indent", which is the nesting level only when every level in the file is
+// exactly that unit wide. Two ways that goes wrong, both real:
+//
+//   too wide  — the unit was picked from a bounded candidate list (a step had
+//               to be 8 columns or narrower), so a file indented 9, 10, 12 or
+//               16 columns per level fell back to tabWidth and every real level
+//               counted as two or four. Correct code, reported as over-nested.
+//   two units — the unit is one number for the whole file, so a region indented
+//               differently is measured against someone else's. Under-reported
+//               depth is the worse half: a genuine violation, silently green.
+//
+// Counting enclosing indentation columns instead needs no unit at all: a line
+// indented wider than the statement enclosing it is one level deeper, whatever
+// the widths are.
+const nested = (unit, levels) => [
+  'def f():',
+  ...Array.from({ length: levels }, (unused, i) => `${unit.repeat(i + 1)}if a${i}:`),
+  `${unit.repeat(levels + 1)}go()`,
+].join('\n');
+
+test('an indent step wider than a tab stop measures its real depth', () => {
+  for (const width of [9, 10, 12, 16]) {
+    const src = nested(' '.repeat(width), 2);
+    assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 3,
+      `${width}-column steps`);
+  }
+});
+
+test('a 10-column def with two levels of if raises no nesting finding', () => {
+  const src = nested(' '.repeat(10), 2);
+  const hit = findings('py', src, 'a.py').find((f) => f.id === 'obvious/nesting-depth');
+  assert.strictEqual(hit, undefined, hit && hit.message);
+});
+
+// One file, two indent widths. The commonest step is 4 — twelve defs vote for
+// it — so the two-space region was measured against it and lost half its depth.
+const twoWidths = (levels) => [
+  ...Array.from({ length: 12 }, (unused, i) => `def d${i}(x):\n    return ${i}`),
+  nested('  ', levels),
+].join('\n');
+
+test('a region indented differently is measured against its own structure', () => {
+  assert.strictEqual(analyzeIndent(twoWidths(5), { tabWidth: 4 }).maxDepth, 6);
+  assert.strictEqual(analyzeIndent(twoWidths(6), { tabWidth: 4 }).maxDepth, 7);
+});
+
+test('the deep region of a mixed-width file is reported', () => {
+  for (const [levels, depth] of [[5, 6], [6, 7]]) {
+    const hit = findings('py', twoWidths(levels), 'a.py')
+      .find((f) => f.id === 'obvious/nesting-depth');
+    assert.ok(hit, `${levels} levels: no nesting finding at all`);
+    assert.strictEqual(hit.message, `nesting depth ${depth} (limit 3)`);
+  }
+});
+
+// The other direction of the same defect: a four-space region in a file whose
+// commonest step is two used to be measured as twice as deep as it is.
+test('the shallow region of a mixed-width file is not over-reported', () => {
+  const src = [
+    ...Array.from({ length: 12 }, (unused, i) => `def d${i}(x):\n  return ${i}`),
+    nested('    ', 2),
+  ].join('\n');
+  assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 3);
+});
+
+// Alignment under an open bracket is not nesting, at any width — the wider the
+// call, the further right the alignment lands.
+test('continuation lines inside a call are not nesting', () => {
+  const src = [
+    'def f():',
+    '    result = compute(alpha,',
+    '                     beta,',
+    '                     gamma)',
+    '    return result',
+  ].join('\n');
+  assert.strictEqual(analyzeIndent(src, { tabWidth: 4 }).maxDepth, 1);
+});
+
+test('tabs and mixed tabs and spaces still measure their real depth', () => {
+  assert.strictEqual(
+    analyzeIndent(nested('\t', 2), { tabWidth: 4 }).maxDepth, 3);
+  const mixed = ['def f():', '  if a:', '\tif b:', '\t  if c:', '\t\tgo()'].join('\n');
+  assert.strictEqual(analyzeIndent(mixed, { tabWidth: 4 }).maxDepth, 4);
 });
