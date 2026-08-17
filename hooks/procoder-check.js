@@ -6,7 +6,7 @@
 // rejected write and does not strand the user behind a false positive.
 
 const path = require('path');
-const { loadConfig, findRepoRoot } = require('./checks/config');
+const { loadConfig, findRepoRoot, levelFor } = require('./checks/config');
 const { checkFile } = require('./checks/run');
 const { formatFindings } = require('./checks/finding');
 const { readHookInput, writeHookOutput, readLevel } = require('./procoder-runtime');
@@ -59,8 +59,8 @@ function buildMessage({ level, config, relPath, findings, staleBaseline }) {
 }
 
 function checkWrittenFile() {
-  const level = readLevel();
-  if (level === 'off') return;
+  const sessionLevel = readLevel();
+  if (sessionLevel === 'off') return;
 
   const filePath = (input.tool_input && input.tool_input.file_path) || '';
   if (!filePath) return;
@@ -90,6 +90,10 @@ function checkWrittenFile() {
   // Findings are the only trigger for output, which also keeps the stale-baseline
   // notice off clean writes instead of on every write forever.
   if (findings.length === 0) return;
+
+  // The level a `[levels]` pin puts this path at, if any — so the message says
+  // the level the findings were judged at, not the one the session is set to.
+  const level = levelFor(config, relPath, sessionLevel);
 
   writeHookOutput('PostToolUse', level,
     buildMessage({ level, config, relPath, findings, staleBaseline }));

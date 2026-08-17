@@ -33,6 +33,12 @@ present. Every hit is a row.
 | IPC / socket handler | `ipcMain.on\|net.createServer\|WebSocket\|unix socket` |
 | Deserialization site | `JSON.parse\|pickle.loads\|yaml.load\|ObjectInputStream\|BinaryFormatter\|serde_json::from_str` |
 | Third-party callback | OAuth redirect handlers, payment-provider callbacks, SSO assertion consumers |
+| Agent-facing input | text an LLM or agent reads as context and may act on: issue/PR bodies, README and doc files, code comments, MCP and tool output, fetched pages, retrieved documents |
+
+An agent-facing row is a boundary like any other, and its sink is whatever the
+agent is allowed to do — a shell call, a file write, a network request, a commit.
+Its validation column asks the same question: what stops text in that channel
+from being obeyed as an instruction?
 
 **2 — Enumerate sinks.**
 

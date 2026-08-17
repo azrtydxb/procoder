@@ -10,15 +10,21 @@ jobs:
       # single most useful thing a matrix is for.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         # Node 18 went end-of-life in April 2025 and 20 in April 2026; runners
         # have been dropping both. A leg that cannot be provisioned is not
         # support, so the set is the two maintained lines plus the current LTS.
-        #
-        # This makes `engines.node` in package.json wrong at >=18 — see the
-        # report: package.json, the README badge and docs/install.md belong to
-        # other owners and must move to >=20 with this.
+        # `engines.node` in package.json says >=20 to match.
         node-version: ['20', '22', '24']
+        os: [ubuntu-latest]
+        # One macOS leg, not three. macOS bills at 10x Linux and differs from it
+        # in almost nothing this code touches — but it is slower and noisier per
+        # core, and that is what exposed the budget defect no Ubuntu leg ever
+        # saw: a file at the cap cost 1794ms of a 2000ms budget, because the
+        # timeout formula encoded one fast machine's throughput. It is kept as
+        # the slow-host canary, on the current LTS only.
+        include:
+          - os: macos-latest
+            node-version: '24'
     runs-on: ${{ matrix.os }}
     steps:
       # v5 of both: v4 runs on the Node 20 action runtime, which GitHub is

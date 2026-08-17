@@ -21,6 +21,10 @@ description: Reference for procoder — what it checks, its rungs, its levels, a
 - **strict** (default) — all four rungs enforced on code touched this session.
 - **paranoid** — strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff.
 
+`[levels]` in `.procoder.toml` pins a level to the paths that earn it
+(`paranoid = ["src/auth/"]`), and that pin wins over the session level for those
+files.
+
 ## Commands
 
 | Command | Does |

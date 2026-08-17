@@ -188,6 +188,10 @@ nesting_depth = 3
 params = 4
 complexity = 10
 
+[levels]
+paranoid = ["src/auth/", "**/payments/*.ts"]
+pragmatic = ["scripts/"]
+
 [exclude]
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
@@ -208,6 +212,14 @@ silently dropped, and so is a value it cannot read exactly. A key written
 naming the file and line — a duplicate says two things and TOML permits
 neither, so keeping either one would be a guess. A repeated `[table]` header
 and a dotted key colliding with a table are refused the same way.
+
+`[levels]` pins a level to the paths that earn it, so the gate follows the blast
+radius rather than the session: auth, payments and crypto answer to `paranoid`
+whoever is typing, and a `scripts/` directory is worth `pragmatic` even in a
+strict session. Patterns are the `[exclude] paths` shapes, and a path covered by
+two pins resolves to the stricter of them. A pin never restarts a session the
+user turned off, and `off` is refused as a pin name — silencing a path is what
+`[exclude] paths` is for, and that one reports the skip.
 
 `[exclude] paths` reports what it costs: one stderr line per pattern per run
 with the count it held back, and the pattern named — and if you name an

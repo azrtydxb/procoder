@@ -39,6 +39,10 @@ nesting_depth = 3
 params = 4
 complexity = 10
 
+[levels]
+paranoid = ["src/auth/", "**/payments/*.ts"]
+pragmatic = ["scripts/"]
+
 [exclude]
 paths = ["vendor/", "generated/"]
 rules = ["scripts/legacy-parser.js:obvious/complexity"]
@@ -56,6 +60,21 @@ file = ".procoder-baseline.json"</code></pre>
   judgment rungs are flagged without blocking language, while SAFE and TRUE always
   demand a fix. The keys are the four rung names verbatim, <code>true</code>
   included — it is a bare key, not a boolean.
+</p>
+
+<p>
+  <strong><code>[levels]</code></strong> pins a level to the paths that earn it,
+  so the gate follows the blast radius instead of whatever the session is set to.
+  Auth, payments and crypto answer to <code>paranoid</code> whoever is typing; a
+  <code>scripts/</code> directory is worth <code>pragmatic</code> even in a strict
+  session. Patterns are the <code>[exclude] paths</code> shapes — a directory
+  prefix or a simple glob — and a path covered by two pins resolves to the
+  stricter of them. A pinned file is judged at its pin, and the run says how many
+  were: <code>3 findings — 1 blocking, 2 advisory at [strict] (1 file at a
+  [levels] pin)</code>. Two things a pin cannot do: it never restarts a session
+  the user turned off, and <code>off</code> is refused as a pin name, because
+  silencing a path is what <code>[exclude] paths</code> is for — and that one
+  reports the skip.
 </p>
 
 <p>

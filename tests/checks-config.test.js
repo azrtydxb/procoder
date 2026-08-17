@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  loadConfig, isExcluded, isRuleExcluded, excludeReason, DEFAULTS, findRepoRoot,
+  loadConfig, isExcluded, isRuleExcluded, excludeReason, DEFAULTS, findRepoRoot, levelFor,
 } = require('../hooks/checks/config');
 const { cpuMs } = require('./perf-guard');
 
@@ -414,4 +414,56 @@ test('a zero or negative max_file_bytes is refused, not obeyed', () => {
     '.procoder.toml': '[limits]\nmax_file_bytes = 0\n',
   })));
   assert.strictEqual(value.limits.max_file_bytes, DEFAULTS.limits.max_file_bytes);
+});
+
+// --- [levels] --------------------------------------------------------------
+
+test('a [levels] pin resolves for the paths it names and nowhere else', () => {
+  const config = loadConfig(tempRepo({
+    '.procoder.toml': '[levels]\nparanoid = ["src/auth/", "**/payments/*.ts"]\npragmatic = ["scripts/"]\n',
+  }));
+  assert.strictEqual(levelFor(config, 'src/auth/login.ts', 'strict'), 'paranoid');
+  assert.strictEqual(levelFor(config, 'api/payments/charge.ts', 'strict'), 'paranoid');
+  assert.strictEqual(levelFor(config, 'scripts/seed.ts', 'strict'), 'pragmatic');
+  assert.strictEqual(levelFor(config, 'src/users.ts', 'strict'), 'strict');
+});
+
+// A path named twice is a config its author should fix. Until they do, the
+// safer of their two answers is the one to obey.
+test('two pins covering one path resolve to the stricter', () => {
+  const config = loadConfig(tempRepo({
+    '.procoder.toml': '[levels]\npragmatic = ["src/"]\nparanoid = ["src/auth/"]\n',
+  }));
+  assert.strictEqual(levelFor(config, 'src/auth/login.ts', 'strict'), 'paranoid');
+});
+
+test('a pin never restarts a session the user turned off', () => {
+  const config = loadConfig(tempRepo({
+    '.procoder.toml': '[levels]\nparanoid = ["src/auth/"]\n',
+  }));
+  assert.strictEqual(levelFor(config, 'src/auth/login.ts', 'off'), 'off');
+});
+
+test('an unknown or "off" level name is warned about and dropped', () => {
+  const { value, captured } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '[levels]\nultra = ["src/"]\noff = ["scripts/"]\n',
+  })));
+  assert.deepStrictEqual(value.levels, []);
+  assert.match(captured, /ignoring \[levels\] "ultra"/);
+  assert.match(captured, /ignoring \[levels\] "off"/);
+  assert.match(captured, /\[exclude\] paths/, '"off" must point at the instrument that does say so');
+});
+
+test('a [levels] value that is not a list of paths is dropped, not guessed at', () => {
+  const { value, captured } = captureStderr(() => loadConfig(tempRepo({
+    '.procoder.toml': '[levels]\nparanoid = "src/auth/"\n',
+  })));
+  assert.deepStrictEqual(value.levels, []);
+  assert.match(captured, /ignoring \[levels\] paranoid/);
+});
+
+test('no [levels] section leaves every path at the session level', () => {
+  const config = loadConfig(tempRepo());
+  assert.deepStrictEqual(config.levels, []);
+  assert.strictEqual(levelFor(config, 'src/auth/login.ts', 'pragmatic'), 'pragmatic');
 });

@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { LEVELS } = require('../hooks/procoder-config');
+const { getProcoderInstructions } = require('../hooks/procoder-instructions');
 
 const doctrine = fs.readFileSync(
   path.join(__dirname, '..', 'skills', 'procoder', 'SKILL.md'), 'utf8');
@@ -29,6 +30,12 @@ test('level-gated blocks are balanced and use known levels', () => {
   for (const o of opens) {
     assert.ok(['pragmatic', 'strict', 'paranoid'].includes(o[1]), `bad level: ${o[1]}`);
   }
+});
+
+test('digest-skip blocks are balanced', () => {
+  const opens = [...doctrine.matchAll(/<!-- digest:skip -->/g)].length;
+  const closes = [...doctrine.matchAll(/<!-- \/digest -->/g)].length;
+  assert.strictEqual(opens, closes, 'unbalanced digest markers');
 });
 
 test('both level-gated block types are present', () => {
@@ -58,6 +65,14 @@ test('covers every spec requirement area', () => {
     'names say **what**, never **how**',
     'comment the **why**',
     'removal trigger',
+    'the agent is a boundary too',
+    'redaction marker',
+    'never by hand-editing the manifest',
+    'typecheck → lint → tests → build',
+    'three attempts at one file',
+    'cost is behavior',
+    'compare the diff against the ask both ways',
+    '(pre-existing)',
     'ponytail chooses **what to write**',
   ]) {
     assert.ok(flat.includes(phrase), `missing rule: ${phrase}`);
@@ -82,8 +97,24 @@ test('the four level names and their order are consistent everywhere they are do
   }
 });
 
+// The budget is what the doctrine costs every session, so it moves only when a
+// rule is added, never to make room for prose — the last two rules (cost is
+// behavior, intent) were paid for by trimming, not by moving the number.
+//
+// Measured on the RENDERED text at the widest level, not on the source file:
+// frontmatter, level markers and digest markers are all stripped before the
+// model sees any of it, and a budget that counted them would be a budget on
+// authoring machinery rather than on context. The digest gets its own, lower
+// ceiling — it is what every subagent pays, so the multiplier lives there.
 test('doctrine stays under the context budget', () => {
-  assert.ok(doctrine.length < 12000, `doctrine is ${doctrine.length} chars; budget is 12000`);
+  const rendered = getProcoderInstructions('paranoid');
+  assert.ok(rendered.length < 14000,
+    `rendered doctrine is ${rendered.length} chars; budget is 14000`);
+});
+
+test('the subagent digest stays well under the full text', () => {
+  const digest = getProcoderInstructions('paranoid', { digest: true });
+  assert.ok(digest.length < 11000, `digest is ${digest.length} chars; budget is 11000`);
 });
 
 test('suppression rule requires narrowest scope and a named rule', () => {

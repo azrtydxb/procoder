@@ -17,3 +17,6 @@ line and state what changed:
 
 If no level was given, report the current level and list the options. One line
 each. Do not restate the doctrine.
+
+If `.procoder.toml` has a `[levels]` section, add one line naming the paths it
+pins and to what: the session level does not apply to them.

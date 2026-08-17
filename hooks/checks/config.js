@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseToml } = require('./toml');
+const { LEVEL_RANK, normalizeLevel } = require('../procoder-config');
 
 // The largest file the engine will open. A measured ceiling, not a preference:
 // past it the engine either overflows the stack building the finding list or
@@ -22,6 +23,7 @@ const DEFAULTS = {
   // Rungs 1-2 are facts (it is injectable, or it is not); rungs 3-4 are
   // judgment. Only `pragmatic` acts on the difference — see procoder-check.js.
   rungs: { safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' },
+  levels: [],
   baseline: { file: '.procoder-baseline.json' },
 };
 
@@ -119,6 +121,7 @@ function loadConfig(repoRoot) {
       rules: parseRuleExclusions(raw.exclude && raw.exclude.rules),
     },
     limits: { max_file_bytes: fileBytesLimit(raw, text, '.procoder.toml') },
+    levels: parseLevelPins(raw.levels),
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
     rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
@@ -366,6 +369,58 @@ function parseRuleExclusions(raw) {
     .map((rule) => ({ path: rule.path, id: rule.id }));
 }
 
+// --- [levels] --------------------------------------------------------------
+//
+// `[levels] paranoid = ["src/auth/", "**/payments/*.ts"]` pins a level to the
+// paths that earn it, so the gate follows the blast radius rather than whatever
+// the session happens to be set to. Auth, payments and crypto want paranoid
+// whoever is typing; a scripts/ directory is worth pragmatic even in a strict
+// session — and nobody remembers to type either at the moment it matters.
+//
+// Patterns are the `[exclude] paths` shapes and nothing new: a directory prefix
+// or a simple glob. Two pins covering one file resolve to the stricter of them.
+// A path named twice is a config its author should fix, and until they do, the
+// safer of their two answers is the one to obey.
+//
+// `off` is refused. It would silence a path outright, which `[exclude] paths`
+// already does — and reports as a skip, which this would not. A second, quieter
+// way to turn the gate off is exactly the twin rung 4 is about.
+function pinsFor(name, patterns) {
+  const level = normalizeLevel(name);
+  if (!level || !LEVEL_RANK[level]) {
+    process.stderr.write(`procoder: ignoring [levels] "${name}" — expected pragmatic, strict or `
+      + `paranoid${level === 'off' ? '. "off" silences a path; [exclude] paths does that and says so' : ''}\n`);
+    return [];
+  }
+  if (!Array.isArray(patterns)) {
+    process.stderr.write(`procoder: ignoring [levels] ${level} — expected an array of path patterns\n`);
+    return [];
+  }
+  return patterns
+    .filter((pattern) => typeof pattern === 'string' && pattern !== '')
+    .map((pattern) => ({ level, pattern }));
+}
+
+function parseLevelPins(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  return Object.entries(raw).flatMap(([name, patterns]) => pinsFor(name, patterns));
+}
+
+// The level this file is gated at: a matching pin, or the session's own level.
+// A session that is `off` stays off — a pin narrows or widens a running gate,
+// and must never restart one the user turned off.
+function levelFor(config, relPath, sessionLevel) {
+  const pins = config.levels;
+  if (sessionLevel === 'off' || !Array.isArray(pins) || pins.length === 0) return sessionLevel;
+  const normalized = String(relPath).replace(/\\/g, '/');
+  let winner = null;
+  for (const pin of pins) {
+    if (!matchesPattern(pin.pattern, normalized)) continue;
+    if (!winner || LEVEL_RANK[pin.level] > LEVEL_RANK[winner]) winner = pin.level;
+  }
+  return winner || sessionLevel;
+}
+
 function isRuleExcluded(config, relPath, id) {
   const normalized = String(relPath).replace(/\\/g, '/');
   return config.exclude.rules.some(
@@ -374,5 +429,5 @@ function isRuleExcluded(config, relPath, id) {
 
 module.exports = {
   DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, excludingPattern,
-  unusedPathExclusions, isRuleExcluded, findRepoRoot, IGNORE_FILE,
+  unusedPathExclusions, isRuleExcluded, findRepoRoot, IGNORE_FILE, levelFor,
 };

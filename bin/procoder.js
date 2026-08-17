@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions,
+  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, levelFor,
 } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
@@ -25,7 +25,8 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
 
   check     report findings not present in the baseline; exit 1 if any of them
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
-            reported but do not block; every other level gates all four rungs)
+            reported but do not block; every other level gates all four rungs;
+            [levels] in .procoder.toml pins a level to the paths that earn it)
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
 
@@ -281,10 +282,14 @@ function isBlocking(finding, level, config) {
   return config.rungs[finding.rung.toLowerCase()] !== 'warn';
 }
 
-function summarize(blocking, advisory, level) {
+function summarize(blocking, advisory, level, pinned) {
   const total = blocking + advisory;
   const counts = `${total} finding${total === 1 ? '' : 's'}` +
-    (advisory > 0 ? ` — ${blocking} blocking, ${advisory} advisory at [${level}]` : '');
+    (advisory > 0 ? ` — ${blocking} blocking, ${advisory} advisory at [${level}]` : '') +
+    // Which level a finding was judged at decides whether it blocks, so a run
+    // where some files answered to a different one has to say so — otherwise
+    // the count above is explained by a level the reader never sees.
+    (pinned > 0 ? ` (${pinned} file${pinned === 1 ? '' : 's'} at a [levels] pin)` : '');
   return blocking > 0
     ? `\nprocoder: ${counts}. Fix them, or run \`procoder baseline <paths>\` ` +
       'to accept pre-existing ones.\n'
@@ -343,12 +348,15 @@ function reportSkipped() {
 }
 
 function runCheck(files, repoRoot, config) {
-  const level = readLevel();
+  const sessionLevel = readLevel();
   let blocking = 0;
   let advisory = 0;
+  let pinned = 0;
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
     if (skipped || findings.length === 0) continue;
+    const level = levelFor(config, relPath, sessionLevel);
+    if (level !== sessionLevel) pinned += 1;
     const gating = findings.filter((f) => isBlocking(f, level, config)).length;
     blocking += gating;
     advisory += findings.length - gating;
@@ -357,7 +365,7 @@ function runCheck(files, repoRoot, config) {
 
   reportSkipped();
   if (blocking + advisory === 0) return 0;
-  process.stdout.write(summarize(blocking, advisory, level));
+  process.stdout.write(summarize(blocking, advisory, sessionLevel, pinned));
   return blocking > 0 ? 1 : 0;
 }
 

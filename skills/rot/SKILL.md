@@ -51,6 +51,13 @@ anything dead, run every check below and say which one cleared it:
    documented public surface, it has callers you cannot see. Not rot.
 5. **Cross-language and cross-repo callers.** FFI, gRPC/GraphQL schema names, SQL
    function names, front-end calling a back-end route string.
+6. **History.** `git log -S "<name>" --oneline` shows when the symbol arrived and
+   when its callers left; `git log --diff-filter=D --oneline -- <path>` shows a
+   twin that was already deleted once and came back. A symbol whose last caller
+   was removed in the commit that introduced its replacement is the deletion the
+   author meant to make — say which commit, and the deletion stops being a guess.
+   `git blame` the deprecation marker instead when there is one: its age, and
+   whether the removal trigger it names has already passed, is the whole verdict.
 
 If any check leaves reachability uncertain, report the item as **needs
 confirmation**, not as a deletion. Recommending a deletion that breaks a caller
@@ -67,6 +74,7 @@ column where git can supply it:
 [4 ALONE]   package.json:31     lodash declared, 0 imports → remove (unused dependency)
 [4 ALONE]   docs/auth.md:44     describes session cookies; code moved to JWT 5mo ago → rewrite (stale doc)
 [4 ALONE]   src/registry.ts:12  loadPlugin, only string-built call sites → needs confirmation
+[4 ALONE]   api/users.ts:6      createUserV1, last caller removed in a1b2c3d with the v2 switch → delete
 ```
 
 Close with two lines: total lines removable, and the single highest-value

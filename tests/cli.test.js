@@ -279,6 +279,42 @@ test('strict fails on a judgment finding', () => {
   assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 1);
 });
 
+// `[levels]` pins a level to the paths that earn it. Both directions are the
+// point: a scripts/ directory stops failing a strict session on judgment
+// findings, and an auth/ directory answers to paranoid whatever the session is.
+// The pin decides whether a finding blocks, so it decides the exit code — which
+// is the only part a pre-commit hook or CI ever sees.
+test('a [levels] pin loosens the gate for the paths it names', () => {
+  const repo = atLevel(repoWith({
+    'scripts/a.ts': ADVISORY_ONLY,
+    '.procoder.toml': '[levels]\npragmatic = ["scripts/"]\n',
+  }), 'strict');
+  const result = cli(repo, ['check', 'scripts/a.ts']);
+  assert.strictEqual(result.code, 0, 'a pinned-pragmatic path must not block on a judgment finding');
+  assert.match(result.out, /ALONE/, 'it is still reported');
+  assert.match(result.out, /\[levels\] pin/, 'and the run says the level came from a pin');
+});
+
+test('a [levels] pin leaves paths it does not name at the session level', () => {
+  const repo = atLevel(repoWith({
+    'src/a.ts': ADVISORY_ONLY,
+    '.procoder.toml': '[levels]\npragmatic = ["scripts/"]\n',
+  }), 'strict');
+  assert.strictEqual(cli(repo, ['check', 'src/a.ts']).code, 1);
+});
+
+// "off" would silence a path outright, which [exclude] paths already does and
+// reports as a skip. Accepted here it would be a second, quieter kill switch.
+test('a [levels] pin of "off" is refused, and the path stays gated', () => {
+  const repo = atLevel(repoWith({
+    'scripts/a.ts': ADVISORY_ONLY,
+    '.procoder.toml': '[levels]\noff = ["scripts/"]\n',
+  }), 'strict');
+  const result = cli(repo, ['check', 'scripts/a.ts']);
+  assert.strictEqual(result.code, 1);
+  assert.match(result.out, /ignoring \[levels\] "off"/);
+});
+
 // A file over the size cap was never checked. Silence makes it identical to a
 // clean pass, which is how an unchecked oversized file rides into main.
 //

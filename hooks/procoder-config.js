@@ -7,6 +7,13 @@ const path = require('path');
 const LEVELS = ['off', 'pragmatic', 'strict', 'paranoid'];
 const DEFAULT_LEVEL = 'strict';
 
+// How strict each level is, for the two places that compare two levels rather
+// than just read one: stripping level-gated doctrine blocks, and resolving a
+// per-path pin in .procoder.toml against the session level. `off` has no rank —
+// it is not a stricter or looser gate, it is no gate — and both callers treat it
+// separately.
+const LEVEL_RANK = { pragmatic: 1, strict: 2, paranoid: 3 };
+
 function normalizeLevel(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
@@ -44,6 +51,7 @@ function parseLevelCommand(text) {
 
 module.exports = {
   LEVELS,
+  LEVEL_RANK,
   DEFAULT_LEVEL,
   normalizeLevel,
   getDefaultLevel,

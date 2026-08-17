@@ -36,7 +36,18 @@ A new dependency is a new trust boundary, and most real CVEs arrive through one.
    date (`npm view <pkg> time.modified`, `pip index versions <pkg>`,
    crates.io / pkg.go.dev). Over two years with no release is a finding.
 
-5. **Check unused.** For each declared dependency, `git grep -n "<pkg>"` across
+5. **Check how they were added.** A manifest entry with no matching lockfile
+   entry was hand-edited, not installed: the version was never resolved and the
+   lockfile never written, so what CI installs is not what anyone chose. Report
+   it, and name the install command that fixes it (`npm install <pkg>`,
+   `cargo add`, `go get`, `dotnet add package`, `uv add`).
+
+6. **Check install scripts.** A package that runs code at install time
+   (`scripts.preinstall`/`install`/`postinstall`, `build.rs`, `setup.py` at
+   sdist install) executes on every developer's machine and every CI runner
+   before a line of it is imported. Name every dependency that has one.
+
+7. **Check unused.** For each declared dependency, `git grep -n "<pkg>"` across
    source. Declared and imported nowhere is a `[4 ALONE]` finding. Build-only
    and plugin-loaded packages (linters, type packages, framework plugins) are
    not unused — check the config files before flagging.
@@ -50,6 +61,8 @@ Standard one-line findings, grouped by ecosystem, most severe first:
 [1 SAFE]    package.json:1    npm manifest with no lockfile committed → commit package-lock.json
 [1 SAFE]    package.json:22   left-pad declared as latest → pin to an exact version
 [4 ALONE]   package.json:19   moment declared, imported nowhere → remove
+[1 SAFE]    package.json:27   chalk in the manifest, absent from the lockfile → hand-edited, run `npm install chalk`
+[1 SAFE]    package.json:33   node-sass runs a postinstall script → read it, or drop the package
 ```
 
 One line per finding. Close with: `N dependencies, M vulnerable, K unused.`
