@@ -197,8 +197,8 @@ test('re-baselining over a stale baseline replaces it with the current format', 
   const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   const written = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
-  assert.strictEqual(written.version, 3);
-  assert.ok(!written.fingerprints.includes('deadbeef'), 'stale entries must not survive');
+  assert.strictEqual(written.version, 4);
+  assert.ok(!written.entries.some((e) => e.fp === 'deadbeef'), 'stale entries must not survive');
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 

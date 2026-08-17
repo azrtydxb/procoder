@@ -110,15 +110,54 @@ function baselinePath(repoRoot, config) {
 // v2 added the occurrence ordinal to every fingerprint; v3 moved identity from
 // one line's text to the token sequence of the whole statement, so a formatter
 // can re-wrap it. Neither change is migratable — the old file records hashes,
-// not the source they were taken from — so an old file is dropped rather than
-// half-honoured. Loading it as-is would suppress nothing and report a legacy
-// repo's whole backlog as new, which is how the tool gets uninstalled.
-const BASELINE_VERSION = 3;
+// not the source they were taken from — so a v1 or v2 file is dropped rather
+// than half-honoured. Loading it as-is would suppress nothing and report a
+// legacy repo's whole backlog as new, which is how the tool gets uninstalled.
+//
+// v4 changes the FILE, not the fingerprint. Every entry now carries the rule it
+// accepted, the path it sits in, and the date it was accepted — because a
+// baseline of bare hashes is a blanket, unexplained, undated suppression, which
+// is the one thing rung 4 forbids everywhere else in this codebase. Nobody
+// could read their own accepted debt: `/procoder:debt` could count it and not
+// name it, and no entry had an age, so nothing could ever be said to have sat
+// there too long.
+//
+// A v3 file migrates cleanly and silently, because its fingerprints are
+// computed exactly as v4 computes them: the entries load with an unknown date,
+// and the first `procoder baseline` after that records real ones.
+const BASELINE_VERSION = 4;
+
+// What an entry whose date predates v4 carries. Not the epoch and not today:
+// either would be a claim about when the debt was accepted, and the file does
+// not say.
+const UNKNOWN_DATE = 'unknown';
 
 // Returns a Set, always: the hook path (checks/run.js) takes it straight to
 // suppress(). A stale file yields an empty Set carrying `staleVersion`, which
 // the CLI reports on stderr — the library never prints, because the hook's
 // stdout is a JSON protocol and its stderr is shown to the user verbatim.
+// A v3 file's `fingerprints` array, as v4 entries with no date. Separate from
+// the loader so the migration is one named thing rather than a branch inside a
+// function that is mostly about I/O.
+function migrateV3(parsed) {
+  return (Array.isArray(parsed.fingerprints) ? parsed.fingerprints : [])
+    .map((fp) => ({ fp, id: UNKNOWN_DATE, path: UNKNOWN_DATE, added: UNKNOWN_DATE }));
+}
+
+function entriesOf(parsed) {
+  if (parsed.version === 3) return migrateV3(parsed);
+  return (Array.isArray(parsed.entries) ? parsed.entries : [])
+    .filter((e) => e && typeof e.fp === 'string');
+}
+
+// Returns a Set of fingerprints, always: the hook path (checks/run.js) takes it
+// straight to suppress(), and every caller that only asks "is this suppressed"
+// keeps working unchanged. The full entries ride along on `.entries` for the
+// two callers that need to NAME the debt — the aging report and the ledger.
+//
+// A stale file yields an empty Set carrying `staleVersion`, which the CLI
+// reports on stderr; the library never prints, because the hook's stdout is a
+// JSON protocol and its stderr is shown to the user verbatim.
 function loadBaseline(repoRoot, config) {
   let parsed;
   try {
@@ -126,21 +165,58 @@ function loadBaseline(repoRoot, config) {
   } catch (e) {
     return new Set();
   }
-  if (parsed.version !== BASELINE_VERSION) {
+  if (parsed.version !== BASELINE_VERSION && parsed.version !== 3) {
     const stale = new Set();
     stale.staleVersion = parsed.version === undefined ? 'unknown' : parsed.version;
     return stale;
   }
-  return new Set(Array.isArray(parsed.fingerprints) ? parsed.fingerprints : []);
+  const entries = entriesOf(parsed);
+  const set = new Set(entries.map((e) => e.fp));
+  // `accepted`, not `entries`: Set.prototype.entries is a built-in method, so a
+  // Set with no baseline behind it would answer that name with a function and
+  // every `|| []` guard downstream would sail past it.
+  set.accepted = entries;
+  return set;
 }
 
+// Today, as a plain date. Not a timestamp: what the aging report asks is how
+// many days a suppression has sat there, and an hour is not a unit anybody
+// reasons about for technical debt.
+const today = () => new Date().toISOString().slice(0, 10);
+
+// Accepting debt again must not reset its clock. `procoder baseline` is run
+// whenever something new is accepted, and if every run re-stamped every entry
+// then nothing would ever age and the report below would always be empty —
+// which is exactly how a "we will fix it later" list becomes permanent.
 function writeBaseline(repoRoot, config, entries) {
+  const existing = new Map(
+    (loadBaseline(repoRoot, config).accepted || []).map((e) => [e.fp, e.added]));
+  const byFingerprint = new Map();
+  for (const entry of entries) {
+    if (byFingerprint.has(entry.fp)) continue;
+    byFingerprint.set(entry.fp, {
+      fp: entry.fp,
+      id: entry.id,
+      path: entry.path,
+      added: existing.get(entry.fp) || today(),
+    });
+  }
   const payload = {
     version: BASELINE_VERSION,
     note: 'procoder ratchet. Generated by `procoder baseline`. Shrinking is good; growth fails CI.',
-    fingerprints: Array.from(new Set(entries)).sort(),
+    entries: Array.from(byFingerprint.values()).sort((a, b) => a.fp.localeCompare(b.fp)),
   };
   fs.writeFileSync(baselinePath(repoRoot, config), JSON.stringify(payload, null, 2) + '\n');
+}
+
+// Accepted findings older than `days`, oldest first. An entry with no date —
+// migrated from v3 — is reported too, and says so: "we do not know when this
+// was accepted" is an answer about debt, not a reason to leave it out.
+function agingEntries(baseline, days, now = Date.now()) {
+  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  return (baseline.accepted || [])
+    .filter((e) => e.added === UNKNOWN_DATE || Date.parse(e.added) < cutoff)
+    .sort((a, b) => String(a.added).localeCompare(String(b.added)));
 }
 
 function suppress(findings, { baseline, relPath, lines }) {
@@ -160,5 +236,5 @@ function growthCheck(baseline, currentFingerprints) {
 
 module.exports = {
   fingerprint, fingerprintsFor, loadBaseline, writeBaseline, suppress, growthCheck, baselinePath,
-  BASELINE_VERSION,
+  agingEntries, BASELINE_VERSION, UNKNOWN_DATE,
 };

@@ -194,10 +194,13 @@ test('findings are sorted by rung and capped', () => {
 test('baselined findings are suppressed', () => {
   const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const config = loadConfig(repo);
-  writeBaseline(repo, config, [
-    fingerprint(finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
+  writeBaseline(repo, config, [{
+    fp: fingerprint(
+      finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
       'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  ]);
+    id: 'safe/dynamic-eval',  // procoder: literal safe/dynamic-eval the id as data, not a sink
+    path: 'src/a.ts',
+  }]);
   const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
   assert.deepStrictEqual(out.findings.map((f) => f.id), []);
 });
@@ -205,10 +208,13 @@ test('baselined findings are suppressed', () => {
 test('applyBaseline false reports findings the baseline would suppress', () => {
   const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
   const config = loadConfig(repo);
-  writeBaseline(repo, config, [
-    fingerprint(finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
+  writeBaseline(repo, config, [{
+    fp: fingerprint(
+      finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
       'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  ]);
+    id: 'safe/dynamic-eval',  // procoder: literal safe/dynamic-eval the id as data, not a sink
+    path: 'src/a.ts',
+  }]);
   const out = checkFile(path.join(repo, 'src/a.ts'),
     { repoRoot: repo, config: loadConfig(repo), applyBaseline: false });
   assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));

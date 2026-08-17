@@ -25,8 +25,16 @@ A deliberate shortcut is fine. An undated one is rot. This is the ledger.
 
    Check an overdue trigger against reality: `git tag --sort=-creatordate | head`
    for versions, today's date for dates.
-4. **Read the baseline.** If `.procoder-baseline.json` exists, report its
-   fingerprint count as accepted debt. It is part of the ledger.
+4. **Read the baseline.** If `.procoder-baseline.json` exists, every entry in
+   it names the rule it silenced, the file it sits in, and the date it was
+   accepted. Report the count, and run
+   `node <plugin>/bin/procoder.js verify --aging 90 .` for the entries that have
+   been accepted longest — those are the ledger's oldest lines, and the only
+   part of it nobody wrote a trigger for. An entry dated `unknown` predates
+   dated baselines; the next `procoder baseline` stamps it.
+
+   Accepted debt belongs in the same table as every marker below: a baseline
+   entry is a suppression that happens to live in a generated file.
 
 ## Output
 
@@ -36,6 +44,7 @@ One table, oldest first:
 |---|---|---|---|---|
 | 14 months | api/users.ts:42 | HACK: skip authz in dev | — | undated |  <!-- procoder: literal alone/orphan-todo the doctrine names this pattern, it is not an instance of it -->
 | 3 months | queue/worker.go:88 | procoder: single lock | throughput > 1k/s | dated |
+| 8 months | legacy/auth.ts | baseline: safe/weak-hash | — | undated (baseline) |
 
 Then one line per undated and overdue marker, standard format:
 

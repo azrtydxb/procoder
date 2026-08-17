@@ -11,9 +11,12 @@ The ratchet only counts if someone reads it. This is the readout.
 
 1. **Pick the reference point.** Previous tag: `git describe --tags --abbrev=0 HEAD^`.
    No tags: `git rev-list -1 --before="30 days ago" HEAD`. State which you used.
-2. **Baseline shrinkage.** Count fingerprints then and now:
+2. **Baseline shrinkage.** Count entries then and now:
    `git show <ref>:.procoder-baseline.json` versus the working copy. Report both
    counts and the difference. If the file did not exist at `<ref>`, say so.
+   Entries carry the rule they silenced, so name which rules left the baseline —
+   "three `safe/weak-hash` accepted findings fixed" is a result; "baseline down
+   by three" is a number.
 3. **Net lines.** `git diff --stat <ref>..HEAD` — added versus deleted.
 4. **Rot removals.** `git log <ref>..HEAD --oneline` plus
    `git log <ref>..HEAD -p --diff-filter=D --name-only` for whole files removed.

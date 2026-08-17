@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const {
   fingerprint, fingerprintsFor, loadBaseline, writeBaseline, suppress, growthCheck,
-  BASELINE_VERSION,
+  agingEntries, BASELINE_VERSION, UNKNOWN_DATE,
 } = require('../hooks/checks/baseline');
 const { finding } = require('../hooks/checks/finding');
 const { DEFAULTS } = require('../hooks/checks/config');
@@ -31,10 +31,73 @@ test('fingerprint distinguishes different files, ids, and content', () => {
 
 test('baseline round-trips through disk', () => {
   const repo = tempRepo();
-  writeBaseline(repo, config, ['aaa', 'bbb']);
+  writeBaseline(repo, config, [
+    { fp: 'aaa', id: 'safe/dynamic-eval', path: 'a.ts' },  // procoder: literal safe/dynamic-eval the id as data, not a sink
+    { fp: 'bbb', id: 'alone/commented-code', path: 'b.ts' },
+  ]);
   const loaded = loadBaseline(repo, config);
   assert.ok(loaded.has('aaa') && loaded.has('bbb'));
   assert.strictEqual(loaded.size, 2);
+});
+
+// A bare hash tells nobody what they accepted. Every entry carries the rule it
+// silenced, the file it sits in, and the day it was accepted — which is what
+// makes --aging possible at all.
+test('every entry records its rule, its path and the date it was accepted', () => {
+  const repo = tempRepo();
+  writeBaseline(repo, config, [{ fp: 'aaa', id: 'safe/weak-hash', path: 'a.ts' }]);
+  const [entry] = loadBaseline(repo, config).accepted;
+  assert.strictEqual(entry.id, 'safe/weak-hash');
+  assert.strictEqual(entry.path, 'a.ts');
+  assert.match(entry.added, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// Accepting new debt must not restart the clock on old debt: if it did, a repo
+// that runs `procoder baseline` every sprint would never have an aging entry.
+test('re-baselining keeps the date an entry already had', () => {
+  const repo = tempRepo();
+  fs.writeFileSync(path.join(repo, '.procoder-baseline.json'), JSON.stringify({
+    version: BASELINE_VERSION,
+    entries: [{ fp: 'aaa', id: 'safe/weak-hash', path: 'a.ts', added: '2020-01-01' }],
+  }));
+  writeBaseline(repo, config, [
+    { fp: 'aaa', id: 'safe/weak-hash', path: 'a.ts' },
+    { fp: 'bbb', id: 'safe/weak-random', path: 'b.ts' },
+  ]);
+  const byFp = new Map(loadBaseline(repo, config).accepted.map((e) => [e.fp, e.added]));
+  assert.strictEqual(byFp.get('aaa'), '2020-01-01', 'an old entry was re-stamped');
+  assert.match(byFp.get('bbb'), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// v3 fingerprints are computed exactly as v4 computes them, so the file
+// migrates rather than being thrown away — with the date it cannot know marked
+// unknown rather than guessed at.
+test('a v3 baseline migrates, keeping every fingerprint', () => {
+  const repo = tempRepo();
+  fs.writeFileSync(path.join(repo, '.procoder-baseline.json'),
+    JSON.stringify({ version: 3, fingerprints: ['aaa', 'bbb'] }));
+  const loaded = loadBaseline(repo, config);
+  assert.strictEqual(loaded.staleVersion, undefined, 'a migratable file is not stale');
+  assert.ok(loaded.has('aaa') && loaded.has('bbb'));
+  assert.strictEqual(loaded.accepted[0].added, UNKNOWN_DATE);
+});
+
+// An undated entry is reported by --aging whatever the window: "we do not know
+// when this was accepted" is an answer about debt, not a reason to omit it.
+test('aging reports old entries, and undated ones, oldest first', () => {
+  const repo = tempRepo();
+  fs.writeFileSync(path.join(repo, '.procoder-baseline.json'), JSON.stringify({
+    version: BASELINE_VERSION,
+    entries: [
+      { fp: 'new', id: 'a/b', path: 'n.ts', added: '2026-08-01' },
+      { fp: 'old', id: 'a/b', path: 'o.ts', added: '2020-01-01' },
+      { fp: 'none', id: 'a/b', path: 'u.ts', added: UNKNOWN_DATE },
+    ],
+  }));
+  const baseline = loadBaseline(repo, config);
+  const now = Date.parse('2026-08-17');
+  assert.deepStrictEqual(agingEntries(baseline, 365, now).map((e) => e.fp), ['old', 'none']);
+  assert.deepStrictEqual(agingEntries(baseline, 3650, now).map((e) => e.fp), ['none']);
 });
 
 test('an absent or corrupt baseline file loads as empty, never throws', () => {
@@ -59,9 +122,11 @@ test('a baseline written in an older format loads empty and says so', () => {
 // Every fingerprint format change is a hard break, including the most recent
 // one: silently loading v-previous entries would suppress nothing and dump a
 // legacy repo's whole backlog on the user as if it were new.
-test('a baseline in the immediately previous format loads empty and says so', () => {
+// v3 migrates (see above); v2 and older cannot, because the ordinal and the
+// statement-token change both rewrote every fingerprint.
+test('a baseline too old to migrate loads empty and says so', () => {
   const repo = tempRepo();
-  const previous = BASELINE_VERSION - 1;
+  const previous = 2;
   fs.writeFileSync(path.join(repo, '.procoder-baseline.json'),
     JSON.stringify({ version: previous, fingerprints: ['aaa', 'bbb'] }));
   const loaded = loadBaseline(repo, config);
@@ -71,7 +136,7 @@ test('a baseline in the immediately previous format loads empty and says so', ()
 
 test('a current-format baseline loads without a stale marker', () => {
   const repo = tempRepo();
-  writeBaseline(repo, config, ['aaa']);
+  writeBaseline(repo, config, [{ fp: 'aaa', id: 'safe/weak-hash', path: 'a.ts' }]);
   const loaded = loadBaseline(repo, config);
   assert.strictEqual(loaded.staleVersion, undefined);
   assert.strictEqual(

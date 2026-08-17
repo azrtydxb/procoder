@@ -19,7 +19,8 @@ const { FORMATS, jsonReport, sarifReport } = require('../hooks/checks/report');
 const { readLevel } = require('../hooks/procoder-runtime');
 const { getClaudeDir } = require('../hooks/procoder-config');
 const {
-  fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
+  fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, agingEntries,
+  BASELINE_VERSION, UNKNOWN_DATE,
 } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
@@ -40,6 +41,11 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
                         suppression left behind after what it silenced was
                         fixed. The last two are judged only when the run's
                         targets covered the whole repository.
+  --aging <days>       (verify only) also fail if an accepted finding has been
+                        in the baseline longer than <days>, naming the oldest
+                        with its date, path and rule. A baseline entry is a
+                        suppression, and a suppression with no end is rot —
+                        this is the removal trigger the file cannot carry.
   --format <fmt>       (check only) text (default), json, or sarif. json is
                         procoder's own versioned shape; sarif is SARIF 2.1.0 for
                         code-scanning dashboards, carrying the same fingerprint
@@ -130,13 +136,18 @@ function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
   return out;
 }
 
+// Every accepted finding is recorded with the rule it silenced and the file it
+// sits in, not as a bare hash. writeBaseline stamps the date, and keeps the one
+// an entry already had — re-running this must not reset the clock on debt that
+// has been sitting there for a year.
 function runBaseline(files, repoRoot, config) {
-  const entries = Array.from(loadBaseline(repoRoot, config));
+  const entries = (loadBaseline(repoRoot, config).accepted || []).slice();
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
     if (skipped) continue;
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
-    entries.push(...fingerprintsFor(findings, relPath, lines));
+    const fps = fingerprintsFor(findings, relPath, lines);
+    findings.forEach((f, i) => entries.push({ fp: fps[i], id: f.id, path: relPath }));
   }
   reportSkipped();
   writeBaseline(repoRoot, config, entries);
@@ -260,9 +271,39 @@ function reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, who
   return unusedExclusions && stale.length + gone.length > 0 ? 1 : 0;
 }
 
+// Accepted debt with no expiry is a deprecation with no removal trigger, which
+// is the rung-4 violation procoder refuses everywhere else. The baseline cannot
+// carry a trigger — nobody writes one into a generated file — so it carries the
+// date instead, and this is what turns that date into a question somebody has
+// to answer.
+//
+// Reported and failing only under the flag, the same contract
+// `--unused-exclusions` has: the honest case is a team that has not got to it
+// yet, and a CI failure by default would make the flag the first thing anybody
+// removes.
+function reportAging(baseline, days) {
+  const old = agingEntries(baseline, days);
+  if (old.length === 0) {
+    process.stdout.write(`procoder: no accepted finding is older than ${days} days.\n`);
+    return 0;
+  }
+  process.stdout.write(
+    `procoder: ${old.length} accepted finding${old.length === 1 ? '' : 's'} older than ${days} days:\n`
+    + old.slice(0, SAMPLE_SIZE).map((e) => `  ${e.added}  ${e.path}  ${e.id}\n`).join('')
+    + (old.length > SAMPLE_SIZE ? `  ...and ${old.length - SAMPLE_SIZE} more\n` : '')
+    + 'Fix them, or say in the ticket why they stay. A baseline entry is a suppression, and a '
+    + 'suppression with no end is rot.\n'
+    + (old.some((e) => e.added === UNKNOWN_DATE)
+      ? `(${UNKNOWN_DATE} means the entry predates dated baselines; the next `
+        + '`procoder baseline` stamps it.)\n'
+      : ''));
+  return 1;
+}
+
 // The ratchet: accepted debt may shrink, never grow. Compares fingerprints,
 // not counts, so fixing an old finding buys no room for a new one.
-function runVerify(files, repoRoot, config, { unusedExclusions = false, wholeTree = false } = {}) {
+function runVerify(files, repoRoot, config,
+  { unusedExclusions = false, wholeTree = false, aging = null } = {}) {
   const baseline = loadBaseline(repoRoot, config);
   const present = presentFindings(files, repoRoot, config);
   reportSkipped();
@@ -293,7 +334,9 @@ function runVerify(files, repoRoot, config, { unusedExclusions = false, wholeTre
   }
   process.stdout.write(
     `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
-  return reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, wholeTree });
+  const stale = reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, wholeTree });
+  const old = aging === null ? 0 : reportAging(baseline, aging);
+  return stale || old;
 }
 
 // Same rule the PostToolUse hook applies: at `pragmatic` the judgment rungs
@@ -724,7 +767,7 @@ const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['veri
 // Isolated so main() can pull the flag out of argv without pushing the
 // function that dispatches commands over the line-count threshold.
 const FLAGS = ['--unused-exclusions', '--no-ignore'];
-const VALUE_FLAGS = ['--format', '--since'];
+const VALUE_FLAGS = ['--format', '--since', '--aging'];
 
 // Both spellings, `--format json` and `--format=json`, because a user who types
 // the one this parser does not accept gets their argument treated as a path,
@@ -749,6 +792,7 @@ function parseFlags(argv) {
     noIgnore: argv.includes('--no-ignore'),
     format: values.get('--format') || 'text',
     since: values.get('--since') || null,
+    aging: values.has('--aging') ? Number(values.get('--aging')) : null,
     rest: rest.filter((a) => !FLAGS.includes(a)),
   };
 }
@@ -835,12 +879,25 @@ function reportStaleBaseline(command, repoRoot, config) {
 // Everything that can refuse a command line before any file is read. Returns
 // an exit code to stop on, or null to carry on — the same shape
 // reportStaleBaseline uses, so main() reads as one list of refusals.
-function refuseArguments({ command, targets, format, since }) {
+// A flag that belongs to one subcommand and was typed at another. Refused
+// rather than ignored: a flag that silently does nothing is how somebody
+// concludes the feature is broken, or worse, believes a check ran.
+function refuseMisplacedFlag({ command, format, aging }) {
+  if (aging !== null && (command !== 'verify' || !Number.isFinite(aging) || aging < 0)) {
+    process.stderr.write('procoder: --aging takes a number of days, on `verify` only\n');
+    return 2;
+  }
   if (!FORMATS.has(format) || (format !== 'text' && command !== 'check')) {
     process.stderr.write(`procoder: --format ${format} is not available for ${command || 'this'} `
       + '— text, json and sarif, on `check` only\n');
     return 2;
   }
+  return null;
+}
+
+function refuseArguments({ command, targets, format, since, aging }) {
+  const misplaced = refuseMisplacedFlag({ command, format, aging });
+  if (misplaced !== null) return misplaced;
   // `--since` supplies the targets, so it is the one shape where naming none is
   // not a usage error.
   if (!COMMANDS.get(command) || (targets.length === 0 && since === null)) {
@@ -860,13 +917,13 @@ function refuseArguments({ command, targets, format, since }) {
 }
 
 function main(argv) {
-  const { unusedExclusions, noIgnore, format, since, rest } = parseFlags(argv);
+  const { unusedExclusions, noIgnore, format, since, aging, rest } = parseFlags(argv);
   const [command, ...targets] = rest;
   // Its arguments are subcommands, not paths, so it branches off before the
   // path handling below.
   if (command === 'statusline') return runStatusline(targets);
 
-  const refused = refuseArguments({ command, targets, format, since });
+  const refused = refuseArguments({ command, targets, format, since, aging });
   if (refused !== null) return refused;
   if (since !== null) return runSince(since, targets, { command, noIgnore, format });
 
@@ -885,7 +942,7 @@ function main(argv) {
   const wholeTree = targets.some((t) => path.resolve(t) === repoRoot);
 
   return COMMANDS.get(command)(files, repoRoot, config,
-    { unusedExclusions, wholeTree, format });
+    { unusedExclusions, wholeTree, format, aging });
 }
 
 process.exit(main(process.argv.slice(2)));
