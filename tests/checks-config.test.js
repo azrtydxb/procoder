@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const {
   loadConfig, isExcluded, isRuleExcluded, excludeReason, DEFAULTS, findRepoRoot, levelFor,
+  unusedIgnorePatterns,
 } = require('../hooks/checks/config');
 const { cpuMs } = require('./perf-guard');
 
@@ -467,4 +468,130 @@ test('no [levels] section leaves every path at the session level', () => {
   const config = loadConfig(tempRepo());
   assert.deepStrictEqual(config.levels, []);
   assert.strictEqual(levelFor(config, 'src/auth/login.ts', 'pragmatic'), 'pragmatic');
+});
+
+// --- .procoderignore staleness ---------------------------------------------
+//
+// The third instrument that narrows enforcement, and the last one nothing
+// judged: an ignore file covering a tree that has since gone clean stayed in
+// force forever, and the day that tree started violating again nobody was told.
+//
+// The audit is the one the CLI builds for a whole-tree verify, hand-built here:
+// the walked tree, the tracked subset of it, and a scan of one file with one
+// ignore pattern lifted — `dirty` names the files that still have a finding
+// without it, and `unjudgeable` the ones a scan could not answer for.
+function auditOf({ files, tracked = files, dirty = [], unjudgeable = [] }) {
+  return {
+    files,
+    tracked,
+    findings: () => 0,
+    ignoreFindings: (rel) => {
+      if (unjudgeable.includes(rel)) return null;
+      return dirty.includes(rel) ? 1 : 0;
+    },
+  };
+}
+
+test('an ignore pattern whose tracked files have all gone clean is reported', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '# why\n*.ts\n' }));
+  const [stale, ...rest] = unusedIgnorePatterns(cfg, auditOf({
+    files: ['gen/.procoderignore', 'gen/a.ts', 'gen/b.ts', 'src/c.ts'],
+  }));
+  assert.deepStrictEqual(rest, [], 'only the pattern that ignores nothing is reported');
+  assert.strictEqual(stale.file, 'gen/.procoderignore', 'the report names which file');
+  assert.strictEqual(stale.pattern, '*.ts', 'and which pattern');
+  assert.strictEqual(stale.line, 2, 'and where to find it');
+  assert.match(stale.reason, /nothing it ignores has a finding \(2 files scanned\)/);
+});
+
+test('an ignore pattern still holding a finding back is not reported', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, auditOf({
+    files: ['gen/.procoderignore', 'gen/a.ts', 'gen/b.ts'],
+    dirty: ['gen/b.ts'],
+  })), [], 'one live finding under it is enough');
+});
+
+// A scan that could not judge a file (still ignored by another pattern, too
+// large, unreadable) has not seen the whole set, so it cannot call it clean.
+test('one unjudgeable file leaves the ignore pattern alone', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, auditOf({
+    files: ['gen/.procoderignore', 'gen/a.ts', 'gen/b.ts'],
+    unjudgeable: ['gen/b.ts'],
+  })), []);
+});
+
+test('an ignore pattern matching nothing in the tree is reported', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': '*.gen.ts\n' }));
+  const stale = unusedIgnorePatterns(cfg, auditOf({ files: ['.procoderignore', 'src/c.ts'] }));
+  assert.strictEqual(stale.length, 1);
+  assert.strictEqual(stale[0].file, '.procoderignore');
+  assert.strictEqual(stale[0].pattern, '*.gen.ts');
+  assert.match(stale[0].reason, /it matches no file in the tree/);
+});
+
+// The repository's own root ignore file covers `.claude/` and `.superpowers/`:
+// untracked agent scratch, present on a developer's machine and absent in CI.
+// Judged as repository content, both would be "stale" forever, on two lines
+// nobody may delete — so a pattern with no tracked file under it is left alone.
+test('a pattern covering only untracked files is not reported', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': 'scratch/*.ts\n' }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, auditOf({
+    files: ['.procoderignore', 'scratch/a.ts', 'src/c.ts'],
+    tracked: ['.procoderignore', 'src/c.ts'],
+  })), [], 'untracked content can never go clean in a sense procoder can verify');
+});
+
+test('a literal path absent from the tree is a fence, not rot', () => {
+  const cfg = loadConfig(tempRepo({ '.procoderignore': '.claude/\nbuild-out/\n' }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, auditOf({
+    files: ['.procoderignore', 'src/c.ts'],
+    tracked: ['.procoderignore', 'src/c.ts'],
+  })), [], 'a location absent from a fresh clone must not warn forever');
+});
+
+test('a negation is never judged — a widening left in place cannot lose coverage', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n!keep.ts\n' }));
+  const stale = unusedIgnorePatterns(cfg, auditOf({
+    files: ['gen/.procoderignore', 'gen/a.ts'],
+  }));
+  assert.deepStrictEqual(stale.map((s) => s.pattern), ['*.ts']);
+});
+
+// The deepest ignore file decides, so it is the one that owns the file — a
+// parent pattern the deeper file overruled is judged on what is left to it.
+test('an ignore pattern is judged only on the files it actually decided', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoderignore': '*.ts\n',
+    'gen/.procoderignore': '*.ts\n',
+  }));
+  const stale = unusedIgnorePatterns(cfg, auditOf({
+    files: ['.procoderignore', 'gen/.procoderignore', 'gen/a.ts', 'src/b.ts'],
+    dirty: ['gen/a.ts'],
+  }));
+  assert.deepStrictEqual(stale.map((s) => `${s.file}:${s.line}`), ['.procoderignore:1'],
+    'the root pattern kept only src/b.ts, which is clean; the deeper one holds a finding');
+});
+
+// The hook, and every direct API caller: no audit, no judgment, no cost.
+test('without an audit no ignore pattern is judged and nothing throws', () => {
+  const cfg = loadConfig(tempRepo({ 'gen/.procoderignore': '*.ts\n' }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg), []);
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, { files: ['gen/a.ts'] }), [],
+    'an audit without a tracked list cannot answer either');
+  assert.deepStrictEqual(unusedIgnorePatterns({}, undefined), []);
+});
+
+// An ignore file inside an ignored tree — an agent worktree, a vendored
+// checkout — belongs to that tree, not to this repository.
+test('an ignore file that is itself ignored is not judged', () => {
+  const cfg = loadConfig(tempRepo({
+    '.procoderignore': 'worktrees/\n',
+    'worktrees/copy/.procoderignore': '*.gen.ts\n',
+  }));
+  assert.deepStrictEqual(unusedIgnorePatterns(cfg, auditOf({
+    files: ['.procoderignore', 'worktrees/copy/.procoderignore', 'worktrees/copy/a.ts'],
+    dirty: ['worktrees/copy/a.ts'],
+  })), []);
 });

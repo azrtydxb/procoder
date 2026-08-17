@@ -29,6 +29,33 @@ function repoWith(files) {
   return dir;
 }
 
+// A real git repository, not the hand-made .git directory above.
+// `.procoderignore` staleness is judged over TRACKED files only, and
+// `git ls-files` is the only thing that knows which those are — so these
+// fixtures have to be repositories git will actually answer for. Files are
+// staged, and committed only when a test needs a ref for `--since`; the
+// identity is passed per-command so a CI runner with no configured user can
+// still build one. `untracked` is written after the staging, which is how a
+// fixture gets a file the repository does not own.
+function gitRepoWith(files, untracked = {}, commit = false) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-git-'));
+  tempDirs.push(dir);
+  const write = (rel, content) => {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), content);
+  };
+  for (const [rel, content] of Object.entries(files)) write(rel, content);
+  const git = (...args) => spawnSync('git', args, { cwd: dir, stdio: 'ignore' });
+  git('init', '-q');
+  git('add', '-A');
+  if (commit) {
+    git('-c', 'user.email=t@example.com', '-c', 'user.name=t',
+      'commit', '-q', '-m', 'fixture');
+  }
+  for (const [rel, content] of Object.entries(untracked)) write(rel, content);
+  return dir;
+}
+
 // CLAUDE_CONFIG_DIR defaults to the throwaway repo, which holds no level file:
 // the CLI then sees the default level (strict), not whatever the developer
 // running the suite happens to have set for themselves.
@@ -542,6 +569,83 @@ test('the tree-wide path exclusion rules stay quiet on a partial run', () => {
   const result = cli(repo, ['verify', '--unused-exclusions', 'src/c.ts']);
   assert.strictEqual(result.code, 0, 'a run that never saw the tree cannot judge a path exclusion');
   assert.doesNotMatch(result.out, /excludes nothing/i);
+});
+
+// --- .procoderignore, judged for staleness ---------------------------------
+//
+// The third instrument that narrows enforcement, and the last one nothing
+// judged. Same reporting and the same exit contract as the other two: said out
+// loud under plain `verify`, failing only under --unused-exclusions.
+const CLEAN_IGNORED_TREE = {
+  'gen/.procoderignore': '# generated\n*.ts\n',
+  'gen/a.ts': 'const x = 1;\n',
+  'src/c.ts': 'const y = 1;\n',
+};
+
+test('a .procoderignore covering a tree that has gone clean is reported', () => {
+  const repo = gitRepoWith(CLEAN_IGNORED_TREE);
+  const plain = cli(repo, ['verify', '.']);
+  assert.strictEqual(plain.code, 0, 'plain verify does not fail CI over a stale ignore pattern');
+  assert.match(plain.out, /ignores nothing/i);
+  assert.match(plain.out, /gen\/\.procoderignore:2 "\*\.ts" — nothing it ignores has a finding/,
+    'an ignore file can sit anywhere, so the report names which file and which pattern');
+
+  const flagged = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
+  assert.match(flagged.out, /ignores nothing/i);
+});
+
+test('a .procoderignore still suppressing a finding is not reported', () => {
+  const repo = gitRepoWith({
+    ...CLEAN_IGNORED_TREE,
+    'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  });
+  const result = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.strictEqual(result.code, 0, 'an ignore file doing real work must never be called stale');
+  assert.doesNotMatch(result.out, /ignores nothing/i);
+});
+
+test('an ignore pattern matching nothing at all is reported', () => {
+  const repo = gitRepoWith({ '.procoderignore': '*.gen.ts\n', 'src/c.ts': 'const y = 1;\n' });
+  const plain = cli(repo, ['verify', '.']);
+  assert.strictEqual(plain.code, 0);
+  assert.match(plain.out, /\.procoderignore:1 "\*\.gen\.ts" — it matches no file in the tree/);
+  assert.notStrictEqual(cli(repo, ['verify', '--unused-exclusions', '.']).code, 0);
+});
+
+// procoder's own root ignore file covers `.claude/` and `.superpowers/`:
+// untracked agent scratch, present on a developer's machine and absent in CI.
+// A rule that judged untracked content would call both stale forever, on two
+// lines nobody may delete — a permanent false report, which is worse than a
+// missed one because it teaches people to delete the fences.
+test('an ignore pattern covering only untracked files is never reported', () => {
+  const repo = gitRepoWith(
+    { '.procoderignore': 'scratch/\n', 'src/c.ts': 'const y = 1;\n' },
+    { 'scratch/note.ts': 'const z = 1;\n' });
+  const result = cli(repo, ['verify', '--unused-exclusions', '.']);
+  assert.strictEqual(result.code, 0);
+  assert.doesNotMatch(result.out, /ignores nothing/i);
+});
+
+// The same restraint the tree-wide path-exclusion rules get: a run over one
+// file has not seen the tree, cannot judge what an ignore file elsewhere is
+// holding back, and must not pay for the scan that would answer it.
+test('a partial-scope run judges no ignore file at all', () => {
+  const repo = gitRepoWith(CLEAN_IGNORED_TREE);
+  const result = cli(repo, ['verify', '--unused-exclusions', 'src/c.ts']);
+  assert.strictEqual(result.code, 0, 'a run that never saw the tree cannot judge an ignore file');
+  assert.doesNotMatch(result.out, /ignores nothing/i);
+});
+
+// `--since` is the same claim in a different shape: the run covered the files
+// that changed, not the tree, so it has seen nothing that could condemn an
+// ignore file somewhere else.
+test('a --since run judges no ignore file either', () => {
+  const repo = gitRepoWith(CLEAN_IGNORED_TREE, {}, true);
+  fs.writeFileSync(path.join(repo, 'src/c.ts'), 'const y = 2;\n');
+  const result = cli(repo, ['verify', '--unused-exclusions', '--since', 'HEAD']);
+  assert.strictEqual(result.code, 0, 'a changed-files run has not seen the tree');
+  assert.doesNotMatch(result.out, /ignores nothing/i);
 });
 
 // A CI gate that passes because it looked at nothing is the worst version of

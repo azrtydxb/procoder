@@ -194,9 +194,13 @@ function globBody(pattern) {
 }
 
 // One line → a matcher, or null for a blank, a comment, or anything unusable.
-function compileIgnore(line, base) {
+// `text` and `lineNo` are what a staleness report has to name — an ignore file
+// can sit in any directory and hold any number of patterns, so "this one is
+// doing nothing" is only actionable as file, line and the pattern as written.
+function compileIgnore(line, base, lineNo) {
   let pattern = line.trim();
   if (!pattern || pattern.startsWith('#')) return null;
+  const text = pattern;
   const negate = pattern.startsWith('!');
   if (negate) pattern = pattern.slice(1);
   const dirOnly = pattern.endsWith('/');
@@ -213,6 +217,8 @@ function compileIgnore(line, base) {
     return {
       base,
       negate,
+      text,
+      line: lineNo,
       re: new RegExp(`^${anchored ? '' : '(?:.*/)?'}${globBody(pattern)}${dirOnly ? '/.+' : '(?:/.+)?'}$`),
     };
   } catch (e) {
@@ -222,7 +228,11 @@ function compileIgnore(line, base) {
   }
 }
 
-function readIgnore(root, relDir) {
+// `drop` lifts one single pattern — `{ base, line }` — so a caller can ask what
+// the tree looks like without it. That is the only way to answer "is this
+// pattern still holding a finding back", and it is the same move the path
+// audit makes for one `[exclude] paths` entry.
+function readIgnore(root, relDir, drop) {
   let text = '';
   try {
     text = fs.readFileSync(path.join(root, relDir, IGNORE_FILE), 'utf8');
@@ -231,7 +241,9 @@ function readIgnore(root, relDir) {
     // degrades to the same thing rather than crashing a hook.
     return [];
   }
-  return text.split(/\r?\n/).map((line) => compileIgnore(line, relDir)).filter(Boolean);
+  return text.split(/\r?\n/)
+    .map((line, i) => compileIgnore(line, relDir, i + 1))
+    .filter((rule) => rule && !(drop && drop.base === relDir && drop.line === rule.line));
 }
 
 // Patterns in force for `relDir`, root-most first: a directory inherits its
@@ -245,7 +257,7 @@ function ignoreRulesFor(config, relDir) {
   if (hit) return hit;
   const cut = relDir.lastIndexOf('/');
   const rules = (relDir === '' ? [] : ignoreRulesFor(config, cut === -1 ? '' : relDir.slice(0, cut)))
-    .concat(readIgnore(config.root, relDir));
+    .concat(readIgnore(config.root, relDir, config.ignoreDrop));
   cache.set(relDir, rules);
   return rules;
 }
@@ -258,14 +270,28 @@ function ignoreRulesFor(config, relDir) {
 // ignore files stop applying, and nothing else changes — [exclude] paths is the
 // project-wide contract and stays in force, so the flag cannot be a back door
 // into node_modules.
-function ignoredBy(config, relPath) {
+const matchesRule = (rule, relPath) =>
+  rule.re.test(rule.base ? relPath.slice(rule.base.length + 1) : relPath);
+
+// The single pattern that decided this path, negation included, or null. The
+// staleness audit needs the rule itself — which file, which line — where
+// `ignoredBy` needs only the file, so the walk lives here once and both
+// callers read the same winner.
+function ignoringRule(config, relPath) {
   if (!config.root || config.noIgnore || relPath.split('/').includes('..')) return null;
   const cut = relPath.lastIndexOf('/');
   let winner = null;
   for (const rule of ignoreRulesFor(config, cut === -1 ? '' : relPath.slice(0, cut))) {
-    if (rule.re.test(rule.base ? relPath.slice(rule.base.length + 1) : relPath)) winner = rule;
+    if (matchesRule(rule, relPath)) winner = rule;
   }
-  return winner && !winner.negate ? `${winner.base ? `${winner.base}/` : ''}${IGNORE_FILE}` : null;
+  return winner;
+}
+
+const ignorePathOf = (base) => `${base ? `${base}/` : ''}${IGNORE_FILE}`;
+
+function ignoredBy(config, relPath) {
+  const winner = ignoringRule(config, relPath);
+  return winner && !winner.negate ? ignorePathOf(winner.base) : null;
 }
 
 // Why a path is not checked, or null. `.procoder.toml` is consulted first and
@@ -346,6 +372,101 @@ function unusedPathExclusions(config, audit) {
   return config.exclude.configuredPaths
     .filter((pattern) => typeof pattern === 'string' && pattern !== '')
     .map((pattern) => ({ pattern, reason: staleReason(config, pattern, audit) }))
+    .filter((entry) => entry.reason !== null);
+}
+
+// --- .procoderignore staleness ---------------------------------------------
+//
+// The third instrument that narrows enforcement, and the last one nothing
+// judged. A `.procoderignore` covering a tree that has since gone clean stays
+// in force forever, and the day that tree starts violating again nobody is
+// told — the exact rot rung 4 names, in procoder's own config.
+//
+// The unit judged is one PATTERN, not one file: an ignore file may hold ten
+// lines of which one has outlived its reason, and "this file is stale" would be
+// both wrong and unactionable. A report therefore names the file, the line and
+// the pattern as written, the way the skip lines already name the file.
+//
+// Two rules, deliberately not three — `unusedPathExclusions` has `gone`,
+// `empty` and `clean`, and only two of the three survive the move:
+//
+//   clean  the pattern is the winning rule for tracked files, and not one of
+//          them has a finding with the pattern lifted. This is the rule the
+//          whole thing exists for.
+//   empty  a GLOB that matches nothing anywhere in the tree the run walked —
+//          not a tracked file, not an untracked one. A shape filtering an
+//          empty set.
+//
+// There is deliberately no `gone`. A literal path in an ignore file is a fence
+// around a LOCATION — build output, a vendored drop, agent scratch — and such a
+// location is legitimately absent from a fresh clone. This repository's own
+// root ignore file is the proof: `.claude/` and `.superpowers/` are untracked
+// working space, present on a developer's machine and absent in CI, and a
+// `gone` rule would fail its own CI on two lines nobody may delete. A false
+// report is worse than a missed one here: it teaches people to delete the
+// fences.
+//
+// For the same reason, judgment is over TRACKED files only. A pattern whose
+// matches are all untracked is holding back content the repository does not
+// own, which can never "go clean" in any sense procoder can verify, so it is
+// left alone rather than guessed at. Negated (`!`) patterns are not judged at
+// all: a negation widens the gate, and a widening left in place cannot lose
+// coverage — the failure this is about.
+//
+// Like the path audit, all of it runs only when the caller passes an `audit`
+// that carries the tracked list, and the CLI builds one only for a `verify`
+// whose targets covered the whole repository. The hook never calls it and its
+// budget is untouched.
+
+// Every non-negated pattern of every ignore file the run walked, except an
+// ignore file that is itself ignored — a copy inside an ignored tree (an agent
+// worktree, a vendored checkout) belongs to that tree, not to this repository.
+function ignorePatternsIn(config, files) {
+  return files
+    .filter((rel) => rel === IGNORE_FILE || rel.endsWith(`/${IGNORE_FILE}`))
+    .filter((rel) => !ignoredBy(config, rel))
+    .flatMap((rel) => readIgnore(
+      config.root, rel.slice(0, Math.max(0, rel.length - IGNORE_FILE.length - 1)), null))
+    .filter((rule) => !rule.negate);
+}
+
+const underBase = (rule, rel) => rule.base === '' || rel.startsWith(`${rule.base}/`);
+
+// Why one pattern is doing nothing, or null if it is still earning its place.
+function staleIgnoreReason(rule, covered, audit) {
+  if (covered.length > 0) {
+    // `ignoreFindings` returns null for a file it could not judge — still
+    // ignored by another pattern, excluded, too large, unreadable. Null is not
+    // 0: one unjudgeable file is enough to leave the pattern alone.
+    return covered.every((rel) => audit.ignoreFindings(rel, rule) === 0)
+      ? `nothing it ignores has a finding (${covered.length} file${covered.length === 1 ? '' : 's'} scanned)`
+      : null;
+  }
+  if (!rule.text.includes('*')) return null;
+  return audit.files.some((rel) => underBase(rule, rel) && matchesRule(rule, rel))
+    ? null
+    : 'it matches no file in the tree';
+}
+
+function unusedIgnorePatterns(config, audit) {
+  // A hand-built config, a hook, a partial run: nothing to judge and nothing
+  // may throw. Without the tracked list there is no judgment to make at all.
+  if (!config.root || !audit || !Array.isArray(audit.tracked)) return [];
+  const covered = new Map();
+  for (const rel of audit.tracked) {
+    const winner = ignoringRule(config, rel);
+    if (!winner || winner.negate) continue;
+    const key = `${winner.base}\0${winner.line}`;
+    if (!covered.has(key)) covered.set(key, []);
+    covered.get(key).push(rel);
+  }
+  return ignorePatternsIn(config, audit.files)
+    .map((rule) => ({
+      file: ignorePathOf(rule.base),
+      line: rule.line,
+      pattern: rule.text,
+      reason: staleIgnoreReason(rule, covered.get(`${rule.base}\0${rule.line}`) || [], audit),
+    }))
     .filter((entry) => entry.reason !== null);
 }
 
@@ -438,5 +559,5 @@ function isRuleExcluded(config, relPath, id) {
 
 module.exports = {
   DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, excludingPattern,
-  unusedPathExclusions, isRuleExcluded, findRepoRoot, levelFor,
+  unusedPathExclusions, unusedIgnorePatterns, isRuleExcluded, findRepoRoot, levelFor,
 };

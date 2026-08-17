@@ -11,7 +11,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, levelFor, excludeReason,
+  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, unusedIgnorePatterns,
+  levelFor, excludeReason,
 } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { runToolBatches } = require('../hooks/checks/resolve');
@@ -50,12 +51,14 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
             confirmation" and nothing is ever deleted.
 
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
-                        suppressed nothing in this run, or a [exclude] paths
-                        entry holds nothing back — its path is gone, it matches
-                        no file, or every file it covers is clean. A stale
-                        suppression left behind after what it silenced was
-                        fixed. The last two are judged only when the run's
-                        targets covered the whole repository.
+                        suppressed nothing in this run, a [exclude] paths entry
+                        holds nothing back — its path is gone, it matches no
+                        file, or every file it covers is clean — or a
+                        .procoderignore pattern ignores nothing: every tracked
+                        file it covers is clean, or it matches nothing at all.
+                        A stale suppression left behind after what it silenced
+                        was fixed. All but the first are judged only when the
+                        run's targets covered the whole repository.
   --aging <days>       (verify only) also fail if an accepted finding has been
                         in the baseline longer than <days>, naming the oldest
                         with its date, path and rule. A baseline entry is a
@@ -265,40 +268,61 @@ function sample(added, present) {
   return shown + (rest > 0 ? `  ...and ${rest} more\n` : '');
 }
 
-// The audit `unusedPathExclusions` needs to judge a pattern on more than
-// whether its path still exists: the tree's repo-relative paths, and a scan of
-// one of them with that one pattern lifted.
+// `.procoderignore` staleness is judged over TRACKED files only — see
+// unusedIgnorePatterns. git is the only thing that knows which those are, and
+// it is asked once per whole-tree verify with a fixed argv and no shell. No git
+// (not installed, not a repository, a checkout too broken to answer) means no
+// tracked list, and the ignore rules then judge nothing at all rather than
+// treating every untracked scratch file as repository content.
+function trackedFiles(root) {
+  const r = spawnSync('git', ['ls-files', '-z'], {
+    cwd: root, encoding: 'utf8', timeout: 10000, maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (r.status !== 0 || r.error) return null;
+  return String(r.stdout || '').split('\0').filter(Boolean);
+}
+
+// The audit `unusedPathExclusions` and `unusedIgnorePatterns` need to judge a
+// pattern on more than whether its path still exists: the tree's repo-relative
+// paths, which of them the repository actually tracks, and a scan of one of
+// them with that one pattern — a `[exclude] paths` entry or a single
+// `.procoderignore` line — lifted.
 //
 // Only built for a run whose targets covered the whole repository, and that is
 // the whole of why it is affordable. "This glob matches nothing" and "nothing
 // under this directory has a finding" are claims about the tree; a run over one
-// file cannot make either, so a partial run passes no audit and the two rules
+// file cannot make either, so a partial run passes no audit and those rules
 // go quiet — the same restraint an out-of-run rule exclusion gets. And because
 // the run already walked the tree, `files` IS the tree: the audit adds no walk,
 // only the re-scan of the excluded files themselves.
 //
 // It never runs in the hook. The hook calls checkFile directly and has never
 // called this file's exclusion audit at all, so its 2s budget is untouched.
-function pathAudit(files, repoRoot, config, wholeTree) {
-  if (!wholeTree || config.exclude.configuredPaths.length === 0) return undefined;
+function treeAudit(files, repoRoot, config, wholeTree) {
+  if (!wholeTree) return undefined;
   const abs = new Map(files.map((f) => [path.relative(config.root, f).replace(/\\/g, '/'), f]));
-  // One config per pattern, cached: each carries its own .procoderignore cache,
-  // so rebuilding it per file would re-read every ignore file in the tree.
+  // One config per lifted pattern, cached: each carries its own
+  // .procoderignore cache, so rebuilding it per file would re-read every
+  // ignore file in the tree.
   const lifted = new Map();
-  const configWithout = (pattern) => {
-    if (!lifted.has(pattern)) {
-      lifted.set(pattern, { ...config,
-        exclude: { ...config.exclude, paths: config.exclude.paths.filter((p) => p !== pattern) } });
-    }
-    return lifted.get(pattern);
+  const cachedConfig = (key, build) => {
+    if (!lifted.has(key)) lifted.set(key, build());
+    return lifted.get(key);
   };
+  const scan = (rel, liftedConfig) => {
+    const out = checkFile(abs.get(rel),
+      { repoRoot, config: liftedConfig, maxFindings: Infinity, applyBaseline: false });
+    return out.skipped ? null : out.findings.length;
+  };
+  const tracked = trackedFiles(config.root);
   return {
     files: Array.from(abs.keys()),
-    findings: (rel, pattern) => {
-      const out = checkFile(abs.get(rel),
-        { repoRoot, config: configWithout(pattern), maxFindings: Infinity, applyBaseline: false });
-      return out.skipped ? null : out.findings.length;
-    },
+    tracked: tracked && tracked.filter((rel) => abs.has(rel)),
+    findings: (rel, pattern) => scan(rel, cachedConfig(`p\0${pattern}`, () => ({ ...config,
+      exclude: { ...config.exclude, paths: config.exclude.paths.filter((p) => p !== pattern) } }))),
+    ignoreFindings: (rel, rule) => scan(rel, cachedConfig(`i\0${rule.base}\0${rule.line}`,
+      () => ({ ...config, ignoreDrop: { base: rule.base, line: rule.line } }))),
   };
 }
 
@@ -307,7 +331,9 @@ function pathAudit(files, repoRoot, config, wholeTree) {
 // underlying finding got fixed) must not turn into a CI failure by default.
 function reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, wholeTree }) {
   const stale = unusedRuleExclusions(files, repoRoot, config);
-  const gone = unusedPathExclusions(config, pathAudit(files, repoRoot, config, wholeTree));
+  const audit = treeAudit(files, repoRoot, config, wholeTree);
+  const gone = unusedPathExclusions(config, audit);
+  const ignores = unusedIgnorePatterns(config, audit);
   if (stale.length > 0) {
     process.stdout.write(
       `procoder: ${stale.length} exclusion rule${stale.length === 1 ? '' : 's'} suppressed nothing ` +
@@ -321,7 +347,15 @@ function reportUnusedExclusions(files, repoRoot, config, { unusedExclusions, who
       'Remove them from [exclude] paths in .procoder.toml, or say why they still apply. Left in ' +
       'place, they silently exclude whatever lands there next.\n');
   }
-  return unusedExclusions && stale.length + gone.length > 0 ? 1 : 0;
+  if (ignores.length > 0) {
+    process.stdout.write(
+      `procoder: ${ignores.length} .procoderignore pattern${ignores.length === 1 ? '' : 's'} ` +
+      `ignore${ignores.length === 1 ? 's' : ''} nothing:\n` +
+      ignores.map((i) => `  ${i.file}:${i.line} "${i.pattern}" — ${i.reason}\n`).join('') +
+      'Remove the line, or say why it still applies. Left in place, it silently ignores whatever ' +
+      'lands there next.\n');
+  }
+  return unusedExclusions && stale.length + gone.length + ignores.length > 0 ? 1 : 0;
 }
 
 // Accepted debt with no expiry is a deprecation with no removal trigger, which
