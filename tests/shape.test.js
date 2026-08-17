@@ -713,9 +713,14 @@ test('indent width inference survives the files with nothing to infer from', () 
 // between two input sizes, for the reason the guards above give.
 test('reading the indent width off the file stays linear', () => {
   const body = ['def f(a):', '    if a:', '        for i in a:', '            go(i)', ''].join('\n');
-  const cost = (kb) => Math.max(1, bestOf(3, () => analyzeIndent(
+  // Floor at 5ms, not 1ms, and measure from 200KB rather than 100KB. This pass
+  // is fast enough that the smaller input lands in timer noise, and a noisy
+  // denominator invents a ratio: it read 8.7x on a macOS runner where the work
+  // was linear and the 100KB reading was a rounding artefact. Same floor as
+  // tests/perf-guard.js, for the same reason.
+  const cost = (kb) => Math.max(5, bestOf(3, () => analyzeIndent(
     body.repeat(Math.ceil((kb * 1024) / body.length)), { tabWidth: 4 })));
-  const ratio = cost(400) / cost(100);
+  const ratio = cost(800) / cost(200);
   assert.ok(ratio < 8, `4x the file cost ${ratio.toFixed(1)}x the time`);
 });
 
