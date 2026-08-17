@@ -40,6 +40,8 @@ safe = "error"
 true = "error"
 obvious = "warn"
 alone = "warn"
+fast = "warn"
+meant = "warn"
 
 [thresholds]
 function_lines = 40
@@ -67,7 +69,11 @@ file = ".procoder-baseline.json"</code></pre>
   as advisory, and the active level modulates that: at <code>pragmatic</code> the
   judgment rungs are flagged without blocking language, while SAFE and TRUE always
   demand a fix. The keys are the six rung names verbatim, <code>true</code>
-  included — it is a bare key, not a boolean.
+  included — it is a bare key, not a boolean. <code>[rungs] fast</code> and
+  <code>[rungs] meant</code> default to <code>warn</code> and are currently
+  inert either way: no deterministic check produces a finding at rung 5 or 6,
+  so promoting them changes nothing until one exists. See
+  <a href="limitations.html">what it misses</a>.
 </p>
 
 <p>
@@ -145,7 +151,7 @@ file = ".procoder-baseline.json"</code></pre>
   there were, and exits <strong>2</strong> — "cannot verify", distinct from the
   <strong>1</strong> that means the ratchet grew — naming both remedies, raise or
   remove the limit, or exclude the path deliberately. A genuine file over the
-  2&nbsp;MB ceiling produces the same exit for the same reason.
+  1&nbsp;MB ceiling produces the same exit for the same reason.
 </p>
 
 <div class="note">

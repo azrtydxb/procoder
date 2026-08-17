@@ -3,7 +3,7 @@
     - href: index.html
       label: Overview
     - href: doctrine.html
-      label: The four rungs
+      label: The six rungs
 - group: Using it
   items:
     - href: start.html

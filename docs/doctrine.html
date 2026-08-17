@@ -3,7 +3,7 @@ layout: page
 href: doctrine.html
 title: The six rungs
 pagetitle: The six rungs — procoder
-description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which two are non-negotiable, and what the deterministic engine catches versus what the doctrine catches.
+description: SAFE, TRUE, OBVIOUS, ALONE, FAST and MEANT in depth — what each rung asks, which two are non-negotiable, and what the deterministic engine catches versus what the doctrine catches.
 ---
 
 <p class="eyebrow">The gate</p>
@@ -42,7 +42,21 @@ description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which 
       <span class="rung rung-soft">[4 ALONE]</span>
       <span class="msg">Did you leave a twin behind?</span>
     </li>
+    <li class="finding">
+      <span class="rung rung-soft">[5 FAST]</span>
+      <span class="msg">Does it stay cheap at the size production arrives at?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-soft">[6 MEANT]</span>
+      <span class="msg">Is this what was asked for, and only that?</span>
+    </li>
   </ul>
+  <p>
+    Rungs 5 and 6 are read by the model and by nothing else. No deterministic
+    check produces a finding at either — see
+    <a href="limitations.html">what it misses</a> — so promoting them in
+    <code>[rungs]</code> changes nothing until one exists.
+  </p>
 </div>
 
 <h2>1 — SAFE</h2>
@@ -323,7 +337,9 @@ accept pre-existing ones.</code></pre>
   </p>
 </div>
 
-<p>The other three pairs, and what the engine reports on each today:</p>
+<p>The other three pairs, and what the engine reports on each today. There is
+no <code>fast/</code> or <code>meant/</code> pair, because there is no rule to
+write one against:</p>
 
 <div class="scroll">
 <table>

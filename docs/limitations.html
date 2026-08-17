@@ -18,6 +18,22 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 
 <ul class="findings findings-display">
   <li class="finding">
+    <span class="rung rung-soft">[6 MEANT]</span>
+    <span class="msg"><span class="loc">hooks/checks/finding.js</span> rungs 5 and 6 have no engine behind them at all <span class="arrow">→</span> no <code>fast/</code> or <code>meant/</code> rule id exists anywhere in <code>hooks/</code>, so <code>[rungs] fast = "error"</code> is inert and CI can never gate on cost or on scope creep</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">hooks/checks/report.js</span> SARIF carries no record of the files a run skipped <span class="arrow">→</span> <code>runs[0]</code> holds <code>tool</code> and <code>results</code> and nothing else, so a file that was too large to read is indistinguishable in the document from a file that was scanned and found clean</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">bin/procoder.js</span> <code>--since</code> does not see a rename <span class="arrow">→</span> <code>--diff-filter=ACM</code> excludes <code>R</code>, so a commit that renames a file prints <code>no files changed — nothing to check</code> and exits 0 over a live <code>safe/sql-injection</code></span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">hooks/checks/worker.js</span> the time budget is not the same in a worker as in this process <span class="arrow">→</span> 600,000&nbsp;ms against 2,000&nbsp;ms, so the deadline that appends <code>true/budget-exhausted</code> fires on a sequential scan and effectively never on a parallel one</span>
+  </li>
+  <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
     <span class="msg"><span class="loc">hooks/checks/lang/taint.js</span> a wrapping call at a binding cannot be told from an escaper <span class="arrow">→</span> <code>q = sanitizeSql(q);</code> before the sink still reports, in all six packs, and so does the driver's own <code>mysql.escape(id)</code></span>
   </li>
@@ -38,16 +54,28 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <span class="msg"><span class="loc">hooks/checks/lang/ts.js</span> <code>safe/xss-sink</code> fires on the assignment target, not the value <span class="arrow">→</span> <code>const safe = escapeHtml(x); el.innerHTML = safe;</code> is reported, and it is correct code</span>
   </li>
   <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/universal.js</span> <code>safe/redaction-marker</code> cannot tell prose from code <span class="arrow">→</span> a Markdown sentence describing the mechanism reports one, and the pattern is case-sensitive, so a lower-case marker in a real file does not</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">hooks/checks/deps.js</span> <code>safe/manifest-not-locked</code> is npm-only and text-matched <span class="arrow">→</span> a <code>peerDependencies</code> entry reports although it is the consumer's to install, and a direct dependency the lockfile knows only as somebody else's transitive does not</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">hooks/checks/lang/py.js</span> <code>true/missing-timeout</code> reads the call as text <span class="arrow">→</span> <code>requests.get(url, **DEFAULTS)</code> reports even when <code>DEFAULTS</code> carries the timeout, and <code>httpx</code>, <code>urllib</code>, <code>aiohttp</code>, <code>fetch</code> and Java's <code>HttpClient</code> are not checked at all</span>
+  </li>
+  <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/checks/shape.js</span> a JS method shorthand named after a JS statement is not read as a signature <span class="arrow">→</span> a six-parameter <code>with(…)</code> or <code>catch(…)</code> is invisible to every shape rule in the ts pack, as is Rust's <code>fn r#match(…)</code></span>
+    <span class="msg"><span class="loc">hooks/checks/shape.js</span> a parameter list on a very long line has no ceiling <span class="arrow">→</span> a 1,000-parameter single-line signature is measured and reported, because <code>obvious/too-many-params</code> is not span-derived and the 4&nbsp;KB line guard does not cover it</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[4 ALONE]</span>
-    <span class="msg"><span class="loc">.procoder.toml</span> a <code>.procoderignore</code> has no expiry test of any kind <span class="arrow">→</span> one covering a tree that has since gone clean is reported by nothing; <code>[exclude] paths</code> now has a full one</span>
+    <span class="msg"><span class="loc">bin/procoder.js</span> nothing ever prunes the baseline <span class="arrow">→</span> <code>procoder baseline</code> only appends, so an entry whose finding was fixed stays forever and <code>verify --aging</code> then fails CI naming files that no longer contain it</span>
   </li>
   <li class="finding">
     <span class="rung rung-soft">[3 OBVIOUS]</span>
-    <span class="msg"><span class="loc">hooks/procoder-check.js</span> in-session findings are narrowed to the edited region and truncated to five <span class="arrow">→</span> run <code>procoder check</code> on the file for the whole-file picture</span>
+    <span class="msg"><span class="loc">hooks/procoder-check.js</span> in-session findings are narrowed to the edited region and truncated to five <span class="arrow">→</span> run <code>procoder check</code> on the file for the whole-file picture; the MCP server's <code>procoder_check</code> truncates the same way and says so even less</span>
   </li>
 </ul>
 
@@ -58,21 +86,23 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 
 <div class="note">
   <p>
-    Those seven lines are a pointer, not a second copy: every one of them is
+    Those fifteen lines are a pointer, not a second copy: every one of them is
     restated from
     <a href="{{ site.repo }}/blob/main/docs/known-limitations.md"><strong>docs/known-limitations.md</strong></a>,
     which is the only place a limitation is recorded, measured and dated. This
-    page is a twin by rung 4's definition, and it had drifted from that
-    document at every audit before this one — five in a row, always into
-    claiming a defect the engine had already stopped having. Every audit until
-    now ran alongside the agents doing the fixing; this one did not, which is
-    the only reason the two agree today. What went from this page in this pass:
-    taint following one name only — it now follows dotted paths, branches,
-    loops, containers and one level of the file's own returns, in all six
-    packs — and Python's indent step, whose 8-column cap and commonest-step
-    guess are both deleted. What arrived: two false positives the wider
-    propagation buys, named above. If the two ever disagree, the markdown is
-    right and this page is stale.
+    page is a twin by rung 4's definition. Five audits running it drifted the
+    same way — into claiming a defect the engine had already stopped having.
+    This one drifted the other way, and worse: the engine grew a parallel
+    scanner, two machine-readable formats, a <code>--since</code>, an
+    <code>init</code>, two rungs and three rules, and this page said nothing
+    about any of it. Silence about new surface is the same dishonesty in
+    different clothes. What went from this page in this pass: the JS method
+    shorthand named after a statement and Rust's <code>fn r#match</code>, both
+    now measured; the template literal holding a quote, which no longer
+    desynchronises the brace scan; and <code>.procoderignore</code> having no
+    expiry test, which it now has. What arrived is everything above the taint
+    rows. If the two ever disagree, the markdown is right and this page is
+    stale.
   </p>
 </div>
 
@@ -89,7 +119,8 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <strong>The check engine</strong> is regex and counters over six languages. It
     runs after every file write and from the CLI, it is reproducible, and it is
     what CI gates on. It catches an interpolated query, a swallowed error, an
-    over-long function, an unexplained suppression.
+    over-long function, an unexplained suppression — 44 rule ids, all of them at
+    rungs 1 to 4.
   </p>
   <p>
     <strong>The doctrine</strong> is text the agent reads. It catches the things no
@@ -100,9 +131,12 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 </div>
 
 <p>
-  A worked instance of that split — the same file, one half caught by the engine
-  and the other only by the doctrine — is on
-  <a href="doctrine.html">the six rungs</a>.
+  For <strong>rungs 5 and 6 the overlap is empty</strong>. FAST and MEANT are
+  doctrine and nothing else: no check in the engine can produce a finding at
+  either, so a query per row over a request-sized list and a rename nobody asked
+  for both pass <code>procoder check</code> in silence. A worked instance of the
+  split — the same file, one half caught by the engine and the other only by the
+  doctrine — is on <a href="doctrine.html">the six rungs</a>.
 </p>
 
 <h2>What the self-scan proves, and what it does not</h2>
@@ -112,13 +146,18 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <code>git ls-files</code>, so every tracked file is in the gate the day it lands,
   this page and its stylesheet included. Running the tool over this repository
   today, <code>node bin/procoder.js check .</code> reports <strong>0 findings</strong>
-  over <strong>201</strong> tracked files and exits 0, having skipped 18 of them
+  over <strong>208</strong> tracked files and exits 0, having skipped 18 of them
   and said so on stderr for every one: 9 by <code>[exclude] paths</code> in
   <code>.procoder.toml</code>, one line per pattern with its count, and 9 across
-  two <code>.procoderignore</code> files. So <strong>183</strong> files are
+  two <code>.procoderignore</code> files. So <strong>190</strong> files are
   actually read — the number the README publishes, and the one
   <code>tests/dogfood.test.js</code> asserts against the scan's own output so it
   cannot drift.
+</p>
+
+<p>
+  It is also, at 208 files, below the 250-file threshold at which the scan forks
+  workers — so procoder's own self-scan never exercises the parallel path.
 </p>
 
 <p>
@@ -134,10 +173,14 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   describes: 5 historical planning documents that quote rule ids by the hundred,
   and the 4 <code>examples/*/before.*</code> files that violate a rung on purpose.
   The latter are still proved on every run, through
-  <code>procoder check --no-ignore</code>. No ignore file has an expiry test, so
-  one covering a path that has since gone clean would not be reported — the
-  per-run stderr line naming each ignore file and its count is what keeps that
-  visible.
+  <code>procoder check --no-ignore</code>. Every ignore <em>pattern</em> is now
+  judged for expiry on a whole-tree <code>verify</code> — reported when every
+  tracked file it covers scans clean with that one line lifted, or when a glob
+  matches nothing — with two gaps kept on purpose: there is no "the path is gone"
+  rule, because a literal path is a fence around a location that a fresh clone
+  legitimately lacks, and a negated pattern is never judged, because "this
+  exception stopped mattering" is not coverage lost. Where <code>git ls-files</code>
+  cannot answer, nothing is judged at all.
 </p>
 
 <p>
@@ -157,11 +200,14 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 <p>
   That key used to be the quietest hold-out procoder offered. It is not now:
   every run prints one stderr line per pattern with its count and the pattern
-  that did it, naming a file directly if you named that file yourself, and
-  <code>verify</code> reports a configured exclusion that holds nothing back —
-  path gone, matching no file, or covering only clean files — failing the build
-  under <code>--unused-exclusions</code>. The last two are claims about the tree
-  and are judged only when the run covered the whole repository.
+  that did it, naming a file directly if you named that file yourself, and all
+  three instruments — rule exclusions, path exclusions, ignore patterns — are
+  re-judged on every <code>verify</code> and fail the build under
+  <code>--unused-exclusions</code>. None of that reaches
+  <code>--format json</code> or <code>sarif</code>: <code>--format</code> is
+  refused off <code>check</code> and the staleness report is <code>verify</code>
+  output, so a dashboard-only pipeline has to run a second, text-mode
+  <code>verify</code> to learn that a directory has been quietly un-gated.
 </p>
 
 <p>
@@ -192,12 +238,20 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <thead><tr><th>Section</th><th>What it covers</th></tr></thead>
   <tbody>
     <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#rungs-5-and-6-have-no-engine-behind-them-at-all">Rungs 5 and 6 have no engine</a></td>
+      <td>Why no <code>fast/</code> or <code>meant/</code> finding can ever be produced, what that makes of the <code>[rungs]</code> keys for them, and the structural claim it sharpens: for two of six rungs the engine and the doctrine do not overlap at all.</td>
+    </tr>
+    <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#taint-tracking-one-file-forward-only">Taint tracking</a></td>
       <td>The nine shapes the structural rebuild closed in all six languages, the six it still misses and why two of those are deliberate, the database-evidence gate in both directions, and the three rung-1 false positives — each a file you can paste.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#heuristic-scanning-not-parsing">Heuristic scanning, not parsing</a></td>
-      <td>What Python's rebuilt indent reading fixed, and the three verified cases left where the brace and indent counter measures the wrong thing or nothing — the function names that make a signature invisible, and the one metric with no ceiling at all.</td>
+      <td>The three cases the member scanner and the raw-identifier work closed, and what the brace and indent counter still cannot measure: a signature on a very long line, a C# type whose whole body is on one, and every language outside the six packs.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-three-newest-rules-and-what-each-of-them-misses">The three newest rules</a></td>
+      <td><code>safe/redaction-marker</code>, <code>safe/manifest-not-locked</code> and <code>true/missing-timeout</code>, each probed for what it misses and what it fires on wrongly — a documentation sentence, a peer dependency, a timeout passed in a dict.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>
@@ -205,15 +259,31 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-self-scan-and-what-is-ignored">The self-scan, and what is ignored</a></td>
-      <td>Which paths are held out, by what, what each one now reports about itself, and the one shape of stale exclusion still judged by nothing.</td>
+      <td>Which paths are held out, by what, what each one now reports about itself, the two deliberate gaps in the ignore-file expiry test, and why no staleness report reaches a machine-readable format.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-parallel-scan-and-the-one-thing-it-does-not-keep-identical">The parallel scan</a></td>
+      <td>What the worker pool does keep identical — verified, including a run in which every worker dies — and the one thing it does not: the per-file time budget, 2,000&nbsp;ms here and 600,000&nbsp;ms in a worker. Plus the unclamped <code>--jobs</code>, and why parallel is slower on small files.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#machine-readable-output-sarif-loses-what-the-terminal-says">Machine-readable output</a></td>
+      <td>What the versioned JSON carries and SARIF does not — the skipped files, the run's level, the exit code — and why a dashboard fed SARIF cannot tell coverage from silence.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#since-ref-what-it-does-not-see"><code>--since &lt;ref&gt;</code></a></td>
+      <td>The three ways it does refuse to pass green on nothing, and the fourth where it does not: a rename leaves the file out of the diff entirely. Plus the flags it silently drops.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#procoder-init-the-mcp-server-and-dated-baseline-entries"><code>init</code>, MCP, dated baselines</a></td>
+      <td><code>init --baseline</code> exiting 0 over files the <code>verify</code> it recommends exits 2 on; the four MCP tools and the three places a failure reads as success; and the baseline nothing ever prunes.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#external-linters-deferring-costs-you-procoders-own-thresholds">External linters</a></td>
-      <td>The cost of letting a linter's thresholds replace procoder's, and one whole-crate compile per Rust file scanned.</td>
+      <td>The cost of letting a linter's thresholds replace procoder's, the one linter the new batching cannot reach, and what a batch does with a file the tool never mentioned.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#cargo-clippy-cannot-be-scoped-to-one-file">clippy cannot be scoped to one file</a></td>
-      <td>Why Rust lints usually lose their timeout, how that timeout is now a share of what is left on the clock rather than a size formula, and what covers the file instead.</td>
+      <td>Why Rust lints usually lose their timeout, how that timeout is a share of what is left on the clock rather than a size formula, and what covers the file instead.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-ratchet-baseline-what-it-guarantees-and-what-it-doesnt">The ratchet baseline</a></td>
@@ -221,15 +291,15 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-baseline-format-is-versioned-and-old-baselines-are-not-migrated">The baseline format is versioned</a></td>
-      <td>Why an old baseline loads as empty rather than partial, and the distinct exit code — 2, "cannot verify" — that says so.</td>
+      <td>Why a v3 baseline loads as empty rather than partial under today's v4, and the distinct exit code — 2, "cannot verify" — that says so.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-toml-parser-is-a-documented-subset">The TOML parser is a subset</a></td>
-      <td>What parses, the long list that is refused rather than guessed at — duplicate keys now among them — and the one construct that still loads a value the author did not write.</td>
+      <td>What parses, the long list that is refused rather than guessed at — duplicate keys among them — and the one construct that still loads a value the author did not write.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#deliberate-narrowings-from-performance-work">Deliberate narrowings</a></td>
-      <td>Every ceiling the performance work left behind — the two span lengths that survive, findings per line, the 4KB line and <strong>1MB</strong> file guards, <code>max_file_bytes</code> clamped downward only, and the reworked time budget that now appends <code>true/budget-exhausted</code> when it cuts a stage — and which of them make <code>verify</code> exit 2 rather than pass green.</td>
+      <td>Every ceiling the performance work left behind — the two span lengths that survive, findings per line, the 4&nbsp;KB line and <strong>1&nbsp;MB</strong> file guards, <code>max_file_bytes</code> clamped downward only, and the time budget that appends <code>true/budget-exhausted</code> when it cuts a stage — and which of them make <code>verify</code> exit 2 rather than pass green.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-posttooluse-hook-reports-near-the-edit-and-at-most-five-findings">The hook reports near the edit</a></td>

@@ -7,6 +7,41 @@ previous edition of this page disclosed something that has since been fixed,
 the entry is gone rather than kept as false modesty — a document that
 overstates weakness is as untrustworthy as one that hides it.
 
+Five audits running, this page went stale by keeping defects that had been
+fixed. This one inverted the failure: the engine grew a parallel scanner, two
+machine-readable formats, a `--since`, an `init`, two rungs and three rules,
+and the page said nothing about any of it. Silence about new surface is the
+same dishonesty in different clothes, and the sections below marked **new** are
+what that silence was hiding.
+
+## Rungs 5 and 6 have no engine behind them at all
+
+FAST and MEANT are rungs of the doctrine and nothing else. `RUNGS` in
+`hooks/checks/finding.js` lists six names, `[rungs]` in `.procoder.toml`
+accepts `fast` and `meant` and defaults both to `warn` — and **no check in the
+engine can ever produce a finding at either**. Verified: a grep for a `fast/`
+or `meant/` rule id over the whole of `hooks/` matches nothing, and
+`BUILTIN_RULE_IDS` in `hooks/checks/patterns/markers.js` holds 44 ids, none of
+them under those two prefixes.
+
+The practical consequences, each of them a limitation and not a footnote:
+
+| What you might expect | What actually happens |
+|---|---|
+| `procoder check` reports a FAST or MEANT finding | It cannot. Every finding the CLI, the hook and the MCP server can emit is at rung 1–4. |
+| `[rungs] fast = "error"` promotes rung 5 to blocking | It is inert. The key parses, `levelFor` and `isBlocking` read it, and nothing ever asks the question because nothing ever produces a finding to ask it about. |
+| A line marker naming a `fast/*` id suppresses something | There is no id to name. A well-shaped id under either prefix is not in the known set and warns `unknown rule id … — it suppresses nothing`. |
+| CI gates on cost or scope creep | It does not. A query per row over a request-sized list and a rename nobody asked for both pass `procoder check` silently. |
+
+This is the structural limitation of the whole tool, stated at its sharpest:
+the doctrine is what the model reads, the engine is what CI runs, and for two
+of the six rungs the overlap is empty. Rungs 5 and 6 are enforced by a reader
+holding the change against the ask, and by nothing else. Neither can be
+decided from one file — FAST needs the size the input really reaches, MEANT
+needs the request the diff answers to — which is why they default to `warn`
+rather than why they are unimplemented, and the default is currently a
+statement about a value that never arrives.
+
 ## Taint tracking: one file, forward only
 
 Binding a query to a variable before consuming it no longer defeats rung 1.
@@ -118,17 +153,120 @@ reports `nesting depth 7` where it used to report nothing; and a `def` wrapped
 over 9 or 20 lines is measured (`20 parameters (limit 4)`) where 8 was the
 ceiling. Uniform 2-space, 4-space and tab files all measure correctly.
 
+Three more cases this page listed are closed, and are deleted from the table
+below rather than hedged. Verified, each on the file this page used to say
+reported nothing:
+
+- **A JS/TS method shorthand named after a JS statement is measured.** A brace
+  that opens a class body or an object literal holds members, and a member is
+  a declaration however it is named; every other brace opens a block. `class R
+  { with(a0…a5) { … } }`, the same with `catch`, `for` in TypeScript, and
+  `const o = { switch(a0…a5) { … } }` each report `6 parameters (limit 4)`,
+  where all four were invisible to every shape rule before.
+- **Rust raw identifiers are measured.** `fn r#match(a0…a5)` and `fn
+  r#try(a0…a5)` both report `6 parameters (limit 4)`. So does C#'s spelling of
+  the same idea, `public int @match(int a0 … int a5)`.
+- **A template literal containing a quote character no longer desynchronises
+  the brace scan.** Five shapes verified, `` new RegExp(`(?:^|["'/])${x}`) ``
+  among them: the enclosing function's closing brace is counted and the next
+  function keeps its own span — `function is 48 lines (limit 40)` is reported
+  against the 48-line function that follows, at its own line, not against the
+  three-line one holding the template. The workaround in
+  `hooks/checks/deps.js` is now belt and braces rather than load-bearing.
+
 What is left:
 
 | Case | Effect |
 |---|---|
-| **A JS/TS method shorthand named after a JS control-flow keyword** | Invisible to every shape rule. The keyword sweep is now scoped to the one pattern that cannot decide it by shape — the ts pack's bare-name head, `name(a, b) {` with nothing in front of it — and to the seven words that really are JS statements: `if`, `for`, `while`, `switch`, `case`, `catch`, `with`. Verified, each a 6-parameter class method reporting **nothing** in JS and TS, and each of `lock(…)`, `using(…)`, `match(…)`, `when(…)` measured on the same file. Every other pack is clear by construction, because its head demands a declarator or two tokens: C# `void using(…)` and `void lock(…)`, Java `void match(…)`, Go `func match(…)` and `func with(…)`, JS's own `function with(…)`, and Python's `def match(…)` all report `6 parameters (limit 4)`. A method literally named `with` or `catch` is the realistic remnant — a builder, a promise-like. |
-| A Rust raw identifier | `fn r#match(a0…a5)` and `fn r#try(a0…a5)` are invisible to every shape rule: the rust head reads `fn` then a word, and `r#` is not one. `fn matcher(a0…a5)` on the same file reports `6 parameters (limit 4)`. Raw identifiers are exactly how a Rust author names a function after a keyword, so this is the case the keyword sweep above was narrowed to avoid, arriving by a different route. |
-| **A template literal containing a quote character** | Desynchronises the brace scan for the rest of the file. `` new RegExp(`(?:^|["'/])${x}`) `` — a template literal whose body holds `"` or `'` — leaves the enclosing function's closing brace uncounted, and the next function is swallowed into its span: measured here as `function is 57 lines (limit 40)` reported against a four-line function. Found by procoder against procoder while writing `hooks/checks/deps.js`, and worked around there by building the pattern from two plain strings. Every span-derived shape metric is affected; the line rules and the universal pack are not. |
 | A parameter list on a very long line | No ceiling remains. `obvious/too-many-params` is not span-derived, so the 4KB per-line shape guard no longer covers it: a 1,000-parameter single-line signature (over 8KB) is measured and reported in JS/TS. |
+| A C# type whose whole body is on one line | Not measured at all. `class A { public int m(int a0 … int a5) { return 1; } }` on a single line reports nothing, raw identifier or not; the same class written over five lines reports `6 parameters (limit 4)`. The C# head is anchored to end of line, and a one-line class puts the body there too. |
+| Any language outside the six packs | `.kt`, `.kts`, `.rb`, `.php`, `.swift`, `.scala` and everything else resolve to no pack, so no shape rule and no SAFE rule of any pack runs over them. Verified: a Kotlin `fun matcher(a0…a5)` with six parameters reports nothing. Only the universal pack (rung 1, credentials and suppressions) reads them. |
 
 Swapping in a real per-language parser is the fix; it has not happened in
 0.2.0.
+
+## The three newest rules, and what each of them misses
+
+`safe/redaction-marker`, `safe/manifest-not-locked` and `true/missing-timeout`
+are the three the doctrine had and the engine did not. Each is a single
+regex or a single lookup, and each was probed the way the taint rules above
+were: smallest file that should fire, smallest file that should not.
+
+### `safe/redaction-marker`
+
+One pattern, `\[REDACTED[:\]]`, over every line of every file the universal
+pack reads. Verified reporting, in JavaScript and Python alike:
+
+<!-- procoder: literal safe/redaction-marker the two shapes the rule matches, quoted -->
+`const a = "[REDACTED]"` and `const b = "[REDACTED:aws-key]"`.
+
+| Missed | The file |
+|---|---|
+| Any other spelling a redaction layer might use | `"***REMOVED***"`, `"<REDACTED>"` and `"[REDACTED_BY_SCANNER]"` are each silent. The bracket and the following `:` or `]` are both required, so an underscore, an angle bracket or a different word matches nothing. |
+| Lower or mixed case | `"[redacted]"` is silent. The pattern is case-sensitive, alone among the universal pack's rules — `safe/hardcoded-secret` beside it is not. |
+| An unterminated marker | `"[REDACTED"` is silent, which is the shape a truncated write leaves behind. |
+
+The false positive is the mirror image and is wide: **any file that talks
+about redaction reports one.** Verified, a Markdown file holding one sentence
+and no code at all:
+
+<!-- procoder: literal safe/redaction-marker the reproducing input, quoted -->
+`The scanner replaces the value with [REDACTED] before the model sees it.`
+
+That file reports `safe/redaction-marker`. So does a comment, a test name, a
+changelog entry and this document, which carries two line markers for exactly
+that reason. The rule has no notion of code versus prose, and every
+documentation file that explains the mechanism has to be marked by hand.
+
+### `safe/manifest-not-locked`
+
+npm only, and text-matched. `checkNpmLocked` in `hooks/checks/deps.js` reads
+the lockfile sitting **next to the manifest** as one string and asks whether
+each dependency name appears in it delimited by a quote, a slash, an `@` or a
+colon. Verified reporting: `left-pad` in `dependencies` with a
+`package-lock.json` that does not name it; verified silent when it does.
+
+| Missed | The file |
+|---|---|
+| Every ecosystem except npm | `Cargo.toml`, `go.mod`, `pyproject.toml` and `Directory.Packages.props` get `safe/missing-lockfile` and nothing else — no entry-by-entry check exists for them. Verified: a `requirements.txt` reports only the missing-lockfile finding. |
+| `optionalDependencies` | Outside `DEP_BLOCKS`. Verified: `{"optionalDependencies": {"fsevents": "2.3.3"}}` against an empty lockfile is silent, where the same entry under `dependencies` reports. |
+| A direct dependency the lock knows only as somebody else's transitive | The lockfile is one string, not a resolution. Verified: `ms` in `dependencies`, and a lockfile whose only mention of it is inside `debug`'s own `dependencies` map, is silent — the direct edge was never recorded and the rule cannot see the difference. |
+| A workspace package | The lookup is `path.dirname(manifestPath)`, so a monorepo's `packages/a/package.json` with the lock at the repository root finds no lockfile, and `checkNpmLocked` returns before checking anything. Verified: it reports `safe/missing-lockfile` — itself a false positive, the lock is one directory up — and never reaches the per-entry rule. |
+| A manifest `JSON.parse` cannot read | Returns silently. Verified: a `package.json` with a trailing comma reports nothing at all, and nothing on stderr says the manifest was skipped. |
+
+The false positive is `peerDependencies`, which is in `DEP_BLOCKS`. A peer
+dependency is by definition the consumer's to install and is legitimately
+absent from this package's lockfile. Verified: `{"peerDependencies":
+{"react": "^18"}}` reports `react is in peerDependencies and not in the
+lockfile` — correct code, blocking finding, on a library's own manifest.
+
+### `true/missing-timeout`
+
+Two packs and two shapes: Python's `requests.<verb>(…)` where the call opens
+and closes on one line with no `timeout=` inside 300 characters, and Go's
+empty `http.Client{}` literal or a package-level `http.Get`/`Post`/`PostForm`/
+`Head`. Verified reporting: `requests.get(url)`, `c := &http.Client{}` (with
+or without inner whitespace) and `http.Get(u)`.
+
+| Missed | The file |
+|---|---|
+| Four of the six packs | There is no timeout rule in the ts, jvm, dotnet or rust packs. Verified silent: `await fetch(url)` in JS, and `HttpClient.newHttpClient().send(r, h)` in Java. |
+| Every Python HTTP client but `requests` | `httpx.get(url)`, `urllib.request.urlopen(url)` and an `aiohttp` session `get` are each silent. |
+| A `requests.Session` | `s = requests.Session()` then `s.get(url)` is silent — the receiver is a bound name, not the module. |
+| An unqualified import | `from requests import get` then `get(url)` is silent; the literal `requests.` prefix is required. |
+| A multi-line call | `requests.get(\n    url,\n)` with no timeout anywhere is silent, and deliberately so — a timeout on a later line would otherwise be reported as missing. |
+| A Go client literal with any other field | `&http.Client{Transport: tr}` and no `Timeout` is silent, deliberately, for the same reason. |
+| `http.DefaultClient` used directly | `http.DefaultClient.Do(req)` is silent, although the rule's own comment names `http.DefaultClient` as the trap. Only the four package-level helpers and the empty literal match. |
+
+Two false positives, both from the same cause — the rule reads the argument
+list as text and cannot follow a name:
+
+| Probe | Reported |
+|---|---|
+| `requests.get(url, **kw)` | `true/missing-timeout`, whatever `kw` holds. |
+| `DEFAULTS = dict(timeout=5)` then `requests.get(url, **DEFAULTS)` | `true/missing-timeout`. The timeout is passed; the word `timeout` is not on the call's line. |
+
+Both block at rung 2 at every level but `pragmatic`.
 
 ## Meta-text: the line marker, and what it cannot cover
 
@@ -223,7 +361,20 @@ What this does *not* give you:
   and `.superpowers/` lines are in CI. And a pattern covering only untracked
   files is never judged: content the repository does not own cannot go clean in
   any sense procoder can verify. Where `git ls-files` cannot answer, no ignore
-  pattern is judged at all.
+  pattern is judged at all. Two more deliberate limits on the same instrument:
+  a **negated** pattern (`!keep.js`) is never judged, because "this exception
+  stopped mattering" is not a claim about coverage lost; and an ignore file
+  that some other ignore file covers is not judged either, since it is not in
+  the walked tree to be found. All three of this repository's own ignore files
+  are silent under these rules, by rule rather than by exemption.
+- **No staleness report of any kind reaches `--format json` or `sarif`.** All
+  three instruments — unused rule exclusions, unused path exclusions, stale
+  ignore patterns — are `verify` output, `--format` is refused off `check`, so
+  the two can never meet. That is deliberate: a suppressed line of config is
+  not a code finding, and SARIF has nowhere honest to put one. The consequence
+  is that a dashboard-only pipeline sees none of it and has to run a second,
+  text-mode `verify` to learn that a whole directory has been quietly
+  un-gated.
 - **`--no-ignore` does not re-include a `[exclude] paths` entry, on purpose.**
   The flag answers "why is this file not being checked?" by turning off every
   `.procoderignore` for the run, and nothing else. `[exclude] paths` is the
@@ -251,6 +402,213 @@ What this does *not* give you:
   deliberate: `.claude/` also holds hand-written hooks and scripts, and a
   default exclusion would un-gate them silently for everybody.
 
+## The parallel scan, and the one thing it does not keep identical
+
+`hooks/checks/scan.js` splits the file list into contiguous slices and hands
+each to a child process running `hooks/checks/worker.js`. The good properties
+hold, and were verified rather than assumed: over a 260-file tree, `--jobs 1`
+and `--jobs 4` produce byte-identical output, and a run in which **every**
+worker is made to exit non-zero still returns all 260 files, in input order,
+with the same 260 findings — the parent rescans a dead worker's slice itself.
+No file has been observed to go missing, and a short or unparseable result
+from a child is discarded wholesale rather than merged, so a truncated
+document cannot become a clean file.
+
+What is not identical is the **time budget**, and this is the finding that
+matters:
+
+| Path | Budget per file |
+|---|---|
+| This process — fewer than 250 files, `--jobs 1`, a single-core machine, or a dead worker's slice | `BUDGET_MS`, **2,000 ms** |
+| A live worker | `SLICE_BUDGET_MS`, **600,000 ms** |
+
+So the deadline that appends `true/budget-exhausted` and prints `Nms budget
+exhausted — not checked: <stage>` fires on the sequential path and effectively
+never on the parallel one. A repository large enough to be scanned in parallel
+reports differently from the same repository scanned with `--jobs 1`, and a
+slice whose worker died reports differently from its neighbours in the same
+run. `scan.js`'s own header claims the result "is IDENTICAL to the sequential
+one" and that "nothing about the report depends on how many cores the machine
+has"; for the budget that is not true. It could not be provoked on the machine
+this was measured on — the most adversarial 1 MB file built here costs 271 ms
+of the 2,000 ms — so this is a divergence stated from the code and the two
+constants, not one reproduced by a failing run.
+
+The rest of the pool's edges, each verified:
+
+| Limit | Measured |
+|---|---|
+| **Below 250 files nothing is forked**, and this repository has 208 tracked files | `procoder check .` over procoder itself is therefore always sequential, and the parallel path is not exercised by the self-scan. |
+| **Parallel is slower on small files** | 260 two-line files: `--jobs 1` costs 0.06 s, `--jobs 8` costs 0.11 s. The 250-file threshold is tuned for real source, and pays for itself only when a file costs more than a fork does. |
+| **`--jobs` is not validated or clamped** | `--jobs 0`, `--jobs abc` and `--jobs -3` are all accepted silently and fall back to the default or to sequential. `--jobs 9999` slices one file per child and spawns 260 processes at once: 2.15 s against 0.06 s sequential, a 35× loss, with no warning. |
+| **Workers inherit stderr, and reload config from disk** | A worker re-reads `.procoder.toml` for itself; only `noIgnore` travels in the payload. A config the parent computed some other way — a hand-built object from an API caller — is not what the worker uses. |
+| **Linting is not parallel** | `runToolBatches` runs before the pool, in the parent, one spawn per tool for the whole run. A slow linter is wall clock nobody's cores help with. |
+
+## Machine-readable output: SARIF loses what the terminal says
+
+`procoder check --format json` and `--format sarif` are built from the same
+per-file results the text path prints, so neither can report a finding the
+default did not. The gap is the other direction — what the document leaves
+out.
+
+**JSON** carries a `version` field (currently `1`), the session level, a
+`summary` (`findings`, `blocking`, `advisory`, `pinned`, `level`), every
+finding with its rung name and number, id, file, line, message, fix, whether
+it blocked, and the ratchet's own fingerprint — and a `skipped` array. Verified
+over a tree holding one oversized file, one ignored file and one excluded file:
+
+```
+"skipped": [{"file":"big.js","reason":"too-large"},
+            {"file":"ign.js","reason":"ignored:.procoderignore"},
+            {"file":"sub/x.js","reason":"excluded"}]
+```
+
+**SARIF carries none of that.** Verified on the same tree, the document's
+`runs[0]` has exactly two keys, `tool` and `results`. There is no `skipped`,
+no `invocations`, no `summary`, and nothing anywhere recording the level the
+run was judged at. The consequences, in order of blast radius:
+
+| Lost in SARIF | Why it matters |
+|---|---|
+| **The skipped files** | A file procoder could not read — over `[limits] max_file_bytes`, unreadable, or held back by `[exclude] paths` — is indistinguishable in the document from a file that was scanned and found clean. A dashboard fed SARIF cannot tell coverage from silence. The notices are still printed, but on **stderr**, which a CI step uploading an artifact routinely discards. This is the silent coverage loss with the widest reach in this release. |
+| **The run's level** | `blocking` collapses into SARIF's `level: error` / `warning`. The same finding is `error` at `strict` and `warning` at `pragmatic`, and the document does not say which ran, so two dashboards over the same code can disagree with nothing to arbitrate them. |
+| **The exit code** | There is no `invocations` block, so a consumer cannot tell a failing run from a passing one without the process's own status. |
+| **Anything the baseline accepted** | `check` applies the baseline, so an accepted finding is absent from both formats. A dashboard therefore shows fewer findings than the repository has, by design, with no count of the difference. |
+| **`note` severity is unused** | Every finding is `error` or `warning`. Deliberate — grading half of them to a level most dashboards hide by default would be a quiet way to lose them — but it means rung 3 and rung 4 arrive as warnings a busy dashboard treats as lint noise. |
+
+Rungs survive: `rungNumber` and `rung` travel on each SARIF rule object, and
+`partialFingerprints.procoderFingerprint` is the same fingerprint the ratchet
+uses, so a moved line is not a new finding. `--format` is refused on anything
+but `check`, so `verify` — the ratchet, the aging report and all three
+staleness instruments — has no machine-readable form at all.
+
+## `--since <ref>`: what it does not see
+
+`--since` asks git for three lists — `diff --diff-filter=ACM <ref>...HEAD`,
+the same against `HEAD` for uncommitted edits, and `ls-files --others` for
+untracked ones — and checks the union. Its commit message says it "cannot pass
+green on nothing"; run against it, that claim holds in three of the four ways
+it is tested and fails in the fourth.
+
+Holds, verified:
+
+- A ref git cannot resolve **exits 2**, naming the git command and its error,
+  rather than checking nothing quietly: `--since no-such-ref` and a ref that
+  resolves to a blob both exit 2.
+- Nothing changed is said out loud — `procoder: no files changed since <ref> —
+  nothing to check.` — not passed over in silence.
+- The dirty working tree is included. A modification to a tracked file and a
+  brand-new untracked file are both checked before either is committed.
+- A merge commit is handled: `...` is a merge base, so `--since <first
+  parent>` over a merge picks up the side branch's files.
+
+Does not hold:
+
+- **A rename takes the file out of `--since` entirely.** `--diff-filter=ACM`
+  excludes `R`, and git detects a rename by default, so a commit that renames
+  a file contributes nothing. Verified end to end: `git mv dirty.js
+  renamed.js`, then `procoder check --since HEAD~2` prints `no files changed
+  since HEAD~2 — nothing to check.` and exits **0**, while `procoder check
+  renamed.js` on the same tree reports a live `safe/sql-injection`. A rename
+  is exactly how code moves between reviews, and this is the one shape where
+  `--since` does pass green over a real finding.
+- **A deletion is not checked, and nothing looks at what it left behind.** A
+  commit that only removes a file exits 0 with `nothing to check` — correct
+  for the deleted file, and the rung-4 question a deletion actually raises
+  (who still calls it?) is `procoder rot`'s, which `--since` does not run.
+- **`--since` silently drops `--aging`, `--unused-exclusions` and the
+  whole-tree audits.** `runSince` calls the subcommand with `{ format }` only.
+  Verified against a baseline whose entries are older than the threshold:
+  `procoder verify --aging 0 .` reports `1 accepted finding older than 0 days`
+  and exits 1, while `procoder verify --aging 0 --since HEAD` on the same tree
+  in the same second prints `ratchet holds` and exits 0. Neither refused nor
+  warned — a flag that reads as running and does nothing, which is the shape
+  the CLI refuses everywhere else.
+- **`verify --since` is a partial ratchet against a whole baseline.** It
+  compares the findings of the changed files against every accepted entry, so
+  it cannot see growth in a file the diff did not touch. That is the point of
+  the flag; it is worth knowing that a green `verify --since` is a much
+  weaker claim than a green `verify .`.
+- `--since` is documented as `check`-only and is not enforced as such: it runs
+  on `baseline` and `verify` too, which is useful and undocumented.
+
+## `procoder init`, the MCP server, and dated baseline entries
+
+Three smaller surfaces, each with one edge worth knowing.
+
+**`procoder init`** writes `.procoder.toml` and nothing else. The two other
+templates that sit beside it in `scripts/templates/` — the pre-commit hook and
+the CI workflow — are referenced by no code and are still copy-and-paste. It
+branches before argument validation, so every flag is accepted and ignored:
+`init --format sarif --aging -5` exits 0 having done nothing with either, where
+`--aging -5` on `verify` exits 2. Outside a git repository it writes into the
+working directory rather than refusing, with nothing in the output
+distinguishing that from writing at a repo root. And it does not validate a
+config that already exists: a `.procoder.toml` full of junk is left as it is
+and reported as fine, and the junk shows up only as a parser warning on the
+next `check`.
+
+The one that matters: **`init --baseline` exits 0 over files it could not
+read.** Verified — with an oversized file and an unreadable one in the tree,
+`init --baseline` names both on stderr, records the baseline and exits **0**,
+then advises running `procoder verify .`, which exits **2** on the same tree
+because the ratchet cannot hold over files nothing looked at. Setup passes;
+the gate it just set up cannot run.
+
+**The MCP server** (`procoder-mcp/`) exposes four tools — `procoder_doctrine`,
+`procoder_check`, `procoder_review`, `procoder_baseline` — and is a strict
+subset of the CLI. It has no `verify`, no baseline *writing*, no `rot`, no
+`init`, no `--format`, no `--jobs`, no `--aging` and no `--unused-exclusions`;
+`--since` exists only inside `procoder_review`. Every answer is a prose blob,
+so a client cannot gate on one without parsing English. Three specific edges:
+
+- **`procoder_check` truncates at five findings, silently.** It takes
+  `checkFile`'s default `maxFindings`, which is the PostToolUse hook's 5, and
+  prints no overflow notice. Verified: a file holding twelve credential
+  literals answers with five; `procoder check` on the same file reports
+  twelve. `procoder_review` passes `Infinity` and does not truncate, so the
+  two tools disagree about completeness and neither says which you got.
+- **`procoder_review` leads with the word `clean` over a diff it did not
+  read.** Verified with two changed files, both over `max_file_bytes` and both
+  carrying a live credential: `clean: 2 changed files (2 files skipped)` — no
+  filename, no reason, and the token a model keys on first is `clean`. The CLI
+  in that exact state exits 2.
+- **Every failure is a successful tool result.** A git error inside
+  `procoder_review` comes back as content with no `isError` flag, and a path
+  that does not exist comes back from `procoder_check` as `skipped
+  (unreadable)`. The prose is honest; the machine-readable signal is uniformly
+  success.
+
+**Baseline entries now record what they accepted and when** — `{fp, id, path,
+added}`, with `added` a `YYYY-MM-DD` stamp that `writeBaseline` preserves
+across re-runs. `--aging <days>` turns that into a CI question. What it does
+not give you:
+
+- **Nothing ever prunes the baseline.** `runBaseline` seeds from the existing
+  file and only appends, so an entry whose finding was fixed stays forever.
+  Verified: fix every finding in the tree, re-run `procoder baseline .`, and
+  the file still holds 3 accepted entries for 0 present findings — and
+  `verify --aging 1` then fails CI naming files that no longer contain the
+  finding. Editing a baselined line mints a second entry rather than replacing
+  the first, so the file grows monotonically with every edit to accepted code.
+  There is no prune command; deleting the JSON and re-baselining is the only
+  remedy.
+- **A v3-migrated entry is pinned to `unknown` forever.** `verify --aging`
+  over an old baseline prints `unknown  unknown  unknown` and says the next
+  `procoder baseline` will stamp it. It does not: `writeBaseline` keeps the
+  first entry it has for a fingerprint and treats the string `unknown` as a
+  date already present. Such an entry matches every `--aging` value, fails
+  `verify --aging` permanently, and names no file, no rule and no date. Since
+  the format is now v4 and a stale-version baseline loads as empty (below),
+  the reachable case is a hand-edited or hand-migrated file — but the printed
+  remedy is false where it is reachable.
+- **`added` is data the user owns.** It is hand-editable, nothing signs it,
+  nothing cross-checks it against git, and it is read by exactly one thing:
+  `--aging`. A date edited to last week resets the clock on a year-old
+  suppression, silently.
+- `--aging` is `verify`-only and refuses negatives and non-numbers with exit 2;
+  `0` and fractional values are legal and report everything.
+
 ## External linters: deferring costs you procoder's own thresholds
 
 `hooks/checks/resolve.js` runs a project's own linter and lets its findings
@@ -272,11 +630,13 @@ Two costs remain, each verified:
 
 | Limitation | Verified |
 |---|---|
-| **A configured linter's thresholds replace procoder's, including where it has none.** `pub fn wide(a0..a5)` reports `[3 OBVIOUS] 6 parameters (limit 4)` with no `[lints.clippy]` in `Cargo.toml`. Add it and `procoder check src/lib.rs` exits **0**: clippy answered, the Rust pack's `obvious/*` rules are dropped, and clippy's own `too_many_arguments` threshold is 7. That is the design — the project's linter defines OBVIOUS — but the practical effect is that configuring clippy loses every 5- and 6-parameter report. |
-| **One whole-crate invocation per Rust file scanned.** `cargo clippy` has no file target, so a directory scan spawns it once per file. Measured today on a 33-file crate: `procoder check .` costs **970ms** warm, ~29ms per file, since cargo replays a cached build. A crate that takes longer than the per-file timeout to compile gets no clippy findings at all. |
+| **A configured linter's thresholds replace procoder's, including where it has none.** `pub fn wide(a0..a5)` reports `[3 OBVIOUS] 6 parameters (limit 4)` with no `[lints.clippy]` in `Cargo.toml`. Add it and the same command reports clippy's findings instead — verified today, `[2 TRUE] writing &Vec instead of &[_] …` and no `6 parameters` line: clippy answered, the Rust pack's `obvious/*` rules are dropped, and clippy's own `too_many_arguments` threshold is 7. That is the design — the project's linter defines OBVIOUS — but the practical effect is that configuring clippy loses every 5- and 6-parameter report. |
+| **One whole-crate invocation per Rust file scanned, and cargo is the one linter the batching does not reach.** `runToolBatches` runs eslint, ruff and golangci-lint once for the whole scan; `cargo` has no `argvMany` and is not batchable — verified, `canBatch(resolveFor('src/lib.rs'))` is `false` — so a directory scan still spawns it once per file. Measured today on a 33-file crate with `[lints.clippy]` present: `procoder check .` costs **1.6–1.7 s** warm, ~50 ms per file, since cargo replays a cached build. A crate that takes longer than the per-file timeout to compile gets no clippy findings at all. |
+| **A batch that names some files and not others marks the rest clean.** `allClean` in `resolve.js` fills in every file the tool did not mention, on the reasoning that these linters report every file they linted. A tool that silently skips a file — its own ignore list, a config exclusion — therefore counts as having answered for it, and the pack's `obvious/*` rules are dropped for a file nothing linted. ruff's integration guards this explicitly (no `--force-exclude`, `invalid-syntax` declines) and eslint's decline rules are applied per batch entry; **golangci-lint has no such guard in the batch path**. Not reproduced: a `.golangci.yml` excluding the file under test left the pack's `6 parameters (limit 4)` intact here, so the shape is a reasoned risk in the code rather than an observed loss. |
 
 `eslint` and `ruff` were not installed on the machine this was verified on, so
-their integrations are undisclosed rather than cleared.
+their integrations — including their batch paths, which are the ones the CLI
+now uses — are undisclosed rather than cleared.
 
 ## `cargo clippy` cannot be scoped to one file
 
@@ -330,7 +690,8 @@ Does not hold:
 
 ## The baseline format is versioned, and old baselines are not migrated
 
-`BASELINE_VERSION` in `hooks/checks/baseline.js` is 3; earlier fingerprints
+`BASELINE_VERSION` in `hooks/checks/baseline.js` is 4 — it moved from 3 when
+entries began recording their rule, path and date; earlier fingerprints
 cannot be reconstructed. A stale-version file loads as an empty accepted set,
 never a partial one. Verified against a hand-edited v1 file, in
 `bin/procoder.js`:
@@ -393,7 +754,7 @@ differential runs. The narrowings that survived are real, and disclosed here:
 | 4KB per-line guard, span-derived shape rules only | `hooks/checks/run.js` | Function length, nesting depth and complexity are not measured on a line over 4KB, because a function on one line has no meaningful span. `obvious/too-many-params` is **not** guarded — it is exact on a minified line. The language packs' SAFE rules and the universal pack read the line unguarded: a credential 1,500 characters into a log call is still reported. |
 | **1MB** per-file skip | `hooks/checks/config.js`, applied in `run.js` | This came down from 4MB to 2MB, and again to 1MB. The language pack is the one stage that cannot be abandoned part-way — everything after it is deadline-driven — so the size of what it is handed is the only lever on its cost, and the taint rebuild roughly doubled the ts pack's constant. 1MB of ordinary source costs the worst pack ~400ms of the 2000ms budget here, which still finishes on a host three times slower; 2MB did not. Larger files are not checked at all. Verified: a file of exactly 1,048,576 bytes is checked; at 1,048,577 `procoder check` exits 0 and prints `procoder: skipped over1mb.js (too-large) — not checked.` on stderr, while `procoder verify` over the same tree prints `1 file could not be checked (see above)` and **exits 2**. An unreadable file gets the same treatment and the same kind of line, and `check`, `baseline` and `verify` all report it. What remains is that `check` still exits **0** over a file it could not read: only `verify` treats an unread file as a hole in its own claim. |
 | `[limits] max_file_bytes`, downward only | `hooks/checks/config.js` | A project may lower the cap, never raise it. `max_file_bytes = 999999999` warns `.procoder.toml:2: max_file_bytes 999999999 is above the measured ceiling 1048576 — using 1048576`; `0`, `-5`, `"big"` and `true` each warn `must be a positive number of bytes, ignored` and fall back to 1MB. A cap that is simply *too low* is not the sharp edge it once was: `max_file_bytes = 10` skips every file including `.procoder.toml` itself, names each one on stderr, and `procoder verify` then prints `3 files could not be checked (see above) — the ratchet cannot hold over files nothing looked at. Raise or remove [limits] max_file_bytes, or exclude the path deliberately.` and **exits 2**. Verified end to end. |
-| 2s budget, and what it cuts | `hooks/checks/run.js` | Checks after the deadline are skipped. The order was reworked: the language pack now runs **before** the project's linter, and the linter is paid a *share* of what is left on the clock (0.6, floor 100ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. The per-MB reserve is deleted. Worst case at a 3× slowdown went from 1797ms to 1448ms of 2000ms, and holds to 6×. What the deadline does cut is now loud on both channels: a `true/budget-exhausted` finding appended **after** the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage — verified with a zero budget, `procoder: package.json: 0ms budget exhausted — not checked: the dependency manifest rules`. The universal pack (rung 1) runs first of all and can never be the stage that is cut. |
+| 2s budget, and what it cuts | `hooks/checks/run.js` | Checks after the deadline are skipped. The order was reworked: the language pack now runs **before** the project's linter, and the linter is paid a *share* of what is left on the clock (0.6, floor 100ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. The per-MB reserve is deleted. Worst case at a 3× slowdown went from 1797ms to 1448ms of 2000ms, and holds to 6×. What the deadline does cut is now loud on both channels: a `true/budget-exhausted` finding appended **after** the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage — verified with a zero budget, `procoder: package.json: 0ms budget exhausted — not checked: the dependency manifest rules`. The universal pack (rung 1) runs first of all and can never be the stage that is cut. **This budget is not uniform any more**: a scan slice running in a worker process gets 600,000ms instead, so the deadline effectively never fires there — see the parallel-scan section above. |
 
 The 200-character `SPAN_MAX` that used to bound the universal pack is gone.
 

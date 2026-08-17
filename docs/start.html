@@ -99,16 +99,29 @@ procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit
 
 <p>
   <code>verify</code> is the CI ratchet: accepted debt may shrink, never grow. It
-  takes one extra flag, <code>--unused-exclusions</code>, which also fails when an
+  takes two extra flags. <code>--unused-exclusions</code> also fails when an
   exclusion stopped suppressing anything — a rule that silences no finding, or a
-  path whose target is gone, matches nothing, or has gone clean. A suppression
-  left behind after the finding it silenced was fixed is itself rung-4 rot.
+  path or <code>.procoderignore</code> pattern whose target is gone, matches
+  nothing, or has gone clean. A suppression left behind after the finding it
+  silenced was fixed is itself rung-4 rot. <code>--aging &lt;days&gt;</code>
+  fails when an accepted finding has sat in the baseline longer than that,
+  naming the oldest with its date, path and rule — a baseline entry is a
+  suppression, and a suppression with no end is rot.
+</p>
+
+<p>
+  <code>--jobs &lt;n&gt;</code> sets how many worker processes a scan splits
+  across: one per core by default, capped at 8, and 1 — no workers at all — for
+  a run of fewer than 250 files, where forking costs more than it saves. The
+  report is identical either way, and a worker that dies has its slice rescanned
+  in this process rather than dropped. <code>--jobs 1</code> takes the pool out
+  of the picture.
 </p>
 
 <p>
   Exit <strong>2</strong> is <em>cannot verify</em>, never "you added findings":
   the baseline is from an incompatible format version, or some file in scope
-  could not be read at all — over the 2&nbsp;MB ceiling, unreadable, or shut out
+  could not be read at all — over the 1&nbsp;MB ceiling, unreadable, or shut out
   by a <code>[limits] max_file_bytes</code> set too low. A ratchet is a claim
   about what was looked at, so a run that read nothing fails rather than passing
   green.
@@ -194,10 +207,14 @@ procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit
 }</code></pre>
 
 <p>
-  It answers <code>initialize</code>, <code>tools/list</code>, and three
+  It answers <code>initialize</code>, <code>tools/list</code>, and four
   <code>tools/call</code> targets: <code>procoder_doctrine</code> (the rungs,
-  filtered to a level), <code>procoder_check</code> (run the engine against a
-  file), and <code>procoder_baseline</code> (read the ratchet baseline).
+  filtered to a level, or a short <code>digest</code> for a subagent),
+  <code>procoder_check</code> (run the engine against one file),
+  <code>procoder_review</code> (run it over everything changed since a ref,
+  <code>HEAD</code> by default), and <code>procoder_baseline</code> (read the
+  ratchet baseline). It speaks two protocol revisions, so a host on either era
+  connects.
 </p>
 
 <h2>When something does not fire</h2>

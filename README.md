@@ -140,7 +140,7 @@ material on the site.
 | Level | Enforces |
 |---|---|
 | `off` | procoder is disabled entirely. |
-| `pragmatic` | Rungs SAFE and TRUE enforced; OBVIOUS and ALONE flagged only, non-blocking. |
+| `pragmatic` | Rungs SAFE and TRUE enforced; OBVIOUS, ALONE, FAST and MEANT flagged only, non-blocking — every rung whose `[rungs]` severity is `warn`. |
 | `strict` (default) | All six rungs enforced on code touched this session. |
 | `paranoid` | strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff. |
 
@@ -171,14 +171,16 @@ comparable tools: one hunts what previous changes left behind, the other maps
 where untrusted data enters and what validates it. Each command is described in
 full on [Commands](https://azrtydxb.github.io/procoder/commands.html).
 
-See [`examples/`](examples/) for a worked before/after pair per rung — each
+See [`examples/`](examples/) for a worked before/after pair for each of rungs
+1–4 — there is no `fast/` or `meant/` pair, because the engine has no rule to
+write one against. Each
 `before.*` trips its rung through `node bin/procoder.js check`, each `after.*`
 is clean, and both are proved on every test run.
 
 ## The CLI
 
 The slash commands need a session; a pre-commit hook and a CI job do not have
-one. The same engine answers to five subcommands:
+one. The same engine answers to six subcommands:
 
 | Command | Purpose |
 |---|---|
@@ -187,6 +189,7 @@ one. The same engine answers to five subcommands:
 | `procoder baseline <paths...>` | Record every current finding as accepted. |
 | `procoder verify <paths...>` | Exit 1 if a finding present today is not in the baseline — the CI ratchet. Exit 2 is *cannot verify*, never "you added findings". |
 | `procoder rot <paths...>` | Rung 4 over the tree: index every export in the scan and report the ones nothing else mentions. |
+| `procoder statusline <install\|uninstall\|status>` | Wire procoder's level badge into Claude Code's `statusLine`, or take it out again. `--append` keeps a statusLine you already have and prints the badge after it; `--force` replaces one that is not procoder's. |
 
 `check --format text|json|sarif` decides who reads the output. `json` is
 procoder's own versioned shape — `version`, `tool`, `level`, `summary`,
@@ -208,6 +211,26 @@ nothing. Zero changed files says `no files changed since <ref>` and exits
 0; silence and a clean scan of a hundred files must not look the same.
 
 
+`--jobs <n>` sets how many worker processes the scan splits across. The default
+is one per core, capped at 8, and **1 — this process, no workers — for a run of
+fewer than 250 files**, where forking costs more than it saves. The report is
+identical either way: slices are contiguous, reassembled in input order, and a
+worker that dies has its slice rescanned here rather than dropped. `--jobs 1`
+is the way to take the pool out of the picture entirely.
+
+`--no-ignore` checks files a `.procoderignore` covers anyway — it answers "why
+is this file not being checked?". It deliberately does not reach `[exclude]
+paths` in `.procoder.toml`, which is the project-wide contract and carries the
+built-in `node_modules/` defaults; every file that key holds back is reported
+by count, or by name if you named that file on the command line.
+
+`verify --unused-exclusions` also fails the build when an exclusion is holding
+nothing back — a `[exclude] rules` entry that suppressed nothing this run, a
+`[exclude] paths` entry whose path is gone or covers only clean files, or a
+`.procoderignore` pattern in the same state. All three are reported under plain
+`verify` and fail only under the flag, and the tree-wide judgments are made only
+when the run's targets covered the whole repository.
+
 `verify --aging <days>` names accepted debt that has outlived its welcome, with
 each entry's date, path and rule, and exits 1. A baseline entry is a suppression
 and a suppression with no end is rot, so this is the removal trigger the file
@@ -223,6 +246,74 @@ left out, since their callers are outside the scan. Test fixtures and example
 files are exported-and-unmentioned by design and will show up: exclude them
 under `[exclude] paths`, or read past them. Nothing is deleted, and a failing
 build on a guess about deletion is how a tool gets switched off.
+
+## Every rule the engine can report
+
+Forty-four rule ids, and this is all of them — the set that line markers and
+`[exclude] rules` entries are checked against. Rungs 5 (FAST) and
+6 (MEANT) appear nowhere below because **no deterministic check produces a
+finding at either**: they are doctrine the model reads, not gates CI runs.
+
+Rung 1, SAFE — untrusted data reaching a sink, and credentials at rest:
+
+| Rule id | Reports |
+|---|---|
+| safe/sql-injection | SQL built by interpolation, concatenation, `format!` or `Sprintf` reaching a query, cursor or statement. |
+| safe/shell-injection | A shell command built by interpolation or concatenation, or a shell invoked with `-c` and an interpolated string. |
+| safe/xss-sink | A raw HTML sink — `innerHTML`, `outerHTML`, `dangerouslySetInnerHTML` and their kin. |
+| safe/dynamic-eval | Dynamic code evaluation: `eval`, `exec`, `Function(…)`, `new Function`. |
+| safe/unsafe-deserialize | Deserialization of untrusted bytes — `pickle.loads`, `yaml.load`, Java native deserialization. |
+| safe/xxe-risk | An XML parser created without external entities disabled. |
+| safe/hardcoded-secret | A credential literal in source, or a credential-named identifier assigned a literal. |
+| safe/redaction-marker | A redaction marker written **into** a file, meaning a real credential was overwritten with a placeholder. |
+| safe/secret-in-log | A credential interpolated into a log call. |
+| safe/pii-in-log | Personal data interpolated into a log call. |
+| safe/tls-disabled | Certificate or hostname verification switched off. |
+| safe/weak-hash | MD5 or SHA-1 used where a secure hash is expected. |
+| safe/weak-random | A non-cryptographic RNG used for a token, key, nonce, salt or session id. |
+| safe/unsafe-block | A Rust `unsafe` block with no `SAFETY:` comment. |
+| safe/missing-lockfile | An ecosystem manifest with no lockfile committed beside it. |
+| safe/manifest-not-locked | A dependency in `package.json` that the lockfile has never heard of — hand-edited rather than installed. |
+| safe/floating-version | A dependency range that does not resolve to a version you audited. |
+
+Rung 2, TRUE — errors handled, edges covered:
+
+| Rule id | Reports |
+|---|---|
+| true/swallowed-error | An exception caught and silently discarded. |
+| true/bare-except | A bare `except:`, which catches `SystemExit` and `KeyboardInterrupt` too. |
+| true/ignored-error | An error assigned to `_` and dropped. |
+| true/printstacktrace | An exception printed to stderr instead of handled. |
+| true/missing-timeout | An outbound HTTP call or client with no timeout — Python `requests`, Go's empty `http.Client{}` and package-level helpers. |
+| true/unclosed-resource | A resource opened with no visible close. |
+| true/mutable-default | A mutable default argument, shared across calls. |
+| true/panic-in-library | A `panic` in library code, which crashes the caller. |
+| true/unwrap-in-library | `unwrap`/`expect` in library code, same reason. |
+| true/budget-exhausted | The 2s per-file budget ran out before some stage ran — the file is only partly checked, and says so. |
+| true/findings-suppressed | More than 20 findings on one line; the overflow is counted rather than dropped. |
+| true/eslint, true/ruff, true/golangci-lint, true/clippy | A finding from the project's own linter that carried no rule id of its own. The tool's own ids arrive as `true/<tool>:<id>` and are checked on shape, since those namespaces are the tool's to define. |
+
+Rung 3, OBVIOUS — thresholds from `[thresholds]`:
+
+| Rule id | Reports |
+|---|---|
+| obvious/function-too-long | A function longer than `function_lines` (default 40). |
+| obvious/nesting-depth | Nesting deeper than `nesting_depth` (default 3). |
+| obvious/too-many-params | More parameters than `params` (default 4). |
+| obvious/complexity | Branch count over `complexity` (default 10). |
+| obvious/nested-ternary | A ternary inside a ternary. |
+
+Rung 4, ALONE — what a change left behind:
+
+| Rule id | Reports |
+|---|---|
+| alone/dead-export | An exported name nothing else in the scan mentions. Reported by `procoder rot`. |
+| alone/commented-code | Commented-out code kept beside its replacement. |
+| alone/debug-leftover | A debugging statement nobody removed. |
+| alone/orphan-todo | A to-do note with no owner and no ticket id. | <!-- procoder: literal alone/orphan-todo the rule described, not an instance -->
+| alone/deprecated-no-trigger | A deprecation mark with no removal condition. | <!-- procoder: literal alone/deprecated-no-trigger the rule described, not an instance -->
+| alone/blanket-suppression | A suppression naming no rule, or disabling a whole file. |
+| alone/unexplained-suppression | A suppression naming a rule but giving no reason. |
 
 ## Configuration
 
@@ -261,8 +352,11 @@ file = ".procoder-baseline.json"
 ```
 
 `[rungs]` sets each rung's severity — `error` findings are must-fix, `warn`
-findings advisory — and the active level modulates it. The keys are the four
-rung names verbatim, `true` included: it is a bare key, not a boolean. A line
+findings advisory — and the active level modulates it. The keys are the six
+rung names verbatim, `true` included: it is a bare key, not a boolean.
+`[rungs] fast` and `[rungs] meant` parse and are read, and are inert in
+practice: no deterministic check produces a finding at rung 5 or 6, so
+promoting either changes nothing until one exists. A line
 the parser cannot recognize is warned about on stderr and skipped, never
 silently dropped, and so is a value it cannot read exactly. A key written
 **twice** has *both* values dropped and the key left unset, with a warning

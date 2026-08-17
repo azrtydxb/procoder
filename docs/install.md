@@ -209,9 +209,16 @@ any MCP-speaking host at it:
 }
 ```
 
-It answers `initialize`, `tools/list`, and three `tools/call` targets:
-`procoder_doctrine` (the rungs, filtered to a level), `procoder_check` (run the
-engine against a file), and `procoder_baseline` (read the ratchet baseline).
+It answers `initialize`, `tools/list`, and four `tools/call` targets:
+`procoder_doctrine` (the rungs, filtered to a level, or a short `digest` for a
+subagent), `procoder_check` (run the engine against one file),
+`procoder_review` (run it over everything changed since a ref, `HEAD` by
+default), and `procoder_baseline` (read the ratchet baseline). It speaks two
+protocol revisions, so a host on either era connects.
+
+`procoder_check` reports at most five findings and does not say so; run
+`procoder check <file>` for the whole-file picture. See
+[what it misses](https://azrtydxb.github.io/procoder/limitations.html).
 
 ## CLI / CI only
 
@@ -227,24 +234,50 @@ installed, which writes the pre-commit hook and CI export for you, or wire the
 CLI directly:
 
 ```bash
+procoder init [--baseline]    # write a starter .procoder.toml; --baseline accepts today's findings
 procoder check <paths...>     # exit 1 if any non-baselined finding blocks at the active level
 procoder baseline <paths...>  # record current findings as accepted
 procoder verify <paths...>    # exit 1 if any finding isn't in the baseline — the CI ratchet
                               # exit 2 if it cannot verify at all (see below)
+procoder rot <paths...>       # rung 4 over the tree: exports nothing else mentions
 ```
 
-At `pragmatic`, `check` reports OBVIOUS and ALONE findings but does not exit 1
-on them; every other level gates all six rungs, and so does CI, which has no
-level file and therefore resolves to the default `strict`.
+`procoder init --baseline` is the first-run path on an existing repository: it
+writes the config and accepts today's findings in one step, so `verify` gates
+only new code from that point. Note that it exits 0 even over files it could
+not read, while the `verify` it recommends exits 2 on the same tree — see
+[what it misses](https://azrtydxb.github.io/procoder/limitations.html).
+
+Four more flags:
+
+- `check --format text|json|sarif` — `json` is procoder's own versioned shape,
+  `sarif` is SARIF 2.1.0 for code-scanning dashboards, carrying the same
+  fingerprint the ratchet uses. `--format` belongs to `check`; typed at anything
+  else it exits 2. SARIF carries no record of the files the run skipped; the
+  JSON does.
+- `check --since <ref>` — check what git says changed since `<ref>`, plus
+  anything uncommitted or untracked. A git failure exits 2 rather than checking
+  nothing quietly. Renamed files are not in that list.
+- `verify --aging <days>` — fail when an accepted finding has been in the
+  baseline longer than that. Ignored when combined with `--since`.
+- `--jobs <n>` — how many worker processes the scan splits across. One per core
+  by default, capped at 8, and 1 for a run of fewer than 250 files. The report
+  is identical either way.
+
+At `pragmatic`, `check` reports OBVIOUS, ALONE, FAST and MEANT findings but does
+not exit 1 on them — every rung whose `[rungs]` severity is `warn`; every other
+level gates all six rungs, and so does CI, which has no level file and therefore
+resolves to the default `strict`. In practice rungs 5 and 6 never produce a
+finding at all: no deterministic check exists for either.
 
 `verify`'s exit codes are **0** the ratchet holds, **1** findings appeared that
 are not in the baseline, and **2** *cannot verify* — either the baseline is from
 an incompatible format version, or some file in scope could not be read at all,
 which a ratchet cannot honestly cover. Exit 2 never means "you added findings".
 
-`verify` takes one extra flag, `--unused-exclusions`: it also fails if an
+`verify --unused-exclusions` also fails if an
 `[exclude] rules` entry suppressed nothing in this run, or an `[exclude] paths`
-entry holds nothing back — its path no longer exists, it matches no file in the
+entry or a `.procoderignore` pattern holds nothing back — its path no longer exists, it matches no file in the
 tree, or every file it covers is clean. A stale suppression left behind after
 the finding it silenced was fixed. Without the flag the stale entries are still
 reported, they just do not fail the build. The last two path rules are claims
@@ -293,7 +326,7 @@ older than the version-resolving command described above — can point at a
 version directory that no longer exists; re-running the install command rewrites
 it from where procoder lives now.
 
-**A wall of findings on first use.**
+**A wall of findings on first use (`procoder init --baseline` is the shortcut).**
 
 Expected on any repo with pre-existing debt — procoder was not run at
 whatever earlier point that debt was written. This is what `procoder

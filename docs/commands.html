@@ -90,7 +90,7 @@ description: The twelve /procoder slash commands — what each one does, grouped
 
 <p>
   A slash command needs a session; a pre-commit hook and a CI job do not have
-  one. The same engine answers to five subcommands, with no dependencies and no
+  one. The same engine answers to six subcommands, with no dependencies and no
   agent behind them.
 </p>
 
@@ -103,6 +103,7 @@ description: The twelve /procoder slash commands — what each one does, grouped
     <tr><td class="nowrap"><code>procoder baseline &lt;paths...&gt;</code></td><td>Record every current finding as accepted, so only new code is gated.</td></tr>
     <tr><td class="nowrap"><code>procoder verify &lt;paths...&gt;</code></td><td>Exit 1 if a finding present today is not in the baseline — the CI ratchet. Exit 2 is <em>cannot verify</em>, never "you added findings".</td></tr>
     <tr><td class="nowrap"><code>procoder rot &lt;paths...&gt;</code></td><td>Rung 4 over the tree: index every export in the scan and report the ones nothing else mentions, as <code>[4 ALONE] alone/dead-export</code>.</td></tr>
+    <tr><td class="nowrap"><code>procoder statusline &lt;install|uninstall|status&gt;</code></td><td>Wire procoder's level badge into Claude Code's <code>statusLine</code>, or take it out again. <code>--append</code> keeps a statusLine you already have and prints the badge after it; <code>--force</code> replaces one that is not procoder's.</td></tr>
   </tbody>
 </table>
 </div>
@@ -156,6 +157,41 @@ description: The twelve /procoder slash commands — what each one does, grouped
   <strong>1</strong>. A baseline entry is a suppression, and a suppression with
   no end is rot; this is the removal trigger the file itself cannot carry.
   Without the flag, age never fails a run.
+</p>
+
+<h3>How many cores: <code>--jobs &lt;n&gt;</code></h3>
+
+<p>
+  A scan splits its file list into contiguous slices and hands each to a worker
+  process. The default is one per core, capped at 8, and <strong>1 — this
+  process, no workers — for a run of fewer than 250 files</strong>, where
+  forking costs more than it saves. The report is identical either way: slices
+  are reassembled in input order, and a worker that dies has its slice rescanned
+  here rather than dropped. <code>--jobs 1</code> takes the pool out of the
+  picture entirely. The value is not clamped, so a very large one spawns a
+  process per file and costs far more than it saves.
+</p>
+
+<h3>Why is this not checked: <code>--no-ignore</code></h3>
+
+<p>
+  Checks files a <code>.procoderignore</code> covers anyway. It reaches ignore
+  files and nothing else — <code>[exclude] paths</code> in
+  <code>.procoder.toml</code> is the project-wide contract and carries the
+  built-in <code>node_modules/</code> defaults, so a flag that reached it would
+  be a back door rather than a diagnostic. Every file that key holds back is
+  reported by count per pattern, or by name if you named that file yourself.
+</p>
+
+<h3>Suppressions that stopped earning it: <code>verify --unused-exclusions</code></h3>
+
+<p>
+  Also fails the build when an <code>[exclude] rules</code> entry suppressed
+  nothing this run, or an <code>[exclude] paths</code> entry or a
+  <code>.procoderignore</code> pattern holds nothing back — its path is gone, it
+  matches no file, or every file it covers is clean. All three are reported
+  under plain <code>verify</code> and fail only under the flag, and the
+  tree-wide judgments are made only when the run covered the whole repository.
 </p>
 
 <h3>What nothing calls: <code>rot</code></h3>

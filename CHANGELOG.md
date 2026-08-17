@@ -120,6 +120,23 @@ gaps that reading exposed.
   the built-in pack rather than being reported clean, and one file's decline
   ("eslint ignores this one") takes only that file out of the batch. The
   PostToolUse hook is untouched: one file, one spawn, 2s budget.
+- **A method named after a statement, and raw identifiers, are measured.** A JS
+  method shorthand puts nothing in front of its name, so
+  `class Parser { with(a, b, c, d, e, f) { … } }` was measured for nothing at
+  all — not length, not nesting, not parameters, not complexity. A brace that
+  opens a class body or an object literal holds members, and a member is a
+  declaration however it is named; every other brace opens a block. `case`
+  labels and `static` blocks stay blocks, so switch-heavy code is untouched: 0
+  findings added over 5,823 TypeScript files. Rust's `fn r#match(…)` and C#'s
+  `public int @match(…)` are measured too, by blanking the prefix rather than
+  deleting it, so every line number is still the source's own. Kotlin's
+  backticked identifier is the third such spelling and is not fixed here.
+- **`.procoderignore` patterns are judged for expiry**, one pattern at a time,
+  naming file, line and the pattern as written — reported when every tracked
+  file it covers scans clean with that one line lifted, or when a glob matches
+  nothing in the tree. Reported under plain `verify`, failing only under
+  `--unused-exclusions`, the same contract the other two instruments have.
+  Negated patterns and patterns covering only untracked files are never judged.
 - **`[levels]` in `.procoder.toml`** pins a level to the paths that earn it, so
   the gate follows the blast radius rather than the session. Two pins over one
   path resolve to the stricter; a pin never restarts a session that is off; and
