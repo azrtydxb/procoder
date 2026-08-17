@@ -84,15 +84,57 @@ const LITERAL_MARKER =
 // every id literal under hooks/ and fails if one is missing, so a new check
 // cannot land without landing here too.
 //
-// The tools registry.js knows how to invoke, and therefore the only tool names
-// that can appear on the left of the colon in an external rule id. The rule
-// half is the tool's own and cannot be enumerated; this half can, so a marker
-// naming `true/eslnit:no-eval` is caught rather than accepted on shape.
+// The tools registry.js knows how to invoke, and the shape each one's own rule
+// ids have. The tool half is a closed set, so `true/eslnit:no-eval` is caught
+// outright. The rule half is the tool's namespace and cannot be enumerated —
+// but "cannot be enumerated" is not "cannot be checked". Every one of these
+// four tools has a rule-id GRAMMAR that its own documentation states, and a
+// grammar is a closed thing even when the set it generates is not:
 //
-// A list, for the same reason as the ids below: registry.js builds `true/
-// ${tool}` from a table of invocation recipes, not from an exported set. Kept
-// honest by the test that scrapes hooks/ for the tool names.
-const EXTERNAL_TOOLS = Object.freeze(['eslint', 'ruff', 'golangci-lint', 'clippy']);
+//   ruff           a linter prefix (a run of capitals) then a number — E501,
+//                  ANN101, PLR0913 — plus the one non-code `invalid-syntax`
+//                  registry.js turns into a decline.
+//   eslint         lowercase kebab segments, optionally `plugin/rule`, and
+//                  optionally an npm scope: `no-eval`, `import/no-cycle`,
+//                  `@typescript-eslint/no-explicit-any`. Any npm package may
+//                  contribute a rule, so the SET is unbounded; the spelling is
+//                  not.
+//   clippy         a rustc/clippy lint name: snake_case, optional `clippy::`.
+//   golangci-lint  the linter's own name: lowercase, kebab or snake.
+//
+// What this catches is the cross-tool copy: `true/ruff:no-eval`,
+// `true/eslint:E501`, `true/clippy:E501` — an id pasted under the wrong tool,
+// which is a whole-id mistake rather than a one-character one.
+//
+// What it deliberately does NOT catch, and this is the honest limit: a
+// well-formed id for a rule that does not exist. `true/eslint:no-such-rule` and
+// `true/ruff:ZZ999` are shaped exactly like real ids and are accepted in
+// silence. Closing that needs a rule registry procoder cannot hold: eslint's
+// set is open by construction, and pinning ruff's ~60 linter prefixes would
+// warn on every CORRECT marker written the week ruff adds one — a warning on a
+// correct marker is the same class of defect as a marker that silences nothing,
+// and it is the one this project would then have to fix.
+//
+// Kept honest by the test that scrapes hooks/ for the tool names.
+// A Map, not an object literal, and that is not a style preference: the tool
+// name comes off a line of somebody's source, and an object literal answers
+// `constructor`, `toString` and `hasOwnProperty` out of Object.prototype. A
+// marker reading `true/constructor:x` would then hand the caller a function
+// where a regex was expected and throw — out of a PostToolUse hook, which is
+// the one thing nothing here may do. A Map has no prototype chain to inherit
+// from and answers `undefined`, which routes to the unknown-tool warning where
+// that id belongs.
+const EXTERNAL_RULE_SHAPES = new Map([
+  ['eslint', /^(?:@[a-z0-9][\w.-]*\/)?[a-z][\w-]*(?:\/[a-z][\w-]*)*$/],
+  ['ruff', /^(?:[A-Z]{1,5}\d{1,4}|invalid-syntax)$/],
+  ['golangci-lint', /^[a-z][a-z0-9_-]*$/],
+  ['clippy', /^(?:clippy::)?[a-z][a-z0-9_]*$/],
+]);
+
+// The names alone, in the order above. Derived rather than spelled a second
+// time: a tool present in one table and absent from the other is a tool whose
+// rule half goes unchecked, silently.
+const EXTERNAL_TOOLS = Object.freeze([...EXTERNAL_RULE_SHAPES.keys()]);
 
 // The bare `true/<tool>` ids are what registry.js emits when a configured
 // linter reports a finding with no rule id of its own. They are generated from
@@ -192,6 +234,7 @@ const STALE_DEPRECATION_FINDING = {
 module.exports = {
   BUILTIN_RULE_IDS,
   EXTERNAL_TOOLS,
+  EXTERNAL_RULE_SHAPES,
   LITERAL_MARKER,
   LITERAL_MARKER_ALONE,
   ORPHAN_MARKER,

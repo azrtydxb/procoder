@@ -454,6 +454,164 @@ test('two different unknown ids on one line are both named', () => {
   assert.ok(stderr.includes('alone/typo-one') && stderr.includes('alone/typo-two'), stderr);
 });
 
+// ---------------------------------------------------------------------------
+// The rule half of a colon id.
+//
+// The tool half was checked and the rule half was accepted on shape alone —
+// meaning on no shape at all, `\S+`. `true/ruff:no-eval` and `true/eslint:E501`
+// are ids pasted under the wrong tool: neither can ever match a finding, and
+// both were accepted in silence, which is the one marker mistake that still
+// failed silently. Each tool states a grammar for its own ids, and a grammar is
+// checkable even where the set it generates is not.
+
+test('a rule half that cannot belong to the named tool warns', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const wrong = {
+    'true/ruff:no-eval': 'an eslint-shaped id under ruff',
+    'true/eslint:E501': 'a ruff-shaped id under eslint',
+    'true/clippy:E501': 'a ruff-shaped id under clippy',
+    'true/golangci-lint:E501': 'a ruff-shaped id under golangci-lint',
+  };
+  for (const [id, why] of Object.entries(wrong)) {
+    const findings = [{ id, line: 1 }];
+    const { result, stderr } = withStderr(() => filterMarkedLiterals(
+      `x(); // ${MARK}${id} ${why} here`, findings, 'wrong-tool.js'));
+
+    assert.deepStrictEqual(result, findings, `${id} must silence nothing`);
+    assert.ok(stderr.includes(id), `${id} went unreported: ${JSON.stringify(stderr)}`);
+    assert.ok(stderr.includes('wrong-tool.js'), `${id} did not name its file: ${JSON.stringify(stderr)}`);
+  }
+});
+
+// The honest limit, pinned so it cannot be mistaken for an oversight. These two
+// are shaped exactly like real ids for their tool, so procoder accepts them and
+// says nothing — closing that needs a registry of every rule eslint and ruff
+// have, which procoder cannot hold and which would warn on correct markers the
+// week either tool adds one.
+test('a well-shaped id for a rule that does not exist stays silent, by design', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  for (const id of ['true/eslint:no-such-rule-at-all', 'true/ruff:ZZ999']) {
+    const { result, stderr } = withStderr(() => filterMarkedLiterals(
+      `x(); // ${MARK}${id} a well-shaped id for no real rule`, [{ id, line: 1 }], 'shaped.js'));
+
+    assert.deepStrictEqual(result, [], `${id} must still silence what it names`);
+    assert.strictEqual(stderr, '', `${id} warned on a well-formed id: ${JSON.stringify(stderr)}`);
+  }
+});
+
+test('a correct colon id for a configured tool stays silent', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  const real = [
+    'true/eslint:no-eval', 'true/eslint:import/no-cycle',
+    'true/eslint:@typescript-eslint/no-explicit-any',
+    'true/ruff:E501', 'true/ruff:PLR0913', 'true/ruff:invalid-syntax',
+    'true/clippy:clippy::needless_borrow', 'true/clippy:unused_variables',
+    'true/golangci-lint:errcheck', 'true/golangci-lint:gosec',
+  ];
+  for (const id of real) {
+    const { result, stderr } = withStderr(() => filterMarkedLiterals(
+      `x(); // ${MARK}${id} a real id for that tool`, [{ id, line: 1 }], 'real.js'));
+
+    assert.deepStrictEqual(result, [], `${id} did not silence what it named`);
+    assert.strictEqual(stderr, '', `a correct marker warned: ${JSON.stringify(stderr)}`);
+  }
+});
+
+// The tool name is read off a line of somebody's source and used to look up
+// that tool's rule shape. Looked up in an object literal it would find
+// Object.prototype's own properties — `constructor` answers a function, and
+// calling `.test` on it throws out of a PostToolUse hook, which nothing here
+// may do.
+test('a tool name that collides with an Object property warns instead of throwing', () => {
+  const { filterMarkedLiterals } = require('../hooks/checks/universal');
+  for (const tool of ['constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+    const id = `true/${tool}:x`;
+    const findings = [{ id: 'alone/debug-leftover', line: 1 }];
+    const { result, stderr } = withStderr(() => filterMarkedLiterals(
+      `x(); // ${MARK}${id} an inherited property name as a tool`, findings, 'proto.js'));
+
+    assert.deepStrictEqual(result, findings, `${id} must silence nothing`);
+    assert.ok(stderr.includes(id), `${id} went unreported: ${JSON.stringify(stderr)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Every warning names its file, through the engine rather than the API.
+//
+// checkFile runs the marker filter twice: once inside this pack, once in
+// run.js over every pack's findings. The pack's own pass returns early when the
+// pack found nothing, so on a file whose only finding comes from a language
+// pack — the common case — run.js's was the only pass that ran, and it was
+// handed no path. Through the CLI the warning therefore never said which file,
+// and the file-less dedup key made a typo on the same line of two files warn
+// once for both.
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { checkFile } = require('../hooks/checks/run');
+const { loadConfig } = require('../hooks/checks/config');
+
+// A leftover debug statement: a finding from the JS pack, not this one, so the
+// pack's own marker pass returns early and run.js's is the one that must warn.
+const LANG_FINDING = 'console.log(1);';  // procoder: literal alone/debug-leftover the scanner input for that rule, not an instance of it
+
+function repoWith(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-marker-'));
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  for (const [rel, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, rel), content);
+  }
+  return dir;
+}
+
+function warningsFrom(files) {
+  const dir = repoWith(files);
+  const repoConfig = loadConfig(dir);
+  const { stderr } = withStderr(() => {
+    for (const rel of Object.keys(files)) {
+      checkFile(path.join(dir, rel), { repoRoot: dir, config: repoConfig, applyBaseline: false });
+    }
+  });
+  return stderr.split('\n').filter((l) => l);
+}
+
+test('the same typo in three files warns three times, each naming its file', () => {
+  const marker = `${MARK}alone/typo-in-three-files a plausible id that does not exist`;
+  const lines = warningsFrom({
+    'one.js': `${LANG_FINDING} // ${marker}\n`,
+    'two.js': `${LANG_FINDING} // ${marker}\n`,
+    'three.js': `const x = 0;\n${LANG_FINDING} // ${marker}\n`,
+  });
+
+  assert.strictEqual(lines.length, 3, `expected one warning per file, got: ${JSON.stringify(lines)}`);
+  for (const name of ['one.js:1', 'two.js:1', 'three.js:2']) {
+    assert.ok(lines.some((l) => l.includes(name)), `no warning named ${name}: ${JSON.stringify(lines)}`);
+  }
+});
+
+test('a typo on two different lines of one file warns twice, naming the file', () => {
+  const marker = `${MARK}alone/typo-on-two-lines a plausible id that does not exist`;
+  const lines = warningsFrom({
+    'twice.js': `${LANG_FINDING} // ${marker}\n${LANG_FINDING} // ${marker}\n`,
+  });
+
+  assert.strictEqual(lines.length, 2, `expected one warning per line, got: ${JSON.stringify(lines)}`);
+  assert.ok(lines[0].includes('twice.js:1') && lines[1].includes('twice.js:2'), JSON.stringify(lines));
+});
+
+// The de-duplication still has to do its real job: checkFile scans the file
+// once but filters twice, and that is one occurrence, not two.
+test('one file scanned once through the engine warns once, not once per pass', () => {
+  const marker = `${MARK}alone/typo-scanned-once a plausible id that does not exist`;
+  const lines = warningsFrom({
+    'once-only.js': `${LANG_FINDING} // ${marker}\n`,
+  });
+
+  assert.strictEqual(lines.length, 1, `warned once per pass rather than per occurrence: ${JSON.stringify(lines)}`);
+  assert.ok(lines[0].includes('once-only.js:1'), lines[0]);
+});
+
 test('every check id the engine can produce is in the known-id set', () => {
   const fs = require('fs');
   const path = require('path');
