@@ -286,16 +286,24 @@ test('a worker that hangs is killed, and its slice is scanned here', { timeout: 
 // --- the threshold is work, not file count ---------------------------------
 //
 // The defect these close: the pool used to fork on a FILE COUNT of 250, and a
-// file count does not predict what a file costs. 3,000 one-liners are 60KB of
+// file count does not predict what a file costs. 250 one-liners are a few KB of
 // nothing and forked six times slower than not forking; twelve 250KB files are
 // a second of real scanning and stayed sequential. Both are asserted by whether
 // a worker was actually started, because that is the decision under test.
+//
+// Note what is NOT claimed: that trivial files never fork. Enough of them are
+// real work — 20,000 one-liners measured 1.87x faster forked — and the whole
+// point of a work threshold is that it says yes there and no here. So the tree
+// below is sized to sit under the threshold on any host, not to be trivial. An
+// earlier version used 3,000 files and asserted they could never fork; it
+// passed on a fast machine and failed on a loaded CI runner, where the same
+// files genuinely crossed the threshold and forking them was the right call.
 
 const forkCount = (marker) => (fs.existsSync(marker)
   ? fs.readFileSync(marker, 'utf8').trim().split('\n').length : 0);
 
-test('a tree of trivial files is not forked, however many of them there are', async () => {
-  const repo = bigRepo(3000);
+test('a tree whose whole cost is under the threshold is not forked', async () => {
+  const repo = bigRepo(200);
   const files = filesIn(repo);
   const options = { repoRoot: repo, config: loadConfig(repo), applyBaseline: false };
   const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
@@ -305,7 +313,7 @@ test('a tree of trivial files is not forked, however many of them there are', as
     () => scanFiles(files, { ...options, jobs: 8 }, checkFile));
 
   assert.strictEqual(forkCount(marker), 0,
-    'a tree of one-line files was forked, which measured 6x slower than not forking');
+    `a tree costing well under ${PARALLEL_MIN_WORK_MS}ms was forked, and forking costs more than it saves there`);
   assert.deepStrictEqual(
     out.map((r) => [r.relPath, r.findings.map((f) => f.id)]),
     sequential.map((r) => [r.relPath, r.findings.map((f) => f.id)]));

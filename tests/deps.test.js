@@ -5,6 +5,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { detectEcosystems, checkManifest, AUDIT_COMMANDS } = require('../hooks/checks/deps');
+const { checkFile } = require('../hooks/checks/run');
+const { loadConfig } = require('../hooks/checks/config');
+const { BUILTIN_RULE_IDS } = require('../hooks/checks/patterns/markers');
 
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-deps-'));
@@ -117,16 +120,140 @@ const idsFor = (repo, rel) => checkManifest(path.join(repo, rel),
 
 // A parse failure that reduces coverage while reporting nothing wrong is the
 // worst outcome a check has: the manifest reads as clean because nothing was
-// read at all. It must say so.
-test('a manifest the parser cannot read is reported, not silently skipped', () => {
+// read at all. It must say so — under its OWN id, because "I could not read
+// your manifest" is a fact about procoder's coverage and "this dependency is
+// not in your lockfile" is a fact about the project. Sharing an id would make
+// one exclusion silence both.
+const UNREADABLE_MANIFESTS = {
+  truncated: '{"dependencies":{"left-pad":"1.0.0",',
+  empty: '',
+  'whitespace only': '  \n\t\n',
+  binary: `\u0000\u0001\u0002\u00c3\u00bf\u00c3\u00be binary garbage \u0000`,
+  'misnamed TOML': '[dependencies]\nserde = "1.0"\n',
+  'misnamed YAML': 'dependencies:\n  - left-pad\n',
+  'a JSON array': '[{"dependencies":{"left-pad":"1.0.0"}}]',
+  'a JSON string': '"not a manifest"',
+  'JSON null': 'null',
+};
+
+for (const [what, body] of Object.entries(UNREADABLE_MANIFESTS)) {
+  test(`a ${what} manifest reports true/manifest-unreadable, not silence`, () => {
+    const repo = repoWith({ 'package.json': body, 'package-lock.json': '{}' });
+    const findings = idsFor(repo, 'package.json');
+    const unread = findings.filter((f) => f.id === 'true/manifest-unreadable');
+    assert.strictEqual(unread.length, 1,
+      `reported: ${findings.map((f) => f.id).join(', ') || '(nothing)'}`);
+    assert.strictEqual(unread[0].rung, 'TRUE');
+    assert.strictEqual(unread[0].line, 1);
+    assert.ok(!findings.some((f) => f.id === 'safe/manifest-not-locked'),
+      'an unreadable manifest was reported as a dependency the lockfile does not carry');
+  });
+}
+
+// go.mod and Cargo.toml have no parse step to fail, so the same file shapes
+// used to yield no dependencies and report nothing at all. One header apiece
+// answers it — measured against 1,619 real go.mod and 1,017 real Cargo.toml,
+// every one of which carries its own.
+const SHAPELESS = {
+  empty: '',
+  'whitespace only': '  \n\t\n',
+  binary: Buffer.from([0, 255, 254, 137, 80, 78, 71, 0]).toString('binary'),
+  XML: '<?xml version="1.0"?><a/>',
+  'a package.json': '{"dependencies":{"left-pad":"1.0.0"}}',
+};
+
+for (const [what, body] of Object.entries(SHAPELESS)) {
+  test(`a go.mod that is ${what} reports true/manifest-unreadable`, () => {
+    const repo = repoWith({ 'go.mod': body, 'go.sum': 'github.com/a/b v1.0.0 h1:x=\n' });
+    const ids = idsFor(repo, 'go.mod').map((f) => f.id);
+    assert.deepStrictEqual(ids, ['true/manifest-unreadable'], `reported: ${ids.join(', ')}`);
+  });
+
+  test(`a Cargo.toml that is ${what} reports true/manifest-unreadable`, () => {
+    const repo = repoWith({ 'Cargo.toml': body, 'Cargo.lock': '[[package]]\nname = "serde"\n' });
+    const ids = idsFor(repo, 'Cargo.toml').map((f) => f.id);
+    assert.deepStrictEqual(ids, ['true/manifest-unreadable'], `reported: ${ids.join(', ')}`);
+  });
+}
+
+// The header test must not fire on the real thing, including the shapes that
+// carry no [package] of their own.
+test('a workspace-only Cargo.toml and a bare go.mod are read, not reported', () => {
+  const cargo = repoWith({
+    'Cargo.toml': '[workspace]\nmembers = ["a"]\n\n[workspace.dependencies]\nserde = "1.0"\n',
+    'Cargo.lock': '[[package]]\nname = "serde"\nversion = "1.0.0"\n',
+  });
+  assert.ok(!idsFor(cargo, 'Cargo.toml').some((f) => f.id === 'true/manifest-unreadable'),
+    'a workspace root was reported as unreadable');
+
+  const go = repoWith({ 'go.mod': 'module example.com/x\n\ngo 1.22\n', 'go.sum': '' });
+  assert.ok(!idsFor(go, 'go.mod').some((f) => f.id === 'true/manifest-unreadable'),
+    'a go.mod with no requirements was reported as unreadable');
+});
+
+// The other half of the split: a real unlocked dependency keeps its own id.
+test('a genuine unlocked dependency still reports safe/manifest-not-locked', () => {
   const repo = repoWith({
-    'package.json': '{"dependencies":{"left-pad":"1.0.0",',
-    'package-lock.json': '{}',
+    'package.json': '{"dependencies":{"left-pad":"1.0.0"}}',
+    'package-lock.json': '{"packages":{"":{}}}',
   });
   const findings = idsFor(repo, 'package.json');
-  const unread = findings.filter((f) => f.id === 'safe/manifest-not-locked');
-  assert.strictEqual(unread.length, 1, 'a truncated manifest was silent');
-  assert.match(unread[0].message, /could not be parsed/);
+  const unlocked = findings.filter((f) => f.id === 'safe/manifest-not-locked');
+  assert.strictEqual(unlocked.length, 1);
+  assert.match(unlocked[0].message, /left-pad/);
+  assert.ok(!findings.some((f) => f.id === 'true/manifest-unreadable'),
+    'a readable manifest was reported as unreadable');
+});
+
+// A manifest with no lockfile at all still says it could not be read. Without
+// this the floating-version pass is lost in silence too, and safe/missing-
+// lockfile is the only thing anyone hears.
+test('an unreadable manifest with no lockfile is still reported', () => {
+  const repo = repoWith({ 'package.json': '{"dependencies":' });
+  const ids = idsFor(repo, 'package.json').map((f) => f.id);
+  assert.ok(ids.includes('true/manifest-unreadable'), `reported: ${ids.join(', ')}`);
+  assert.ok(ids.includes('safe/missing-lockfile'));
+});
+
+// One cause, one finding: the unreadable manifest must not be reported once by
+// the floating-version pass and again by the lockfile pass.
+test('an unreadable manifest is reported exactly once', () => {
+  const repo = repoWith({ 'package.json': '{', 'package-lock.json': '{}' });
+  assert.strictEqual(
+    idsFor(repo, 'package.json').filter((f) => f.id === 'true/manifest-unreadable').length, 1);
+});
+
+// The sibling case. A lockfile that EXISTS and cannot be read used to throw
+// straight out of checkManifest and into the PostToolUse hook. A directory
+// under the lockfile's name is the reproducible form of it.
+test('a lockfile that exists and cannot be read reports true/lockfile-unreadable', () => {
+  const repo = repoWith({
+    'package.json': '{"dependencies":{"left-pad":"1.0.0"}}',
+    'package-lock.json/placeholder': 'a directory wearing the lockfile name',
+  });
+  let findings;
+  assert.doesNotThrow(() => { findings = idsFor(repo, 'package.json'); });
+  const unread = findings.filter((f) => f.id === 'true/lockfile-unreadable');
+  assert.strictEqual(unread.length, 1, `reported: ${findings.map((f) => f.id).join(', ')}`);
+  assert.strictEqual(unread[0].rung, 'TRUE');
+  assert.ok(!findings.some((f) => f.id === 'safe/manifest-not-locked'),
+    'an unreadable lockfile was reported as a dependency it does not carry');
+});
+
+// A lockfile that reads but does not PARSE is deliberately NOT that finding:
+// npmTopLevel degrades to the text match, which is real coverage rather than
+// none, and yarn/pnpm locks are never parsed at all.
+test('a lockfile that reads but does not parse falls back to the text match', () => {
+  const repo = repoWith({
+    'package.json': '{"dependencies":{"left-pad":"1.0.0","absent":"1.0.0"}}',
+    'package-lock.json': '{"packages":{"node_modules/left-pad":{truncated',
+  });
+  const findings = idsFor(repo, 'package.json');
+  assert.ok(!findings.some((f) => f.id === 'true/lockfile-unreadable'),
+    'a parse failure the text match covers was reported as unreadable');
+  const unlocked = findings.filter((f) => f.id === 'safe/manifest-not-locked');
+  assert.strictEqual(unlocked.length, 1, `reported: ${unlocked.map((f) => f.message).join('; ')}`);
+  assert.match(unlocked[0].message, /absent/);
 });
 
 // The false positive the limitations audit named: a peer dependency is by
@@ -294,4 +421,85 @@ test('a manifest that is truncated, empty or the wrong format never throws', () 
     const repo = repoWith({ [name]: body, 'package-lock.json': '{}', 'go.sum': '', 'Cargo.lock': '' });
     assert.doesNotThrow(() => checkManifest(path.join(repo, name), body), `${name}: ${JSON.stringify(body)}`);
   }
+});
+
+// The binary and misnamed forms of the same guarantee, on every ecosystem —
+// not just the one that parses. Nothing here may throw into a hook.
+test('a binary or misnamed manifest never throws, in any ecosystem', () => {
+  const BINARY = Buffer.from([0, 255, 254, 137, 80, 78, 71, 0]).toString('binary');
+  for (const name of ['package.json', 'go.mod', 'Cargo.toml']) {
+    for (const body of [BINARY, '   ', '<?xml version="1.0"?><a/>', '\n'.repeat(500)]) {
+      const repo = repoWith({
+        [name]: body, 'package-lock.json': '{}', 'go.sum': '', 'Cargo.lock': '',
+      });
+      assert.doesNotThrow(() => checkManifest(path.join(repo, name), body),
+        `${name}: ${JSON.stringify(body.slice(0, 20))}`);
+    }
+  }
+});
+
+// --- the two ids, through the whole pipeline --------------------------------
+//
+// A check id nothing can name is a check nobody can suppress or exclude, so
+// both halves of the split are exercised where a user meets them: the marker
+// and the [exclude] rules entry.
+
+function pipelineRepo(files, toml) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-deps-pipe-'));
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  for (const [rel, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), content);
+  }
+  if (toml) fs.writeFileSync(path.join(dir, '.procoder.toml'), toml);
+  return dir;
+}
+
+const pipelineIds = (repo, rel) => checkFile(path.join(repo, rel), {
+  repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, applyBaseline: false,
+}).findings.map((f) => f.id);
+
+test('both new ids are registered so a marker and an exclusion can name them', () => {
+  for (const id of ['true/manifest-unreadable', 'true/lockfile-unreadable']) {
+    assert.ok(BUILTIN_RULE_IDS.includes(id), `${id} is not in BUILTIN_RULE_IDS`);
+  }
+});
+
+// A manifest that does not parse is a manifest that can hold a comment, which
+// is how a marker reaches line 1 of a JSON file at all.
+test('a literal marker suppresses true/manifest-unreadable', () => {
+  const marked = '{"dependencies":  // procoder: literal true/manifest-unreadable a fixture of the shape, not a manifest\n';
+  const repo = pipelineRepo({ 'package.json': marked, 'package-lock.json': '{}' });
+  assert.ok(!pipelineIds(repo, 'package.json').includes('true/manifest-unreadable'),
+    'the marker did not reach the finding');
+
+  const unmarked = pipelineRepo({ 'package.json': '{"dependencies":\n', 'package-lock.json': '{}' });
+  assert.ok(pipelineIds(unmarked, 'package.json').includes('true/manifest-unreadable'),
+    'the same manifest without the marker was silent, so the test above proves nothing');
+});
+
+// The whole point of the split: one exclusion must not take the other down
+// with it.
+test('excluding either id leaves the other reporting', () => {
+  const files = {
+    'package.json': '{"dependencies":{"left-pad":"1.0.0"}}',
+    'package-lock.json': '{"packages":{"":{}}}',
+  };
+  const broken = {
+    'package.json': '{"dependencies":',
+    'package-lock.json': '{"packages":{"":{}}}',
+  };
+  const exclude = (id) => `[exclude]\nrules = ["package.json:${id}"]\n`;
+
+  assert.ok(pipelineIds(pipelineRepo(files, exclude('true/manifest-unreadable')), 'package.json')
+    .includes('safe/manifest-not-locked'),
+  'excluding true/manifest-unreadable also silenced safe/manifest-not-locked');
+
+  assert.ok(pipelineIds(pipelineRepo(broken, exclude('safe/manifest-not-locked')), 'package.json')
+    .includes('true/manifest-unreadable'),
+  'excluding safe/manifest-not-locked also silenced true/manifest-unreadable');
+
+  assert.ok(!pipelineIds(pipelineRepo(broken, exclude('true/manifest-unreadable')), 'package.json')
+    .includes('true/manifest-unreadable'),
+  'the exclusion did not take effect at all, so the tests above prove nothing');
 });
