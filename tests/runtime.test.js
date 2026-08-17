@@ -6,6 +6,8 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only' };
+
 function withTempClaudeDir(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-'));
   const saved = process.env.CLAUDE_CONFIG_DIR;
@@ -49,9 +51,20 @@ test('clearLevel removes the file and does not throw when absent', () => {
   });
 });
 
-test('setLevel never throws on an unwritable directory', () => {
+// The directory is unwritable the way a real one is — a directory the user
+// cannot write into — and NOT `/proc/anything`, which is what this test used
+// to use. `fs.mkdirSync('/proc/x', { recursive: true })` never returns on
+// Linux (verified on node:22), so this test ran forever on every ubuntu CI leg
+// while macOS, which has no /proc, passed it in milliseconds. The identical
+// trap sat in tests/activate.test.js; both are gone, and `npm test` now carries
+// a per-test timeout so the next one fails with a name instead of a bill.
+//
+// Skipped on Windows: the property is about a POSIX permission bit.
+test('setLevel never throws on an unwritable directory', POSIX_ONLY, () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-ro-'));
+  fs.chmodSync(parent, 0o500);
   const saved = process.env.CLAUDE_CONFIG_DIR;
-  process.env.CLAUDE_CONFIG_DIR = '/proc/nonexistent-procoder-dir';
+  process.env.CLAUDE_CONFIG_DIR = path.join(parent, 'nope');
   delete require.cache[require.resolve('../hooks/procoder-runtime')];
   delete require.cache[require.resolve('../hooks/procoder-config')];
   try {
@@ -60,6 +73,8 @@ test('setLevel never throws on an unwritable directory', () => {
   } finally {
     if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = saved;
+    fs.chmodSync(parent, 0o700);
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 
