@@ -1,0 +1,15 @@
+# procoder. Full configuration reference:
+# https://azrtydxb.github.io/procoder/configuration.html
+#
+# Nothing in this file is required — every key has a documented default, and a
+# key written here is a decision you are making, so make it deliberately rather
+# than by uncommenting an example. The sections that exist: [rungs] severities,
+# [levels] path pins, [thresholds] shape limits, [exclude] paths and rules,
+# [limits] max_file_bytes, [baseline] file.
+#
+# [exclude] paths is for generated code. Anything you merely have not fixed yet
+# belongs in the baseline instead — `procoder baseline .` — where every entry is
+# dated and `procoder verify --aging 90 .` will eventually ask about it.
+
+[exclude]
+paths = []

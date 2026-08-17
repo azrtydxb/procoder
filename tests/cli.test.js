@@ -976,3 +976,57 @@ test('--since says when nothing changed instead of exiting 0 in silence', () => 
   assert.strictEqual(result.code, 0);
   assert.match(result.out, /no files changed since HEAD/);
 });
+
+// --- init -------------------------------------------------------------------
+
+test('init writes a starter config and never touches an existing one', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  assert.strictEqual(cli(repo, ['init']).code, 0);
+  const written = fs.readFileSync(path.join(repo, '.procoder.toml'), 'utf8');
+  assert.match(written, /\[exclude\]/);
+
+  fs.writeFileSync(path.join(repo, '.procoder.toml'), '# mine\n');
+  const second = cli(repo, ['init']);
+  assert.match(second.out, /already exists/);
+  assert.strictEqual(fs.readFileSync(path.join(repo, '.procoder.toml'), 'utf8'), '# mine\n',
+    'init overwrote a config somebody wrote');
+});
+
+// The point of --baseline is that an existing repository is green on the first
+// run: adopting procoder must not start with a cleanup.
+test('init --baseline accepts today findings, so verify passes and new code still fails', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  assert.strictEqual(cli(repo, ['init', '--baseline']).code, 0);
+  assert.strictEqual(cli(repo, ['verify', '.']).code, 0);
+
+  fs.writeFileSync(path.join(repo, 'b.ts'), DIRTY);
+  assert.strictEqual(cli(repo, ['verify', '.']).code, 1, 'new code rode in on the baseline');
+});
+
+// --- verify --aging ---------------------------------------------------------
+
+test('--aging names accepted debt older than the window, and fails on it', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  cli(repo, ['baseline', 'a.ts']);
+  const file = path.join(repo, '.procoder-baseline.json');
+  const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+  doc.entries[0].added = '2020-01-01';
+  fs.writeFileSync(file, JSON.stringify(doc));
+
+  const aged = cli(repo, ['verify', '--aging', '30', 'a.ts']);
+  assert.strictEqual(aged.code, 1);
+  assert.match(aged.out, /accepted finding.*older than 30 days/);
+  assert.match(aged.out, /2020-01-01/);
+
+  assert.strictEqual(cli(repo, ['verify', '--aging', '99999', 'a.ts']).code, 0,
+    'a window nothing is older than must pass');
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0,
+    'without the flag, age does not fail the run');
+});
+
+test('--aging is refused on a command that cannot use it', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  const result = cli(repo, ['check', '--aging', '30', 'a.ts']);
+  assert.strictEqual(result.code, 2);
+  assert.match(result.out, /--aging takes a number of days/);
+});

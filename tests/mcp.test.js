@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -42,10 +42,11 @@ test('initialize returns protocol and server info', async () => {
   assert.strictEqual(res.result.serverInfo.name, 'procoder');
 });
 
-test('tools/list advertises the three tools with schemas', async () => {
+test('tools/list advertises every tool with a schema', async () => {
   const [res] = await rpc([{ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }]);
   const names = res.result.tools.map((t) => t.name).sort();
-  assert.deepStrictEqual(names, ['procoder_baseline', 'procoder_check', 'procoder_doctrine']);
+  assert.deepStrictEqual(names,
+    ['procoder_baseline', 'procoder_check', 'procoder_doctrine', 'procoder_review']);
   for (const tool of res.result.tools) {
     assert.ok(tool.description && tool.inputSchema, `${tool.name} missing schema`);
   }
@@ -131,5 +132,51 @@ test('a broken stdout pipe does not crash the server (EPIPE guard)', async () =>
   // Confirm it did not already exit with a failure code/signal before we killed it.
   if (exitCode !== null) {
     assert.strictEqual(exitCode, 0, `server exited non-zero (code=${exitCode}, signal=${exitSignal})`);
+  }
+});
+
+// A gate that can only answer for one file at a time makes every host
+// re-implement "which files changed", or skip the check entirely.
+test('procoder_review checks everything that changed since a ref', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  const git = (...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(dir, 'old.ts'), 'const x = 1;\n');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  fs.writeFileSync(path.join(dir, 'new.ts'), 'eval(x);\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+
+  const [res] = await rpc([{
+    jsonrpc: '2.0', id: 20, method: 'tools/call',
+    params: { name: 'procoder_review', arguments: { path: dir, since: 'HEAD' } },
+  }]);
+  assert.match(res.result.content[0].text, /new\.ts/);
+  assert.doesNotMatch(res.result.content[0].text, /old\.ts/);
+});
+
+// "I could not work out what changed" and "nothing changed" are opposite
+// answers, and the second arriving as the first is how a gate goes quiet.
+test('procoder_review says so when git cannot resolve the ref', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  const [res] = await rpc([{
+    jsonrpc: '2.0', id: 21, method: 'tools/call',
+    params: { name: 'procoder_review', arguments: { path: dir, since: 'no-such-ref' } },
+  }]);
+  assert.match(res.result.content[0].text, /cannot review/);
+});
+
+test('procoder_doctrine can return the digest', async () => {
+  const [full, digest] = await Promise.all([
+    rpc([{ jsonrpc: '2.0', id: 22, method: 'tools/call',
+      params: { name: 'procoder_doctrine', arguments: {} } }]),
+    rpc([{ jsonrpc: '2.0', id: 23, method: 'tools/call',
+      params: { name: 'procoder_doctrine', arguments: { digest: true } } }]),
+  ]);
+  const fullText = full[0].result.content[0].text;
+  const digestText = digest[0].result.content[0].text;
+  assert.ok(digestText.length < fullText.length, 'the digest is not smaller than the full text');
+  for (const rung of ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT']) {
+    assert.match(digestText, new RegExp(rung), `the digest dropped ${rung}`);
   }
 });

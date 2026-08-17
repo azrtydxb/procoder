@@ -24,6 +24,7 @@ const {
 } = require('../hooks/checks/baseline');
 
 const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
+       procoder init [--baseline]
        procoder check [--format text|json|sarif] [--since <ref>] [paths...]
        procoder statusline <install|uninstall|status> [--append] [--force]
 
@@ -31,6 +32,10 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
             reported but do not block; every other level gates all six rungs;
             [levels] in .procoder.toml pins a level to the paths that earn it)
+  init      write a starter .procoder.toml, and say what it did. Nothing is
+            overwritten: a file that already exists is left exactly as it is.
+            --baseline also records today's findings as accepted, which is what
+            makes an existing repository green on the first run.
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
 
@@ -760,6 +765,41 @@ function runStatusline(args) {
   }
 }
 
+// The starter config lives in scripts/templates/ with the pre-commit hook and
+// the CI workflow, and for the same reason: a config template written inline is
+// a block of commented-out TOML inside a JavaScript file, which reads to rung 4
+// exactly like commented-out code — because that is what it looks like.
+function starterConfig() {
+  return fs.readFileSync(path.join(__dirname, '..', 'scripts', 'templates', 'procoder.toml'), 'utf8');
+}
+
+// Writes what is missing and says so; never touches what is there. An init that
+// overwrote a config would be the one command in this tool capable of deleting
+// somebody's decisions.
+function runInit(argv) {
+  const repoRoot = findRepoRoot(process.cwd());
+  const configPath = path.join(repoRoot, '.procoder.toml');
+  if (fs.existsSync(configPath)) {
+    process.stdout.write(`procoder: ${configPath} already exists — left as it is.\n`);
+  } else {
+    fs.writeFileSync(configPath, starterConfig());
+    process.stdout.write(`procoder: wrote ${configPath}\n`);
+  }
+
+  if (!argv.includes('--baseline')) {
+    process.stdout.write('procoder: run `procoder check .` to see where you stand, or '
+      + '`procoder init --baseline` to accept today\'s findings and gate only new code.\n');
+    return 0;
+  }
+
+  const config = { ...loadConfig(repoRoot), noIgnore: false };
+  const code = runBaseline(expand([repoRoot]), repoRoot, config);
+  process.stdout.write('procoder: from here, `procoder verify .` fails only on findings that '
+    + 'are not in the baseline. `procoder verify --aging 90 .` names the ones that have been '
+    + 'accepted longest.\n');
+  return code;
+}
+
 // A Map, not an object literal: argv is user input, and `procoder constructor`
 // must not find a method on Object.prototype and try to run it.
 const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['verify', runVerify]]);
@@ -922,6 +962,7 @@ function main(argv) {
   // Its arguments are subcommands, not paths, so it branches off before the
   // path handling below.
   if (command === 'statusline') return runStatusline(targets);
+  if (command === 'init') return runInit(targets);
 
   const refused = refuseArguments({ command, targets, format, since, aging });
   if (refused !== null) return refused;
