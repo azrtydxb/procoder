@@ -33,10 +33,10 @@ longer exists.
 ## Rungs 5 and 6: what the engine claims, and what it does not
 
 FAST and MEANT were doctrine and nothing else until `hooks/checks/judgment.js`
-existed. They now have **three rules between them**, out of 47 —
+existed. They now have **three rules between them**, out of 49 —
 `fast/query-in-loop`, `fast/blocking-in-async` and `meant/unimplemented-stub` —
 and the ratio is the honest headline. `BUILTIN_RULE_IDS` in
-`hooks/checks/patterns/markers.js` holds 47 ids; `RUNGS` in
+`hooks/checks/patterns/markers.js` holds 49 ids; `RUNGS` in
 `hooks/checks/finding.js` lists six names, and `[rungs] fast` and `[rungs]
 meant` are no longer inert. Verified, each by running it:
 
@@ -312,9 +312,19 @@ Four rows this section used to carry are struck as fixed, each re-verified:
   under a root manifest declaring `"workspaces"` resolves against the root
   `package-lock.json`: unlocked reports the entry, locked is silent, and the
   false `safe/missing-lockfile` is gone.
-- **An unreadable manifest says so.** A `package.json` with a trailing comma
-  reports `package.json could not be parsed (…) — nothing in it was checked
-  against the lockfile` rather than returning in silence.
+- **An unreadable manifest says so, under an id of its own.** A `package.json`
+  with a trailing comma reports **`true/manifest-unreadable`** — `package.json
+  could not be parsed (…) — nothing in it was checked against the lockfile` —
+  rather than returning in silence. An empty `go.mod` (`no module directive`)
+  and an empty `Cargo.toml` (`no [package] or [workspace] table`) report the
+  same id. Its sibling **`true/lockfile-unreadable`** covers a lockfile that
+  exists and cannot be read at all: verified, a `package-lock.json` with no read
+  permission reports `could not be read (EACCES) — nothing in this manifest was
+  checked against it`. Two ids and not one, because a `package.json` held as a
+  publish template never parses, and a project excluding *that* must still hear
+  that its lockfile has gone missing under it. A lockfile that reads but does
+  not parse is deliberately neither: the npm reader degrades to a text match,
+  which is a real if weaker answer.
 
 The `peerDependencies` false positive is **gone**: `LOCK_BLOCKS` is
 `dependencies`, `devDependencies` and `optionalDependencies`, and a peer is by
@@ -326,10 +336,10 @@ definition the consumer's to install. Verified: `{"peerDependencies": {"react":
 | python, dotnet, maven and gradle manifests | `pyproject.toml`, `requirements.txt` and `Directory.Packages.props` get `safe/missing-lockfile` and nothing else — verified, each reports exactly that one finding. `pom.xml` and a Gradle build file report nothing at all. Deliberate, and each for its own reason: `requirements.txt` *is* the pinned artefact in most repositories; a pyproject name maps to a poetry or uv lock entry only through PEP 503 normalization, extras and environment markers; `packages.lock.json` is opt-in and rarely committed; and maven and gradle have no lockfile in the default toolchain at all, so there is nothing to compare a declaration against. |
 | A dependency declared somewhere the section scan does not read | The Cargo reader understands `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`, their workspace and target-cfg spellings, and a `[dependencies.x]` table with its own `package =` rename. A declaration reached any other way is not seen. |
 
-The **unreadable-manifest finding still carries `safe/manifest-not-locked`'s
-own id**, which overloads one id with two different claims — "this dependency
-is not locked" and "I could not read this file". A dedicated rule id for it had
-not landed on `main` when this page was written.
+What the split still leaves: `true/manifest-unreadable` and
+`true/lockfile-unreadable` sit at **rung 2**, not rung 1. "I could not read your
+dependency manifest" is a coverage hole in a rung-1 rule, and it is reported one
+rung down from the rule whose coverage it holes.
 
 ### `true/missing-timeout`
 

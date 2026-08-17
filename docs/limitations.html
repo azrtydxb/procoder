@@ -33,7 +33,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
 <ul class="findings findings-display">
   <li class="finding">
     <span class="rung rung-soft">[6 MEANT]</span>
-    <span class="msg"><span class="loc">hooks/checks/judgment.js</span> rungs 5 and 6 have three rules between them, out of 47 <span class="arrow">→</span> almost all of MEANT stays doctrine-only, because scope creep is a relationship between a change and a request and a line scanner has never seen the request</span>
+    <span class="msg"><span class="loc">hooks/checks/judgment.js</span> rungs 5 and 6 have three rules between them, out of 49 <span class="arrow">→</span> almost all of MEANT stays doctrine-only, because scope creep is a relationship between a change and a request and a line scanner has never seen the request</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
@@ -73,7 +73,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   </li>
   <li class="finding">
     <span class="rung rung-hard">[1 SAFE]</span>
-    <span class="msg"><span class="loc">hooks/checks/deps.js</span> <code>safe/manifest-not-locked</code> covers npm, go and cargo and no more <span class="arrow">→</span> python, dotnet, maven and gradle manifests get <code>safe/missing-lockfile</code> and nothing else, and an unreadable manifest is reported under this same id rather than one of its own</span>
+    <span class="msg"><span class="loc">hooks/checks/deps.js</span> <code>safe/manifest-not-locked</code> covers npm, go and cargo and no more <span class="arrow">→</span> python, dotnet, maven and gradle manifests get <code>safe/missing-lockfile</code> and nothing else, and the two holes in its own coverage — <code>true/manifest-unreadable</code>, <code>true/lockfile-unreadable</code> — are reported a rung below the rule they hole</span>
   </li>
   <li class="finding">
     <span class="rung rung-hard">[2 TRUE]</span>
@@ -132,7 +132,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     <strong>The check engine</strong> is regex and counters over six languages. It
     runs after every file write and from the CLI, it is reproducible, and it is
     what CI gates on. It catches an interpolated query, a swallowed error, an
-    over-long function, an unexplained suppression — 47 rule ids, across all six
+    over-long function, an unexplained suppression — 49 rule ids, across all six
     rungs.
   </p>
   <p>
@@ -239,7 +239,7 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#the-three-widened-rules-and-what-each-of-them-still-misses">The three widened rules</a></td>
-      <td><code>safe/redaction-marker</code>, <code>safe/manifest-not-locked</code> and <code>true/missing-timeout</code>, each re-probed after being widened: what fires now, the fourteen rows struck as fixed, and what is still missed — a table cell, a builder chain, four ecosystems with no lockfile to compare against.</td>
+      <td><code>safe/redaction-marker</code>, <code>safe/manifest-not-locked</code> and <code>true/missing-timeout</code>, each re-probed after being widened: what fires now, the fourteen rows struck as fixed, the two new ids an unreadable manifest and an unreadable lockfile were split into, and what is still missed — a table cell, a builder chain, four ecosystems with no lockfile to compare against.</td>
     </tr>
     <tr>
       <td><a href="{{ site.repo }}/blob/main/docs/known-limitations.md#meta-text-the-line-marker-and-what-it-cannot-cover">Meta-text: the line marker</a></td>

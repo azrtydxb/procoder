@@ -22,7 +22,10 @@ Documentation.
   exiting 0 over unreadable files; three MCP edges; the baseline nobody pruned
   and the `unknown` date nobody stamped; and Kotlin counting as a language
   outside the packs, which it no longer is — `.kt` and `.kts` are in the jvm
-  pack.
+  pack. `true/manifest-unreadable` and `true/lockfile-unreadable`, split out of
+  `safe/manifest-not-locked` while this pass was running, are documented with
+  what the split still leaves: both sit a rung below the rule whose coverage
+  they hole.
 
 Doctrine additions, drawn from reading how the other agent harnesses (Amp,
 Cursor, Augment, Codex CLI, Comet, Kiro) state the same rules — and from the
