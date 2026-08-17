@@ -328,10 +328,13 @@ test('a minified line that matches thousands of times is capped, and says so', (
 
 // A word run used to make the ts signature scan quadratic, so the packs never
 // saw the line carrying it. The scan is linear now and the guard is gone, so a
-// sink sharing that line is reported — and 1MB stays far inside the budget.
+// sink sharing that line is reported — and a file at the size cap stays far
+// inside the budget. Sized from MAX_FILE_BYTES rather than a literal, so that
+// re-deriving the cap moves the fixture with it instead of pushing it past.
 test('a sink on a line with a runaway word run is reported', () => {
+  const sink = 'db.query(`select * from t where id = ${id}`);';  // procoder: literal safe/sql-injection the fixture line this test hides behind a word run
   const repo = repoWith({
-    'bundle.ts': `db.query(\`select * from t where id = \${id}\`);${'x'.repeat(1024 * 1024)}\n`,
+    'bundle.ts': `${sink}${'x'.repeat(MAX_FILE_BYTES - sink.length - 1)}\n`,
   });
   let out;
   const elapsed = cpuMs(() => {
@@ -545,19 +548,13 @@ test('span-derived shape metrics still do not see a minified line', () => {
 });
 
 // The budget's worst realistic composition: the project's linter hangs and the
-// file is at the cap. The linter is given the budget that is left after the
-// pack's share of it is reserved, so growing the file does not grow the total —
-// it moves time from the linter to the pack.
-//
-// Relative by construction: both sides run the same hung linter on the same
-// machine, so load moves them together. RED against a fixed linter timeout:
-// the tiny file cost ~1.0s and the file at the cap ~1.8s, a ratio of 1.8.
+// file is at the cap. The linter runs last and is paid out of what is actually
+// left, so growing the file does not grow the total by the pack's cost — it
+// moves that time from the linter to the pack.
 //
 // Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: the property
-// under test is elapsed time spent waiting on a hung child process, which
-// costs this process no CPU at all. The budget it defends is a wall-clock
-// budget. Being a ratio between two measurements taken back to back is what
-// keeps it load-proof here.
+// under test is elapsed time spent waiting on a hung child process, which costs
+// this process no CPU at all. The budget it defends is a wall-clock budget.
 function wallBestOf(runs, work) {
   let best = Infinity;
   for (let i = 0; i < runs; i += 1) {
@@ -568,6 +565,31 @@ function wallBestOf(runs, work) {
   return best;
 }
 
+// Two properties, and neither of them may be "this runner is fast".
+//
+// The first is the scheduling property, and it is stated against a THIRD
+// measurement — the same file at the cap with no linter on PATH, which is what
+// the in-process work costs on this machine right now. The engine's arithmetic
+// is exact: with the linter taking SHARE of what is left after that work,
+//
+//     atCap = work + SHARE * (budget - work)
+//     tiny  = 0    + SHARE * (budget - 0)
+//     atCap - tiny = (1 - SHARE) * work
+//
+// so the excess over a one-line file is a fixed fraction of work, on any host,
+// at any speed. That is what is asserted. The previous form asserted
+// `atCap < tiny * 1.35 + 100`, whose 1.35 was this laptop's pack-to-budget
+// ratio: on a runner 2-3x slower `work` grows, the excess grows with it, and
+// the bound failed on hardware the engine was still perfectly within budget on.
+// Anchoring to a measured `work` makes it slowdown-proof, and it is STRICTER,
+// not looser — it fails a scheme that hands the linter a fixed slice, because
+// there the excess is the whole of `work` rather than 40% of it.
+//
+// The second is the requirement itself: the composition finishes inside the
+// budget. BUDGET_MS, not 0.8 of it. The 0.8 was headroom that only existed on
+// the measuring machine, and asserting it scored the runner's speed rather than
+// the engine's guarantee; the guarantee is that spent + SHARE * (budget -
+// spent) < budget for any spent, which is exactly `< BUDGET_MS`.
 test('a hung linter plus a file at the cap costs no more than a hung linter alone', shimTest, () => {
   const hang = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
   const repo = repoWith({
@@ -578,13 +600,53 @@ test('a hung linter plus a file at the cap costs no more than a hung linter alon
   const config = loadConfig(repo);
   const run = (name) => checkFile(path.join(repo, name), { repoRoot: repo, config });
 
+  // No shim on PATH: the linter never resolves, so this is the in-process work
+  // alone — read, universal pack, language pack, and the whole reporting tail.
+  const work = wallBestOf(2, () => run('atcap.ts'));
+
   withShim('eslint', hang, () => {
     const tiny = wallBestOf(2, () => run('tiny.ts'));
     const atCap = wallBestOf(2, () => run('atcap.ts'));
-    assert.ok(atCap < tiny * 1.35 + 100,
-      `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file — `
+    assert.ok(atCap - tiny < work * 0.75 + 100,
+      `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file, `
+      + `an excess of ${atCap - tiny}ms over ${work}ms of in-process work — `
       + 'the linter did not yield its slice to the pack');
-    assert.ok(atCap < BUDGET_MS * 0.8,
+    assert.ok(atCap < BUDGET_MS,
       `the worst realistic composition took ${atCap}ms of a ${BUDGET_MS}ms budget`);
   });
+});
+
+// The deadline is the engine's answer to hardware it was not measured on, so
+// what it does when it runs out has to be tested, not assumed. A budget of 1ms
+// is the slowest host there is: nothing after the universal pack can run.
+//
+// The contract is that the coverage lost is NAMED. Silent partial coverage is
+// the failure this project has fixed nine times, and a gate that quietly checks
+// less than it claims is indistinguishable from a gate that passed.
+test('a budget that runs out says what it did not check', shimTest, () => {
+  const repo = repoWith({
+    '.eslintrc.json': '{}',
+    'src/a.ts': 'export function f(a, b, c, d, e) { return a; }\n',
+  });
+  const out = withShim('eslint', RUFF_OK, () => checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo), budgetMs: 0 }));
+
+  const notice = out.findings.find((f) => f.id === 'true/budget-exhausted');
+  assert.ok(notice, 'the deadline cut two stages and the report did not say so');
+  assert.match(notice.message, /ts rules/);
+  assert.match(notice.message, /eslint/);
+  assert.strictEqual(out.skipped, null, 'a partial check is not a skipped file');
+});
+
+// ...and the notice survives a full house of findings. It is appended after the
+// per-file cap precisely so that five findings cannot push out the one line
+// saying the report is incomplete.
+test('the budget notice outlives the per-file cap', () => {
+  const repo = repoWith({
+    'src/a.ts': 'const k = "AKIAIOSFODNN7EXAMPLE";\n'.repeat(10),  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+  });
+  const out = checkFile(path.join(repo, 'src/a.ts'),
+    { repoRoot: repo, config: loadConfig(repo), budgetMs: 0, maxFindings: 1 });
+  assert.ok(out.findings.some((f) => f.id === 'true/budget-exhausted'),
+    'the cap swallowed the notice that the file was only partly checked');
 });
