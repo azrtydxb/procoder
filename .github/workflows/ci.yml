@@ -26,6 +26,13 @@ jobs:
           - os: macos-latest
             node-version: '24'
     runs-on: ${{ matrix.os }}
+    # A ceiling on the job, on top of the per-test one in `npm test`. Both exist
+    # because of the same incident: a test blocked inside a syscall that never
+    # returns on Linux — mkdirSync under /proc — so every ubuntu leg ran until
+    # somebody noticed, four runs deep and three hours in, while macOS finished
+    # in forty seconds. A hung gate costs money and says nothing; a failed one
+    # says where to look. 15 minutes is ten times the suite's worst leg.
+    timeout-minutes: 15
     steps:
       # v5 of both: v4 runs on the Node 20 action runtime, which GitHub is
       # force-migrating to Node 24, and a forced migration is a thing to do

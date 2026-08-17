@@ -146,17 +146,17 @@ description: procoder's own weaknesses, filed in procoder's own format, with a m
   <code>git ls-files</code>, so every tracked file is in the gate the day it lands,
   this page and its stylesheet included. Running the tool over this repository
   today, <code>node bin/procoder.js check .</code> reports <strong>0 findings</strong>
-  over <strong>208</strong> tracked files and exits 0, having skipped 18 of them
+  over <strong>209</strong> tracked files and exits 0, having skipped 18 of them
   and said so on stderr for every one: 9 by <code>[exclude] paths</code> in
   <code>.procoder.toml</code>, one line per pattern with its count, and 9 across
-  two <code>.procoderignore</code> files. So <strong>190</strong> files are
+  two <code>.procoderignore</code> files. So <strong>191</strong> files are
   actually read — the number the README publishes, and the one
   <code>tests/dogfood.test.js</code> asserts against the scan's own output so it
   cannot drift.
 </p>
 
 <p>
-  It is also, at 208 files, below the 250-file threshold at which the scan forks
+  It is also, at 209 files, below the 250-file threshold at which the scan forks
   workers — so procoder's own self-scan never exercises the parallel path.
 </p>
 

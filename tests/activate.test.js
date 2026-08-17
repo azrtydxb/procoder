@@ -16,6 +16,8 @@ const SESSION_START_PAYLOAD = JSON.stringify({
 const execHook = (script, options = {}, payload = SESSION_START_PAYLOAD) =>
   execFileSync('node', [script], { encoding: 'utf8', input: payload, ...options });
 
+const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only' };
+
 const HOOK = path.join(__dirname, '..', 'hooks', 'procoder-activate.js');
 const SUBAGENT = path.join(__dirname, '..', 'hooks', 'procoder-subagent.js');
 const MODE_TRACKER = path.join(__dirname, '..', 'hooks', 'procoder-mode-tracker.js');
@@ -130,10 +132,32 @@ test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
   }
 });
 
-test('hooks exit 0 even when the config dir is unwritable', () => {
-  assert.doesNotThrow(() => execHook(HOOK, {
-    env: { ...process.env, CLAUDE_CONFIG_DIR: '/proc/nope-procoder' },
-  }));
+// The config dir is unwritable in the way a real one is: a directory the user
+// cannot write into. The hook must still emit the doctrine — losing the level
+// file is a small thing, losing the session's rules is not.
+//
+// It used to point CLAUDE_CONFIG_DIR at `/proc/nope-procoder`, and that one
+// path is why CI hung for hours on every Linux leg while macOS finished in
+// forty seconds. `fs.mkdirSync('/proc/anything', { recursive: true })` never
+// returns on Linux — verified on node:22-slim, and unrelated to procoder — so
+// the hook blocked forever inside a call it cannot bound, `execFileSync` waited
+// forever for it, and the whole file timed out. macOS has no /proc, so the path
+// was simply a missing directory there and the mkdir failed fast.
+//
+// Windows has no chmod worth the name, hence the skip: the property is about a
+// POSIX permission the platform actually enforces.
+test('hooks exit 0 and still emit the doctrine when the config dir is unwritable', POSIX_ONLY, () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-ro-'));
+  fs.chmodSync(parent, 0o500);
+  try {
+    const stdout = execHook(HOOK, {
+      env: { ...process.env, CLAUDE_CONFIG_DIR: path.join(parent, 'nope') },
+    });
+    assert.match(stdout, /SAFE/, 'an unwritable config dir cost the session its doctrine');
+  } finally {
+    fs.chmodSync(parent, 0o700);
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -142,7 +166,6 @@ test('hooks exit 0 even when the config dir is unwritable', () => {
 // Four states have to end the same way: output as usual, exit 0, no throw.
 // ---------------------------------------------------------------------------
 
-const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX shell only' };
 const CHECK = path.join(__dirname, '..', 'hooks', 'procoder-check.js');
 const ALL_HOOKS = [HOOK, SUBAGENT, MODE_TRACKER, CHECK];
 

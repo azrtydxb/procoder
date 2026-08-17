@@ -14,7 +14,7 @@
   ],
   "pi": { "skills": ["./skills"], "extensions": ["./pi-extension/index.js"] },
   "scripts": {
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-timeout=120000 tests/*.test.js",
     "sync": "node scripts/sync-rules.js",
     "sync:check": "node scripts/sync-rules.js --check"
   }

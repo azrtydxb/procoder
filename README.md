@@ -99,8 +99,8 @@ new trust boundary does not get to add one for convenience.
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **208** tracked files the scan
-reads **190** and skips **18** — 9 by `[exclude] paths` and 9 by two
+arithmetic is published instead of implied: of **209** tracked files the scan
+reads **191** and skips **18** — 9 by `[exclude] paths` and 9 by two
 `.procoderignore` files. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
 itself so they cannot drift from this paragraph, and every exclusion is

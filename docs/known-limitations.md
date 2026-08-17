@@ -306,7 +306,7 @@ in the gate the day it lands. Both of its hold-out lists — `HELD_OUT` and
 the test at `tests/dogfood.test.js:73` fails if a `HELD_OUT` path matches no
 tracked file or has gone clean.
 
-Measured today over **208** tracked files, `procoder check .` reports **0**
+Measured today over **209** tracked files, `procoder check .` reports **0**
 findings and exits 0, having skipped **18** of them and said so on stderr for
 every one:
 
@@ -323,7 +323,7 @@ every one:
   `examples/*/before.*` (files that violate a rung on purpose, and are still
   checked on every test run through `procoder check --no-ignore`).
 
-So **190** files are actually read, and README.md publishes those three
+So **191** files are actually read, and README.md publishes those three
 numbers; `tests/dogfood.test.js` asserts them against the scan's own output, so
 the paragraph fails the build rather than going quietly out of date. The
 repository root also carries a `.procoderignore` for `.claude/` and
@@ -438,7 +438,7 @@ The rest of the pool's edges, each verified:
 
 | Limit | Measured |
 |---|---|
-| **Below 250 files nothing is forked**, and this repository has 208 tracked files | `procoder check .` over procoder itself is therefore always sequential, and the parallel path is not exercised by the self-scan. |
+| **Below 250 files nothing is forked**, and this repository has 209 tracked files | `procoder check .` over procoder itself is therefore always sequential, and the parallel path is not exercised by the self-scan. |
 | **Parallel is slower on small files** | 260 two-line files: `--jobs 1` costs 0.06 s, `--jobs 8` costs 0.11 s. The 250-file threshold is tuned for real source, and pays for itself only when a file costs more than a fork does. |
 | **`--jobs` is not validated or clamped** | `--jobs 0`, `--jobs abc` and `--jobs -3` are all accepted silently and fall back to the default or to sequential. `--jobs 9999` slices one file per child and spawns 260 processes at once: 2.15 s against 0.06 s sequential, a 35× loss, with no warning. |
 | **Workers inherit stderr, and reload config from disk** | A worker re-reads `.procoder.toml` for itself; only `noIgnore` travels in the payload. A config the parent computed some other way — a hand-built object from an API caller — is not what the worker uses. |
