@@ -106,6 +106,20 @@ gaps that reading exposed.
   added later is in the digest unless somebody explicitly marks it out. The
   context budget is now measured on the rendered text rather than the source
   file, where authoring markers were being counted as context.
+- **`procoder check .` scans in parallel.** One worker process per core (max 8,
+  `--jobs n` to override), and sequential under 250 files where forking costs
+  more than it saves. Measured on a 2,000-file tree: 1.57s to 0.55s. The report
+  is identical either way — slices are contiguous and reassembled in input
+  order — and a worker that dies has its slice scanned in the parent rather than
+  dropped, because a parallel scan that lost a slice would be a gate reporting
+  on less than it claims.
+- **Linters run once per tool, not once per file.** eslint, ruff and
+  golangci-lint each cost far more to start than to lint one more file, so a
+  5,000-file repository paid 5,000 cold starts. The CLI now hands each tool its
+  whole file list. A file the batch cannot attribute an answer to falls back to
+  the built-in pack rather than being reported clean, and one file's decline
+  ("eslint ignores this one") takes only that file out of the batch. The
+  PostToolUse hook is untouched: one file, one spawn, 2s budget.
 - **`[levels]` in `.procoder.toml`** pins a level to the paths that earn it, so
   the gate follows the blast radius rather than the session. Two pins over one
   path resolve to the stricter; a pin never restarts a session that is off; and

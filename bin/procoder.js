@@ -15,6 +15,7 @@ const {
 } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { runToolBatches } = require('../hooks/checks/resolve');
+const { scanFiles, defaultJobs } = require('../hooks/checks/scan');
 const { formatFindings } = require('../hooks/checks/finding');
 const { FORMATS, jsonReport, sarifReport } = require('../hooks/checks/report');
 const { buildIndex, deadExports } = require('../hooks/checks/exports');
@@ -60,6 +61,11 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
                         with its date, path and rule. A baseline entry is a
                         suppression, and a suppression with no end is rot —
                         this is the removal trigger the file cannot carry.
+  --jobs <n>           scan with n worker processes. Defaults to one per core
+                        (max 8), and to 1 — this process, no workers — for a run
+                        of fewer than 250 files, where forking costs more than
+                        it saves. The report is identical either way: slices are
+                        reassembled in input order.
   --format <fmt>       (check only) text (default), json, or sarif. json is
                         procoder's own versioned shape; sarif is SARIF 2.1.0 for
                         code-scanning dashboards, carrying the same fingerprint
@@ -146,7 +152,32 @@ let uncheckedFiles = 0;
 // all walk many files, and each of them pays the same cold start otherwise.
 let toolAnswers = new Map();
 
+// Results a parallel pre-pass already computed, keyed by absolute path. Filled
+// only for the one pass of a command that reads every file the same way; the
+// second passes verify makes (with rules cleared, or with one path exclusion
+// lifted) deliberately bypass it, because they are asking a different question
+// of the same files.
+let scanned = new Map();
+
+// The exact config object and baseline setting the pre-pass ran under. Identity,
+// not equality: `verify` re-walks the same files with `rules` cleared, and again
+// with one path exclusion lifted, and each of those is a DIFFERENT question
+// about the same file. Answering them from the cache reported a live exclusion
+// as unused — caught by the test that exists for exactly that.
+let scannedConfig = null;
+let scannedBaseline = null;
+
 function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
+  const cached = config === scannedConfig && applyBaseline === scannedBaseline
+    ? scanned.get(absPath)
+    : null;
+  if (cached) {
+    if (cached.skipped && !skipsReported.has(cached.relPath)) {
+      skipsReported.add(cached.relPath);
+      reportSkip(cached.relPath, cached.skipped, absPath, config);
+    }
+    return cached;
+  }
   const out = checkFile(absPath, {
     repoRoot, config, maxFindings: Infinity, applyBaseline,
     toolAnswer: toolAnswers.get(path.normalize(absPath)) || null,
@@ -888,7 +919,7 @@ const COMMANDS = new Map([
 // Isolated so main() can pull the flag out of argv without pushing the
 // function that dispatches commands over the line-count threshold.
 const FLAGS = ['--unused-exclusions', '--no-ignore'];
-const VALUE_FLAGS = ['--format', '--since', '--aging'];
+const VALUE_FLAGS = ['--format', '--since', '--aging', '--jobs'];
 
 // Both spellings, `--format json` and `--format=json`, because a user who types
 // the one this parser does not accept gets their argument treated as a path,
@@ -914,6 +945,7 @@ function parseFlags(argv) {
     format: values.get('--format') || 'text',
     since: values.get('--since') || null,
     aging: values.has('--aging') ? Number(values.get('--aging')) : null,
+    jobs: values.has('--jobs') ? Number(values.get('--jobs')) : null,
     rest: rest.filter((a) => !FLAGS.includes(a)),
   };
 }
@@ -963,7 +995,7 @@ function sinceTargets(since, targets) {
 // "Nothing changed" is a real answer and is said out loud. Exiting 0 in silence
 // is indistinguishable from a clean check of a hundred files, which is how a CI
 // gate quietly stops covering anything.
-function runSince(since, targets, { command, noIgnore, format }) {
+async function runSince(since, targets, { command, noIgnore, format, jobs }) {
   let files = [];
   try {
     files = sinceTargets(since, targets);
@@ -980,7 +1012,33 @@ function runSince(since, targets, { command, noIgnore, format }) {
   const halt = reportStaleBaseline(command, repoRoot, config);
   if (halt !== null) return halt;
   toolAnswers = runToolBatches(files, { repoRoot });
+  scanned = await prescan({ command, files, repoRoot, config, jobs });
   return COMMANDS.get(command)(files, repoRoot, config, { format });
+}
+
+// The commands that read every file once, and how they read it. `rot` builds
+// its own index and `init` writes a file; neither goes through findingsFor.
+//
+// verify's main pass takes findings BEFORE baseline suppression — the ratchet
+// compares the full picture against what was accepted — so its pre-pass has to
+// ask for the same thing, or the cache would answer a different question from
+// the one presentFindings asks.
+const SCAN_PASS = new Map([
+  ['check', { applyBaseline: true }],
+  ['baseline', { applyBaseline: true }],
+  ['verify', { applyBaseline: false }],
+]);
+
+// One parallel pass over the file list, before the command walks it. Sequential
+// under the threshold, and sequential if anything goes wrong — see scan.js.
+async function prescan({ command, files, repoRoot, config, jobs }) {
+  const pass = SCAN_PASS.get(command);
+  if (!pass) return new Map();
+  const results = await scanFiles(files,
+    { repoRoot, config, applyBaseline: pass.applyBaseline, toolAnswers, jobs }, checkFile);
+  scannedConfig = config;
+  scannedBaseline = pass.applyBaseline;
+  return new Map(results.map((r) => [r.absPath, r]));
 }
 
 // A baseline from an older procoder suppresses nothing, so a legacy repo would
@@ -1038,8 +1096,8 @@ function refuseArguments({ command, targets, format, since, aging }) {
   return null;
 }
 
-function main(argv) {
-  const { unusedExclusions, noIgnore, format, since, aging, rest } = parseFlags(argv);
+async function main(argv) {
+  const { unusedExclusions, noIgnore, format, since, aging, jobs, rest } = parseFlags(argv);
   const [command, ...targets] = rest;
   // Its arguments are subcommands, not paths, so it branches off before the
   // path handling below.
@@ -1048,7 +1106,7 @@ function main(argv) {
 
   const refused = refuseArguments({ command, targets, format, since, aging });
   if (refused !== null) return refused;
-  if (since !== null) return runSince(since, targets, { command, noIgnore, format });
+  if (since !== null) return runSince(since, targets, { command, noIgnore, format, jobs });
 
   const files = expand(targets, true);
   if (files.length === 0) return 0;
@@ -1064,6 +1122,7 @@ function main(argv) {
   // times out or crashes simply answers for nothing, which leaves every file it
   // owns to the built-in pack exactly as a per-file timeout does.
   toolAnswers = runToolBatches(files, { repoRoot });
+  scanned = await prescan({ command, files, repoRoot, config, jobs });
 
   // Whether this run's targets covered the whole repository. Two of the three
   // path-exclusion staleness rules are claims about the tree and are only made
@@ -1074,4 +1133,13 @@ function main(argv) {
     { unusedExclusions, wholeTree, format, aging });
 }
 
-process.exit(main(process.argv.slice(2)));
+// The scan is asynchronous now, so the exit code arrives as a promise. A throw
+// here would exit 0 through an unhandled rejection on some Node versions, which
+// in a gate reads as a pass — so it is caught and turned into 2, "cannot check".
+main(process.argv.slice(2)).then(
+  (code) => process.exit(code),
+  (e) => {
+    process.stderr.write(`procoder: ${e && e.stack ? e.stack : e}\n`);
+    process.exit(2);
+  },
+);
