@@ -201,8 +201,9 @@ not a category.
 
 What this does *not* give you:
 
-- **A `.procoderignore` has no expiry test.** `[exclude] paths` now has a full
-  one. `unusedPathExclusions` in `hooks/checks/config.js` reports a configured
+- **All three instruments now have an expiry test, and the third one has two
+  deliberate gaps.** `unusedPathExclusions` in `hooks/checks/config.js` reports
+  a configured
   path exclusion three ways — its path no longer exists, it matches no file in
   the tree, or every file it covers is clean — under plain `verify`, failing
   the build only under `--unused-exclusions`, which is the contract
@@ -212,7 +213,17 @@ What this does *not* give you:
   tree-wide rules are decided only when the run's targets covered the whole
   repository — "this glob matches nothing" is a claim about the tree, and a
   `verify` over one file has not seen it — so a partial run still says nothing,
-  deliberately. An ignore file gets no staleness test of any kind.
+  deliberately. `unusedIgnorePatterns` judges a `.procoderignore` the same way
+  and on the same contract, one pattern at a time, naming file, line and the
+  pattern as written: reported when every *tracked* file it covers scans clean
+  with that one line lifted, or when a glob matches nothing in the walked tree.
+  The two gaps are on purpose. There is no "the path is gone" rule — a literal
+  path in an ignore file is a fence around a location, and such a location is
+  legitimately absent from a fresh clone, as this repository's own `.claude/`
+  and `.superpowers/` lines are in CI. And a pattern covering only untracked
+  files is never judged: content the repository does not own cannot go clean in
+  any sense procoder can verify. Where `git ls-files` cannot answer, no ignore
+  pattern is judged at all.
 - **`--no-ignore` does not re-include a `[exclude] paths` entry, on purpose.**
   The flag answers "why is this file not being checked?" by turning off every
   `.procoderignore` for the run, and nothing else. `[exclude] paths` is the
