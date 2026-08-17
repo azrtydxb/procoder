@@ -126,13 +126,11 @@ test('malformed input exits cleanly', () => {
 //
 // The budget is 2s and a real run costs ~65ms, so asserting against 2s asserts
 // almost nothing — except on a loaded machine, where the process spawn alone
-// can breach it, and then it asserts a flake. One already fired this session.
+// can breach it, and then it asserts a flake.
 //
 // So each run is compared against a baseline measured here and now: the same
-// hook, the same spawn, over a one-line file. Machine load moves baseline and
-// measurement together; work that stops being linear moves only the
-// measurement. Best of three on each side, because a scheduler stall hits one
-// run of three, not all three.
+// hook, the same spawn, over a one-line file. Work that stops being linear
+// moves the measurement and not the baseline.
 //
 // Catches: any regression that makes analysing a large file an order of
 // magnitude dearer than the spawn it rides on — today ~34ms of analysis over a
@@ -141,26 +139,64 @@ test('malformed input exits cleanly', () => {
 // config parsing), or a regression smaller than that multiple.
 const SPAWN_MULTIPLE = 6;
 
-// Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: what is
-// timed here is a child process, whose CPU is not this process's to measure.
-// Being a ratio between two spawns taken back to back is what keeps it from
-// scoring the machine's load instead of the hook's cost.
+// CPU time, not wall-clock — the same correction tests/perf-guard.js made, for
+// the same reason, and these three assertions were the ones it did not reach.
+//
+// A ratio of two wall-clock spawns was assumed to be load-proof because load
+// "moves both sides together". It does not. The baseline spawn is almost
+// entirely fixed startup — fork, node boot, module load — which under
+// contention inflates by scheduler queueing, a delay that has nothing to do
+// with how much work is queued behind it. The measured spawn is that same
+// startup PLUS the analysis. Two draws from a heavy-tailed distribution, best
+// of three each, and the ratio between them is not stable: measured under 20
+// spinners on a 10-core box, three of six runs of this file failed.
+//
+// A child's CPU is not the parent's to measure — `process.cpuUsage()` reads
+// RUSAGE_SELF, and a waited-for child lands in RUSAGE_CHILDREN — so the child
+// measures itself. `cpuProbe` is a wrapper that installs an exit handler and
+// then requires the hook, so the number covers the real hook process end to
+// end, module load included, and is reported on a stream nothing else parses.
+// Other processes steal wall time from the hook; they cannot spend its CPU.
+const CPU_MARK = 'PROCODER_CPU_MS';
+const cpuProbe = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cpu-'));
+  const file = path.join(dir, 'probe.js');
+  // The hook exits via process.exit() on its top-level catch, so this has to be
+  // an 'exit' listener rather than code after the require.
+  fs.writeFileSync(file, 'process.on("exit", () => {\n'
+    + '  const u = process.cpuUsage();\n'
+    + `  require("fs").writeSync(2, "\\n${CPU_MARK} " + (u.user + u.system) / 1000 + "\\n");\n`
+    + '});\n'
+    + `require(${JSON.stringify(HOOK)});\n`);
+  return file;
+})();
+
+function hookCpuMs(repo, filePath) {
+  const res = spawnSync('node', [cpuProbe], {
+    encoding: 'utf8',
+    cwd: repo,
+    input: JSON.stringify({ tool_name: 'Write', cwd: repo, tool_input: { file_path: filePath } }),
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  });
+  const at = new RegExp(`${CPU_MARK} ([\\d.]+)`).exec(res.stderr || '');
+  assert.ok(at, `the hook process did not report its CPU time:\n${res.stderr}`);
+  return Number(at[1]);
+}
+
+// Best of N: a GC pause or a page fault is the hook's own CPU time and only
+// best-of drops it.
 function bestOf(runs, work) {
   let best = Infinity;
-  for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
-  }
+  for (let i = 0; i < runs; i += 1) best = Math.min(best, work());
   return best;
 }
 
 function assertNearBareHook(repo, file, what) {
   const bare = repoWith({ 'bare.ts': 'const x = 1;\n' });
-  const baseline = bestOf(3, () => runHook(bare, path.join(bare, 'bare.ts')));
-  const elapsed = bestOf(3, () => runHook(repo, file));
+  const baseline = bestOf(3, () => hookCpuMs(bare, path.join(bare, 'bare.ts')));
+  const elapsed = bestOf(3, () => hookCpuMs(repo, file));
   assert.ok(elapsed <= baseline * SPAWN_MULTIPLE + 50,
-    `${what}: ${elapsed}ms against a ${baseline}ms one-line-file baseline`);
+    `${what}: ${elapsed}ms of CPU against a ${baseline}ms one-line-file baseline`);
 }
 
 test('the hook stays inside its budget on a large file', () => {
@@ -180,11 +216,19 @@ test('the hook stays inside its budget on a minified file', () => {
 //
 // Two assertions, because they fail for different reasons. The first is
 // relative: a file at the cap against a quarter of the cap, same machine, same
-// spawn, so load moves both — linear work lands near 4x and anything
-// super-linear runs away from it. The second is the requirement itself, and
-// BUDGET_MS is an engine constant rather than a machine one; it is worth
-// asserting here because the margin is real (measured 440ms against 2000ms),
-// unlike the one-line runs where 65ms against 2000ms asserted nothing.
+// spawn, so linear work lands near 4x and anything super-linear runs away from
+// it. The second is the requirement itself, and BUDGET_MS is an engine constant
+// rather than a machine one; it is worth asserting here because the margin is
+// real (measured ~230ms against 2000ms), unlike the one-line runs where 65ms
+// against 2000ms asserted nothing.
+//
+// Both in CPU milliseconds. The budget it defends is a wall-clock one, and that
+// is exactly why: on an idle machine the two numbers are the same, and on a
+// machine oversubscribed 3:1 the wall-clock figure is how long the scheduler
+// made the hook wait, which is the runner's property and not the engine's. A
+// bound that fires because someone else's build was running proves nothing and
+// trains everyone to re-run CI. What the engine owes is that the work it does
+// fits the budget; what a host owes is to run it.
 test('the hook stays inside its budget on a file at the size cap', () => {
   const unit = 'export function f(a, b) { if (a) { return b; } return a; }\n';
   const fill = (bytes) => unit.repeat(Math.ceil(bytes / unit.length)).slice(0, bytes);
@@ -193,14 +237,14 @@ test('the hook stays inside its budget on a file at the size cap', () => {
     'atcap.ts': fill(MAX_FILE_BYTES),
   });
 
-  const quarter = bestOf(3, () => runHook(repo, path.join(repo, 'quarter.ts')));
-  const atCap = bestOf(3, () => runHook(repo, path.join(repo, 'atcap.ts')));
+  const quarter = bestOf(3, () => hookCpuMs(repo, path.join(repo, 'quarter.ts')));
+  const atCap = bestOf(3, () => hookCpuMs(repo, path.join(repo, 'atcap.ts')));
 
   assert.ok(atCap < quarter * 6,
-    `a file at the cap cost ${atCap}ms against ${quarter}ms for a quarter of it — `
+    `a file at the cap cost ${atCap}ms of CPU against ${quarter}ms for a quarter of it — `
     + 'the size-dependent work is no longer linear');
   assert.ok(atCap < BUDGET_MS,
-    `the largest permitted input took ${atCap}ms of a ${BUDGET_MS}ms budget`);
+    `the largest permitted input took ${atCap}ms of CPU of a ${BUDGET_MS}ms budget`);
 });
 
 // A skipped file must say why. The hook emits no context for it — there are no

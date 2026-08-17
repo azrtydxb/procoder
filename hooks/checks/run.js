@@ -42,34 +42,79 @@ const MAX_FINDINGS_PER_LINE = 20;
 // real: past it the user gets a stall and no findings at all.
 const BUDGET_MS = 2000;
 
-// What a language pack costs per megabyte of source, measured on this engine
-// across all six packs at 1MB: ts 187ms, java 188ms, cs 184ms, rs 169ms, go
-// 165ms, py 134ms — linear in size, and the universal pack adds 12ms/MB on top.
-// 200 is the worst of those rounded up, and it is used two ways: to reserve the
-// pack's share of the budget from the linter below, and to derive MAX_FILE_BYTES.
-const PACK_MS_PER_MB = 200;
+// The share of what is LEFT of the budget that the project's linter may take,
+// computed at the moment the linter is invoked rather than split off in
+// advance.
+//
+// This replaces `budgetMs/2 - 200ms/MB`, and the constant it replaces is the
+// whole reason CI was red. 200ms/MB was this laptop's pack throughput; on a
+// runner 2-3x slower the pack needed more than that reserve predicted, and the
+// linter — whose timeout had already been fixed from the same constant — had no
+// way to give any of it back. The composition then ran to 1794ms of a 2000ms
+// budget where the same code measured 1332ms here. A constant derived by
+// measurement only holds the budget on the machine that measured it.
+//
+// A share of the remainder holds on any machine, because it is arithmetic
+// rather than a prediction: everything in-process has already been spent when
+// this is computed, so total <= spent + SHARE * (budget - spent) < budget for
+// any spent < budget, whatever the host's speed. A slow pack shrinks the
+// linter's slice instead of overrunning after it.
+//
+// The share is below 1 because work remains after the linter returns — the
+// marked-literal filter, the per-line cap, the sort, the baseline. That tail
+// scales with the same host slowdown as everything else, which is exactly why
+// its reserve is a fraction of what is left and not a millisecond constant.
+// 0.4 of the remainder covers a tail measured at 30-90ms here on a file at the
+// cap, with room for a host several times slower.
+const LINTER_BUDGET_SHARE = 0.6;
+
+// Below this there is no point spawning at all: no linter starts, reads a file
+// and reports inside it, so the slice would buy nothing and the fork would cost
+// real time. Not a throughput number — process startup, on any host, is tens of
+// milliseconds before the tool's own runtime boots.
+const LINTER_MIN_MS = 100;
 
 // Total-size skip. Lives in config.js because `[limits] max_file_bytes` lets a
 // project clamp it downward, and the clamp has to be applied — and warned about
 // — once, where the config is read. The derivation stays here, with the numbers
 // it was derived from.
 //
-// This came down from 4MB, which measurement did not support. The old comment
-// claimed 4MB cost 122ms; measured end to end through the hook process it costs
-// 896ms, and the number that matters is not the file alone but the worst
-// realistic composition — the project's linter hangs and burns its slice, then
-// the pack runs. That measured 1797ms of a 2000ms budget at 4MB, and the hook
-// process as a whole took 2608ms, past the kill. Worse, 3MB and 4MB did not
-// merely stall: one finding per line is ~157,000 findings, and the engine threw
-// `Maximum call stack size exceeded` from inside the cap — which the hook's
-// top-level catch turns into a silent clean result.
+// It came down from 4MB, which measurement did not support: 3MB and 4MB did not
+// merely stall, they threw `Maximum call stack size exceeded` from inside the
+// cap — one finding per line is ~157,000 findings — which the hook's top-level
+// catch turns into a silent clean result.
 //
-// 2MB is where the size-dependent work stays at a quarter of the budget:
-// 2MB x (200 + 12)ms/MB = 424ms measured, against 2000ms. The worst realistic
-// composition at 2MB measures ~1030ms — 52% of budget, so a machine would have
-// to be 1.9x slower than this one to breach. At 4MB the same composition sat at
-// 90% and any machine 1.15x slower breached it. 2MB is still larger than any
-// file a human edits, and far above the 256KB this cap once used.
+// It has now come down again, from 2MB to 1MB, and the reason is the point of
+// this whole file: the language pack is the one stage of a check that cannot be
+// abandoned part-way. Everything after it is deadline-driven and therefore
+// host-independent (see LINTER_BUDGET_SHARE), but the pack is a single
+// synchronous call, so the only lever on its cost is the size of what it is
+// given. That makes this cap the one number that still has to be derived by
+// measurement — and a number derived by measurement must state the slowdown it
+// survives, or it is only true on the machine that measured it.
+//
+// Measured here at 1MB of ordinary source, worst pack of the six: ts 388ms,
+// java 188ms, cs 188ms, go 202ms, rs 172ms, py 91ms, plus ~10ms for the
+// universal pack. So 1MB costs ~400ms of a 2000ms budget on this machine, and
+// the stated guarantee is that a host THREE TIMES SLOWER still finishes: 1.2s
+// of pack, leaving ~800ms from which the linter takes its share and the tail
+// runs. At the old 2MB the same file cost ~780ms here and 2.3s at 3x — over
+// budget before the linter was even reached, which no scheduling scheme can
+// repair.
+//
+// (388ms/MB is itself up from the 187ms the previous derivation used, because
+// the taint work roughly doubled the ts pack's constant. That is the second
+// reason to state a slowdown factor: the factor absorbs the engine getting
+// slower as well as the host being slower, and a `[limits] max_file_bytes`
+// clamp in .procoder.toml is the knob for a project that needs more headroom
+// than 3x on hardware nobody here has measured.)
+//
+// Bytes are an imperfect proxy and knowingly so: most pack rules are per LINE,
+// so cost tracks line count as much as size. 1MB of newlines costs the java
+// pack 1265ms against 188ms for 1MB of code. No file a human edits looks like
+// that, a generated one that does is what `[exclude] paths` and .procoderignore
+// are for, and the deadline reporting below is what makes the overrun loud
+// rather than silent if one ever arrives.
 //
 // The constant itself is `MAX_FILE_BYTES`, imported from config.js above.
 
@@ -208,22 +253,20 @@ function readSource(absPath, relPath, config) {
 // `answered` is false for a linter that timed out or crashed, and for no
 // linter at all — both leave the pack covering the whole file.
 //
-// The linter gets half the budget minus the pack's share of it, because the
-// linter is the one consumer of the budget that can hang and the one whose
-// absence costs least: rung 1 has already run, the pack's SAFE rules run after
-// this regardless, and all a timeout loses is the linter's own rung-2 findings.
-// Reserving first is what keeps the total flat as the file grows — measured
-// against a hung linter, a one-line file cost 1005ms and a file at the cap
-// 1788ms before the reserve, and ~1030ms for both after it.
-function toolResults(relPath, { repoRoot, absPath, deadline, budgetMs, bytes }) {
+// The linter goes LAST and is paid out of what is actually left, because it is
+// the one consumer of the budget that can hang and the one whose absence costs
+// least: rung 1 has already run, the pack's SAFE rules have already run, and a
+// timeout loses only the linter's own rung-2 findings. Anything it cannot be
+// given is named in `unchecked` and reported — see checkFile.
+function toolResults(relPath, { repoRoot, absPath, deadline, unchecked }) {
   const tool = resolveFor(relPath, { repoRoot });
-  if (!tool || Date.now() >= deadline) return { findings: [], answered: false };
-  const packReserveMs = Math.ceil((bytes / (1024 * 1024)) * PACK_MS_PER_MB);
-  const result = runToolResult(tool, {
-    repoRoot,
-    absPath,
-    timeoutMs: Math.min(1500, Math.max(250, Math.floor(budgetMs / 2) - packReserveMs)),
-  });
+  if (!tool) return { findings: [], answered: false };
+  const timeoutMs = Math.floor((deadline - Date.now()) * LINTER_BUDGET_SHARE);
+  if (timeoutMs < LINTER_MIN_MS) {
+    unchecked.push(`${tool.name} (no budget left for it)`);
+    return { findings: [], answered: false };
+  }
+  const result = runToolResult(tool, { repoRoot, absPath, timeoutMs });
   return { findings: result.findings, answered: result.ok };
 }
 
@@ -241,16 +284,30 @@ function packResults(pack, source, shaped, options) {
 // The project's linter plus the language pack: everything that answers for this
 // one file's own code, and so everything the touched-range narrowing may reduce.
 // The universal pack is deliberately not here — it is never narrowed.
+//
+// The pack runs BEFORE the linter, which is the other half of the fix. The pack
+// is in-process, deterministic and bounded by MAX_FILE_BYTES; the linter is a
+// subprocess that can hang for as long as it is allowed to. Spending the
+// bounded work first means the linter's slice is computed from the time that is
+// really left on this machine, instead of from a guess at what the pack was
+// about to cost on some other one.
 function narrowableFindings(relPath, source, shaped, opts) {
-  const { repoRoot, absPath, config, deadline, budgetMs } = opts;
-  const tool = toolResults(relPath, {
-    repoRoot, absPath, deadline, budgetMs, bytes: source.length,
-  });
-  const local = [...tool.findings];
+  const { repoRoot, absPath, config, deadline, unchecked } = opts;
+  const local = [];
 
   const pack = packFor(relPath);
-  if (pack && Date.now() < deadline) {
-    const packFindings = packResults(pack, source, shaped, { relPath, config });
+  let packFindings = null;
+  if (pack) {
+    if (Date.now() < deadline) {
+      packFindings = packResults(pack, source, shaped, { relPath, config });
+    } else {
+      unchecked.push(`the ${path.extname(relPath).replace('.', '') || 'language'} rules`);
+    }
+  }
+
+  const tool = toolResults(relPath, { repoRoot, absPath, deadline, unchecked });
+  pushAll(local, tool.findings);
+  if (packFindings) {
     pushAll(local, tool.answered
       ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
       : packFindings);
@@ -273,7 +330,10 @@ function reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, 
   // and a test asserting on one are the same problem as a test asserting on a
   // credential, and one mechanism has to cover all three. The marker names its
   // rules and reaches at most two lines — see universal.js.
-  const scoped = capFindingsPerLine(filterMarkedLiterals(source, findings))
+  // relPath is passed so an unknown-id warning names the file. Without it this
+  // pass — the one that actually runs, since the pack's own returns early when
+  // the pack found nothing — printed "at line N" and no path.
+  const scoped = capFindingsPerLine(filterMarkedLiterals(source, findings, relPath))
     .filter((f) => !isRuleExcluded(config, relPath, f.id));
 
   const lines = source.split(/\r?\n/);
@@ -291,11 +351,43 @@ function reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, 
   };
 }
 
+// What the budget cost us, said out loud. A stage the deadline cut is coverage
+// the caller did not get, and coverage silently not taken is the failure this
+// project has fixed nine times — so it arrives on both channels the caller has:
+//
+//   - as a finding, which is the only thing the hook renders into the model's
+//     context, and which is appended AFTER the per-file cap so that five SAFE
+//     findings can never push it out. A notice that survives only when there
+//     was nothing else to report is not a notice.
+//   - on stderr, which reaches the transcript whatever the caller does with the
+//     finding list, and matches how a skipped file already announces itself.
+//
+// Never throws: `finding` only throws on an unknown rung, and this one is
+// literal.
+function reportUnchecked(report, unchecked, budgetMs) {
+  if (unchecked.length === 0) return report;
+  const what = unchecked.join(', ');
+  process.stderr.write(
+    `procoder: ${report.relPath}: ${budgetMs}ms budget exhausted — not checked: ${what}\n`);
+  report.findings = report.findings.concat(finding({
+    rung: 'TRUE',
+    id: 'true/budget-exhausted',
+    line: 1,
+    message: `only partly checked: the ${budgetMs}ms budget ran out before ${what}`,
+    fix: 'split the file, or exclude it if it is generated — its findings are unknown, not absent',
+  }));
+  return report;
+}
+
 function checkFile(absPath, {
   repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
   touched = null, budgetMs = BUDGET_MS,
 } = {}) {
   const deadline = Date.now() + budgetMs;
+  // Every stage the deadline cut, in the order it would have run. Threaded
+  // rather than returned, because the stages that get cut are three levels down
+  // and each one is the only place that knows what it was about to do.
+  const unchecked = [];
   const relPath = path.relative(repoRoot, absPath).replace(/\\/g, '/');
   const { source, skipped } = readSource(absPath, relPath, config);
   if (skipped) return { relPath, findings: [], skipped };
@@ -312,17 +404,20 @@ function checkFile(absPath, {
   const findings = checkUniversal(source, { relPath, config });
 
   pushAll(findings, withinTouched(
-    narrowableFindings(relPath, source, shaped, { repoRoot, absPath, config, deadline, budgetMs }),
+    narrowableFindings(relPath, source, shaped, { repoRoot, absPath, config, deadline, unchecked }),
     source, touched,
   ));
 
   // Dependency manifests get one extra pass: a floating range or an absent
   // lockfile is a rung-1 finding no language pack looks for.
-  if (MANIFEST_FILES.has(path.basename(relPath)) && Date.now() < deadline) {
-    pushAll(findings, checkManifest(absPath, source));
+  if (MANIFEST_FILES.has(path.basename(relPath))) {
+    if (Date.now() < deadline) pushAll(findings, checkManifest(absPath, source));
+    else unchecked.push('the dependency manifest rules');
   }
 
-  return reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings });
+  return reportUnchecked(
+    reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings }),
+    unchecked, budgetMs);
 }
 
 module.exports = {

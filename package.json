@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "description": "Ship gate for AI-written code: security, correctness, readability, and nothing stale left behind.",
   "license": "Apache-2.0",
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=20" },
   "bin": { "procoder": "./bin/procoder.js" },
   "main": "./hooks/procoder-runtime.js",
   "files": [

@@ -6,11 +6,14 @@ const path = require('path');
 const { parseToml } = require('./toml');
 
 // The largest file the engine will open. A measured ceiling, not a preference:
-// past it the engine either eats the whole 2s hook budget or overflows the
-// stack building the finding list. run.js carries the derivation and the
-// numbers behind it; it lives here because `[limits] max_file_bytes` lets a
-// project clamp it, and a clamp belongs where the config is read.
-const MAX_FILE_BYTES = 2 * 1024 * 1024;
+// past it the engine either overflows the stack building the finding list or
+// spends more than the 2s hook budget inside the one stage of a check that
+// cannot be abandoned part-way, the language pack. run.js carries the
+// derivation, the per-pack numbers behind it and — the part that matters — the
+// slowdown factor it is stated to survive. It lives here because
+// `[limits] max_file_bytes` lets a project clamp it, and a clamp belongs where
+// the config is read.
+const MAX_FILE_BYTES = 1024 * 1024;
 
 const DEFAULTS = {
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
@@ -56,9 +59,12 @@ const MAX_FILE_BYTES_LINE = /^\s*(?:limits\s*\.\s*)?max_file_bytes\s*=/;
 // `[limits] max_file_bytes` clamps the size cap DOWNWARD ONLY.
 //
 // The built-in ceiling is a measurement, not a taste: above it the engine
-// misses the hook budget or crashes, and either way the file is not checked. So
-// a smaller value — a slower machine, a project wanting a tighter guarantee —
-// is honoured, and a larger one is refused with a warning naming file and line.
+// misses the hook budget or crashes, and either way the file is not checked. It
+// is stated to hold on a host up to three times slower than the one that
+// measured it, and this clamp is the knob for a project that needs more
+// headroom than that — hardware nobody here has measured, a container with a
+// CPU quota, a laptop on battery. So a smaller value is honoured, and a larger
+// one is refused with a warning naming file and line.
 // Config may always narrow what procoder trusts itself to do; it may never
 // widen it past what measurement supports.
 //

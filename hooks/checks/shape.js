@@ -130,39 +130,34 @@ function indentBlock(open, endLine) {
   return { ...open, endLine, length: endLine - open.startLine + 1 };
 }
 
-// True when the file indents some lines with tabs and others with spaces.
-function mixesTabsAndSpaces(lines) {
-  let tabs = false;
-  let spaces = false;
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const leading = /^[ \t]*/.exec(line)[0];
-    tabs = tabs || leading.includes('\t');
-    spaces = spaces || leading.includes(' ');
-    if (tabs && spaces) return true;
-  }
-  return false;
-}
-
-// Depth for a file that mixes tabs and spaces, counted as changes of
-// indentation rather than as multiples of tabWidth.
+// Nesting depth as a stack of enclosing indentation columns: `columns` holds
+// the column of every statement this one is nested inside, and its height *is*
+// the depth. A statement indented wider than the one before opens a level, one
+// indented back to or past an enclosing column closes every level it passed.
 //
-// The tab-width conversion answers "how many tabWidths wide is this line's
-// indent", which is the nesting level only when every level is exactly one
-// tabWidth. Mix a two-space level with a tab level and two real levels land in
-// the same bucket: the file reports one level less than it has, and a function
-// nested past the limit passes. Under-reporting is the wrong direction of
-// error for a nesting check.
+// This is what depth is — a property of the nesting structure — and it needs
+// no unit at all. Depth used to be `column / step` for some step read off the
+// file, which answers a different question: "how many steps wide is this
+// indent". The two agree only when every level in the file is exactly one step
+// wide, and they came apart in three ways, all real:
 //
-// Counting changes instead needs no guess at what a tab is worth — a line
-// indented wider than the one enclosing it is one level deeper, whatever the
-// indent is made of. Python 3 rejects such a file outright (TabError), so
-// there is no "correct" tab width to recover; the enclosing/enclosed ordering
-// is the only thing both readings agree on, and it is all a depth count needs.
+//   too wide  — a step had to be 8 columns or narrower to be a candidate at
+//               all, so a file indented 9, 10, 12 or 16 columns per level fell
+//               back to tabWidth and counted every real level twice or four
+//               times. Correct code, reported as over-nested at rung 3.
+//   two units — the step was one number for the whole file, the commonest one,
+//               so a region indented differently was measured against someone
+//               else's: a six-level two-space function in a four-space file
+//               read as three and passed a limit of three. Silent, and the
+//               worse half — a genuine violation reported as nothing.
+//   tabs      — a tab level and a two-space level land in the same bucket, so
+//               two real levels read as one. Python 3 rejects such a file
+//               (TabError), so there is no "correct" tab width to recover.
 //
-// It runs only on mixed files. Consistent indentation — every real Python file
-// a formatter has touched — keeps the tabWidth arithmetic byte for byte, so
-// this can only change the reading of a file Python itself would refuse.
+// The ordering of enclosing to enclosed is the one thing every reading of a
+// file agrees on, whatever its indentation is made of, and it is all a depth
+// count needs. tabWidth survives with its own, narrower meaning — what a tab
+// expands to — because ordering still has to compare a tab against spaces.
 function changeDepth(columns, column) {
   while (columns.length && columns[columns.length - 1] >= column) columns.pop();
   if (column > 0) columns.push(column);
@@ -175,6 +170,14 @@ function changeDepth(columns, column) {
 // `):` line — back at the def's own column — so every wrapped def measures as
 // short as its signature, however long the body is. This is the indentation
 // half of the brace languages' wrapped-signature gap.
+//
+// Python's other continuation is an explicit backslash, and it is the same
+// case: `if a or \` puts the rest of one condition on the next line, aligned
+// under the first, and CPython's idlelib/calltip_w.py aligns three such lines
+// one column past the `if` — which counting them as statements reads as a level
+// of nesting that is not there.
+const LINE_CONTINUES = /\\\s*$/;
+
 function bracketBalance(line) {
   let balance = 0;
   for (let i = 0; i < line.length; i += 1) {
@@ -192,6 +195,7 @@ function bracketBalance(line) {
 function indentRows(lines, tabWidth) {
   const rows = [];
   let open = 0;
+  let continued = false;
   for (const line of lines) {
     if (!line.trim()) {
       rows.push(null);
@@ -200,63 +204,12 @@ function indentRows(lines, tabWidth) {
     const leading = /^[ \t]*/.exec(line)[0];
     rows.push({
       column: leading.replace(/\t/g, ' '.repeat(tabWidth)).length,
-      continuation: open > 0,
+      continuation: open > 0 || continued,
     });
     open = Math.max(0, open + bracketBalance(line));
+    continued = LINE_CONTINUES.test(line);
   }
   return rows;
-}
-
-// Wider than any indentation style in use — a tab stop is 8 at the widest — and
-// the point past which a step is an alignment rather than a level.
-const MAX_INDENT_STEP = 8;
-
-// What one level of indentation is worth in this file, in columns.
-//
-// Depth used to be `column / tabWidth` with tabWidth fixed at 4 by the caller,
-// which answers "how many tabWidths wide is this indent" — the nesting level
-// only when a level happens to be exactly four columns. A file indented two
-// spaces per level reported half its depth, so seven real levels measured three
-// and passed a limit of three: a genuine violation, silently green. Two-space
-// Python is ordinary — black is not universal, and plenty of code predates it.
-//
-// The file says what a level is worth: it is the step from one statement's
-// indentation to the next's. Taking the *commonest* step rather than the
-// smallest is what survives the odd line — a hanging block, a misaligned
-// continuation, a `# fmt: off` region — since one stray two-column step in a
-// four-space file would otherwise double every depth in it and put a nesting
-// finding on correct code. Steps are read between statements only, and an
-// alignment wider than any indentation style is not a candidate at all.
-//
-// tabWidth keeps its own, narrower meaning: what a tab character expands to.
-// The two are independent — a tab-indented file is 4, 4, 4 columns and steps of
-// 4 — so the packs need no change, and a caller that passes tabWidth: 4 (py.js
-// does) gets four-column tabs and the file's own step.
-function indentSteps(rows) {
-  const seen = new Map();
-  let previous = 0;
-  for (const row of rows) {
-    if (!row || row.continuation) continue;
-    const step = row.column - previous;
-    if (step > 0 && step <= MAX_INDENT_STEP) seen.set(step, (seen.get(step) || 0) + 1);
-    previous = row.column;
-  }
-  return seen;
-}
-
-function indentStep(rows, tabWidth) {
-  const seen = indentSteps(rows);
-  let width = 0;
-  let commonest = 0;
-  for (const [step, count] of seen) {
-    if (count > commonest || (count === commonest && step < width)) {
-      width = step;
-      commonest = count;
-    }
-  }
-  // A file with no indentation at all, or none this can read: nothing is nested
-  // in it, so any width answers 0, and tabWidth is the caller's own guess.
-  return width || tabWidth;
 }
 
 // Indentation *is* the block structure, so this runs only for the indentation
@@ -268,11 +221,6 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
   const rows = indentRows(lines, tabWidth);
   const blocks = [];
   const columns = [];
-  // Inference reads one step off the file, so it needs the file to have one.
-  // A file that mixes tabs and spaces has none by construction, and is counted
-  // by changes of indentation instead — see changeDepth.
-  const mixed = mixesTabsAndSpaces(lines);
-  const step = mixed ? tabWidth : indentStep(rows, tabWidth);
   let maxDepth = 0;
   let openBlock = null;
 
@@ -280,12 +228,11 @@ function analyzeIndent(source, { tabWidth = 4 } = {}) {
     const row = rows[index];
     // A continuation's column is an alignment under an open bracket, not a
     // level — `compute(a,` aligns its second argument under the first, at
-    // whatever column that lands on. It used to count towards depth anyway,
-    // which a narrower step magnifies: the same aligned line that read as
-    // depth 4 at a fixed four columns reads as 9 at the two the file actually
-    // uses. Statements are what nest, so only statements are counted.
+    // whatever column that lands on, and counting it would read one call as
+    // several levels of nesting. Statements are what nest, so only statements
+    // are counted.
     if (!row || row.continuation) return;
-    const depth = mixed ? changeDepth(columns, row.column) : Math.floor(row.column / step);
+    const depth = changeDepth(columns, row.column);
     maxDepth = Math.max(maxDepth, depth);
 
     if (DEF_OR_CLASS.test(line)) {
@@ -339,33 +286,59 @@ function frameParams(frame) {
   return frame.last === ',' ? frame.commas : frame.commas + 1;
 }
 
+// What `/\s/` matches, decided without a regex call. This is the hottest loop
+// in the engine — once per character of every file every pack reads — and a
+// regex test there was two thirds of its cost. ASCII whitespace is six
+// comparisons; anything above ASCII is rare enough to still ask the regex, so
+// the answer is the one `/\s/` gave, character for character.
+function isSpace(ch) {
+  return ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r'
+    || ch === '\f' || ch === '\v' || (ch > '\x7f' && /\s/.test(ch));
+}
+
 function countAt(frame, ch) {
   if (ch === ',' && frame.generic === 0) frame.commas += 1;
   else if (ch === '<') frame.generic += 1;
   else if (ch === '>' && frame.generic > 0) frame.generic -= 1;
 }
 
+// Closes the innermost frame, records its span when it was a parameter list,
+// and answers the frame that is innermost now.
+function closeFrame(stack, spans, at) {
+  const frame = stack.pop();
+  if (frame && frame.ch === '(') spans.set(frame.at, { end: at, params: frameParams(frame) });
+  return stack.length ? stack[stack.length - 1] : null;
+}
+
 function paramSpans(text) {
   const spans = new Map();
   const stack = [];
+  // The innermost frame, carried rather than looked up: this loop runs once per
+  // character of every file the engine sees, and `stack[stack.length - 1]` on
+  // each of them is the difference between 30ms and 200ms on a 2MB file.
+  let top = null;
+  // Whitespace never reaches here — the loop steps over it — so `seen` no
+  // longer has to ask whether this character is any.
   const seen = (ch) => {
-    const top = stack[stack.length - 1];
-    if (!top || /\s/.test(ch)) return;
+    if (!top) return;
     top.last = ch;
     top.content = top.content || ch !== ',';
   };
 
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
+    // Whitespace is most of a source file and says nothing about any of the
+    // three things this tracks, so it is stepped over before anything else
+    // looks at it.
+    if (isSpace(ch)) continue;
     if (OPENS.includes(ch)) {
       seen(ch);
-      stack.push({ ch, at: i, commas: 0, generic: 0, last: '', content: false });
+      top = { ch, at: i, commas: 0, generic: 0, last: '', content: false };
+      stack.push(top);
     } else if (CLOSES.includes(ch)) {
-      const frame = stack.pop();
-      if (frame && frame.ch === '(') spans.set(frame.at, { end: i, params: frameParams(frame) });
+      top = closeFrame(stack, spans, i);
       seen(ch);
     } else {
-      const top = stack[stack.length - 1];
       if (top) countAt(top, ch);
       seen(ch);
     }
@@ -451,11 +424,6 @@ function lineRuleFindings(rules, lines, { codeLines = lines, skip } = {}) {
   });
   return findings;
 }
-
-// How far a wrapped `def`'s continuation lines are followed in
-// `hooks/checks/lang/py.js`. Python has no block-opening brace, so nothing in
-// this file uses it any more; it stays exported because that pack imports it.
-const SIGNATURE_LOOKBACK = 10;
 
 // How far past its parameter list's `)` a block-opening `{` may sit. This is a
 // bound on the *tail* — a return type, `throws`, a `where` clause — and not on
@@ -863,7 +831,6 @@ function emptyCatchFindings(text, re, message) {
 }
 
 module.exports = {
-  SIGNATURE_LOOKBACK,
   stripNoise,
   analyzeBraces,
   analyzeIndent,
