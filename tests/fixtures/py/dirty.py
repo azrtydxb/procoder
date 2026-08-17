@@ -63,6 +63,11 @@ def deep(x, y, z, w):
                 go(w)
 
 
+def load_profile(url):
+    s = requests.Session()
+    return s.get(url)
+
+
 def lookup_user_tainted(cursor, uid):
     q = f"SELECT * FROM t WHERE id = {uid}"
     return cursor.execute(q)

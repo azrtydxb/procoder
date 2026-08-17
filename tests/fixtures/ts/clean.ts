@@ -83,6 +83,10 @@ export const SINK_PATTERN = /dangerouslySetInnerHTML|\.innerHTML\s*=|document\.w
 // value bound to a name before it reaches the sink. All four stay silent —
 // a bound placeholder, a value built only from literals, a binding cleared by
 // a literal reassignment, and a tainted value that never reaches a sink.
+async function loadProfileBounded(url: string) {
+  return await fetch(url, { signal: AbortSignal.timeout(5000) });
+}
+
 function lookupUserBound(db: any, id: string) {
   const q = "SELECT * FROM users WHERE id = ?";
   return db.query(q, [id]);

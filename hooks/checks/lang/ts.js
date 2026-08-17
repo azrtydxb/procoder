@@ -80,6 +80,36 @@ const LINE_RULES = [
     fix: 'use crypto.randomUUID() or crypto.randomBytes()',
   },
   {
+    // `fetch` has no timeout anywhere it runs — not in a browser, not in Node —
+    // and an axios call without `timeout` inherits none either. Both park the
+    // caller until the far end answers.
+    //
+    // Only the SINGLE-argument form, and that bound is the whole rule. A second
+    // argument may carry the `signal` (or axios's `timeout`) and may be a name
+    // this rule cannot see inside — `fetch(url, opts)` — so reading it as
+    // missing a timeout would be a blocking rung-2 finding on correct code.
+    // Measured on a 6,000-file corpus, and three shapes had to be excluded for
+    // the same reason, each of them a real package's correct code:
+    //
+    //   `fetch(...args)`   a passthrough wrapper (@reduxjs/toolkit). The
+    //                      caller's own options, signal included, are in the
+    //                      spread, and this rule cannot see into it.
+    //   `axios(config)`    the bare call takes ONE config object, which is
+    //                      where axios's own `timeout` lives — so the bare
+    //                      form is not matched at all, only `axios.get(url)`
+    //                      and its siblings, whose first argument is the URL.
+    //   a local `fetch`    a module that declares its own (esbuild's installer
+    //                      wraps `https.get`; @protobufjs/fetch requires one)
+    //                      is not calling the global — see FETCH_SHADOW.
+    //
+    // The lookbehind keeps the method spelling out for the same reason:
+    // `cache.fetch(key)` and `this.fetch(url)` are somebody else's fetch.
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: /(?<![.\w$])(?:fetch|axios\.(?:get|post|put|patch|delete|head|request))\s*\(\s*(?!\.\.\.)[^(),]{0,200}\)/,
+    message: 'outbound call with no timeout — fetch has none, and neither has an axios call without one',
+    fix: 'pass { signal: AbortSignal.timeout(ms) }, or axios { timeout: ms }',
+  },
+  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /\bdebugger\s*;|\bconsole\.(?:log|debug|dir|trace)\s*\(/,
     message: 'leftover debugging statement',
@@ -225,6 +255,14 @@ const FUNCTION_SIGNATURE = {
   tail: /\s*(?::[^{=]{1,500})?(?:=>)?\s*\{/,
 };
 
+// A module that declares its own `fetch` is not calling the platform's, and
+// what that local one does about timeouts is its own business — esbuild's
+// installer wraps `https.get` in one, @protobufjs/fetch requires one from its
+// own package. File-scoped, like the Python pack's Session bindings: the name
+// means whatever the file bound it to.
+const FETCH_SHADOW = /(?:function\s+fetch\s*\(|(?:const|let|var)\s+fetch\s*=)/;
+const FETCH_CALL = /(?<![.\w$])fetch\s*\(/;
+
 function check(source, { relPath, config } = {}) {
   const text = String(source || '');
   const lines = text.split(/\r?\n/);
@@ -241,8 +279,11 @@ function check(source, { relPath, config } = {}) {
   const codeLines = code.split(/\r?\n/);
   const strippedLines = stripped.split(/\r?\n/);
   const ctx = packContext({ lines: codeLines, stripped: strippedLines, spec: TAINT });
+  const shadowed = FETCH_SHADOW.test(code);
   const inline = lineRuleFindings(LINE_RULES, codeLines, {
-    codeLines: strippedLines, skip: (rule, line) => skipConstant(rule, line, ctx),
+    codeLines: strippedLines,
+    skip: (rule, line) => (rule.id === 'true/missing-timeout' && shadowed && FETCH_CALL.test(line))
+      || skipConstant(rule, line, ctx),
   });
 
   return [

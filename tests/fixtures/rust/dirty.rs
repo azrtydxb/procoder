@@ -41,6 +41,10 @@ fn debug_print(x: i32) {
     dbg!(x);
 }
 
+fn http_client() -> reqwest::Client {
+    reqwest::Client::new()
+}
+
 fn lookup_user_tainted(pool: &Pool, id: &str) {
     let q = format!("SELECT * FROM t WHERE id = {}", id);
     sqlx::query(&q);

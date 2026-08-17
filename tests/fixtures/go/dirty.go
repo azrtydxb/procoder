@@ -61,6 +61,10 @@ func debugPrint(x int) {
 	fmt.Println("here", x)
 }
 
+func sendRequest(req *http.Request) (*http.Response, error) {
+	return http.DefaultClient.Do(req)
+}
+
 func lookupUserTainted(db *sql.DB, id string) (*sql.Rows, error) {
 	q := "SELECT * FROM t WHERE id = " + id
 	return db.Query(q)

@@ -51,22 +51,8 @@ const LINE_RULES = [
     message: 'unsafe deserialization of untrusted bytes',
     fix: 'use json, or yaml.safe_load',
   },
-  {
-    // An outbound call that cannot time out is a thread — or a whole worker
-    // pool — parked until the far end feels like answering. requests has no
-    // default timeout at all, which is the trap: the code looks complete.
-    //
-    // Deliberately narrow. The call must OPEN AND CLOSE on this line: a
-    // multi-line call whose timeout sits on a later line would otherwise be
-    // reported as missing one, and this rung blocks. The 300-character span is
-    // a stated ceiling, not a guess — past it the argument list is generated or
-    // minified, and a bounded span is what keeps the scan linear on a long line
-    // (see tests/perf-guard.js).
-    id: 'true/missing-timeout', rung: 'TRUE',
-    re: /\brequests\.(?:get|post|put|patch|delete|head|request)\s*\((?![^)]{0,300}timeout\s*=)[^)]{0,300}\)/,
-    message: 'HTTP call with no timeout — requests waits forever by default',
-    fix: 'pass timeout=<seconds>, or a (connect, read) pair',
-  },
+  // true/missing-timeout is not here: its receivers depend on what the file
+  // binds and imports, so it is built per file — see timeoutRule below.
   {
     id: 'safe/weak-hash', rung: 'SAFE',
     re: /\bhashlib\.(?:md5|sha1)\s*\(/,
@@ -141,6 +127,85 @@ const TAINT = {
     },
   ],
 };
+
+// --- true/missing-timeout ---------------------------------------------------
+//
+// An outbound call that cannot time out is a thread — or a whole worker pool —
+// parked until the far end feels like answering. `requests` has no default
+// timeout at all, and neither has a `requests.Session` or
+// `urllib.request.urlopen`; that is the trap, because the code looks complete.
+//
+// Which receivers count depends on the file, which is why this rule is built
+// per file rather than spelled in LINE_RULES: a Session is a bound name, and
+// `from requests import get` makes a bare `get(...)` an HTTP call. Both are
+// read off the file's own bindings, so a `session` or a `get` that this file
+// never tied to requests means nothing and stays silent.
+//
+// httpx and aiohttp are deliberately absent. Both ship a default timeout —
+// httpx 5s, aiohttp 5 minutes — so reporting a bare call there is a finding
+// against correct code, which is the thing this rule was fixed for.
+//
+// Still deliberately narrow in one respect, unchanged: the call must OPEN AND
+// CLOSE on this line, because a multi-line call whose timeout sits further
+// down would otherwise be reported as missing one, and this rung blocks. The
+// 300-character span is a stated ceiling — past it the argument list is
+// generated or minified, and a bounded span is what keeps the scan linear on a
+// long line (see tests/perf-guard.js).
+//
+// `**kwargs` buys silence for the same reason. `requests.get(url, **DEFAULTS)`
+// may well pass a timeout, and the rule reads text: it cannot follow a name.
+// A miss costs less than a blocking finding on correct code.
+//
+// A literal `file:` or `data:` URL buys silence too, and for a plainer reason:
+// there is no peer to wait for. `urlopen("file:%s" % path)` opens a file.
+// Measured on CPython's own 1,849-file library and test suite, those were the
+// only two of 47 findings that were not a real outbound call.
+const PY_VERBS = 'get|post|put|patch|delete|head|options|request';
+const SESSION_BIND = /^\s*(?:self\.)?([A-Za-z_]\w*)\s*=\s*requests\.Session\s*\(/;
+const REQUESTS_IMPORT = /^\s*from\s+requests\s+import\s+([^#]+)/;
+
+// How many distinct bound names the receiver alternation may carry. Each one
+// is a branch the regex tries on every line, so an unbounded set is quadratic
+// in the file: a 1MB file of distinct `x = requests.Session()` bindings cost
+// 33,787ms against 482ms for the same file before this rule existed. Names are
+// deduplicated first, which is what makes the cap unreachable in real code —
+// a module binds one session, or a handful. Past the cap the later names are
+// not matched, which is a miss, and a miss is the safe end.
+const RECEIVER_LIMIT = 25;
+
+function timeoutReceivers(lines) {
+  const bound = new Set();
+  const bare = new Set();
+  for (const line of lines) {
+    const bind = SESSION_BIND.exec(line);
+    if (bind && bound.size < RECEIVER_LIMIT) bound.add(bind[1]);
+    const imported = REQUESTS_IMPORT.exec(line);
+    if (!imported) continue;
+    for (const part of imported[1].split(',')) {
+      // `from requests import get as fetch` binds the alias, not the name.
+      const name = part.trim().replace(/[()]/g, '').split(/\s+as\s+/).pop().trim();
+      if (/^[A-Za-z_]\w*$/.test(name) && bare.size < RECEIVER_LIMIT) bare.add(name);
+    }
+  }
+
+  const receivers = [
+    String.raw`requests\.(?:${PY_VERBS})`,
+    String.raw`requests\.Session\s*\(\s*\)\s*\.(?:${PY_VERBS})`,
+    String.raw`urllib\.request\.urlopen`,
+  ];
+  if (bound.size) receivers.push(String.raw`(?:self\.)?(?:${[...bound].join('|')})\.(?:${PY_VERBS})`);
+  if (bare.size) receivers.push(`(?:${[...bare].join('|')})`);
+  return receivers;
+}
+
+function timeoutRule(lines) {
+  return {
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: new RegExp(String.raw`(?<![.\w])(?:${timeoutReceivers(lines).join('|')})\s*\((?![^)]{0,300}(?:timeout\s*=|\*\*|["'](?:file|data):))[^)]{0,300}\)`),
+    message: 'HTTP call with no timeout — requests and urlopen wait forever by default',
+    fix: 'pass timeout=<seconds>, or a (connect, read) pair',
+  };
+}
 
 const BARE_EXCEPT = /^\s*except\s*:\s*$/;
 const BROAD_EXCEPT = /^\s*except\s+(?:Exception|BaseException)\b[^:]*:\s*$/;
@@ -294,7 +359,7 @@ function check(source, { relPath, config } = {}) {
   const stripped = blankStringInteriors(stripNoise(String(source || ''), 'py'), 'py');
   const texts = defParamText(stripped);
   const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
-  const inline = lineRuleFindings(LINE_RULES, lines, {
+  const inline = lineRuleFindings([...LINE_RULES, timeoutRule(lines)], lines, {
     skip: (rule, line) => notForSecurity(rule, line) || skipConstant(rule, line, ctx),
   });
 

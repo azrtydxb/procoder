@@ -102,4 +102,8 @@ class CleanExamples {
     //   no leftover System.out.println("here")
     void documented() {
     }
+
+    HttpClient httpClientBounded() {
+        return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    }
 }
