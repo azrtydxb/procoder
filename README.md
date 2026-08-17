@@ -99,8 +99,8 @@ new trust boundary does not get to add one for convenience.
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **202** tracked files the scan
-reads **184** and skips **18** — 9 by `[exclude] paths` and 9 by two
+arithmetic is published instead of implied: of **203** tracked files the scan
+reads **185** and skips **18** — 9 by `[exclude] paths` and 9 by two
 `.procoderignore` files. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
 itself so they cannot drift from this paragraph, and every exclusion is
@@ -125,6 +125,7 @@ engine ships as a CLI:
 
 ```bash
 npm install -g procoder
+procoder init --baseline      # a starter config, today's findings accepted
 procoder check <paths...>
 ```
 
@@ -173,6 +174,55 @@ full on [Commands](https://azrtydxb.github.io/procoder/commands.html).
 See [`examples/`](examples/) for a worked before/after pair per rung — each
 `before.*` trips its rung through `node bin/procoder.js check`, each `after.*`
 is clean, and both are proved on every test run.
+
+## The CLI
+
+The slash commands need a session; a pre-commit hook and a CI job do not have
+one. The same engine answers to five subcommands:
+
+| Command | Purpose |
+|---|---|
+| `procoder init [--baseline]` | Write a starter `.procoder.toml`. Nothing is ever overwritten — a config that already exists is left exactly as it is. `--baseline` also records today's findings as accepted, which is what makes an existing repository green on its first run rather than red by four thousand. |
+| `procoder check [paths...]` | Report findings that are not in the baseline; exit 1 if any of them blocks at the active level. |
+| `procoder baseline <paths...>` | Record every current finding as accepted. |
+| `procoder verify <paths...>` | Exit 1 if a finding present today is not in the baseline — the CI ratchet. Exit 2 is *cannot verify*, never "you added findings". |
+| `procoder rot <paths...>` | Rung 4 over the tree: index every export in the scan and report the ones nothing else mentions. |
+
+`check --format text|json|sarif` decides who reads the output. `json` is
+procoder's own versioned shape — `version`, `tool`, `level`, `summary`,
+`findings[]`, `skipped[]` — so a consumer can tell an old document from a new
+one. `sarif` is SARIF 2.1.0 for GitHub code scanning and anything else that
+speaks it, and it carries `partialFingerprints.procoderFingerprint`: the same
+fingerprint the ratchet uses, so a finding that moved down the file is not a new
+alert to triage again. Findings go to stdout and every skip notice stays on
+stderr, so the document stays parseable when you pipe it. `--format` belongs to
+`check`; typed at anything else it exits 2 rather than being ignored.
+
+`check --since <ref>` checks what git says changed: `git diff --name-only
+--diff-filter=ACM <ref>...HEAD`, plus anything uncommitted and anything
+untracked. Paths given alongside narrow it to the intersection, so `--since main
+src/` is "what changed under src/". A git failure exits 2 and names the command
+that failed — the CI template used to do this in shell with `|| true`, where a
+first push made git fail, produced no files, and passed green having checked
+nothing. Zero changed files says `no files changed since <ref>` and exits
+0; silence and a clean scan of a hundred files must not look the same.
+
+
+`verify --aging <days>` names accepted debt that has outlived its welcome, with
+each entry's date, path and rule, and exits 1. A baseline entry is a suppression
+and a suppression with no end is rot, so this is the removal trigger the file
+itself cannot carry. Without the flag, age never fails a run.
+
+`rot` reports two tiers and exits 0 for both. A name nothing else mentions is a
+deletion; a name mentioned outside its file only inside a string is *needs
+confirmation*, because routing tables, DI containers and reflection all look
+like that and an index of bare words cannot tell them apart. Files a published
+package points at (`bin`, `main`, `module`, `exports` in package.json) and
+conventional entry points (`index.*`, `lib.rs`, `mod.rs`, `__init__.py`) are
+left out, since their callers are outside the scan. Test fixtures and example
+files are exported-and-unmentioned by design and will show up: exclude them
+under `[exclude] paths`, or read past them. Nothing is deleted, and a failing
+build on a guess about deletion is how a tool gets switched off.
 
 ## Configuration
 
@@ -265,9 +315,11 @@ rule, the ratchet baseline, and every variable.
 
 For hosts that speak MCP but not Claude Code plugins, `procoder-mcp/server.js`
 is a dependency-free JSON-RPC 2.0 (stdio) server exposing the same engine as
-the hooks: `procoder_doctrine` (the rungs at a given level), `procoder_check`
-(run the engine against a file), and `procoder_baseline` (read the ratchet
-baseline). Point an `mcpServers` config at it:
+the hooks: `procoder_doctrine` (the rungs at a given level, or the shorter
+digest with `digest: true`), `procoder_check` (run the engine against a file),
+`procoder_review` (check everything changed since a git ref, plus anything
+uncommitted), and `procoder_baseline` (read the ratchet baseline). Point an
+`mcpServers` config at it:
 
 ```json
 {
@@ -279,6 +331,14 @@ baseline). Point an `mcpServers` config at it:
   }
 }
 ```
+
+The server answers both eras of the protocol. MCP revision 2026-07-28 dropped
+the handshake and made `server/discover` mandatory, with each request declaring
+its protocol version in `_meta`; a version the server does not support is
+refused with JSON-RPC error `-32022` carrying the list it does support, rather
+than answered in a dialect the client cannot read. The older `initialize`
+handshake still works, negotiating the client's version when it is one of
+2025-11-25, 2025-06-18, 2025-03-26 or 2024-11-05.
 
 See [`docs/install.md`](docs/install.md#mcp) for the full method list.
 

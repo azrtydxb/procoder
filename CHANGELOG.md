@@ -52,7 +52,49 @@ gaps that reading exposed.
   carries the ratchet's own fingerprint, so a dashboard and the baseline agree
   about what a finding is. `--since` moves diff scoping out of the CI template's
   shell, where a failed `git diff` was being swallowed by `|| true` and the job
-  passed green having checked nothing.
+  passed green having checked nothing. `--since` takes committed changes,
+  uncommitted ones and untracked files; paths given alongside narrow it to the
+  intersection; and zero changed files is said out loud rather than exiting 0 in
+  silence. Both flags are `check`-only and exit 2 typed anywhere else, because a
+  flag that silently does nothing is how somebody concludes a check ran.
+- **`procoder init [--baseline]`.** Writes a starter `.procoder.toml` and says
+  what it did; a config that already exists is left exactly as it is, since an
+  `init` that overwrote one would be the only command here capable of deleting
+  somebody's decisions. `--baseline` also records today's findings as accepted,
+  which is what makes an existing repository green on its first run.
+- **`procoder rot <paths...>`.** The first check in this engine that answers for
+  the repository rather than for one file, which is why the rung procoder exists
+  for had no engine behind it: "you left a twin behind" is a claim one file
+  cannot make. It indexes every exported symbol across the scan and reports the
+  ones nothing else mentions, as `[4 ALONE] alone/dead-export`. Two tiers —
+  mentioned nowhere else, and mentioned outside its file only inside a string,
+  which is what routing, DI and reflection look like from here and is reported as
+  needing confirmation. Files a published package points at (`bin`, `main`,
+  `module`, `exports`) and conventional entry points (`index.*`, `lib.rs`,
+  `mod.rs`, `__init__.py`) are left out, their callers being outside the scan.
+  Test fixtures and example files are exported-and-unmentioned by design and will
+  appear; exclude them under `[exclude] paths` or read past them. It exits 0 even
+  with findings: these are candidates, not verdicts, and a build failed on a
+  guess about deletion is how a tool gets switched off.
+- **Baseline format v4, and `verify --aging <days>`.** Each accepted entry is
+  now `{fp, id, path, added}` rather than a bare hash, so accepted debt can be
+  named and dated — a hash names nothing, and a suppression nobody can read is
+  one nobody reviews. Re-baselining preserves an entry's original date rather
+  than resetting the clock on debt that never moved. `--aging` names the entries
+  older than `<days>` with date, path and rule and exits 1; without the flag age
+  never fails a run. A v3 baseline migrates silently, its fingerprints being
+  already current, with the dates it never carried marked `unknown`; v2 and
+  older still refuse to load.
+- **The MCP server speaks both eras.** MCP revision 2026-07-28 dropped the
+  handshake and made `server/discover` mandatory, with each request declaring its
+  protocol version in `_meta`; a version the server does not support is refused
+  with JSON-RPC error `-32022` carrying the list it does support, rather than
+  answered in a dialect the client cannot read. The `initialize` handshake still
+  works, negotiating the client's version when it is one of 2025-11-25,
+  2025-06-18, 2025-03-26 or 2024-11-05. A `procoder_review` tool checks
+  everything changed since a git ref plus anything uncommitted, and
+  `procoder_doctrine` gains `digest` — an MCP host pays the doctrine text per
+  conversation exactly as SubagentStart pays it per subagent.
 - **Subagents inherit a digest, not the whole doctrine** — ~24% smaller
   (≈3,400 → ≈2,580 tokens at `strict`). The session pays once; SubagentStart pays
   per subagent, so that is the only multiplier worth trimming. Three kinds of

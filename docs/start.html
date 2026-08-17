@@ -71,10 +71,31 @@ procoder statusline uninstall          # remove it, restore what it composed wit
 
 <pre><code>npm install -g procoder
 
+procoder init --baseline      # starter .procoder.toml, today's findings accepted
 procoder check &lt;paths...&gt;     # exit 1 if a finding blocks at the active level
 procoder baseline &lt;paths...&gt;  # record current findings as accepted
 procoder verify &lt;paths...&gt;    # exit 1 if a finding is not in the baseline
-                              # exit 2 if it cannot verify at all</code></pre>
+                              # exit 2 if it cannot verify at all
+procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit 0</code></pre>
+
+<p>
+  <code>init</code> is the first run on an existing repository: it writes a
+  starter config, never over one that is already there, and with
+  <code>--baseline</code> it accepts what is already in the tree so the gate
+  starts green and only new code is judged.
+</p>
+
+<p>
+  In a CI job, <code>check --since &lt;ref&gt;</code> narrows the run to the files
+  git says changed — plus anything uncommitted or untracked — and exits
+  <strong>2</strong> naming the git command if git itself failed, rather than
+  checking nothing and passing green. <code>check --format json|sarif</code>
+  writes the run as a document instead of as lines: SARIF 2.1.0 carries the
+  ratchet's own fingerprint, so a code-scanning dashboard and the baseline agree
+  about what counts as one finding. Findings go to stdout, skip notices to
+  stderr. Both flags are <code>check</code>-only, and typed anywhere else they
+  exit 2.
+</p>
 
 <p>
   <code>verify</code> is the CI ratchet: accepted debt may shrink, never grow. It

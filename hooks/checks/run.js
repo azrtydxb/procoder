@@ -258,7 +258,12 @@ function readSource(absPath, relPath, config) {
 // least: rung 1 has already run, the pack's SAFE rules have already run, and a
 // timeout loses only the linter's own rung-2 findings. Anything it cannot be
 // given is named in `unchecked` and reported — see checkFile.
-function toolResults(relPath, { repoRoot, absPath, deadline, unchecked }) {
+function toolResults(relPath, { repoRoot, absPath, deadline, unchecked, toolAnswer }) {
+  // An answer the caller already has. `procoder check .` runs each linter once
+  // over every file it owns rather than once per file, and hands the result in
+  // here — see runToolBatches in resolve.js. The hook never passes one.
+  if (toolAnswer) return { findings: toolAnswer.findings, answered: toolAnswer.ok };
+
   const tool = resolveFor(relPath, { repoRoot });
   if (!tool) return { findings: [], answered: false };
   const timeoutMs = Math.floor((deadline - Date.now()) * LINTER_BUDGET_SHARE);
@@ -292,7 +297,7 @@ function packResults(pack, source, shaped, options) {
 // really left on this machine, instead of from a guess at what the pack was
 // about to cost on some other one.
 function narrowableFindings(relPath, source, shaped, opts) {
-  const { repoRoot, absPath, config, deadline, unchecked } = opts;
+  const { repoRoot, absPath, config, deadline, unchecked, toolAnswer } = opts;
   const local = [];
 
   const pack = packFor(relPath);
@@ -305,7 +310,7 @@ function narrowableFindings(relPath, source, shaped, opts) {
     }
   }
 
-  const tool = toolResults(relPath, { repoRoot, absPath, deadline, unchecked });
+  const tool = toolResults(relPath, { repoRoot, absPath, deadline, unchecked, toolAnswer });
   pushAll(local, tool.findings);
   if (packFindings) {
     pushAll(local, tool.answered
@@ -379,9 +384,21 @@ function reportUnchecked(report, unchecked, budgetMs) {
   return report;
 }
 
+// Dependency manifests get one extra pass: a floating range, an absent
+// lockfile, or an entry the lockfile has never heard of is a rung-1 finding no
+// language pack looks for.
+function manifestFindings(absPath, relPath, source, { deadline, unchecked }) {
+  if (!MANIFEST_FILES.has(path.basename(relPath))) return [];
+  if (Date.now() >= deadline) {
+    unchecked.push('the dependency manifest rules');
+    return [];
+  }
+  return checkManifest(absPath, source);
+}
+
 function checkFile(absPath, {
   repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
-  touched = null, budgetMs = BUDGET_MS,
+  touched = null, budgetMs = BUDGET_MS, toolAnswer = null,
 } = {}) {
   const deadline = Date.now() + budgetMs;
   // Every stage the deadline cut, in the order it would have run. Threaded
@@ -404,16 +421,12 @@ function checkFile(absPath, {
   const findings = checkUniversal(source, { relPath, config });
 
   pushAll(findings, withinTouched(
-    narrowableFindings(relPath, source, shaped, { repoRoot, absPath, config, deadline, unchecked }),
+    narrowableFindings(relPath, source, shaped,
+      { repoRoot, absPath, config, deadline, unchecked, toolAnswer }),
     source, touched,
   ));
 
-  // Dependency manifests get one extra pass: a floating range or an absent
-  // lockfile is a rung-1 finding no language pack looks for.
-  if (MANIFEST_FILES.has(path.basename(relPath))) {
-    if (Date.now() < deadline) pushAll(findings, checkManifest(absPath, source));
-    else unchecked.push('the dependency manifest rules');
-  }
+  pushAll(findings, manifestFindings(absPath, relPath, source, { deadline, unchecked }));
 
   return reportUnchecked(
     reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, maxFindings }),
@@ -421,5 +434,5 @@ function checkFile(absPath, {
 }
 
 module.exports = {
-  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, MAX_LINE_BYTES, BUDGET_MS,
+  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, BUDGET_MS,
 };

@@ -27,6 +27,14 @@ description: .procoder.toml, .procoderignore, the literal line marker, the ratch
   are the defaults.
 </p>
 
+<p>
+  <code>procoder init</code> writes a starter one and says what it did; a file
+  that already exists is left exactly as it is, since an <code>init</code> that
+  overwrote a config would be the one command here capable of deleting somebody's
+  decisions. <code>procoder init --baseline</code> also records today's findings
+  as accepted, which is what makes an existing repository green on its first run.
+</p>
+
 <pre><code>[rungs]
 safe = "error"
 true = "error"
@@ -308,6 +316,33 @@ build/          # a directory of that name, at any depth
   finding, and copy-pasting a suppressed line does not ride in for free. A
   re-wrapping formatter, or code moved between files, does break the fingerprint;
   <a href="limitations.html">what it misses</a> covers exactly which cases.
+</p>
+
+<p>
+  The file is format <strong>v4</strong>, and each accepted entry is an object
+  rather than a bare hash: <code>fp</code> the fingerprint, <code>id</code> the
+  rule, <code>path</code> the file, and <code>added</code> the date it was first
+  accepted. A hash names nothing, so a baseline of hashes could not be read,
+  reviewed, or aged. Re-baselining preserves an entry's original
+  <code>added</code> date — otherwise every re-baseline would reset the clock on
+  debt that never moved.
+</p>
+
+<p>
+  A v3 baseline migrates silently, because its fingerprints are already the
+  current ones: only the surrounding record changed, and the dates it never
+  carried are marked <code>unknown</code>. v2 and older still refuse to load —
+  those files record hashes computed a different way, and a migration would be a
+  guess about which findings somebody accepted.
+</p>
+
+<p>
+  <code>verify --aging &lt;days&gt;</code> names every accepted finding that has
+  been in the baseline longer than <code>&lt;days&gt;</code> — date, path and
+  rule, oldest first — and exits <strong>1</strong>. An entry whose date is
+  <code>unknown</code> is reported too, and says so. A baseline entry is a
+  suppression, and a suppression with no end is rot; this is the removal trigger
+  the file itself cannot carry. Without the flag, age never fails a run.
 </p>
 
 <p>

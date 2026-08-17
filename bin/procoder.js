@@ -11,11 +11,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, levelFor,
+  loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, levelFor, excludeReason,
 } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
+const { runToolBatches } = require('../hooks/checks/resolve');
 const { formatFindings } = require('../hooks/checks/finding');
 const { FORMATS, jsonReport, sarifReport } = require('../hooks/checks/report');
+const { buildIndex, deadExports } = require('../hooks/checks/exports');
 const { readLevel } = require('../hooks/procoder-runtime');
 const { getClaudeDir } = require('../hooks/procoder-config');
 const {
@@ -25,6 +27,7 @@ const {
 
 const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
        procoder init [--baseline]
+       procoder rot <paths...>
        procoder check [--format text|json|sarif] [--since <ref>] [paths...]
        procoder statusline <install|uninstall|status> [--append] [--force]
 
@@ -38,6 +41,12 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
             makes an existing repository green on the first run.
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
+  rot       index every export in the scan and report the ones nothing else
+            mentions — rung 4 over the tree rather than over one file. Reports
+            candidates and exits 0: a name reached by reflection, a route table
+            or another repository looks identical to a dead one from here, so
+            the ones this can see a string mention for are marked "needs
+            confirmation" and nothing is ever deleted.
 
   --unused-exclusions  (verify only) also fail if a [exclude] rules entry
                         suppressed nothing in this run, or a [exclude] paths
@@ -132,8 +141,16 @@ let uncheckedFiles = 0;
 
 // maxFindings Infinity throughout: the CLI reports and records everything,
 // unlike the hook, which shows a top-5 sample inside its time budget.
+// Linter answers for this whole run, obtained in one spawn per tool rather than
+// one per file. Empty until a command fills it: `check`, `baseline` and `verify`
+// all walk many files, and each of them pays the same cold start otherwise.
+let toolAnswers = new Map();
+
 function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
-  const out = checkFile(absPath, { repoRoot, config, maxFindings: Infinity, applyBaseline });
+  const out = checkFile(absPath, {
+    repoRoot, config, maxFindings: Infinity, applyBaseline,
+    toolAnswer: toolAnswers.get(path.normalize(absPath)) || null,
+  });
   if (out.skipped && !skipsReported.has(out.relPath)) {
     skipsReported.add(out.relPath);
     reportSkip(out.relPath, out.skipped, absPath, config);
@@ -800,9 +817,73 @@ function runInit(argv) {
   return code;
 }
 
+// Files a published package points at from outside its source: anything named
+// in `bin`, `main`, `module` or `exports`. A name exported from one of those has
+// callers no index of this repository can see, and reporting it as dead is the
+// one failure that would make this command untrustworthy.
+function declaredEntryFiles(repoRoot) {
+  const entries = new Set();
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  } catch (e) {
+    return entries;
+  }
+  const collect = (value) => {
+    if (typeof value === 'string') entries.add(value.replace(/^\.\//, ''));
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  };
+  for (const key of ['bin', 'main', 'module', 'exports']) collect(manifest[key]);
+  return entries;
+}
+
+// Rung 4 over the tree. Every other check in this engine answers for one file,
+// which is why the rung procoder exists for had no engine behind it: "you left a
+// twin behind" is a claim about the repository, and one file cannot make it.
+//
+// Exit 0 even with findings, deliberately. These are candidates — the five
+// reachability routes the rot skill checks by hand (dynamic dispatch, entry
+// points declared outside source, a published API, cross-language callers,
+// constructed names) are exactly the ones an index of bare words cannot see. A
+// command that failed a build on a guess about deletion would get switched off,
+// and rightly.
+function runRot(files, repoRoot, config) {
+  const sources = new Map();
+  let unread = 0;
+  for (const absPath of files) {
+    const rel = path.relative(repoRoot, absPath).replace(/\\/g, '/');
+    if (excludeReason(config, rel)) continue;
+    try {
+      sources.set(rel, fs.readFileSync(absPath, 'utf8'));
+    } catch (e) {
+      // A file this pass could not read is not a file with nothing in it: its
+      // mentions are missing from the index, and a missing mention is exactly
+      // what turns a live symbol into a candidate for deletion. Counted and
+      // reported, never swallowed.
+      unread += 1;
+      process.stderr.write(`procoder: could not read ${rel} (${e.code || e.message}) — `
+        + 'its references are missing from this index.\n');
+    }
+  }
+
+  const index = buildIndex(Array.from(sources.keys()), (rel) => sources.get(rel));
+  const findings = deadExports(index, { entryFiles: declaredEntryFiles(repoRoot) });
+  for (const f of findings) process.stdout.write(formatFindings([f], f.file) + '\n');
+
+  const confirm = findings.filter((f) => f.needsConfirmation).length;
+  process.stdout.write(`\nprocoder: ${index.exports.length} exports across ${sources.size} files, `
+    + `${findings.length} with no mention elsewhere (${confirm} need confirmation). `
+    + 'Nothing here is deleted — check reachability before removing any of them.\n'
+    + (unread > 0 ? `procoder: ${unread} file${unread === 1 ? '' : 's'} could not be read, so `
+      + 'this index is incomplete — treat every candidate above as unconfirmed.\n' : ''));
+  return 0;
+}
+
 // A Map, not an object literal: argv is user input, and `procoder constructor`
 // must not find a method on Object.prototype and try to run it.
-const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['verify', runVerify]]);
+const COMMANDS = new Map([
+  ['check', runCheck], ['baseline', runBaseline], ['verify', runVerify], ['rot', runRot],
+]);
 
 // Isolated so main() can pull the flag out of argv without pushing the
 // function that dispatches commands over the line-count threshold.
@@ -898,6 +979,7 @@ function runSince(since, targets, { command, noIgnore, format }) {
   const config = { ...loadConfig(repoRoot), noIgnore };
   const halt = reportStaleBaseline(command, repoRoot, config);
   if (halt !== null) return halt;
+  toolAnswers = runToolBatches(files, { repoRoot });
   return COMMANDS.get(command)(files, repoRoot, config, { format });
 }
 
@@ -976,6 +1058,12 @@ function main(argv) {
 
   const halt = reportStaleBaseline(command, repoRoot, config);
   if (halt !== null) return halt;
+
+  // One spawn per linter for the whole run, instead of one per file. The
+  // budget is generous — this is the CLI, not the 2s hook — and a tool that
+  // times out or crashes simply answers for nothing, which leaves every file it
+  // owns to the built-in pack exactly as a per-file timeout does.
+  toolAnswers = runToolBatches(files, { repoRoot });
 
   // Whether this run's targets covered the whole repository. Two of the three
   // path-exclusion staleness rules are claims about the tree and are only made

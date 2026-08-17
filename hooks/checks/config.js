@@ -438,5 +438,5 @@ function isRuleExcluded(config, relPath, id) {
 
 module.exports = {
   DEFAULTS, MAX_FILE_BYTES, loadConfig, isExcluded, excludeReason, excludingPattern,
-  unusedPathExclusions, isRuleExcluded, findRepoRoot, IGNORE_FILE, levelFor,
+  unusedPathExclusions, isRuleExcluded, findRepoRoot, levelFor,
 };

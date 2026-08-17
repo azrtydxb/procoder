@@ -180,3 +180,57 @@ test('procoder_doctrine can return the digest', async () => {
     assert.match(digestText, new RegExp(rung), `the digest dropped ${rung}`);
   }
 });
+
+// --- protocol eras ----------------------------------------------------------
+//
+// MCP split in two: modern revisions (2026-07-28 and later) carry the version
+// on every request and have no handshake at all, legacy ones (2025-11-25 and
+// earlier) negotiate it once via `initialize`. A modern client talking to a
+// legacy-only server FAILS with no fall-forward, so answering both eras is the
+// difference between working and not working for whole categories of client.
+
+test('server/discover answers the modern probe with every version it speaks', async () => {
+  const [res] = await rpc([{
+    jsonrpc: '2.0', id: 30, method: 'server/discover',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } },
+  }]);
+  assert.strictEqual(res.result.resultType, 'complete');
+  assert.ok(res.result.supportedVersions.includes('2026-07-28'), 'the current revision is missing');
+  assert.ok(res.result.supportedVersions.includes('2025-11-25'), 'the last legacy revision is missing');
+  assert.deepStrictEqual(res.result.capabilities, { tools: {} });
+  assert.strictEqual(
+    res.result._meta['io.modelcontextprotocol/serverInfo'].name, 'procoder');
+});
+
+// A version this server does not speak must come back as the spec's own error,
+// carrying the list to retry with: a plain "unknown method" leaves a modern
+// client with nothing to fall back to.
+test('an unsupported protocol version is refused with the versions that would work', async () => {
+  const [res] = await rpc([{
+    jsonrpc: '2.0', id: 31, method: 'tools/list',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '1900-01-01' } },
+  }]);
+  assert.strictEqual(res.error.code, -32022);
+  assert.strictEqual(res.error.data.requested, '1900-01-01');
+  assert.ok(Array.isArray(res.error.data.supported) && res.error.data.supported.length > 1);
+});
+
+test('a modern request at a supported version is served', async () => {
+  const [res] = await rpc([{
+    jsonrpc: '2.0', id: 32, method: 'tools/list',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } },
+  }]);
+  assert.ok(res.result.tools.length >= 4);
+});
+
+// The legacy handshake answers with the client's own version when it is one we
+// speak. Echoing an unknown one back would be a claim to speak it.
+test('initialize negotiates the version the client asked for, when it is one we speak', async () => {
+  const [older, unknown] = await Promise.all([
+    rpc([{ jsonrpc: '2.0', id: 33, method: 'initialize', params: { protocolVersion: '2025-03-26' } }]),
+    rpc([{ jsonrpc: '2.0', id: 34, method: 'initialize', params: { protocolVersion: '1999-01-01' } }]),
+  ]);
+  assert.strictEqual(older[0].result.protocolVersion, '2025-03-26');
+  assert.strictEqual(unknown[0].result.protocolVersion, '2025-11-25',
+    'an unknown request should get the newest legacy revision, not an echo');
+});

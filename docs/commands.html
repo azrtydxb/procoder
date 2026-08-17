@@ -3,7 +3,7 @@ layout: page
 href: commands.html
 title: Commands
 pagetitle: Commands — procoder
-description: The twelve /procoder slash commands — what each one does, grouped by whether it controls the gate, hunts for something, or measures progress.
+description: The twelve /procoder slash commands — what each one does, grouped by whether it controls the gate, hunts for something, or measures progress — and the CLI subcommands for a hook or a CI job.
 ---
 
 <p class="eyebrow">Using it</p>
@@ -84,4 +84,103 @@ description: The twelve /procoder slash commands — what each one does, grouped
   generated from those files, and <code>npm run sync:check</code> fails the build
   if any port has drifted — so there is exactly one place to edit a command, and
   no copy that can quietly disagree with it.
+</p>
+
+<h2>The CLI</h2>
+
+<p>
+  A slash command needs a session; a pre-commit hook and a CI job do not have
+  one. The same engine answers to five subcommands, with no dependencies and no
+  agent behind them.
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>procoder init [--baseline]</code></td><td>Write a starter <code>.procoder.toml</code>. Nothing is overwritten — a config that already exists is left exactly as it is. <code>--baseline</code> also records today's findings as accepted, which is what makes an existing repository green on its first run rather than red by four thousand.</td></tr>
+    <tr><td class="nowrap"><code>procoder check [paths...]</code></td><td>Report findings that are not in the baseline; exit 1 if any of them blocks at the active level.</td></tr>
+    <tr><td class="nowrap"><code>procoder baseline &lt;paths...&gt;</code></td><td>Record every current finding as accepted, so only new code is gated.</td></tr>
+    <tr><td class="nowrap"><code>procoder verify &lt;paths...&gt;</code></td><td>Exit 1 if a finding present today is not in the baseline — the CI ratchet. Exit 2 is <em>cannot verify</em>, never "you added findings".</td></tr>
+    <tr><td class="nowrap"><code>procoder rot &lt;paths...&gt;</code></td><td>Rung 4 over the tree: index every export in the scan and report the ones nothing else mentions, as <code>[4 ALONE] alone/dead-export</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Who reads the output: <code>check --format</code></h3>
+
+<p>
+  <code>text</code> is the default and is for a person. <code>json</code> is
+  procoder's own versioned shape — <code>version</code>, <code>tool</code>,
+  <code>level</code>, <code>summary</code>, <code>findings[]</code>,
+  <code>skipped[]</code> — so a consumer can tell an old document from a new one.
+  <code>sarif</code> is SARIF 2.1.0, for GitHub code scanning and anything else
+  that speaks it, and it carries
+  <code>partialFingerprints.procoderFingerprint</code>: the same fingerprint the
+  ratchet uses, so a finding that moved down the file is not a fresh alert to
+  triage again.
+</p>
+
+<p>
+  Findings go to stdout and every skip notice stays on stderr, so the document
+  stays parseable when you pipe it. <code>--format</code> belongs to
+  <code>check</code>; typed at any other subcommand it exits <strong>2</strong>
+  rather than being quietly ignored.
+</p>
+
+<h3>What gets checked: <code>check --since &lt;ref&gt;</code></h3>
+
+<p>
+  Checks what git says changed —
+  <code>git diff --name-only --diff-filter=ACM &lt;ref&gt;...HEAD</code>, plus
+  anything uncommitted and anything untracked. Paths given alongside narrow it to
+  the intersection, so <code>--since main src/</code> means "what changed under
+  <code>src/</code>".
+</p>
+
+<p>
+  A git failure exits <strong>2</strong> and names the command that failed. The
+  shipped CI template used to do this in shell with <code>|| true</code>, where a
+  first push (whose "before" SHA is all zeros) made git fail, produced no files,
+  and passed the build green having checked nothing. Zero changed files is a real
+  answer and is said out loud — <code>no files changed since &lt;ref&gt;</code>,
+  exit 0 — because silence and a clean scan of a hundred files must not look the
+  same.
+</p>
+
+<h3>Debt with an end: <code>verify --aging &lt;days&gt;</code></h3>
+
+<p>
+  Names every accepted finding that has been in the baseline longer than
+  <code>&lt;days&gt;</code>, with its date, path and rule, and exits
+  <strong>1</strong>. A baseline entry is a suppression, and a suppression with
+  no end is rot; this is the removal trigger the file itself cannot carry.
+  Without the flag, age never fails a run.
+</p>
+
+<h3>What nothing calls: <code>rot</code></h3>
+
+<p>
+  Two tiers, and the difference is the whole honesty of the command. A name
+  nothing else in the scan mentions is a deletion. A name mentioned outside its
+  own file only inside a string is <em>needs confirmation</em>: routing tables,
+  DI containers and reflection all look exactly like that, and an index of bare
+  words cannot tell them apart.
+</p>
+
+<p>
+  Files a published package points at — <code>bin</code>, <code>main</code>,
+  <code>module</code>, <code>exports</code> in <code>package.json</code> — and
+  conventional entry points (<code>index.*</code>, <code>lib.rs</code>,
+  <code>mod.rs</code>, <code>__init__.py</code>) are left out, because their
+  callers are outside the scan and reporting one as dead is the failure that
+  would make the whole report untrustworthy. Test fixtures and example files are
+  exported-and-unmentioned by design and will appear: exclude them under
+  <code>[exclude] paths</code>, or read past them.
+</p>
+
+<p>
+  It exits <strong>0</strong> even with findings. These are candidates, not
+  verdicts, and nothing is ever deleted — a build failed on a guess about
+  deletion is how a tool gets switched off, and rightly.
 </p>

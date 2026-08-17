@@ -73,6 +73,41 @@ function externalFinding(line, message, tool, ruleId) {
   });
 }
 
+// The two decline conditions eslint signals, as a reason string or null. Split
+// out of parse() so the batch path can ask the same question per result without
+// throwing: in a batch, a throw would take every other file down with the one
+// the linter declined.
+function declineReason(messages) {
+  for (const m of messages) {
+    if (m && m.fatal) return `eslint could not parse it: ${m.message}`;
+    if (m && m.ruleId == null && /^File ignored\b/.test(String(m.message || ''))) {
+      return 'eslint ignores it';
+    }
+  }
+  return null;
+}
+
+// A flat list of tool items, grouped into one entry per file. `fileOf` reads
+// the path an item names, `findingOf` converts it, and `declineOf` (optional)
+// says whether an item means the linter did not actually lint that file.
+//
+// An item naming no file is dropped rather than attributed to a guess: a
+// finding on the wrong file is worse than a finding nobody sees, because the
+// author goes looking at code that is fine.
+function groupByFile(items, fileOf, findingOf, declineOf = () => null) {
+  const byFile = new Map();
+  for (const item of items) {
+    const file = fileOf(item);
+    if (!file) continue;
+    if (!byFile.has(file)) byFile.set(file, { file, declined: null, findings: [] });
+    const entry = byFile.get(file);
+    const decline = declineOf(item);
+    if (decline) { entry.declined = decline; continue; }
+    entry.findings.push(findingOf(item));
+  }
+  return Array.from(byFile.values());
+}
+
 // A linter can decline a file instead of judging it: eslint says so out loud
 // ("File ignored because of a matching ignore pattern", exit 0), ruff used to
 // say so only by printing an empty result set. Either way the tool linted
@@ -239,6 +274,15 @@ const TOOLS = {
     // nothing else. A path the project excludes from ruff is procoder's to
     // exclude in .procoder.toml, not ruff's to silence procoder with.
     argv: (file) => ['check', '--output-format', 'json', file],
+    // Many files, one process. Every ruff item names its own `filename`, so a
+    // batch is attributable without guessing — see parseMany below and
+    // runToolBatch in resolve.js for why the CLI wants this and the hook does
+    // not.
+    argvMany: (files) => ['check', '--output-format', 'json', ...files],
+    parseMany: (stdout) => groupByFile(JSON.parse(stdout), (item) => item.filename,
+      (item) => externalFinding(item.location && item.location.row,
+        `${item.code}: ${item.message}`, 'ruff', item.code),
+      (item) => (item && item.code === 'invalid-syntax' ? 'ruff could not parse it' : null)),
     // parse() must THROW on output it cannot read, never return []. Returning
     // [] tells resolve.js the tool answered and found nothing, which skips the
     // built-in pack too — so a linter that printed a flag error would delete
@@ -267,6 +311,17 @@ const TOOLS = {
       '.eslintrc.yml', '.eslintrc.yaml',
     ],
     argv: (file) => ['--format', 'json', file],
+    argvMany: (files) => ['--format', 'json', ...files],
+    // eslint's JSON is already grouped: one result object per file, carrying
+    // `filePath`. The decline rules are the single-file ones, applied per
+    // result — a file eslint ignores must take itself out of the batch, and
+    // nothing else with it.
+    parseMany: (stdout) => JSON.parse(stdout).map((result) => ({
+      file: result.filePath,
+      declined: declineReason(result.messages || []),
+      findings: (result.messages || []).map((m) =>
+        externalFinding(m.line, `${m.ruleId || 'eslint'}: ${m.message}`, 'eslint', m.ruleId)),
+    })),
     parse: (stdout) => JSON.parse(stdout).flatMap((result) => {
       const messages = result.messages || [];
       // Verified against eslint 10.8.1. Two answers mean eslint linted nothing:
@@ -293,6 +348,13 @@ const TOOLS = {
       : ['run', '--out-format', 'json', file],
     parse: (stdout) => (golangciReport(stdout).Issues || []).map((issue) =>
       externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter)),
+    argvMany: (files) => (golangciMajorVersion() >= 2
+      ? ['run', '--output.json.path', 'stdout', ...files]
+      : ['run', '--out-format', 'json', ...files]),
+    parseMany: (stdout) => groupByFile(golangciReport(stdout).Issues || [],
+      (issue) => issue.Pos && issue.Pos.Filename,
+      (issue) => externalFinding(issue.Pos && issue.Pos.Line,
+        `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter)),
   },
   // There is no standalone `clippy` binary on a normal PATH — only
   // `cargo-clippy`, which `cargo clippy` dispatches to. The binary to

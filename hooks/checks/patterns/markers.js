@@ -157,7 +157,8 @@ const BUILTIN_RULE_IDS = Object.freeze([
   'true/swallowed-error', 'true/unclosed-resource', 'true/unwrap-in-library',
   'obvious/complexity', 'obvious/function-too-long', 'obvious/nested-ternary',
   'obvious/nesting-depth', 'obvious/too-many-params',
-  'alone/blanket-suppression', 'alone/commented-code', 'alone/debug-leftover',
+  'alone/blanket-suppression', 'alone/commented-code', 'alone/dead-export',
+  'alone/debug-leftover',
   'alone/deprecated-no-trigger', 'alone/orphan-todo',  // procoder: literal alone/deprecated-no-trigger the id is itself deprecation-shaped
   'alone/unexplained-suppression',
   ...EXTERNAL_TOOLS.map((tool) => `true/${tool}`),
@@ -235,7 +236,6 @@ const STALE_DEPRECATION_FINDING = {
 
 module.exports = {
   BUILTIN_RULE_IDS,
-  EXTERNAL_TOOLS,
   EXTERNAL_RULE_SHAPES,
   LITERAL_MARKER,
   LITERAL_MARKER_ALONE,

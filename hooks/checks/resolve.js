@@ -105,8 +105,8 @@ function reportingStdio(tool) {
 // the same no-shell guarantee — because execFileSync returns only stdout, and
 // discards stderr entirely on a zero exit. That is exactly clippy's case, so
 // stderr capture is unreachable through execFileSync.
-function spawnTool(tool, { repoRoot, absPath, timeoutMs }) {
-  const run = spawnSync(tool.name, tool.argv(absPath), {
+function spawnTool(tool, { repoRoot, absPath, timeoutMs, argv }) {
+  const run = spawnSync(tool.name, argv || tool.argv(absPath), {
     cwd: repoRoot,
     encoding: 'utf8',
     timeout: timeoutMs,
@@ -162,4 +162,119 @@ function runTool(tool, opts) {
   return runToolResult(tool, opts).findings;
 }
 
-module.exports = { hasTool, isConfigured, resolveFor, runTool, runToolResult };
+// --- batching --------------------------------------------------------------
+//
+// One spawn per file is right for the hook, which has one file and a 2s budget.
+// It is badly wrong for `procoder check .`: eslint and ruff and golangci-lint
+// each cost far more to START than to lint one more file, so a 5,000-file
+// repository paid 5,000 cold starts to lint 5,000 files. The tools all accept
+// many paths in one invocation and all report which file each finding came
+// from, so the CLI hands them the whole list at once.
+//
+// The hook is untouched. Nothing here runs inside it, and runToolResult above
+// is unchanged.
+//
+// Two properties this must not lose, both of them the difference between a gate
+// and a rumour:
+//   - a file the batch cannot attribute an answer to is NOT reported as clean.
+//     It is simply absent from the returned map, and the caller then runs the
+//     built-in pack over it, exactly as it does for a linter that timed out.
+//   - one file's decline ("eslint ignores this one") takes only that file out.
+//     In the single-file path a decline is a throw, and a throw in a batch
+//     would silently take every other file's findings with it.
+const BATCH_MAX_FILES = 400;
+
+function canBatch(tool) {
+  return !!(tool && tool.argvMany && tool.parseMany);
+}
+
+// Absolute paths, both sides, so a tool that answers in repo-relative paths and
+// one that answers in absolute paths key the same map.
+function absoluteKey(repoRoot, file) {
+  return path.isAbsolute(file) ? path.normalize(file) : path.normalize(path.join(repoRoot, file));
+}
+
+// Every file in the batch the tool did not name, answered clean. Two runs say
+// that: no output at all on a clean exit, and readable output that named some
+// files and not others — these tools report every file they linted, and nothing
+// else.
+function allClean(files, results) {
+  for (const file of files) {
+    if (!results.has(file)) results.set(file, { findings: [], ok: true });
+  }
+  return results;
+}
+
+// The run, parsed, or null when it could not be made or could not be read. Null
+// is what leaves every file in the batch out of the answers, which hands them
+// back to the built-in pack — never to silence.
+function batchRun(tool, { repoRoot, files, timeoutMs }) {
+  let run;
+  try {
+    run = spawnTool(tool, { repoRoot, timeoutMs, argv: tool.argvMany(files) });
+  } catch (e) {
+    return null;
+  }
+  if (!run.output.trim()) return { parsed: [], exitedCleanly: run.exitedCleanly };
+  try {
+    return { parsed: tool.parseMany(run.output), exitedCleanly: run.exitedCleanly };
+  } catch (e) {
+    return null;
+  }
+}
+
+function batchOnce(tool, { repoRoot, files, timeoutMs }) {
+  const results = new Map();
+  const run = batchRun(tool, { repoRoot, files, timeoutMs });
+  if (run === null) return results;
+  if (run.parsed.length === 0) return run.exitedCleanly ? allClean(files, results) : results;
+
+  for (const entry of run.parsed) {
+    // A declined file takes only itself out of the answers: in the single-file
+    // path a decline is a throw, and a throw here would take the whole batch
+    // with it.
+    if (entry.declined) continue;
+    results.set(absoluteKey(repoRoot, entry.file), { findings: entry.findings, ok: true });
+  }
+  return allClean(files, results);
+}
+
+// Every file the caller is about to check, mapped to its linter's answer.
+// Files whose language has no configured, installed, batch-capable linter are
+// absent, and the caller falls back to its per-file path for them — which is
+// what keeps cargo clippy (no per-file scoping at all) working as it did.
+// One tool's whole file list, in chunks: an argv list is not unbounded, and a
+// 20,000-file repository must not fail with E2BIG instead of linting.
+function batchGroup(tool, { repoRoot, files, timeoutMs }) {
+  const answers = new Map();
+  for (let i = 0; i < files.length; i += BATCH_MAX_FILES) {
+    const chunk = files.slice(i, i + BATCH_MAX_FILES);
+    for (const [file, answer] of batchOnce(tool, { repoRoot, files: chunk, timeoutMs })) {
+      answers.set(file, answer);
+    }
+  }
+  return answers;
+}
+
+function runToolBatches(files, { repoRoot, timeoutMs = 120000 }) {
+  const byTool = new Map();
+  for (const absPath of files) {
+    const rel = path.relative(repoRoot, absPath).replace(/\\/g, '/');
+    const tool = resolveFor(rel, { repoRoot });
+    if (!canBatch(tool)) continue;
+    if (!byTool.has(tool.name)) byTool.set(tool.name, { tool, files: [] });
+    byTool.get(tool.name).files.push(absPath);
+  }
+
+  const answers = new Map();
+  for (const { tool, files: group } of byTool.values()) {
+    for (const [file, answer] of batchGroup(tool, { repoRoot, files: group, timeoutMs })) {
+      answers.set(file, answer);
+    }
+  }
+  return answers;
+}
+
+module.exports = {
+  hasTool, isConfigured, resolveFor, runTool, runToolResult, runToolBatches, canBatch,
+};

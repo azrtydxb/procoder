@@ -29,7 +29,39 @@ if (!process.stdout.__procoderEpipeGuarded) {
   process.stdout.on('error', () => {});
 }
 
-const PROTOCOL_VERSION = '2024-11-05';
+// MCP splits into two eras, and this server answers both.
+//
+//   modern (2026-07-28 and later)  no handshake at all. Every request carries
+//                                  its protocol version in `_meta`, the server
+//                                  answers each one statelessly, and
+//                                  `server/discover` is mandatory.
+//   legacy (2025-11-25 and older)  the `initialize` handshake that established
+//                                  a session and a negotiated version.
+//
+// Being dual-era costs almost nothing here and is the difference between
+// working and not working for whole categories of client: a modern client
+// talking to a legacy-only server FAILS, with no fall-forward, and this server
+// was pinned to 2024-11-05 — the first revision there ever was.
+//
+// It is stateless already, which is what makes the modern era honest to claim:
+// nothing here has ever depended on a session, because every tool call resolves
+// its own repository root and config from the path it is given.
+const MODERN_VERSION = '2026-07-28';
+
+// Newest first: the legacy handshake answers with the newest version both sides
+// know, and a client that asks for something older than everything here gets
+// the oldest we still speak rather than an error, which is what the handshake
+// era expected.
+const LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const SUPPORTED_VERSIONS = [MODERN_VERSION, ...LEGACY_VERSIONS];
+
+const META_VERSION = 'io.modelcontextprotocol/protocolVersion';
+const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
+
+// -32022 is the spec's own code for it, and the shape matters: a modern client
+// reads `data.supported` and retries with a version both sides speak. Returning
+// a plain -32601 instead would leave it with nothing to retry.
+const UNSUPPORTED_VERSION = -32022;
 
 const TOOLS = [
   {
@@ -165,31 +197,97 @@ function callTool(name, args = {}) {
   return text(handler(args));
 }
 
+// The version a modern request declares, or null for a legacy one. A request
+// with no `_meta` version is legacy by construction — that is exactly how the
+// two eras tell each other apart on stdio.
+function declaredVersion(params) {
+  const meta = params && params._meta;
+  const version = meta && meta[META_VERSION];
+  return typeof version === 'string' ? version : null;
+}
+
+// The legacy handshake: answer with the client's own version when it is one we
+// speak, and with the newest we speak when it is not. Echoing an unknown
+// version back would be a claim to speak it; answering the oldest would drag a
+// current client backwards for no reason.
+function negotiateLegacy(requested) {
+  return LEGACY_VERSIONS.includes(requested) ? requested : LEGACY_VERSIONS[0];
+}
+
+function discoverResult(id) {
+  return {
+    jsonrpc: '2.0',
+    id,
+    result: {
+      resultType: 'complete',
+      supportedVersions: SUPPORTED_VERSIONS,
+      capabilities: { tools: {} },
+      _meta: { [META_SERVER_INFO]: { name: 'procoder', version: VERSION } },
+      instructions: 'Gate code against procoder\'s six rungs. procoder_review checks '
+        + 'everything changed since a git ref; procoder_check answers for one file; '
+        + 'procoder_doctrine returns the rungs themselves.',
+    },
+  };
+}
+
+// A request declaring a version this server does not speak, refused with the
+// list it does speak — whatever the request was asking for. Returns null when
+// there is nothing to refuse.
+function refuseVersion(id, params) {
+  const declared = declaredVersion(params);
+  if (declared === null || SUPPORTED_VERSIONS.includes(declared)) return null;
+  return {
+    jsonrpc: '2.0',
+    id,
+    error: {
+      code: UNSUPPORTED_VERSION,
+      message: 'Unsupported protocol version',
+      data: { supported: SUPPORTED_VERSIONS, requested: declared },
+    },
+  };
+}
+
+function initializeResult(id, params) {
+  return {
+    jsonrpc: '2.0', id,
+    result: {
+      protocolVersion: negotiateLegacy(params && params.protocolVersion),
+      capabilities: { tools: {} },
+      serverInfo: { name: 'procoder', version: VERSION },
+    },
+  };
+}
+
+function toolsCallResult(id, params) {
+  try {
+    return { jsonrpc: '2.0', id, result: callTool(params && params.name, params && params.arguments) };
+  } catch (e) {
+    return { jsonrpc: '2.0', id, error: { code: e.code || -32603, message: e.message } };
+  }
+}
+
+// One entry per method, for the same two reasons the tool dispatch is a Map:
+// the chain had grown past the complexity threshold, and `method` is remote
+// input that must not reach a name on Object.prototype.
+//
+// `server/discover` is mandatory for a modern server and doubles as the stdio
+// backward-compatibility probe: a dual-era client sends it first and reads the
+// answer to decide which era it is talking to.
+const METHODS = new Map([
+  ['server/discover', (id) => discoverResult(id)],
+  ['initialize', initializeResult],
+  ['tools/list', (id) => ({ jsonrpc: '2.0', id, result: { tools: TOOLS } })],
+  ['tools/call', toolsCallResult],
+]);
+
 function handle(request) {
   const { id, method, params } = request;
 
-  if (method === 'initialize') {
-    return {
-      jsonrpc: '2.0', id,
-      result: {
-        protocolVersion: PROTOCOL_VERSION,
-        capabilities: { tools: {} },
-        serverInfo: { name: 'procoder', version: VERSION },
-      },
-    };
-  }
+  const refused = refuseVersion(id, params);
+  if (refused) return refused;
 
-  if (method === 'tools/list') {
-    return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
-  }
-
-  if (method === 'tools/call') {
-    try {
-      return { jsonrpc: '2.0', id, result: callTool(params && params.name, params && params.arguments) };
-    } catch (e) {
-      return { jsonrpc: '2.0', id, error: { code: e.code || -32603, message: e.message } };
-    }
-  }
+  const respond = METHODS.get(method);
+  if (respond) return respond(id, params);
 
   // Notifications carry no id and expect no response.
   if (id === undefined) return null;
