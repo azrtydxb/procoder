@@ -3,7 +3,7 @@ on: [push, pull_request]
 jobs:
   test:
     strategy:
-      # A red leg must not hide the other five. With fail-fast on, the first
+      # A red leg must not hide the others. With fail-fast on, the first
       # failure cancelled every other combination in the matrix, so for this
       # project's whole history exactly one leg's result has ever been visible
       # and "does this fail everywhere or only on macOS" was unanswerable — the
