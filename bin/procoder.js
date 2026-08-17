@@ -198,23 +198,74 @@ function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
   return out;
 }
 
+// What this run is entitled to drop from the baseline. An accepted entry is a
+// suppression, and one whose finding is gone silences nothing today while
+// standing ready to silence the same violation the day it is pasted back — the
+// ratchet's own rule ("may shrink, never grow") applied to the file rather than
+// to the count.
+//
+// Only a run that actually READ the file may say the finding is gone. A file
+// this run skipped, or never targeted, keeps its entries: "I did not look" is
+// not "it is fixed", which is the distinction every other claim in this program
+// turns on.
+function pruned(entry, { covered, present, wholeTree, repoRoot }) {
+  if (present.has(entry.fp)) return false;
+  if (covered.has(entry.path)) return true;
+  // A whole-tree run can say one more thing: the recorded path is gone. A path
+  // still on disk that this run did not read was skipped, not deleted, so it is
+  // deliberately not covered here.
+  return wholeTree && entry.path !== UNKNOWN_DATE
+    && !fs.existsSync(path.join(repoRoot, entry.path));
+}
+
 // Every accepted finding is recorded with the rule it silenced and the file it
 // sits in, not as a bare hash. writeBaseline stamps the date, and keeps the one
 // an entry already had — re-running this must not reset the clock on debt that
 // has been sitting there for a year.
-function runBaseline(files, repoRoot, config) {
-  const entries = (loadBaseline(repoRoot, config).accepted || []).slice();
+function runBaseline(files, repoRoot, config, { wholeTree = false } = {}) {
+  const accepted = loadBaseline(repoRoot, config).accepted || [];
+  const covered = new Set();
+  const present = new Map();
   for (const absPath of files) {
-    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
+    // applyBaseline false, so this is the full picture rather than what is left
+    // after the baseline hides itself. Under suppression an accepted finding
+    // looks absent, and pruning would then drop every entry still earning its
+    // keep — the ratchet would empty itself on every run.
+    const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config, false);
     if (skipped) continue;
+    covered.add(relPath);
     const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
     const fps = fingerprintsFor(findings, relPath, lines);
-    findings.forEach((f, i) => entries.push({ fp: fps[i], id: f.id, path: relPath }));
+    findings.forEach((f, i) => present.set(fps[i], { fp: fps[i], id: f.id, path: relPath }));
   }
   reportSkipped();
+
+  const kept = accepted.filter((e) => !pruned(e, { covered, present, wholeTree, repoRoot }));
+  const dropped = accepted.length - kept.length;
+  // Present first: writeBaseline keeps the first entry per fingerprint, and a
+  // v3-migrated entry carries `unknown` for its rule and its path until a run
+  // that actually saw the finding fills them in.
+  const entries = [...present.values(), ...kept];
   writeBaseline(repoRoot, config, entries);
-  process.stdout.write(`procoder: baseline recorded (${entries.length} accepted findings)\n`);
-  return 0;
+  const total = new Set(entries.map((e) => e.fp)).size;
+  process.stdout.write(`procoder: baseline recorded (${total} accepted findings`
+    + (dropped > 0 ? `, ${dropped} pruned — fixed or gone` : '') + ')\n');
+  // The same refusal `verify` makes, for the same reason: `init` recommends
+  // `verify` in its own output, and a baseline exiting 0 over files nothing
+  // read would be recommending a command it already knows exits 2.
+  return uncheckedFiles > 0
+    ? refuseUnchecked('a baseline cannot accept what nothing looked at')
+    : 0;
+}
+
+// One refusal, worded per caller. Exit 2 — "cannot do this" — never 1, which
+// would read as "you added findings".
+function refuseUnchecked(claim) {
+  process.stdout.write(
+    `procoder: ${uncheckedFiles} file${uncheckedFiles === 1 ? '' : 's'} could not be checked ` +
+    `(see above) — ${claim}. Raise or remove [limits] max_file_bytes, or exclude the path ` +
+    'deliberately.\n');
+  return 2;
 }
 
 // Fingerprint → a human-readable location, for every finding present today.
@@ -419,11 +470,7 @@ function runVerify(files, repoRoot, config,
   // verify stops at 2 — "cannot verify" — rather than 1, which would read as
   // "you added findings".
   if (uncheckedFiles > 0) {
-    process.stdout.write(
-      `procoder: ${uncheckedFiles} file${uncheckedFiles === 1 ? '' : 's'} could not be checked ` +
-      '(see above) — the ratchet cannot hold over files nothing looked at. Raise or remove ' +
-      '[limits] max_file_bytes, or exclude the path deliberately.\n');
-    return 2;
+    return refuseUnchecked('the ratchet cannot hold over files nothing looked at');
   }
   process.stdout.write(
     `procoder: ${present.size} findings against a baseline of ${baseline.size} — ratchet holds.\n`);
@@ -881,7 +928,16 @@ function runInit(argv) {
   }
 
   const config = { ...loadConfig(repoRoot), noIgnore: false };
-  const code = runBaseline(expand([repoRoot]), repoRoot, config);
+  const files = expand([repoRoot]);
+  // The same linter answers `check` and `verify` get. Without them the baseline
+  // recorded only the built-in pack's findings, and the very next `verify` —
+  // which does run the linters — reported every linter finding as new code.
+  toolAnswers = runToolBatches(files, { repoRoot });
+  const code = runBaseline(files, repoRoot, config, { wholeTree: true });
+  // Said only when it is true. `verify` exits 2 over the same tree, so
+  // promising that it "fails only on findings that are not in the baseline"
+  // would be this command's own recommendation contradicting itself.
+  if (code !== 0) return code;
   process.stdout.write('procoder: from here, `procoder verify .` fails only on findings that '
     + 'are not in the baseline. `procoder verify --aging 90 .` names the ones that have been '
     + 'accepted longest.\n');
@@ -1091,7 +1147,9 @@ async function runSince(since, targets,
 // the one presentFindings asks.
 const SCAN_PASS = new Map([
   ['check', { applyBaseline: true }],
-  ['baseline', { applyBaseline: true }],
+  // baseline takes the full picture too: it has to see the findings it already
+  // accepted, or it would prune every one of them as fixed.
+  ['baseline', { applyBaseline: false }],
   ['verify', { applyBaseline: false }],
 ]);
 

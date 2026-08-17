@@ -188,6 +188,15 @@ const today = () => new Date().toISOString().slice(0, 10);
 // whenever something new is accepted, and if every run re-stamped every entry
 // then nothing would ever age and the report below would always be empty —
 // which is exactly how a "we will fix it later" list becomes permanent.
+// An entry migrated from v3 carries no date, and `agingEntries` therefore
+// reports it as old forever: no run could ever clear it, which makes `--aging`
+// a permanent failure on any repository that ever held a v3 baseline. The next
+// `procoder baseline` stamps it — exactly what the CLI's own --aging notice has
+// always told the user would happen — with the only date this file can honestly
+// claim: the day procoder first dated it. The fingerprint is untouched, so
+// nothing is re-suppressed and no existing baseline invalidates.
+const dateOf = (recorded) => (recorded && recorded !== UNKNOWN_DATE ? recorded : today());
+
 function writeBaseline(repoRoot, config, entries) {
   const existing = new Map(
     (loadBaseline(repoRoot, config).accepted || []).map((e) => [e.fp, e.added]));
@@ -198,7 +207,7 @@ function writeBaseline(repoRoot, config, entries) {
       fp: entry.fp,
       id: entry.id,
       path: entry.path,
-      added: existing.get(entry.fp) || today(),
+      added: dateOf(existing.get(entry.fp)),
     });
   }
   const payload = {

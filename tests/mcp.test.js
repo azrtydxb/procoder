@@ -16,9 +16,9 @@ function takeLines(buffer) {
 }
 
 // Sends a batch of requests, resolves with the parsed responses in order.
-function rpc(requests) {
+function rpc(requests, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn('node', [SERVER], { stdio: ['pipe', 'pipe', 'ignore'], ...options });
     let buffer = '';
     const responses = [];
     child.stdout.on('data', (chunk) => {
@@ -233,4 +233,144 @@ test('initialize negotiates the version the client asked for, when it is one we 
   assert.strictEqual(older[0].result.protocolVersion, '2025-03-26');
   assert.strictEqual(unknown[0].result.protocolVersion, '2025-11-25',
     'an unknown request should get the newest legacy revision, not an echo');
+});
+
+// --- failure signalling -----------------------------------------------------
+//
+// A gate reporting clean when it did not run is the worst failure this project
+// can have, and MCP is a second front door onto the same engine the CLI gates
+// with. The CLI exits 2 for "cannot verify" and names every file it skipped;
+// these hold the server to the same standard, in the shape MCP has for it —
+// `isError: true` on the result, which is what a host feeds back to the model.
+// A protocol-level `error` is reserved for a request that never named a
+// runnable check at all.
+
+let nextId = 1000;
+function call(name, args) {
+  nextId += 1;
+  return rpc([{ jsonrpc: '2.0', id: nextId, method: 'tools/call', params: { name, arguments: args } }])
+    .then(([res]) => res);
+}
+
+const tempRepo = (files = {}) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  for (const [rel, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, rel), content);
+  }
+  return dir;
+};
+
+test('procoder_check fails the call for a file it cannot read', async () => {
+  const dir = tempRepo();
+  const res = await call('procoder_check', { path: path.join(dir, 'gone.ts') });
+  const out = res.result.content[0].text;
+  assert.strictEqual(res.result.isError, true, 'an unread file came back as a successful check');
+  assert.doesNotMatch(out, /(^|\n)clean\b/);
+  assert.match(out, /not checked/);
+});
+
+test('procoder_check reports every finding, not the hook\'s top five', async () => {
+  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const dir = tempRepo({ 'many.ts': Array.from({ length: 8 }, (_, i) => `eval(x${i});`).join('\n') + '\n' });
+  const res = await call('procoder_check', { path: path.join(dir, 'many.ts') });
+  const lines = res.result.content[0].text.split('\n').filter((l) => /many\.ts:/.test(l));
+  assert.strictEqual(lines.length, 8, `reported ${lines.length} of 8 findings, silently`);
+});
+
+test('a tool call with no path is a protocol error, not a check that passed', async () => {
+  const res = await call('procoder_check', {});
+  assert.ok(res.error, 'a request naming no file answered as though a file was checked');
+  assert.strictEqual(res.error.code, -32602);
+});
+
+test('an internal throw is a failed tool result, and the server survives it', async () => {
+  // The engine made to throw from inside a tool call, which no fixture can
+  // arrange from outside: the preload patches checkFile in the require cache
+  // before server.js destructures it, and the run is still real stdio JSON-RPC.
+  const dir = tempRepo({ 'a.ts': 'const x = 1;\n' });
+  const preload = path.join(dir, 'boom.js');
+  const runModule = path.join(__dirname, '..', 'hooks', 'checks', 'run.js');
+  fs.writeFileSync(preload,
+    `require(${JSON.stringify(runModule)}).checkFile = () => { throw new Error('boom'); };\n`);
+
+  nextId += 2;
+  const [bad, after] = await rpc([
+    { jsonrpc: '2.0', id: nextId, method: 'tools/call', params: { name: 'procoder_check', arguments: { path: path.join(dir, 'a.ts') } } },
+    { jsonrpc: '2.0', id: nextId + 1, method: 'initialize', params: {} },
+  ], { env: { ...process.env, NODE_OPTIONS: `--require "${preload}"` } });
+  assert.ok(!bad.error, 'an internal failure was raised as a protocol error the model never sees');
+  assert.strictEqual(bad.result.isError, true);
+  assert.doesNotMatch(bad.result.content[0].text, /(^|\n)clean\b/);
+  assert.strictEqual(after.result.serverInfo.name, 'procoder', 'the server died on a throw');
+});
+
+test('procoder_review never says clean over a diff it could not fully read', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  const git = (...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(dir, '.procoder.toml'), '[limits]\nmax_file_bytes = 4\n');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  fs.writeFileSync(path.join(dir, 'big.ts'), 'const x = 1;\n'.repeat(20));
+
+  const res = await call('procoder_review', { path: dir, since: 'HEAD' });
+  const out = res.result.content[0].text;
+  assert.doesNotMatch(out, /(^|\n)clean\b/, 'a diff nothing read was reported as clean');
+  assert.match(out, /big\.ts/, 'the file that went unread was not named');
+  assert.strictEqual(res.result.isError, true);
+});
+
+// The severity split the SARIF report already makes: an excluded file is a
+// scope decision, not a broken run, so the call succeeds — but coverage was
+// still lost, and the word "clean" is not available for it either.
+test('procoder_review names an excluded file without failing the call', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  const git = (...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(dir, '.procoder.toml'), '[exclude]\npaths = ["generated/"]\n');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  fs.mkdirSync(path.join(dir, 'generated'));
+  fs.writeFileSync(path.join(dir, 'generated', 'g.ts'), 'const x = 1;\n');
+
+  const res = await call('procoder_review', { path: dir, since: 'HEAD' });
+  const out = res.result.content[0].text;
+  assert.strictEqual(res.result.isError, undefined, 'an excluded path failed the whole call');
+  assert.doesNotMatch(out, /(^|\n)clean\b/, 'a review that read nothing was reported as clean');
+  assert.match(out, /generated\/g\.ts/);
+});
+
+test('procoder_review fails the call when git cannot say what changed', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  spawnSync('git', ['init', '-q'], { cwd: dir });
+  const res = await call('procoder_review', { path: dir, since: 'no-such-ref' });
+  assert.strictEqual(res.result.isError, true, 'a git failure answered as a successful review');
+  assert.match(res.result.content[0].text, /cannot review/);
+});
+
+// A renamed file is content arriving at a path nothing has checked. The CLI's
+// --since fixed this by widening its filter to ACMRT; the MCP door was still
+// on ACM, so a commit that only renamed a file reviewed nothing and said so as
+// "no files changed".
+test('procoder_review checks a renamed file at its new path', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
+  const git = (...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args],
+    { cwd: dir, encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(dir, 'old.ts'), 'eval(x);\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  git('add', '-A');
+  git('commit', '-qm', 'base');
+  git('mv', 'old.ts', 'moved.ts');
+  git('commit', '-qm', 'rename');
+
+  const res = await call('procoder_review', { path: dir, since: 'HEAD~1' });
+  assert.match(res.result.content[0].text, /moved\.ts/, 'a rename reviewed nothing');
+});
+
+test('procoder_baseline refuses a baseline file it cannot honour', async () => {
+  const dir = tempRepo({ '.procoder-baseline.json': JSON.stringify({ version: 2, fingerprints: ['a'] }) });
+  const res = await call('procoder_baseline', { path: dir });
+  assert.strictEqual(res.result.isError, true, 'a stale baseline was reported as no baseline');
+  assert.match(res.result.content[0].text, /procoder baseline/);
 });

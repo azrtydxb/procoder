@@ -1237,6 +1237,73 @@ test('init --baseline accepts today findings, so verify passes and new code stil
   assert.strictEqual(cli(repo, ['verify', '.']).code, 1, 'new code rode in on the baseline');
 });
 
+// `init` tells the user to run `verify` next. If the state it leaves behind
+// fails that verify, the two commands disagree about the same tree, and the
+// one that exits 0 is the one that is lying.
+test('init --baseline and verify agree about a file neither of them could read', () => {
+  const repo = repoWith({ 'a.ts': DIRTY, '.procoder.toml': '[limits]\nmax_file_bytes = 4\n' });
+  const init = cli(repo, ['init', '--baseline']);
+  const verify = cli(repo, ['verify', '.']);
+  assert.strictEqual(verify.code, 2, 'verify no longer refuses an unread file — fix this test');
+  assert.strictEqual(init.code, verify.code,
+    `init --baseline exited ${init.code} over a tree verify exits ${verify.code} on`);
+  assert.match(init.out, /could not be checked/);
+});
+
+// --- baseline pruning -------------------------------------------------------
+//
+// A baseline entry is a suppression. One whose finding is gone suppresses
+// nothing, and stays there ready to silence the same violation the day it is
+// pasted back — the ratchet's own rule ("may shrink, never grow") applied to
+// the file rather than to the count.
+test('baseline drops accepted findings that are fixed or gone', () => {
+  const repo = repoWith({ 'a.ts': DIRTY, 'b.ts': DIRTY, 'c.ts': DIRTY });
+  cli(repo, ['baseline', '.']);
+  const file = path.join(repo, '.procoder-baseline.json');
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).entries.length, 3);
+
+  fs.writeFileSync(path.join(repo, 'b.ts'), 'const x = 1;\n');
+  fs.rmSync(path.join(repo, 'c.ts'));
+  const again = cli(repo, ['baseline', '.']);
+
+  const paths = JSON.parse(fs.readFileSync(file, 'utf8')).entries.map((e) => e.path);
+  assert.deepStrictEqual(paths, ['a.ts'], 'a fixed and a deleted finding stayed accepted');
+  assert.match(again.out, /pruned/);
+});
+
+// A run that did not read a file cannot say its accepted findings are gone.
+test('baseline keeps entries for files this run never looked at', () => {
+  const repo = repoWith({ 'a.ts': DIRTY, 'b.ts': DIRTY });
+  cli(repo, ['baseline', '.']);
+  fs.writeFileSync(path.join(repo, 'b.ts'), 'const x = 1;\n');
+  cli(repo, ['baseline', 'a.ts']);
+  const paths = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'))
+    .entries.map((e) => e.path).sort();
+  assert.deepStrictEqual(paths, ['a.ts', 'b.ts'], 'a one-file run pruned a file it never read');
+});
+
+// v3 files migrate with no date, and `--aging` reports them forever: the entry
+// can never age out and no run can ever fix it. The next `procoder baseline`
+// stamps it — which is what the --aging notice has always told the user — and
+// the fingerprint must not move, or every existing baseline invalidates.
+test('a v3-migrated entry gets a real date on the next baseline, keeping its fingerprint', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  cli(repo, ['baseline', 'a.ts']);
+  const file = path.join(repo, '.procoder-baseline.json');
+  const [v4] = JSON.parse(fs.readFileSync(file, 'utf8')).entries;
+  fs.writeFileSync(file, JSON.stringify({ version: 3, fingerprints: [v4.fp] }));
+
+  assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0,
+    'a v3 baseline stopped suppressing — the fingerprint moved');
+  cli(repo, ['baseline', 'a.ts']);
+
+  const [migrated] = JSON.parse(fs.readFileSync(file, 'utf8')).entries;
+  assert.strictEqual(migrated.fp, v4.fp, 'the fingerprint changed — every baseline just invalidated');
+  assert.match(migrated.added, /^\d{4}-\d{2}-\d{2}$/, 'the migrated entry is still dateless');
+  assert.strictEqual(migrated.path, 'a.ts');
+  assert.strictEqual(migrated.id, v4.id);
+});
+
 // --- verify --aging ---------------------------------------------------------
 
 test('--aging names accepted debt older than the window, and fails on it', () => {

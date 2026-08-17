@@ -183,4 +183,8 @@ function sarifReport({ findings, version, skipped = [] }) {
 
 const FORMATS = new Set(['text', 'json', 'sarif']);
 
-module.exports = { FORMATS, SCHEMA_VERSION, jsonReport, sarifReport };
+// Exported so the MCP server answers for a skipped file with the same words
+// and the same severity split the SARIF and JSON reports use. A third dialect
+// for "this file was not checked" is how one front door ends up quieter than
+// the other.
+module.exports = { FORMATS, SCHEMA_VERSION, jsonReport, sarifReport, skipDescriptor };
