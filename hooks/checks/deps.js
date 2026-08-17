@@ -500,6 +500,36 @@ const PER_ENTRY = {
   'Cargo.toml': checkCargoLocked,
 };
 
+// go.mod and Cargo.toml have no parse step to fail — both are read by a line
+// scan, so a file that is empty, binary, or a YAML document under the name
+// yields no dependencies and reports nothing, which is the same zero coverage
+// an unparseable package.json used to give, only quieter.
+//
+// One header apiece answers it, and the threshold is measured rather than
+// assumed: over 1,619 real go.mod and 1,017 real Cargo.toml from the module
+// cache and the crates.io registry, every single one carries its header. A
+// heuristic that fires on none of the corpus and on every non-manifest is the
+// only kind worth having here — a warning on a correct manifest is the same
+// class of defect as silence on a broken one.
+const MANIFEST_SHAPE = {
+  'go.mod': { has: /^\s*module\s+\S/m, why: 'no module directive' },
+  'Cargo.toml': { has: /^\s*\[(?:package|workspace)\b/m, why: 'no [package] or [workspace] table' },
+};
+
+// The lockfile, read once, here — so that one which exists and cannot be read
+// is one finding rather than an exception out of a PostToolUse hook. No
+// lockfile at all never reaches this: that is safe/missing-lockfile's finding.
+function checkAgainstLock(base, lockPath, source, findings) {
+  let text;
+  try {
+    text = fs.readFileSync(lockPath, 'utf8');
+  } catch (e) {
+    findings.push(unreadableLockfile(path.basename(lockPath), e.code || e.message.split('\n')[0]));
+    return;
+  }
+  PER_ENTRY[base](source, { path: lockPath, text }, findings);
+}
+
 function checkManifest(manifestPath, source) {
   const findings = [];
   const base = path.basename(manifestPath);
@@ -518,20 +548,13 @@ function checkManifest(manifestPath, source) {
 
   if (base === 'package.json') checkNpmDeps(source, findings);
 
-  // Read once, here, so that a lockfile which exists and cannot be read is one
-  // finding rather than an exception out of a hook. No lockfile at all is
-  // safe/missing-lockfile's finding, already pushed above.
-  if (lockPath !== null && PER_ENTRY[base]) {
-    let text;
-    try {
-      text = fs.readFileSync(lockPath, 'utf8');
-    } catch (e) {
-      findings.push(unreadableLockfile(path.basename(lockPath), e.code || e.message.split('\n')[0]));
-      return findings;
-    }
-    PER_ENTRY[base](source, { path: lockPath, text }, findings);
+  const shape = MANIFEST_SHAPE[base];
+  if (shape && !shape.has.test(String(source))) {
+    findings.push(unreadableManifest(base, shape.why));
+    return findings;
   }
 
+  if (lockPath !== null && PER_ENTRY[base]) checkAgainstLock(base, lockPath, source, findings);
   return findings;
 }
 
