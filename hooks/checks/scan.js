@@ -144,7 +144,8 @@ const PROBE_MS = 100;
 // batched (cargo clippy — see canBatch in resolve.js), a `procoder check .`
 // that used to run clippy to completion per file in a worker now cuts it at
 // its share of 2,000ms and says so. That is the sequential path's behaviour
-// today, on every repository under 250 files, including this one.
+// today, on every repository whose measured work is under
+// PARALLEL_MIN_WORK_MS, including this one — 737ms of a 900ms threshold.
 const SCAN_BUDGET_MS = 2000;
 
 // Never more than this many workers, however many are asked for. The scan is
