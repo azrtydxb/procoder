@@ -479,3 +479,64 @@ test('the driver-import tie-break does not fire without a driver', () => {
   assert.ok(!ids("import { upgrade } from './pgup';\nfunction run(step, n) {\n  const label = `step ${n}`;\n  return step.execute(label);\n}\n")
     .includes('safe/sql-injection'));
 });
+
+// What makes taint die — see taint.js. A wrapping call at a binding was read as
+// taint-preserving, so each correct shape below reported.
+test('a named escaper at a binding kills the taint', () => {
+  assert.ok(!ids('let q = "SELECT * FROM t WHERE id=" + req.query.id;\nq = sanitizeSql(q);\ndb.query(q);\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const id = mysql.escape(req.query.id);\ndb.query("SELECT * FROM t WHERE id=" + id);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const id = sqlstring.escape(req.query.id);\ndb.query("SELECT * FROM t WHERE id=" + id);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const t = format.ident(req.query.table);\ndb.query("SELECT * FROM " + t);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const v = format.literal(req.query.v);\ndb.query("SELECT * FROM t WHERE v=" + v);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('const c = client.escapeIdentifier(req.query.c);\ndb.query("SELECT * FROM t ORDER BY " + c);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+test('a wrapping call that is not an escaper keeps the taint', () => {
+  assert.ok(ids('function notAnEscaper(v) { return v; }\nlet q = "SELECT * FROM t WHERE id=" + req.query.id;\nq = notAnEscaper(q);\ndb.query(q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  // `escape` bare is the JS global URL encoder, not a driver escape.
+  assert.ok(ids('const id = escape(req.query.id);\ndb.query("SELECT * FROM t WHERE id=" + id);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('db.query("SELECT * FROM t WHERE id=" + rawId);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});
+
+test('an escaped value assigned to a raw-HTML sink is the correct pattern', () => {
+  assert.ok(!ids('const safe = escapeHtml(x);\nel.innerHTML = safe;\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(!ids('const safe = DOMPurify.sanitize(dirty);\nel.innerHTML = safe;\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(!ids('const safe = sanitizeHtml(dirty);\nel.outerHTML = safe;\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(!ids('el.innerHTML = escapeHtml(x);\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+});
+
+test('a raw-HTML sink still fires on an unescaped value', () => {
+  assert.ok(ids('el.innerHTML = userInput;\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  assert.ok(ids('const shown = req.query.q;\nel.innerHTML = shown;\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+  // A bare `sanitize()` says nothing about what it sanitises *for*.
+  assert.ok(ids('el.innerHTML = sanitize(x);\n').includes('safe/xss-sink'));  // procoder: literal safe/xss-sink scanner input for that rule, not an instance of it
+});
+
+// The file's SQL evidence says the module talks to a database; it says nothing
+// about `redis`, `cache`, `runner` or `api` in the same module.
+test('a receiver that is not a database handle does not inherit the file SQL', () => {
+  assert.ok(!ids('db.query("SELECT 1");\nconst cmd = "job:" + req.query.id;\nredis.execute(cmd);\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('db.query("SELECT 1");\nconst k = "u:" + req.query.id;\ncache.execute(k);\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('db.query("SELECT 1");\nconst step = "run:" + req.query.id;\nrunner.execute(step);\n')
+    .includes('safe/sql-injection'));
+  assert.ok(!ids('db.query("SELECT 1");\nconst path = "/v1/" + req.query.id;\napi.execute(path);\n')
+    .includes('safe/sql-injection'));
+});
+
+test('a real handle in the same file still fires', () => {
+  assert.ok(ids('db.query("SELECT 1");\nconst cmd = "job:" + req.query.id;\ndb.execute(cmd);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+  assert.ok(ids('const q = "SELECT * FROM t WHERE id=" + req.query.id;\nconn.query(q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes('safe/sql-injection'));
+});

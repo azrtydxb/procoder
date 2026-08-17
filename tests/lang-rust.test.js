@@ -326,3 +326,34 @@ test("the same shape reports when the fragment is not provably constant", () => 
   assert.ok(ids('const TABLE: &str = "users";\nlet q = format!("SELECT * FROM {} WHERE n = {}", TABLE, name);\nlet r = sqlx::query(&q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
     .includes("safe/sql-injection"));
 });
+
+// What makes taint die — see taint.js.
+test("a named escaper at a binding kills the taint", () => {
+  assert.ok(!ids('let mut q = format!("SELECT * FROM t WHERE id={}", user_id);\nq = sanitize_sql(q);\nconn.execute(&q);\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('let id = escape_string(&user_id);\nconn.execute(&format!("SELECT * FROM t WHERE id={}", id));\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('let body = ammonia::clean(&raw);\nlet q = format!("SELECT * FROM t WHERE b={}", body);\nconn.execute(&q);\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('let t = html_escape::encode_text(&raw);\nlet q = format!("SELECT * FROM t WHERE b={}", t);\nconn.execute(&q);\n')
+    .includes("safe/sql-injection"));
+});
+
+test("a wrapping call that is not an escaper keeps the taint", () => {
+  assert.ok(ids('fn not_an_escaper(v: String) -> String { v }\n\nfn f(conn: &Conn, user_id: String) {\n    let mut q = format!("SELECT * FROM t WHERE id={}", user_id);\n    q = not_an_escaper(q);\n    conn.execute(&q);\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('conn.execute(&format!("SELECT * FROM t WHERE id={}", raw_id));\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a receiver that is not a database handle does not inherit the file SQL", () => {
+  assert.ok(!ids('conn.execute("SELECT 1");\nlet cmd = format!("job:{}", user_id);\ncache.execute(&cmd);\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('conn.execute("SELECT 1");\nlet cmd = format!("job:{}", user_id);\nrunner.execute(&cmd);\n')
+    .includes("safe/sql-injection"));
+});
+
+test("a real handle in the same file still fires", () => {
+  assert.ok(ids('conn.execute("SELECT 1");\nlet q = format!("SELECT * FROM t WHERE id={}", user_id);\nconn.execute(&q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

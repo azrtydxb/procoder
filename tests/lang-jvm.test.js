@@ -364,3 +364,32 @@ test("a generic execute with no evidence anywhere stays silent", () => {
   assert.ok(!ids('class A {\n  Object run(Step s, String n) {\n    String label = BASE + "@" + n;\n    return s.execute(label);\n  }\n}\n')
     .includes("safe/sql-injection"));
 });
+
+// What makes taint die — see taint.js.
+test("a named escaper at a binding kills the taint", () => {
+  assert.ok(!ids('String q = "SELECT * FROM t WHERE id=" + req.getParameter("id");\nq = sanitizeSql(q);\nstmt.executeQuery(q);\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('String id = StringEscapeUtils.escapeSql(req.getParameter("id"));\nstmt.executeQuery("SELECT * FROM t WHERE id=" + id);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('String h = Encode.forHtml(req.getParameter("q"));\nString q = "SELECT * FROM t WHERE h=" + h;\nstmt.executeQuery(q);\n')
+    .includes("safe/sql-injection"));
+});
+
+test("a wrapping call that is not an escaper keeps the taint", () => {
+  assert.ok(ids('class A {\n  String notAnEscaper(String v) { return v; }\n  void f(Statement stmt, HttpServletRequest req) throws Exception {\n    String q = "SELECT * FROM t WHERE id=" + req.getParameter("id");\n    q = notAnEscaper(q);\n    stmt.executeQuery(q);\n  }\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('stmt.executeQuery("SELECT * FROM t WHERE id=" + rawId);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a receiver that is not a database handle does not inherit the file SQL", () => {
+  assert.ok(!ids('stmt.executeQuery("SELECT 1");\nString cmd = "job:" + req.getParameter("id");\nrunner.execute(cmd);\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('stmt.executeQuery("SELECT 1");\nString k = "u:" + req.getParameter("id");\ncache.execute(k);\n')
+    .includes("safe/sql-injection"));
+});
+
+test("a real handle in the same file still fires", () => {
+  assert.ok(ids('stmt.executeQuery("SELECT 1");\nString q = "SELECT * FROM t WHERE id=" + req.getParameter("id");\nstmt.executeQuery(q);\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});

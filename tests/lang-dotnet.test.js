@@ -323,3 +323,25 @@ test("the same shapes report when the fragment is not provably constant", () => 
   assert.ok(ids('string col = "created_at";\ncol = Request.Query["c"];\ncmd.CommandText = $"SELECT * FROM t ORDER BY {col}";\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
     .includes("safe/sql-injection"));
 });
+
+// What makes taint die — see taint.js. The receiver discrimination that closes
+// `redis.execute` in the other five packs has nothing to close here: this
+// pack's SQL sink names are `SqlCommand`, `CommandText`, `ExecuteSqlRaw` and
+// `FromSqlRaw`, none of which is an ordinary method name on any receiver.
+test("a named escaper at a binding kills the taint", () => {
+  assert.ok(!ids('string q = "SELECT * FROM t WHERE id=" + Request.Query["id"];\nq = SanitizeSql(q);\ncmd.CommandText = q;\n')
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('string id = builder.QuoteIdentifier(Request.Query["id"]);\ncmd.CommandText = "SELECT * FROM t WHERE id=" + id;\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('string h = HttpUtility.HtmlEncode(Request.Query["q"]);\ncmd.CommandText = "SELECT * FROM t WHERE h=" + h;\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(!ids('string u = Uri.EscapeDataString(Request.Query["u"]);\ncmd.CommandText = "SELECT * FROM t WHERE u=" + u;\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
+
+test("a wrapping call that is not an escaper keeps the taint", () => {
+  assert.ok(ids('class A {\n  string NotAnEscaper(string v) { return v; }\n  void F(SqlCommand cmd) {\n    string q = "SELECT * FROM t WHERE id=" + Request.Query["id"];\n    q = NotAnEscaper(q);\n    cmd.CommandText = q;\n  }\n}\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+  assert.ok(ids('cmd.CommandText = "SELECT * FROM t WHERE id=" + rawId;\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
+    .includes("safe/sql-injection"));
+});
