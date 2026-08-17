@@ -228,6 +228,20 @@ test('a file past the size cap is skipped, not scanned', () => {
 
 // The old 256KB cap threw away every finding on an ordinary large source. The
 // cap exists for files no human edits, so a 400KB one must still be scanned.
+// The 2s budget is a promise the engine keeps for itself: when it runs out of
+// time it stops and says so with true/budget-exhausted, rather than grinding on.
+// So the honest assertion is that it finished on its own terms, not that a
+// particular host completed in a particular number of milliseconds — a raw
+// ceiling scores the runtime, and two of those failed on ubuntu/node20 while
+// the engine was unchanged. The loose ceiling that remains is a hang guard, set
+// far above any plausible host rather than at the budget.
+function assertFinished(out, elapsed, what) {
+  assert.ok(!out.findings.some((f) => f.id === 'true/budget-exhausted'),
+    `${what} ran out of the ${BUDGET_MS}ms budget instead of finishing`);
+  assert.ok(elapsed < BUDGET_MS * 4,
+    `${what} took ${elapsed}ms, far past anything the engine should need`);
+}
+
 test('a large but ordinary source is scanned, not skipped', () => {
   const repo = repoWith({
     'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
@@ -237,7 +251,7 @@ test('a large but ordinary source is scanned, not skipped', () => {
     out = checkFile(path.join(repo, 'big.ts'),
       { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   });
-  assert.ok(elapsed < 2000, `a 400KB source blew the budget: ${elapsed}ms`);
+  assertFinished(out, elapsed, 'a 400KB source');
   assert.strictEqual(out.skipped, null);
   assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
 });
@@ -250,7 +264,7 @@ test('a minified file finishes well inside the 2s budget', () => {
   const elapsed = cpuMs(() => {
     out = checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
   });
-  assert.ok(elapsed < 2000, `checkFile took ${elapsed}ms`);
+  assertFinished(out, elapsed, 'a 200KB minified line');
   assert.strictEqual(out.skipped, null);
 });
 
@@ -263,7 +277,7 @@ test('a long line does not stall a file of otherwise normal lines', () => {
     out = checkFile(path.join(repo, 'mixed.ts'),
       { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   });
-  assert.ok(elapsed < 2000, `the long line was scanned anyway: ${elapsed}ms`);
+  assertFinished(out, elapsed, 'a 100KB line among short ones');
   const ids = out.findings.map((f) => f.id);
   assert.ok(ids.includes('safe/dynamic-eval'));
   assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
@@ -327,7 +341,7 @@ test('a minified line that matches thousands of times is capped, and says so', (
     out = checkFile(path.join(repo, 'bundle.ts'),
       { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
   });
-  assert.ok(elapsed < 2000, `the minified line blew the budget: ${elapsed}ms`);
+  assertFinished(out, elapsed, 'the minified line');
   assert.strictEqual(out.findings.length, MAX_FINDINGS_PER_LINE + 1);
   assert.ok(out.findings.some((f) => f.id === 'true/findings-suppressed'));
 });
