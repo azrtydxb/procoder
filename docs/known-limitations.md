@@ -19,12 +19,13 @@ stays here, gathered under [Accepted trade-offs](#accepted-trade-offs), where
 each one says what it buys and not only what it costs. Everything else is a
 genuine gap and is written up as one.
 
-This pass covers four engine changes. Rungs 5 and 6 have an engine, three rules
+This pass covers five engine changes. Rungs 5 and 6 have an engine, three rules
 wide; `true/missing-timeout`, `safe/manifest-not-locked` and
 `safe/redaction-marker` were each widened past the third of their promise they
 used to keep; the parallel scan's threshold is measured milliseconds rather
-than a file count; and `init`, the MCP server and the baseline stopped
-reporting success over work they had not done. **Twenty-three entries are
+than a file count; `init`, the MCP server and the baseline stopped reporting
+success over work they had not done; and an unreadable manifest or lockfile got
+ids of its own. **Twenty-three entries are
 deleted rather than hedged** — ten misses and four false positives across the
 three widened rules, five across `init`, MCP and the baseline, two on the
 parallel scan, one on Kotlin, and one whole section on a threshold that no
