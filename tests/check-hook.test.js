@@ -132,12 +132,12 @@ test('malformed input exits cleanly', () => {
 // hook, the same spawn, over a one-line file. Work that stops being linear
 // moves the measurement and not the baseline.
 //
-// Catches: any regression that makes analysing a large file an order of
-// magnitude dearer than the spawn it rides on — today ~34ms of analysis over a
-// ~31ms baseline, and the bound allows six times the baseline. Does not catch:
-// a uniform slowdown that costs the one-line run just as much (module load,
-// config parsing), or a regression smaller than that multiple.
-const SPAWN_MULTIPLE = 6;
+// Catches: size-dependent work that stops being linear — quadrupling the input
+// costs about 4x when it is linear and about 16x when it is not, so 6 sits
+// clear of one and far below the other. Does not catch: a uniform slowdown that
+// costs the small run just as much (module load, config parsing), or a
+// regression smaller than that multiple.
+const SIZE_MULTIPLE = 6;
 
 // CPU time, not wall-clock — the same correction tests/perf-guard.js made, for
 // the same reason, and these three assertions were the ones it did not reach.
@@ -191,24 +191,44 @@ function bestOf(runs, work) {
   return best;
 }
 
-function assertNearBareHook(repo, file, what) {
-  const bare = repoWith({ 'bare.ts': 'const x = 1;\n' });
-  const baseline = bestOf(3, () => hookCpuMs(bare, path.join(bare, 'bare.ts')));
-  const elapsed = bestOf(3, () => hookCpuMs(repo, file));
-  assert.ok(elapsed <= baseline * SPAWN_MULTIPLE + 50,
-    `${what}: ${elapsed}ms of CPU against a ${baseline}ms one-line-file baseline`);
+// The same input at two sizes, four times apart: linear work lands near 4x and
+// anything super-linear runs away from it. Six is the ceiling, matching the
+// size-cap test below.
+//
+// This replaces a comparison against a BARE HOOK — the same spawn over a
+// one-line file — and the difference is why every ubuntu leg went red. That
+// bound divided analysis CPU by startup CPU, two quantities with no fixed
+// relationship: measured here, 34ms of analysis over a 31ms startup, a ratio of
+// 1.1; measured on a GitHub runner, 479ms over 67ms, a ratio of 7.1. Neither
+// number says anything about linearity, which is what the comment above always
+// claimed this was for, and the runner's ratio is not a regression — it is a
+// host whose startup is cheap relative to its throughput.
+//
+// A ratio between two SIZES of the same input is speed-free by construction:
+// both points are measured on whatever host is running, and only the shape of
+// the growth survives the division. That is the correction tests/perf-guard.js
+// made for the packs and the size-cap test below already uses.
+function assertLinearInSize(build, what) {
+  const small = repoWith({ 'a.ts': build(1) });
+  const large = repoWith({ 'a.ts': build(4) });
+  const one = bestOf(3, () => hookCpuMs(small, path.join(small, 'a.ts')));
+  const four = bestOf(3, () => hookCpuMs(large, path.join(large, 'a.ts')));
+  assert.ok(four < one * SIZE_MULTIPLE,
+    `${what}: ${four}ms of CPU at four times the size against ${one}ms — `
+    + 'the size-dependent work is no longer linear');
 }
 
 test('the hook stays inside its budget on a large file', () => {
-  const repo = repoWith({ 'big.ts': 'const x = 1;\n'.repeat(20000) });
-  assertNearBareHook(repo, path.join(repo, 'big.ts'), '20k lines');
+  assertLinearInSize((n) => 'const x = 1;\n'.repeat(5000 * n), '20k lines');
 });
 
 test('the hook stays inside its budget on a minified file', () => {
-  let line = '';
-  while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
-  const repo = repoWith({ 'min.ts': line });
-  assertNearBareHook(repo, path.join(repo, 'min.ts'), '200KB single line');
+  const line = (bytes) => {
+    let out = '';
+    while (out.length < bytes) out += `function f${out.length}(a,b){return a&&b?a:b;}`;
+    return out;
+  };
+  assertLinearInSize((n) => line(50 * 1024 * n), '200KB single line');
 });
 
 // The largest input the engine now accepts, run through the real hook process
