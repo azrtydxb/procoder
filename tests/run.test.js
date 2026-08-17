@@ -14,7 +14,7 @@ const { finding } = require('../hooks/checks/finding');
 // in CPU milliseconds: `node --test` runs the test files concurrently, and a
 // wall-clock budget scores how loaded the machine is as much as how expensive
 // checkFile is. See tests/perf-guard.js.
-const { cpuMs } = require('./perf-guard');
+const { cpuMs, bestOf } = require('./perf-guard');
 
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-run-'));
@@ -342,21 +342,39 @@ test('a sink on a line with a runaway word run is reported', () => {
   const repo = repoWith({
     'bundle.ts': `${sink}${'x'.repeat(MAX_FILE_BYTES - sink.length - 1)}\n`,
   });
+  // Against a same-size benign file in this process, not a fixed millisecond
+  // count. The property is that a runaway word run costs no more than ordinary
+  // text of the same size — an absolute bound scores the runtime instead, and
+  // this one failed on ubuntu/node20 at 524ms of a 500ms ceiling while the
+  // engine was not involved in the difference.
+  const plain = repoWith({ 'plain.ts': `${sink}${'x y '.repeat((MAX_FILE_BYTES - sink.length) / 4)}\n` });
+  const config = loadConfig(repo);
   let out;
-  const elapsed = cpuMs(() => {
-    out = checkFile(path.join(repo, 'bundle.ts'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
+  const wordRun = bestOf(3, () => {
+    out = checkFile(path.join(repo, 'bundle.ts'), { repoRoot: repo, config, maxFindings: Infinity });
   });
-  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms on a 1MB word run`);
+  const ordinary = bestOf(3, () => checkFile(path.join(plain, 'plain.ts'),
+    { repoRoot: plain, config: loadConfig(plain), maxFindings: Infinity }));
+  assert.ok(wordRun < Math.max(ordinary, 5) * 8,
+    `a 1MB word run cost ${wordRun}ms against ${ordinary}ms for ordinary text of the same size`);
   assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
     'the sink on the word-run line was invisible');
 });
 
+// Ratio, not a millisecond ceiling: the claim is that 400KB on one line costs
+// no more than the same 400KB spread over many, which is what "the shape path
+// never sees it" means. A fixed bound measures the runtime — the sibling test
+// above failed on ubuntu/node20 at 524ms of a 500ms ceiling with the engine
+// unchanged — and quadratic growth shows up in the ratio however slow the host.
 test('a long line stays cheap: the shape path never sees it', () => {
-  const repo = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
-  const elapsed = cpuMs(() => checkFile(path.join(repo, 'min.ts'),
-    { repoRoot: repo, config: loadConfig(repo) }));
-  assert.ok(elapsed < 500, `checkFile took ${elapsed}ms — the shape path is quadratic in line length`);
+  const oneLine = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
+  const manyLines = repoWith({ 'min.ts': minifiedLine(400 * 1024).replace(/;/g, ';\n') });
+  const single = bestOf(3, () => checkFile(path.join(oneLine, 'min.ts'),
+    { repoRoot: oneLine, config: loadConfig(oneLine) }));
+  const spread = bestOf(3, () => checkFile(path.join(manyLines, 'min.ts'),
+    { repoRoot: manyLines, config: loadConfig(manyLines) }));
+  assert.ok(single < Math.max(spread, 5) * 8,
+    `400KB on one line cost ${single}ms against ${spread}ms spread over many — the shape path is quadratic in line length`);
 });
 
 // One line can match a rule thousands of times. The cap keeps that off the
