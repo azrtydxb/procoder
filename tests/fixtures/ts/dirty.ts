@@ -137,3 +137,59 @@ export function runTainted(dir: string) {
   const cmd = `ls ${dir}`;
   return exec(cmd);
 }
+
+// The structural shapes: a field, a helper's return value, a branch, a loop, a
+// wrapped right-hand side, a transformation at the sink, and a container. Each
+// one reported nothing before taint.js grew a statement model, a block-aware
+// merge, path bindings and a return pass.
+export function fieldTainted(db: any, id: string) {
+  const o: any = {};
+  o.q = "SELECT * FROM users WHERE id = " + id;
+  return db.query(o.q);
+}
+
+function buildQuery(id: string) {
+  return "SELECT * FROM users WHERE id = " + id;
+}
+
+export function returnedTainted(db: any, id: string) {
+  const q = buildQuery(id);
+  return db.query(q);
+}
+
+export function returnedInline(db: any, id: string) {
+  return db.query(buildQuery(id));
+}
+
+export function branchTainted(db: any, id: string, all: boolean) {
+  let q = "SELECT * FROM users";
+  if (!all) {
+    q = "SELECT * FROM users WHERE id = " + id;
+  }
+  return db.query(q);
+}
+
+export function loopTainted(db: any, clauses: string[]) {
+  let q = "SELECT * FROM users WHERE 1=1";
+  for (const clause of clauses) {
+    q = q + clause;
+  }
+  return db.query(q);
+}
+
+export function wrappedTainted(db: any, id: string) {
+  const q =
+    "SELECT * FROM users WHERE id = " + id;
+  return db.query(q);
+}
+
+export function trimmedTainted(db: any, id: string) {
+  const q = "SELECT * FROM users WHERE id = " + id;
+  return db.query(q.trim());
+}
+
+export function containerTainted(db: any, id: string) {
+  const parts = ["SELECT * FROM users WHERE id = ", id];
+  const q = parts.join("");
+  return db.query(q);
+}

@@ -3,7 +3,9 @@
 
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   SIGNATURE_LOOKBACK,
   analyzeIndent, countParams, estimateComplexity, lineRuleFindings, shapeFindings, stripNoise,
@@ -78,11 +80,23 @@ const LINE_RULES = [
 // `text(value)` it is far too common an identifier to key a finding on. Shell
 // and eval get no taint sink — `os.system(`, `shell=True`, `eval(` and
 // `exec(` are already reported on the sink itself whatever the argument is.
+const PY_WORD = String.raw`[A-Za-z_]\w*`;
+
 const TAINT = {
   indent: true,
   // The optional `(?:\s*:[^=\n]*)?` is an annotation: `q: str = "…" + user_id`
   // established no taint at all, because the recogniser stopped at the `:`.
-  assign: /^\s*([A-Za-z_][\w]*)\s*(?::[^=\n]*)?\+?=(?!=)/,
+  assign: new RegExp(String.raw`^\s*(${PY_WORD}(?:\.${PY_WORD})*)\s*(?::[^=\n]*)?\+?=(?!=)`),
+  // No `declare`, deliberately: Python has no declarator, and its scoping is
+  // exactly what "the binding already live, wherever it was declared" gives —
+  // `q` assigned inside an `if` or a `for` is the function's `q`. A nested
+  // `def` reusing the name gets a fresh one from its own parameter list, or
+  // from the fact that leaving the enclosing block unbinds it.
+  //
+  // The enclosing function's name, for return propagation. `def` is the only
+  // thing that opens one, which is also why it is the only thing `params`
+  // reads — Python has no block-opening brace to cut a statement at.
+  func: new RegExp(String.raw`^\s*(?:async\s+)?def\s+(${PY_WORD})`),
   // A `def`'s parameters, which shadow any enclosing binding of the same name.
   // Python's statements have no block-opening brace to cut them at, so the
   // generic "the list this statement ends with" would read every call's
@@ -105,7 +119,7 @@ const TAINT = {
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: /\b(?:executemany|execute|raw)\s*\(\s*([A-Za-z_][\w]*)\s*[,)]/i,
+      re: new RegExp(String.raw`\b(?:executemany|execute|raw)\s*\(\s*${valuePattern(PY_WORD)}\s*[,)]`, 'i'),
       message: 'SQL built by f-string, % or concatenation reaches a cursor',
       fix: 'pass parameters as the second argument instead',
     },

@@ -3,7 +3,9 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -119,7 +121,12 @@ const SPAN_RULES = [
 // rules already fire on the sink itself whatever the argument is
 // (`.innerHTML =`, `eval(`), so a taint sink for them would report a second
 // time for the same line and nothing new — the duplicate rung 4 forbids.
-const JS_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+const JS_WORD = String.raw`[A-Za-z_$][\w$]*`;
+// A dotted path, so `o.q` and `this.query` are bindings of their own, plus the
+// call and method-chain suffixes a value picks up on its way into a sink — see
+// valuePattern in taint.js.
+const JS_VALUE = valuePattern(JS_WORD);
+const JS_PATH = String.raw`(${JS_WORD}(?:\.${JS_WORD})*)`;
 
 // A template literal with a hole in it — unless the tag is `sql`.
 //
@@ -139,19 +146,28 @@ const TAINT = {
   // The optional `(?::[^=\n]*)?` is a type annotation: `const q: string = …` is
   // how a typed codebase writes the binding, and without it the recogniser
   // stopped at the `:` and established no taint at all.
-  assign: /^\s*(?:(?:const|let|var)\s+)?(?:this\.)?([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?\+?=(?![=>])/,
+  assign: new RegExp(String.raw`^\s*(?:(?:const|let|var)\s+)?${JS_PATH}\s*(?::[^=\n]*)?\+?=(?![=>])`),
+  // The same recogniser with the declarator required. A declaration binds
+  // afresh at this block's level; a bare assignment writes whatever binding is
+  // already live, which is what carries a branch's or a loop body's work out
+  // of the block — see bind() in taint.js.
+  declare: /^\s*(?:const|let|var)\s/,
+  // The enclosing function's name, for return propagation. `function build(` and
+  // `const build = (` are the two spellings worth following; a method shorthand
+  // is deliberately not, since its name is ambiguous with any call.
+  func: new RegExp(String.raw`^\s*(?:export\s+)?(?:async\s+)?(?:function\s*\*?\s*|(?:const|let|var)\s+)(${JS_WORD})`),
   sources: [JS_TEMPLATE, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: new RegExp(String.raw`\b(?:query|execute|raw)\s*\(\s*${JS_NAME}\s*[,)]`, 'i'),
+      re: new RegExp(String.raw`\b(?:query|execute|raw)\s*\(\s*${JS_VALUE}\s*[,)]`, 'i'),
       message: 'SQL built by interpolation or concatenation reaches a query',
       fix: 'use a parameterized query with bound values',
     },
     {
       id: 'safe/shell-injection',
       re: new RegExp(
-        String.raw`(?:\bchild_process\.|(?<![.\w$]))(?:execSync|exec)\s*\(\s*${JS_NAME}\s*[,)]`),
+        String.raw`(?:\bchild_process\.|(?<![.\w$]))(?:execSync|exec)\s*\(\s*${JS_VALUE}\s*[,)]`),
       message: 'shell command built by interpolation or concatenation',
       fix: 'use execFile/spawn with an argument array and shell:false',
     },

@@ -103,6 +103,46 @@ test('flags shape violations using indentation depth', () => {
   assert.ok(ids(deep).includes('obvious/nesting-depth'));
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in.
+const SHAPES = [
+  ['a field',
+    'self.q = "SELECT id=" + user_id\ncur.execute(self.q)',
+    'self.q = "SELECT * FROM t"\ncur.execute(self.q)'],
+  ['a helper\'s return value',
+    'def build(uid):\n    return "SELECT id=" + uid\nq = build(x)\ncur.execute(q)',
+    'def build():\n    return "SELECT * FROM t"\nq = build()\ncur.execute(q)'],
+  ['a return straight into the sink',
+    'def b(uid):\n    return "SELECT id=" + uid\ncur.execute(b(1))',
+    'def b():\n    return "SELECT * FROM t"\ncur.execute(b())'],
+  ['a binding made inside a branch',
+    'def f(cur, uid, x):\n    q = "SELECT"\n    if x:\n        q = "SELECT id=" + uid\n    cur.execute(q)',
+    'def f(cur, uid, x):\n    q = "SELECT 1"\n    if x:\n        q = "SELECT 2"\n    cur.execute(q)'],
+  ['a value built in a loop',
+    'def f(cur, ps):\n    q = "SELECT"\n    for p in ps:\n        q = q + p\n    cur.execute(q)',
+    'def f(cur, ps):\n    q = "SELECT"\n    for p in ps:\n        log(q + p)\n    cur.execute(q)'],
+  ['a wrapped right-hand side',
+    'q = (\n    "SELECT id=" + uid)\ncur.execute(q)',
+    'q = (\n    "SELECT " + "* FROM t")\ncur.execute(q)'],
+  ['a transformation at the sink',
+    'q = "SELECT id=" + uid\ncur.execute(q.strip())',
+    'q = "SELECT * FROM t"\ncur.execute(q.strip())'],
+  ['a container',
+    'parts = ["SELECT id=", uid]\nq = "".join(parts)\ncur.execute(q)',
+    'parts = ["SELECT ", "* FROM t"]\nq = "".join(parts)\ncur.execute(q)'],
+  ['an inner binding of the same name',
+    'q = "SELECT id=" + uid\ndef g():\n    q = "SELECT 1"\ncur.execute(q)',
+    'q = "SELECT 1"\ndef g():\n    q = "SELECT id=" + uid\ncur.execute(q)'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'py');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.py'), 'utf8'),

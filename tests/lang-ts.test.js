@@ -129,6 +129,46 @@ test('a ternary-shaped string is not a nested ternary', () => {
   assert.ok(ids('const x = a ? b ? 1 : 2 : 3;').includes('obvious/nested-ternary'));
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in — and
+// every twin is a real spelling of the safe form, not a strawman.
+const SHAPES = [
+  ['a field', 'const o: any = {};\no.q = "SELECT id=" + id;\ndb.query(o.q);',
+    'const o: any = {};\no.q = "SELECT * FROM t";\ndb.query(o.q);'],
+  ["a helper's return value", 'function build(id) { return "SELECT id=" + id; }\nconst q = build(x);\ndb.query(q);',
+    'function build() { return "SELECT * FROM t"; }\nconst q = build();\ndb.query(q);'],
+  ['a return straight into the sink', 'function b(id) { return "SELECT id=" + id; }\ndb.query(b(1));',
+    'function b() { return "SELECT * FROM t"; }\ndb.query(b());'],
+  ['a binding made inside a branch', 'let q = "SELECT";\nif (x) { q = "SELECT id=" + id; }\ndb.query(q);',
+    'let q = "SELECT 1";\nif (x) { q = "SELECT 2"; }\ndb.query(q);'],
+  ['a value built in a loop', 'let q = "SELECT";\nfor (const p of ps) { q = q + p; }\ndb.query(q);',
+    'let q = "SELECT";\nfor (const p of ps) { log(q + p); }\ndb.query(q);'],
+  ['a wrapped right-hand side', 'const q =\n  "SELECT id=" + id;\ndb.query(q);',
+    'const q =\n  "SELECT " + "* FROM t";\ndb.query(q);'],
+  ['a transformation at the sink', 'const q = "SELECT id=" + id;\ndb.query(q.trim());',
+    'const q = "SELECT * FROM t";\ndb.query(q.trim());'],
+  ['a container', 'const parts = ["SELECT id=", id];\nconst q = parts.join("");\ndb.query(q);',
+    'const parts = ["SELECT ", "* FROM t"];\nconst q = parts.join("");\ndb.query(q);'],
+  ['an inner binding of the same name',
+    'let q = "SELECT id=" + id;\nfunction g() { let q = "SELECT 1"; }\ndb.query(q);',
+    'let q = "SELECT 1";\nfunction g() { let q = "SELECT id=" + id; }\ndb.query(q);'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
+// A parameter arriving already tainted stays missed on purpose: reading every
+// parameter as data reports every data-access helper ever written, and nothing
+// in the file tells the constant caller from the untrusted one. See taint.js.
+test('a bare parameter reaching a sink is still not a finding', () => {
+  assert.ok(!ids('function f(db, q) { db.query(q); }').includes('safe/sql-injection'));
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'ts');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.ts'), 'utf8'),

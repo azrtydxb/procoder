@@ -4,7 +4,9 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -76,16 +78,20 @@ const SPAN_RULES = [
 // literal clears it. The sink allows a leading `&`, which is how a `String`
 // reaches sqlx. Shell gets no taint sink: `Command::new("sh").arg("-c")` is
 // already reported on the invocation itself, whatever the argument is.
+const RS_WORD = String.raw`[A-Za-z_]\w*`;
+
 const TAINT = {
   // `const` and `static` alongside `let`: without them `const TABLE: &str =
   // "users"` matched nothing at all, so a table name declared the way Rust
   // declares one was neither tracked nor provably constant.
-  assign: /^\s*(?:(?:let|const|static)\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*(?::[^=\n]*)?\+?=(?!=)/,
+  assign: new RegExp(String.raw`^\s*(?:(?:let|const|static)\s+(?:mut\s+)?)?(${RS_WORD}(?:\.${RS_WORD})*)\s*(?::[^=\n]*)?\+?=(?!=)`),
+  declare: /^\s*(?:let|const|static)\s/,
+  func: new RegExp(String.raw`^\s*(?:pub(?:\s*\([^()]*\))?\s+)?(?:default\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]*"\s+)?fn\s+(${RS_WORD})`),
   sources: [/\bformat!\s*\(/, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: /\b(?:query|execute)\w*\s*\(\s*&?\s*([A-Za-z_]\w*)\s*[,)]/,
+      re: new RegExp(String.raw`\b(?:query|execute)\w*\s*\(\s*&?\s*${valuePattern(RS_WORD)}\s*[,)]`),
       message: 'SQL built with format! or concatenation reaches a query',
       fix: 'use bind parameters',
     },

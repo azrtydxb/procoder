@@ -3,7 +3,9 @@
 
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -109,21 +111,25 @@ const SPAN_RULES = [
 // verb, so `cmd.CommandText = q;` is read as well as `new SqlCommand(q, c)`;
 // the argument must end the statement or the argument list, so a tainted name
 // that is only the receiver of a further call is not counted.
-const CS_NAME = String.raw`([A-Za-z_@]\w*)`;
+const CS_WORD = String.raw`[A-Za-z_@]\w*`;
+const CS_VALUE = valuePattern(CS_WORD);
+const CS_MOD = String.raw`(?:readonly|const|public|private|protected|internal|static|async|override|virtual|sealed|abstract|var)\s+`;
 
 const TAINT = {
-  assign: /^\s*(?:(?:readonly|const|public|private|protected|internal|static|var)\s+)*(?:[\w<>[\],.?]+\s+)?([A-Za-z_@]\w*)\s*\+?=(?![=>])/,
+  assign: new RegExp(String.raw`^\s*(?:${CS_MOD})*(?:[\w<>[\],.?]+\s+)?(${CS_WORD}(?:\.${CS_WORD})*)\s*\+?=(?![=>])`),
+  declare: new RegExp(String.raw`^\s*(?:${CS_MOD}|[\w<>[\],.?]+\s+)${CS_WORD}\s*=`),
+  func: new RegExp(String.raw`^\s*(?:\[[^\]\n]*\]\s*)*(?:${CS_MOD})*(?:[\w<>[\],.?]+\s+)?(${CS_WORD})\s*\(`),
   sources: [/\$"[^"\n]*\{/, /\b[Ss]tring\.Format\s*\(/, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: new RegExp(String.raw`(?:SqlCommand|CommandText|ExecuteSqlRaw|FromSqlRaw)\s*(?:\(|=)\s*${CS_NAME}\s*(?:[,)]|$)`),
+      re: new RegExp(String.raw`(?:SqlCommand|CommandText|ExecuteSqlRaw|FromSqlRaw)\s*(?:\(|=)\s*${CS_VALUE}\s*(?:[,)]|$)`),
       message: 'SQL built by interpolation or concatenation reaches a command',
       fix: 'use parameters (cmd.Parameters.AddWithValue) or FromSqlInterpolated',
     },
     {
       id: 'safe/shell-injection',
-      re: new RegExp(String.raw`\bProcess\.Start\s*\(\s*${CS_NAME}\s*[,)]`),
+      re: new RegExp(String.raw`\bProcess\.Start\s*\(\s*${CS_VALUE}\s*[,)]`),
       message: 'shell command built by interpolation or concatenation',
       fix: 'use ArgumentList with UseShellExecute = false instead of a shell string',
     },

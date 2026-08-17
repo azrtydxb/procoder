@@ -4,7 +4,9 @@
 const { finding } = require('../finding');
 const { stripComments } = require('./comments');
 const { spanRuleFindings } = require('./spans');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   analyzeBraces, emptyCatchFindings, lineRuleFindings, measureFunctions,
   shapeFindings, signaturesFrom, stripNoise,
@@ -63,22 +65,33 @@ const LINE_RULES = [
 // a plain `q = …` reassignment are read; Kotlin's `val`/`var` sit in the same
 // modifier list. The shell sink is pinned to `getRuntime().exec(` rather than
 // a bare `exec(`, which is far too common a method name to key on.
-const JVM_NAME = String.raw`([A-Za-z_$][\w$]*)`;
+const JVM_WORD = String.raw`[A-Za-z_$][\w$]*`;
+const JVM_VALUE = valuePattern(JVM_WORD);
+// The modifiers a declaration or a method signature may carry, shared by the
+// two recognisers below.
+const JVM_MOD = String.raw`(?:final|val|var|const|public|private|protected|static|open|suspend|override|abstract|synchronized|fun|lateinit)\s+`;
+const JVM_MODS = String.raw`(?:${JVM_MOD})*`;
 
 const TAINT = {
   // `const` sits in the modifier list for Kotlin's `const val`.
-  assign: /^\s*(?:(?:final|val|var|const|public|private|protected|static)\s+)*(?:[\w$<>[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*\+?=(?![=>])/,
+  assign: new RegExp(String.raw`^\s*${JVM_MODS}(?:[\w$<>[\],.?]+\s+)?(${JVM_WORD}(?:\.${JVM_WORD})*)\s*\+?=(?![=>])`),
+  // A declaration is the same recogniser with the declarator required: a
+  // modifier, or a type before the name. A bare `q = …` is not one, and so
+  // writes whatever binding is already live — which is what carries a branch's
+  // or a loop body's work out of the block.
+  declare: new RegExp(String.raw`^\s*(?:${JVM_MOD}|[\w$<>[\],.?]+\s+)${JVM_WORD}\s*=`),
+  func: new RegExp(String.raw`^\s*(?:@\w+\s*)*${JVM_MODS}(?:[\w$<>[\],.?]+\s+)?(${JVM_WORD})\s*\(`),
   sources: [/\bString\.format\s*\(/, /"[^"\n]*\$[A-Za-z_{]/, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: new RegExp(String.raw`\b(?:executeQuery|executeUpdate|createQuery|rawQuery|execute)\s*\(\s*${JVM_NAME}\s*[,)]`),
+      re: new RegExp(String.raw`\b(?:executeQuery|executeUpdate|createQuery|rawQuery|execute)\s*\(\s*${JVM_VALUE}\s*[,)]`),
       message: 'SQL built by concatenation or format reaches a statement',
       fix: 'use PreparedStatement with bound parameters',
     },
     {
       id: 'safe/shell-injection',
-      re: new RegExp(String.raw`getRuntime\s*\(\s*\)\s*\.\s*exec\s*\(\s*${JVM_NAME}\s*[,)]`),
+      re: new RegExp(String.raw`getRuntime\s*\(\s*\)\s*\.\s*exec\s*\(\s*${JVM_VALUE}\s*[,)]`),
       message: 'shell command built by concatenation or format',
       fix: 'call the binary directly with a separate argument list',
     },

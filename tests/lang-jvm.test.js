@@ -140,6 +140,46 @@ test('xxe-risk stays silent when the very next lines disable DOCTYPE', () => {
   assert.ok(ids(farAway).includes('safe/xxe-risk'));
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in.
+const SHAPES = [
+  ['a field',
+    'this.q = "SELECT id=" + id;\nstmt.executeQuery(this.q);',
+    'this.q = "SELECT * FROM t";\nstmt.executeQuery(this.q);'],
+  ['a helper\'s return value',
+    'String build(String id) { return "SELECT id=" + id; }\nString q = build(x);\nstmt.executeQuery(q);',
+    'String build() { return "SELECT * FROM t"; }\nString q = build();\nstmt.executeQuery(q);'],
+  ['a return straight into the sink',
+    'String b(String id) { return "SELECT id=" + id; }\nstmt.executeQuery(b(x));',
+    'String b() { return "SELECT * FROM t"; }\nstmt.executeQuery(b());'],
+  ['a binding made inside a branch',
+    'String q = "SELECT";\nif (x) { q = "SELECT id=" + id; }\nstmt.executeQuery(q);',
+    'String q = "SELECT 1";\nif (x) { q = "SELECT 2"; }\nstmt.executeQuery(q);'],
+  ['a value built in a loop',
+    'String q = "SELECT";\nfor (String p : ps) { q = q + p; }\nstmt.executeQuery(q);',
+    'String q = "SELECT";\nfor (String p : ps) { log(q + p); }\nstmt.executeQuery(q);'],
+  ['a wrapped right-hand side',
+    'String q =\n    "SELECT id=" + id;\nstmt.executeQuery(q);',
+    'String q =\n    "SELECT " + "* FROM t";\nstmt.executeQuery(q);'],
+  ['a transformation at the sink',
+    'String q = "SELECT id=" + id;\nstmt.executeQuery(q.trim());',
+    'String q = "SELECT * FROM t";\nstmt.executeQuery(q.trim());'],
+  ['a container',
+    'List<String> parts = Arrays.asList("SELECT id=", id);\nString q = String.join("", parts);\nstmt.executeQuery(q);',
+    'List<String> parts = Arrays.asList("SELECT ", "* FROM t");\nString q = String.join("", parts);\nstmt.executeQuery(q);'],
+  ['an inner binding of the same name',
+    'String q = "SELECT id=" + id;\nvoid g() { String q = "SELECT 1"; }\nstmt.executeQuery(q);',
+    'String q = "SELECT 1";\nvoid g() { String q = "SELECT id=" + id; }\nstmt.executeQuery(q);'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'jvm');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.java'), 'utf8'),

@@ -2,7 +2,9 @@
 // procoder — Go pack.
 
 const { stripComments } = require('./comments');
-const { CONCAT, packContext, skipConstant, taintFindings } = require('./taint');
+const {
+  CONCAT, packContext, skipConstant, taintFindings, valuePattern,
+} = require('./taint');
 const {
   analyzeBraces, lineRuleFindings, measureFunctions, shapeFindings, signaturesFrom, stripNoise,
 } = require('../shape');
@@ -88,7 +90,8 @@ const LINE_RULES = [
 // `db.QueryContext(ctx, q)` and `db.Query(q)` are read the same way. Shell
 // gets no taint sink: `exec.Command("sh", "-c", …)` is already reported on
 // the shell invocation itself, whatever the argument is.
-const GO_NAME = String.raw`([A-Za-z_]\w*)`;
+const GO_WORD = String.raw`[A-Za-z_]\w*`;
+const GO_VALUE = valuePattern(GO_WORD);
 
 const TAINT = {
   // The optional type in `var q string = …` is written `(?:\s+[\w*.[\]]+)?`,
@@ -101,12 +104,20 @@ const TAINT = {
   // `const` alongside `var`: without it `const table = "users"` bound the name
   // `const` instead of `table`, so a table name declared the way Go declares
   // one was neither tracked nor provably constant.
-  assign: /^\s*(?:(?:var|const)\s+)?([A-Za-z_]\w*)(?:\s+[\w*.[\]]+)?\s*[:+]?=(?!=)/,
+  // The name is a dotted path — `s.query`, `req.Body` — so a field is a
+  // binding of its own. The optional type stays exactly where it was, with the
+  // whitespace inside the group, for the reason above.
+  assign: new RegExp(String.raw`^\s*(?:(?:var|const)\s+)?(${GO_WORD}(?:\.${GO_WORD})*)(?:\s+[\w*.[\]]+)?\s*[:+]?=(?!=)`),
+  // `:=` and `var`/`const` declare; a bare `=` writes a binding that already
+  // exists, which is what carries a branch's or a loop body's work out of the
+  // block. Read off noise-stripped code, so a `:=` inside a literal is not one.
+  declare: /^\s*(?:var|const)\s|:=/,
+  func: new RegExp(String.raw`^\s*func\s+(?:\([^()]*\)\s*)?(${GO_WORD})`),
   sources: [/\bfmt\.Sprintf\s*\(/, /`[^`\n]*`\s*\+\s*(?=[A-Za-z_(])/, ...CONCAT],
   sinks: [
     {
       id: 'safe/sql-injection',
-      re: new RegExp(String.raw`\b(?:Query|QueryRow|QueryContext|QueryRowContext|ExecContext|Exec)\s*\(\s*(?:${GO_NAME}\s*,\s*)?${GO_NAME}\s*[,)]`),
+      re: new RegExp(String.raw`\b(?:Query|QueryRow|QueryContext|QueryRowContext|ExecContext|Exec)\s*\(\s*(?:${GO_VALUE}\s*,\s*)?${GO_VALUE}\s*[,)]`),
       message: 'SQL built by Sprintf or concatenation reaches a query',
       fix: 'use placeholders ($1, ?) and pass the values as arguments',
     },

@@ -101,6 +101,46 @@ test('the signature regex does not treat if/catch as methods', () => {
   assert.deepStrictEqual(check(src, { relPath: 'X.cs', config }), []);
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in.
+const SHAPES = [
+  ['a field',
+    'this.q = "SELECT id=" + id;\ncmd.CommandText = this.q;',
+    'this.q = "SELECT * FROM t";\ncmd.CommandText = this.q;'],
+  ['a helper\'s return value',
+    'string Build(string id) { return "SELECT id=" + id; }\nvar q = Build(x);\ncmd.CommandText = q;',
+    'string Build() { return "SELECT * FROM t"; }\nvar q = Build();\ncmd.CommandText = q;'],
+  ['a return straight into the sink',
+    'string B(string id) { return "SELECT id=" + id; }\ncmd.CommandText = B(x);',
+    'string B() { return "SELECT * FROM t"; }\ncmd.CommandText = B();'],
+  ['a binding made inside a branch',
+    'var q = "SELECT";\nif (x) { q = "SELECT id=" + id; }\ncmd.CommandText = q;',
+    'var q = "SELECT 1";\nif (x) { q = "SELECT 2"; }\ncmd.CommandText = q;'],
+  ['a value built in a loop',
+    'var q = "SELECT";\nforeach (var p in ps) { q = q + p; }\ncmd.CommandText = q;',
+    'var q = "SELECT";\nforeach (var p in ps) { Log(q + p); }\ncmd.CommandText = q;'],
+  ['a wrapped right-hand side',
+    'var q =\n    "SELECT id=" + id;\ncmd.CommandText = q;',
+    'var q =\n    "SELECT " + "* FROM t";\ncmd.CommandText = q;'],
+  ['a transformation at the sink',
+    'var q = "SELECT id=" + id;\ncmd.CommandText = q.Trim();',
+    'var q = "SELECT * FROM t";\ncmd.CommandText = q.Trim();'],
+  ['a container',
+    'var parts = new[] { "SELECT id=", id };\nvar q = string.Join("", parts);\ncmd.CommandText = q;',
+    'var parts = new[] { "SELECT ", "* FROM t" };\nvar q = string.Join("", parts);\ncmd.CommandText = q;'],
+  ['an inner binding of the same name',
+    'var q = "SELECT id=" + id;\nvoid G() { var q = "SELECT 1"; }\ncmd.CommandText = q;',
+    'var q = "SELECT 1";\nvoid G() { var q = "SELECT id=" + id; }\ncmd.CommandText = q;'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'dotnet');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.cs'), 'utf8'),

@@ -9,24 +9,49 @@
 //
 // The scope is deliberately small, and it is the whole design:
 //
-//   * One file, forward only. No call graph and no cross-file dataflow: that
-//     needs a resolver per language and is out of proportion to a 2s hook.
-//   * One name at a time. No fields and no containers: `obj.q = tainted` is
-//     not tracked. Names do carry to names — see the propagation rule below.
-//   * A binding lives in the block it was assigned in and dies when that block
-//     closes — brace depth for the five brace packs, indentation column for
-//     Python. A sibling function reusing the name starts clean, and so does a
-//     *parameter* reusing it: a parameter list is a fresh binding, so the
-//     names it introduces shadow whatever an enclosing scope bound them to for
-//     as long as the block it opens is live.
+//   * One file, forward only. No cross-file dataflow: that needs a resolver
+//     per language and is out of proportion to a 2s hook. Within the file
+//     there *is* one level of call propagation — see "returns" below.
+//   * A statement, not a line. Physical lines are gathered into logical
+//     statements first — see logicalLines — so a right-hand side a formatter
+//     wrapped is one unit and `const q =` / `  "SELECT id=" + id;` reads as
+//     the assignment it is. The same reading baseline.js gives a finding's
+//     statement, so the flat and the wrapped form are one construct to both.
+//   * A *path*, not a bare name. `o.q`, `this.query` and `q` are each a
+//     binding in their own right, and a lookup falls back through the path's
+//     prefixes, so a transformation at the sink — `db.query(q.trim())` —
+//     still finds `q`. No containers are modelled beyond the one shape below.
+//   * A binding lives at the level it was **declared** at, not the level the
+//     assignment sits on, and dies when that block closes — brace depth for
+//     the five brace packs, indentation column for Python. So a name assigned
+//     inside a branch or a loop body is still assigned *after* it: a
+//     may-analysis, which is the right bias for a security rule, and the only
+//     reading under which `if (x) { q = … }` and `for (…) { q = q + p }`
+//     mean anything. A declaration (`let`, `var`, `const`, `:=`, a typed
+//     local) binds afresh at its own level instead, and so does a
+//     *parameter*: a parameter list is a fresh binding, so the names it
+//     introduces shadow whatever an enclosing scope bound them to for as long
+//     as the block it opens is live. A sibling function reusing the name
+//     starts clean, and gives the name back on the way out — clears are
+//     recorded and undone exactly like taints, so an inner binding of the
+//     name no longer clears the outer one for the rest of the file.
 //   * A source is a string built from a *non-literal*: concatenation, a
 //     template or f-string, `%`, `.format`, `Sprintf`, `String.format`,
-//     `format!`. A value built only from literals is never tainted.
+//     `format!`, or a container literal that mixes a literal with a name —
+//     `["SELECT id=", id]`, whose `,` plays the part `+` plays in the others.
+//     A value built only from literals is never tainted.
 //   * An assignment whose right-hand side names a tainted variable carries the
 //     taint on. That is how a query is built incrementally — `q = q + id`,
 //     `q += id`, `a = b` — and reading those as "not a source, therefore
 //     clear" dropped the taint at the exact statement that introduced it. A
 //     compound `+=` never clears either, since it reads the old value.
+//   * Returns. One pass learns which of the file's own functions return a
+//     value that is tainted where it is built; a second uses that, so
+//     `const q = build(x)` and `db.query(b(1))` carry the taint of what the
+//     helper returns. The second pass runs only when the first found one, so
+//     a file with no such helper still costs a single pass. This is not a
+//     call graph: it is one level deep, within one file, keyed by the
+//     function's own name.
 //   * Any other assignment clears the name, so a literal reassignment
 //     untaints it.
 //
@@ -35,6 +60,19 @@
 // one that misses, because it is the whole pack that gets turned off. The
 // clean fixtures are the guard — every case added here has its safe
 // counterpart there.
+//
+// The two misses worth naming, because they look like the shapes above and are
+// deliberately not closed:
+//
+//   * A parameter arriving already tainted — `function f(q) { db.query(q) }`.
+//     Treating every parameter as data reports every data-access helper in
+//     every repository class, including the ones whose callers pass a
+//     constant, and no evidence inside this file tells the two apart. It is
+//     the single largest false-positive source available here, so it stays
+//     shut until there is a cross-file resolver to answer it.
+//   * A container read back by index or key — `parts[0]`, `m["q"]`. The
+//     container literal itself is a source (above), which is enough for the
+//     `join` form; element-wise reads would need a real value model.
 //
 // The ids are the ones the inline form already reports. A second id for the
 // same vulnerability written a second way would be the duplicate rung 4
@@ -98,7 +136,51 @@ const NOT_A_BINDING = /^\s*(?:else\s+)?(?:if|while|switch|return|yield|await|loc
 // character.
 const NAME_CONCAT = /(?<![\w$])[A-Za-z_$][\w$]*\s*\+\s*[A-Za-z_$]/;
 
-const NAME = /[A-Za-z_$][\w$]*/g;
+// A container literal that mixes a string literal with a name is the same
+// "literal glued to a non-literal" shape CONCAT reads, written with a `,`
+// instead of a `+`: `const parts = ["SELECT id=", id]` builds the query, and
+// `parts.join("")` only spells it out. Both directions, and both are as linear
+// as CONCAT and for the same two reasons — the first is entered only at a
+// quote and ends at the next one, the second is pinned to an identifier's
+// first character.
+const COMMA_MIX = [
+  /(?:"[^"\n]*"|'[^'\n]*'|`[^`\n]*`)\s*,\s*(?=[A-Za-z_$])/,
+  /(?<![\w$])[A-Za-z_$][\w$]*\s*,\s*["'`]/,
+];
+
+// …but only where the value *is* a list rather than one expression. An
+// ordinary call's arguments say nothing about what it returns, and reading
+// `t("hello", name)` as a source would taint half of every file. So the mix
+// counts only inside a container literal, in the spellings the six packs use:
+// `[…]` and `{…}`, `vec![…]`, `[]string{…}`, `map[string]string{…}`,
+// `new String[]{…}`, `Arrays.asList(…)`, `List.of(…)`, `listOf(…)`.
+//
+// Anchored at `^`, so every alternative has exactly one starting offset and
+// the inner `[^\]\n]*` cannot be retried.
+const CONTAINER = new RegExp([
+  String.raw`^\s*&?\s*(?:vec!|new\s*[\w.<>]*\s*(?:\[\s*\])?\s*`,
+  String.raw`|\[\s*\]\s*[\w.]+\s*|map\s*\[[^\]\n]*\]\s*[\w.]+\s*)?[[{]`,
+  String.raw`|^\s*(?:Arrays\.asList|(?:List|Set|Map)\.of|listOf|arrayOf|mutableListOf)\s*\(`,
+].join(''));
+
+function containerMix(text) {
+  return CONTAINER.test(text) && COMMA_MIX.some((re) => re.test(text));
+}
+
+// A dotted path, so `o.q` and `this.query` are read as the bindings they are
+// rather than as the bare name at one end of them.
+const NAME = /[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g;
+
+// The value expression a sink's argument may be, built on a pack's own
+// identifier pattern: a name or a dotted path, optionally called, optionally
+// followed by method calls on the result. `q`, `o.q`, `build(x)`, `q.trim()`.
+//
+// The path is what is captured, and a lookup falls back through its prefixes
+// (see builtAt) — so `q.trim` finds `q`, which is how a transformation at the
+// sink keeps the taint, and `b` in `b(1)` is looked up among the file's own
+// tainted-return functions.
+const valuePattern = (word) => String.raw`((?:${word})(?:\.${word})*)`
+  + String.raw`\s*(?:\([^()]*\))?(?:\s*\.${word}\s*\([^()]*\))*`;
 
 // Identifiers in a fragment, read off noise-stripped text so a word inside a
 // string literal — `"SELECT id"` — is not one of them.
@@ -119,36 +201,211 @@ function levelStep(ch, braces) {
   return braces;
 }
 
-// One statement, the block level it sits at, and its line number. `text` is the
-// raw slice, because the source patterns read the literal the value is built
-// from; `code` is the same span with string contents blanked, which is what
-// structure — an assignment's operator, a parameter list, the names on a
-// right-hand side — is read off, so a word or a bracket inside a literal is
-// never mistaken for one.
-function unitsOf(lines, stripped, indent) {
-  const split = indent ? SEMI_SPLIT : BRACE_SPLIT;
-  const units = [];
-  let braces = 0;
-  let level = 0;
-  const push = (text, code, lineNo) => units.push({ text, code, level, line: lineNo });
+// Depth over `(` and `[` only. A line ending in `{` opens a block far more
+// often than it wraps an expression, and following it would swallow a whole
+// function body into its signature. Same reading as baseline.js's statementAt,
+// deliberately: what one calls a statement the other has to call a statement
+// too, or a finding's line and its fingerprint stop agreeing.
+const GROUP = { '(': 1, '[': 1, ')': -1, ']': -1 };
 
-  lines.forEach((line, index) => {
-    if (indent && !line.trim()) return;
-    const guide = stripped[index] === undefined ? line : stripped[index];
-    level = indent ? indentOf(line) : braces;
-    let from = 0;
-    split.lastIndex = 0;
-    for (let m = split.exec(guide); m; m = split.exec(guide)) {
-      push(line.slice(from, m.index), guide.slice(from, m.index), index + 1);
-      // The statement a `{` ended is the one that opens a block, and so the
-      // only one whose trailing parenthesised list can be a parameter list.
-      if (m[0] === '{') units[units.length - 1].opens = true;
-      braces = levelStep(m[0], braces);
-      if (!indent) level = braces;
-      from = m.index + 1;
+// Operators a wrapping formatter leaves at the end of a line when it breaks a
+// long assignment or concatenation. `?`, `:`, `.` and `,` are absent for the
+// reason baseline.js gives: prettier moves those to the START of the
+// continuation line, and a trailing `:` is a Python block header whose body
+// must not be swallowed.
+const CONTINUES = new Set(['+', '-', '*', '/', '%', '=', '&', '|', '^', '\\']);
+
+// A statement longer than this stops being one, and a stray unclosed bracket
+// must not let one statement swallow the rest of the file.
+const JOIN_MAX_LINES = 10;
+
+function guideAt(lines, stripped, index) {
+  return stripped[index] === undefined ? lines[index] : stripped[index];
+}
+
+function groupDepth(code) {
+  let depth = 0;
+  for (let i = 0; i < code.length; i += 1) depth += GROUP[code[i]] || 0;
+  return depth;
+}
+
+// The last non-space character, read off noise-stripped text so a `+` inside a
+// literal is not one.
+function lastToken(code) {
+  let i = code.length - 1;
+  while (i >= 0 && (code[i] === ' ' || code[i] === '\t' || code[i] === '\r')) i -= 1;
+  return i < 0 ? '' : code[i];
+}
+
+// Physical lines gathered into logical statements: `[from, to]` ranges, each
+// extended forward while a `(`/`[` is still open or the line ends on an
+// operator a formatter breaks after. A statement already on one line is
+// balanced and yields exactly itself, so nothing that fitted on a line before
+// reads any differently now.
+function logicalLines(guides) {
+  const rows = [];
+  let index = 0;
+  while (index < guides.length) {
+    let last = index;
+    let depth = groupDepth(guides[index]);
+    while (last + 1 < guides.length && last - index + 1 < JOIN_MAX_LINES
+      && (depth > 0 || CONTINUES.has(lastToken(guides[last])))) {
+      last += 1;
+      depth += groupDepth(guides[last]);
     }
-    push(line.slice(from), guide.slice(from), index + 1);
-  });
+    rows.push({ from: index, to: last });
+    index = last + 1;
+  }
+  return rows;
+}
+
+// One logical line's text, plus where each of its physical lines starts in it.
+// Joined with a single space, so the two spellings stay at identical offsets:
+// `text` is the raw slice, because the source patterns read the literal the
+// value is built from, and `code` is the same span with string contents
+// blanked, which is what structure — an assignment's operator, a parameter
+// list, the names on a right-hand side — is read off.
+function joinRange(rows, from, to) {
+  const starts = [0];
+  let text = rows[from];
+  for (let i = from + 1; i <= to; i += 1) {
+    starts.push(text.length + 1);
+    text += ` ${rows[i]}`;
+  }
+  return { text, starts };
+}
+
+// Offset of the first non-space character, or 0 for a slice that is all space.
+function firstWord(text) {
+  let i = 0;
+  while (i < text.length && (text[i] === ' ' || text[i] === '\t')) i += 1;
+  return i === text.length ? 0 : i;
+}
+
+// Which physical line an offset in the joined text falls on. A statement spans
+// at most JOIN_MAX_LINES, so the walk is over ten entries at worst — and it is
+// what keeps every finding on the line the author wrote it on, wrapped or not.
+function rowOf(starts, offset) {
+  let row = 0;
+  while (row + 1 < starts.length && starts[row + 1] <= offset) row += 1;
+  return row;
+}
+
+// Half the languages here spell a container literal with braces —
+// `[]string{"SELECT id=", id}`, `map[string]string{…}`, `new[] { … }`,
+// `new String[]{…}` — and a brace is exactly what a statement is cut at. So
+// the statement ends before the literal it is assigning, and the source that
+// makes it a source is in the next unit.
+//
+// Rather than move the boundary, which is where every binding's level comes
+// from, the literal is handed back to the statement as a *tail*: the braces
+// still open and close a block and the depth is untouched, and only the source
+// test reads it. It is offered when the `{` sits where a composite literal's
+// does — right after a `]` or a `new Foo` — and only when the matching `}` is
+// on the same logical line, so no unbalanced case can reach it. A block brace
+// that happens to qualify (`if m[k] {`) reaches nothing: the tail is read only
+// from the right of an assignment, and only by the container test.
+// How far either half of the test may look. Both bounds are what keep this
+// O(1) per brace on a line with a great many of them: reading the prefix as a
+// slice and asking a `$`-anchored regex about it was O(n) per brace and so
+// quadratic in line length — 100KB of `function f(a,b){…}` took 19s. A type
+// name longer than the first, or a container literal longer than the second,
+// gives the tail up rather than the budget.
+const HEAD_LOOKBACK = 128;
+const LITERAL_MAX = 512;
+
+// Does the `{` at `at` open a composite literal rather than a block? It does
+// when a type sits immediately before it — `[]string{`, `map[string]string{`,
+// `new[] {`, `new List<string> {`, `new String[]{`. Read backwards from the
+// brace, so nothing is copied and nothing is rescanned.
+const TYPE_CHAR = /[\w.*<>]/;
+
+// Index of the last character at or before `from` that is not one of `chars`,
+// never looking further back than `floor`.
+function skipBack(text, from, floor, chars) {
+  let i = from;
+  while (i >= floor && chars.test(text[i])) i -= 1;
+  return i;
+}
+
+const SPACE = /[ \t]/;
+
+function compositeHead(text, at) {
+  const floor = Math.max(0, at - HEAD_LOOKBACK);
+  let i = skipBack(text, at - 1, floor, SPACE);
+  i = skipBack(text, i, floor, TYPE_CHAR);
+  i = skipBack(text, i, floor, SPACE);
+  if (text[i] === ']') return true;
+  // `new`, as a whole word, is the other thing a literal may follow.
+  return i >= 2 && text.slice(i - 2, i + 1) === 'new' && !WORD.test(text[i - 3] || ' ');
+}
+
+function braceLiteral(raw, guide, at) {
+  if (!compositeHead(guide.text, at)) return undefined;
+  let depth = 0;
+  for (let i = at; i < guide.text.length && i - at < LITERAL_MAX; i += 1) {
+    if (guide.text[i] === '{') depth += 1;
+    else if (guide.text[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return raw.text.slice(at, i + 1);
+    }
+  }
+  return undefined;
+}
+
+// The statements one logical line holds, split at `;{}` (at `;` alone where
+// the pack is indentation-scoped). `state` carries the brace depth across
+// logical lines, which is what the level of every statement is read from.
+function splitUnits(raw, guide, from, state) {
+  const units = [];
+  const push = (start, end) => {
+    const text = raw.text.slice(start, end);
+    units.push({
+      text,
+      code: guide.text.slice(start, end),
+      level: state.level,
+      // Only a statement that actually spans physical lines has to be located
+      // within one: the single-line case is every line of a normal file, and
+      // giving it the leading-whitespace scan too was measurable at 2MB.
+      line: raw.starts.length === 1 ? from + 1 : from + rowOf(raw.starts, start + firstWord(text)) + 1,
+    });
+  };
+
+  let start = 0;
+  state.split.lastIndex = 0;
+  for (let m = state.split.exec(guide.text); m; m = state.split.exec(guide.text)) {
+    push(start, m.index);
+    // The statement a `{` ended is the one that opens a block, and so the only
+    // one whose trailing parenthesised list can be a parameter list.
+    if (m[0] === '{') {
+      units[units.length - 1].opens = true;
+      units[units.length - 1].tail = braceLiteral(raw, guide, m.index);
+    }
+    state.braces = levelStep(m[0], state.braces);
+    if (!state.indent) state.level = state.braces;
+    start = m.index + 1;
+  }
+  push(start, raw.text.length);
+  return units;
+}
+
+// One statement, the block level it sits at, and its line number.
+function unitsOf(lines, stripped, indent) {
+  // Materialised once. Built inside the loop it would be one pass over the
+  // whole file per statement, which is the quadratic every other pass here
+  // was written to avoid.
+  const guides = lines.map((_, i) => guideAt(lines, stripped, i));
+  const state = { split: indent ? SEMI_SPLIT : BRACE_SPLIT, indent, braces: 0, level: 0 };
+  const units = [];
+
+  for (const { from, to } of logicalLines(guides)) {
+    const raw = joinRange(lines, from, to);
+    if (indent && !raw.text.trim()) continue;
+    state.level = indent ? indentOf(lines[from]) : state.braces;
+    for (const unit of splitUnits(raw, joinRange(guides, from, to), from, state)) {
+      units.push(unit);
+    }
+  }
   return units;
 }
 
@@ -162,13 +419,13 @@ function unitsOf(lines, stripped, indent) {
 // inside a function would untaint the caller's variable for the rest of the
 // file. Entries are undone last-first, so a name bound twice at one level
 // unwinds to what it was before the first of them.
-function forget(tainted, open, level) {
+function forget(vars, open, level) {
   while (open.length && open[open.length - 1].level > level) {
     const frame = open.pop();
     for (let i = frame.names.length - 1; i >= 0; i -= 1) {
       const { name, prev } = frame.names[i];
-      if (prev === undefined) tainted.delete(name);
-      else tainted.set(name, prev);
+      if (prev === undefined) vars.delete(name);
+      else vars.set(name, prev);
     }
   }
 }
@@ -182,23 +439,78 @@ function frameAt(open, level) {
   return top;
 }
 
-function remember(tainted, open, unit, name) {
-  forget(tainted, open, unit.level);
-  frameAt(open, unit.level).names.push({ name, prev: tainted.get(name) });
-  tainted.set(name, unit.line);
+// Is the binding this name currently has outside the function being scanned?
+//
+// Only asked of a pack with no declarator — Python — where the function
+// boundary *is* the declarator: `q = "SELECT 1"` inside a `def` is a new local
+// whatever an enclosing scope bound `q` to, and reading it as a write to the
+// outer `q` let a nested helper clear a caller's taint for the rest of the
+// file. The five packs that spell their declarations answer this with
+// `declare` instead, and a closure there really does write the outer binding.
+function outsideFunction(scope, name) {
+  const live = scope.funcLevel === undefined ? undefined : scope.vars.get(name);
+  return Boolean(live) && live.level <= scope.funcLevel;
+}
+
+// Give `name` a value. `builtLine` is the line the value was built on, or null
+// for a value this scan can prove carries no data.
+//
+// Which *binding* is written is the whole of the block-aware merge. A
+// declaration — and only a declaration — binds afresh at the level the
+// statement sits on. Anything else writes the binding that is already live,
+// wherever it was declared, so a name assigned inside a branch or a loop body
+// is still assigned after the block closes. That is a may-analysis, and it is
+// the right bias for a security rule: err toward reporting and let the
+// constant-discharge rules suppress the safe cases.
+//
+// A write to an outer binding needs no undo record: the frame that owns the
+// binding already holds what the name meant before it existed, and restoring
+// the intermediate values on the way out would mean nothing. A write at this
+// level does, and a *clearing* one just as much as a tainting one — recording
+// only taints is what let an inner `let q = "SELECT 1"` clear an outer tainted
+// `q` for the rest of the file.
+function bind(scope, unit, { name, builtLine, declares }) {
+  const live = declares || outsideFunction(scope, name) ? undefined : scope.vars.get(name);
+  const level = live ? live.level : unit.level;
+  if (level === unit.level) {
+    frameAt(scope.open, level).names.push({ name, prev: scope.vars.get(name) });
+  }
+  scope.vars.set(name, { builtLine, level });
 }
 
 // A parameter list introduces fresh names, one level in from the statement it
 // sits on — which is where the block it opens begins, whether that is the next
 // brace level or the next indentation column. They start clean whatever an
 // enclosing scope bound them to, and give the name back when the block closes.
-function shadow(tainted, open, unit, names) {
+function shadow(scope, unit, names) {
   if (!names.length) return;
-  const frame = frameAt(open, unit.level + 1);
+  const frame = frameAt(scope.open, unit.level + 1);
   for (const name of names) {
-    frame.names.push({ name, prev: tainted.get(name) });
-    tainted.delete(name);
+    frame.names.push({ name, prev: scope.vars.get(name) });
+    scope.vars.set(name, { builtLine: null, level: unit.level + 1 });
   }
+}
+
+// The line the value behind `path` was built on, or undefined.
+//
+// A path is looked up whole and then by its prefixes: `o.q` finds the field's
+// own binding, and `q.trim` — the shape a transformation at the sink leaves —
+// finds `q`. A prefix that is bound and clean ends the walk, because a local
+// of that name is what the expression reads.
+//
+// The file's own tainted-return functions answer to the same lookup, which is
+// how `build(x)` and `b(1)` carry what the helper returns. They are consulted
+// before a clean binding ends the walk, since `const build = (id) => …` binds
+// the name as well as defining the function.
+function builtAt(scope, path) {
+  for (let at = path.length; at > 0; at = path.lastIndexOf('.', at - 1)) {
+    const entry = scope.vars.get(path.slice(0, at));
+    if (entry && entry.builtLine) return entry.builtLine;
+    const returned = scope.returns.get(path.slice(0, at));
+    if (returned) return returned;
+    if (entry) return undefined;
+  }
+  return undefined;
 }
 
 // The parameter list a statement ends with, if it opens a block that binds.
@@ -330,20 +642,23 @@ function isDatabaseCall(line, ctx) {
 // keys every finding has, and this is not one of them. Nothing that identifies
 // a finding reads it — the baseline fingerprint is id, path, line text and
 // ordinal — so every existing baseline entry stays valid.
-function sinkFinding(sink, unit, tainted) {
+function sinkFinding(sink, unit, scope) {
   const match = sink.re.exec(unit.text);
   if (!match) return null;
-  const name = match.slice(1).find((group) => group && tainted.has(group));
-  if (!name) return null;
-  const builtAt = tainted.get(name);
+  let built;
+  for (const group of match.slice(1)) {
+    built = group && builtAt(scope, group);
+    if (built) break;
+  }
+  if (!built) return null;
   const found = finding({
     rung: 'SAFE',
     id: sink.id,
     line: unit.line,
-    message: `${sink.message}, built at line ${builtAt}`,
+    message: `${sink.message}, built at line ${built}`,
     fix: sink.fix,
   });
-  if (builtAt !== unit.line) found.sourceLine = builtAt;
+  if (built !== unit.line) found.sourceLine = built;
   return found;
 }
 
@@ -364,24 +679,34 @@ function sinkFinding(sink, unit, tainted) {
 // TABLE` is a concatenation, so CONCAT matches it; it is also not data, and
 // reporting it was the same defect as reporting `os.system("ls /tmp")`, one
 // level of indirection out.
+// Is this one value built from something that is not a literal, or from a name
+// that already carries data? The same question an assignment's right-hand side
+// and a `return`'s expression both ask, which is why it is one function.
+function valueIsTainted(spec, scope, text, code) {
+  if (fragmentIsConstant(text, scope.consts)) return false;
+  return spec.sources.some((re) => re.test(text))
+    || NAME_CONCAT.test(code)
+    || containerMix(text)
+    || namesIn(code).some((name) => builtAt(scope, name));
+}
+
 function applyAssignment(spec, unit, scope) {
-  const { tainted, open, consts } = scope;
   const match = spec.assign.exec(unit.code);
   if (!match) return;
   const from = match.index + match[0].length;
   const code = unit.code.slice(from);
-  const names = namesIn(code);
+  // The tail is the brace-delimited container literal this statement was cut
+  // in front of, where there is one — see braceLiteral.
+  const text = unit.text.slice(from) + (unit.tail || '');
   const compound = match[0].includes('+=');
+  // A compound `+=` reads the old value, so it is never a declaration and
+  // never clears.
+  const declares = !compound && Boolean(spec.declare) && spec.declare.test(unit.code);
 
-  if (fragmentIsConstant(unit.text.slice(from), consts)) {
-    if (!compound) tainted.delete(match[1]);
-    return;
-  }
-  if (spec.sources.some((re) => re.test(unit.text.slice(from)))
-    || NAME_CONCAT.test(code)
-    || names.some((name) => tainted.has(name))
-    || (compound && names.length)) remember(tainted, open, unit, match[1]);
-  else if (!compound) tainted.delete(match[1]);
+  const tainted = valueIsTainted(spec, scope, text, code)
+    || (compound && namesIn(code).length);
+  if (!tainted && compound) return;
+  bind(scope, unit, { name: match[1], builtLine: tainted ? unit.line : null, declares });
 }
 
 // A wholly constant call — the other half of "a value built only from literals
@@ -794,9 +1119,14 @@ function assignedValues({ lines, stripped, spec }) {
     const match = spec.assign.exec(guide);
     if (!match) return;
     const from = match.index + match[0].length;
-    const list = values.get(match[1]) || [];
+    // The path's last segment, which is the only part fragmentWord judges:
+    // every segment before a `.` is read there as callee path and skipped, so
+    // `this.table = "users"` makes `table` the constant, exactly as a bare
+    // `table = "users"` does.
+    const name = match[1].slice(match[1].lastIndexOf('.') + 1);
+    const list = values.get(name) || [];
     list.push(line.slice(from));
-    values.set(match[1], list);
+    values.set(name, list);
   });
   return values;
 }
@@ -832,6 +1162,65 @@ function collect(state, found) {
   state.findings.push(found);
 }
 
+const RETURN = /^\s*return\b/;
+
+// A value that is nothing but one name or dotted path, optionally parenthesised
+// — `a`, `(q)`, `this.q`. Whether it carries data is one lookup.
+const PLAIN_VALUE = /^[\s(]*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)[\s);]*$/;
+
+// A block header that binds no function name, whatever the pack's `func`
+// pattern makes of it. `if (x) {` is a call-shaped statement in half these
+// languages, and reading it as a function would attribute the `return` inside
+// it to a function called `if`.
+const CONTROL = new RegExp([
+  String.raw`^\s*(?:\}\s*)?(?:@\w+\s*)*(?:else\s+)?`,
+  String.raw`\b(?:if|else|while|for|foreach|do|try|catch|finally|switch|match|loop`,
+  String.raw`|with|using|lock|unless|elif|when|return|yield|guard|synchronized)\b`,
+].join(''));
+
+// The name of the function this block opens, or null for a block that opens no
+// function. Only consulted on a statement that actually opens a block —
+// except where the pack is indentation-scoped and there is no brace to see.
+function functionName(spec, unit) {
+  if (!spec.func || CONTROL.test(unit.code)) return null;
+  if (!unit.opens && !spec.indent) return null;
+  const match = spec.func.exec(unit.code);
+  return match ? match[1] : null;
+}
+
+// A `return` whose expression is tainted marks the function it sits in. The
+// nearest *named* frame owns it — an `if` inside a function returns from the
+// function — and the first such return is the one recorded, since one is
+// already enough to make every call site tainted.
+function recordReturn(spec, unit, scope, { funcs, found }) {
+  if (!RETURN.test(unit.code)) return;
+  let owner = null;
+  for (let i = funcs.length - 1; i >= 0 && !owner; i -= 1) owner = funcs[i].name;
+  if (!owner || found.has(owner)) return;
+  const at = unit.code.indexOf('return') + 'return'.length;
+  const code = unit.code.slice(at);
+  // `return a;` — one name and nothing else — is most of the returns in most
+  // files, and the full test would run eight patterns over it to arrive at the
+  // one lookup that decides it. Answering it directly is what keeps the return
+  // pass off the 2MB budget.
+  const plain = PLAIN_VALUE.exec(code);
+  const tainted = plain
+    ? Boolean(builtAt(scope, plain[1]))
+    : valueIsTainted(spec, scope, unit.text.slice(at), code);
+  if (tainted) found.set(owner, unit.line);
+}
+
+// Every sink this statement matches. The SQL gate is asked only about a sink
+// that actually matched, and only about the SQL id — the one whose verbs
+// double as ordinary method names.
+function collectSinks(spec, unit, scope, { state, ctx }) {
+  for (const sink of spec.sinks) {
+    const hit = sinkFinding(sink, unit, scope);
+    if (hit && hit.id === SQL_ID && !isDatabaseCall(unit.text, ctx)) continue;
+    collect(state, hit);
+  }
+}
+
 // One forward pass. The sink is tested before the assignment on the same
 // statement, so `q = q + x` reports against the value q already held.
 //
@@ -839,23 +1228,32 @@ function collect(state, found) {
 // a SQL sink at all — `execute`, `query` and `Query` are ordinary method names,
 // and a Command pattern or a job runner spells its entry point exactly that
 // way. See isDatabaseCall for what counts as evidence and in what order.
-function scan(spec, ctx) {
-  const scope = { tainted: new Map(), open: [], consts: ctx.consts };
+//
+// The pass also answers the question the *next* pass needs: which of this
+// file's own functions return a value that is tainted where it is built.
+// `open` frames stack per block; `funcs` stacks alongside them, with a null
+// name for a block that is not a function, so a `return` is attributed to the
+// nearest enclosing function rather than to the nearest brace.
+function scan(spec, ctx, returns) {
+  const scope = { vars: new Map(), open: [], consts: ctx.consts, returns };
   const state = { findings: [], seen: new Set() };
+  const funcs = [];
+  const found = new Map();
 
   for (const unit of ctx.units) {
-    forget(scope.tainted, scope.open, unit.level);
-    for (const sink of spec.sinks) {
-      const found = sinkFinding(sink, unit, scope.tainted);
-      // The gate is asked only about a sink that actually matched, and only
-      // about the SQL id — the one whose verbs double as ordinary method names.
-      if (found && found.id === SQL_ID && !isDatabaseCall(unit.text, ctx)) continue;
-      collect(state, found);
-    }
+    forget(scope.vars, scope.open, unit.level);
+    while (funcs.length && funcs[funcs.length - 1].level >= unit.level) funcs.pop();
+
+    collectSinks(spec, unit, scope, { state, ctx });
+    recordReturn(spec, unit, scope, { funcs, found });
+    // Only where the pack has no declarator — see outsideFunction.
+    if (!spec.declare) scope.funcLevel = funcs.length ? funcs[funcs.length - 1].level : undefined;
     applyAssignment(spec, unit, scope);
-    shadow(scope.tainted, scope.open, unit, paramsOf(spec, unit));
+    shadow(scope, unit, paramsOf(spec, unit));
+    const name = functionName(spec, unit);
+    if (name || unit.opens) funcs.push({ name, level: unit.level });
   }
-  return state.findings;
+  return { findings: state.findings, returns: found };
 }
 
 // Everything a pack's rules need about the whole file, computed once and shared
@@ -873,9 +1271,18 @@ function packContext({ lines, stripped, spec }) {
 
 // `existing` is the pack's own line-rule findings: where the inline rule
 // already reported the same id on the same line, this adds nothing.
+// Two passes at most: one to learn which of the file's own functions return a
+// tainted value, one to use that. The second runs only when the first found
+// one, so the common file — no such helper anywhere in it — still costs a
+// single pass, and no file costs more than two whatever it contains. That is
+// what keeps this a fixed factor rather than a fixpoint.
 function taintFindings({ spec, ctx, existing = [] }) {
   const already = new Set(existing.map((f) => `${f.id}:${f.line}`));
-  return scan(spec, ctx).filter((f) => !already.has(`${f.id}:${f.line}`));
+  const first = scan(spec, ctx, new Map());
+  const last = first.returns.size ? scan(spec, ctx, first.returns) : first;
+  return last.findings.filter((f) => !already.has(`${f.id}:${f.line}`));
 }
 
-module.exports = { CONCAT, constantLine, packContext, skipConstant, taintFindings };
+module.exports = {
+  CONCAT, constantLine, packContext, skipConstant, taintFindings, valuePattern,
+};

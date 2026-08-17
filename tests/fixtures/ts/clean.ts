@@ -103,3 +103,70 @@ function describeDir(dir: string) {
   const cmd = "ls " + dir;
   logger.info(cmd);
 }
+
+// The safe twin of every structural shape the dirty fixture commits: a field, a
+// helper's return value, a branch, a loop, a wrapped right-hand side, a
+// transformation at the sink, a container, and an inner binding that must not
+// reach back out of its block. Widening the scan to catch the unsafe forms is
+// exactly where false positives come from, and these are the guard.
+function fieldBound(db: any, id: string) {
+  const o: any = {};
+  o.q = "SELECT * FROM users WHERE id = ?";
+  return db.query(o.q, [id]);
+}
+
+function buildListQuery() {
+  return "SELECT id, name FROM users";
+}
+
+function returnedBound(db: any) {
+  const q = buildListQuery();
+  return db.query(q);
+}
+
+function returnedInlineBound(db: any) {
+  return db.query(buildListQuery());
+}
+
+function branchBound(db: any, all: boolean) {
+  let q = "SELECT * FROM users";
+  if (!all) {
+    q = "SELECT * FROM users WHERE active = 1";
+  }
+  return db.query(q);
+}
+
+function loopBound(db: any, clauses: string[]) {
+  const q = "SELECT * FROM users";
+  for (const clause of clauses) {
+    logger.info(q + clause);
+  }
+  return db.query(q);
+}
+
+function wrappedBound(db: any, id: string) {
+  const q =
+    "SELECT * FROM users " + "WHERE id = ?";
+  return db.query(q, [id]);
+}
+
+function trimmedBound(db: any, id: string) {
+  const q = "SELECT * FROM users WHERE id = ?";
+  return db.query(q.trim(), [id]);
+}
+
+function containerBound(db: any, id: string) {
+  const parts = ["SELECT * FROM users ", "WHERE id = ?"];
+  const q = parts.join("");
+  return db.query(q, [id]);
+}
+
+function innerBindingBound(db: any) {
+  const q = "SELECT * FROM users";
+  function inner(id: string) {
+    const inner_q = "SELECT * FROM audit WHERE id = " + id;
+    return inner_q.length;
+  }
+  inner("1");
+  return db.query(q);
+}

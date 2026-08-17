@@ -146,6 +146,46 @@ test('keeps seeing sinks built inside string literals', () => {
     .includes('safe/shell-injection'));
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in.
+const SHAPES = [
+  ['a field',
+    'self.q = format!("SELECT id={}", id);\nconn.query(&self.q);',
+    'self.q = "SELECT * FROM t";\nconn.query(&self.q);'],
+  ['a helper\'s return value',
+    'fn build(id: &str) -> String { return format!("SELECT id={}", id); }\nlet q = build(x);\nconn.query(&q);',
+    'fn build() -> String { return "SELECT * FROM t".to_string(); }\nlet q = build();\nconn.query(&q);'],
+  ['a return straight into the sink',
+    'fn b(id: &str) -> String { return format!("SELECT id={}", id); }\nconn.query(&b(x));',
+    'fn b() -> String { return "SELECT * FROM t".to_string(); }\nconn.query(&b());'],
+  ['a binding made inside a branch',
+    'let mut q = "SELECT".to_string();\nif x {\n    q = format!("SELECT id={}", id);\n}\nconn.query(&q);',
+    'let mut q = "SELECT 1".to_string();\nif x {\n    q = "SELECT 2".to_string();\n}\nconn.query(&q);'],
+  ['a value built in a loop',
+    'let mut q = "SELECT".to_string();\nfor p in ps {\n    q = q + p;\n}\nconn.query(&q);',
+    'let mut q = "SELECT".to_string();\nfor p in ps {\n    log(q.clone() + p);\n}\nconn.query(&q);'],
+  ['a wrapped right-hand side',
+    'let q =\n    format!("SELECT id={}", id);\nconn.query(&q);',
+    'let q =\n    "SELECT ".to_string() + "* FROM t";\nconn.query(&q);'],
+  ['a transformation at the sink',
+    'let q = format!("SELECT id={}", id);\nconn.query(&q.trim());',
+    'let q = "SELECT * FROM t";\nconn.query(&q.trim());'],
+  ['a container',
+    'let parts = vec!["SELECT id=", id];\nlet q = parts.join("");\nconn.query(&q);',
+    'let parts = vec!["SELECT ", "* FROM t"];\nlet q = parts.join("");\nconn.query(&q);'],
+  ['an inner binding of the same name',
+    'let q = format!("SELECT id={}", id);\nfn g() { let q = "SELECT 1"; }\nconn.query(&q);',
+    'let q = "SELECT 1";\nfn g() { let q = format!("SELECT id={}", id); }\nconn.query(&q);'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'rust');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.rs'), 'utf8'),

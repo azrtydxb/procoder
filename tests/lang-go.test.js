@@ -88,6 +88,43 @@ test('keeps seeing sinks built inside string literals', () => {
   assert.ok(ids('exec.Command("bash", "-c", "rm "+dir)').includes('safe/shell-injection'));
 });
 
+// The structural shapes taint.js closed, each with the safe twin that must
+// stay silent. Every one of these reported nothing before the statement model,
+// the block-aware merge, the path bindings and the return pass went in.
+const SHAPES = [
+  ['a field',
+    's.q = "SELECT id=" + id\ndb.Query(s.q)',
+    's.q = "SELECT * FROM t"\ndb.Query(s.q)'],
+  ['a helper\'s return value',
+    'func build(id string) string { return "SELECT id=" + id }\nq := build(x)\ndb.Query(q)',
+    'func build() string { return "SELECT * FROM t" }\nq := build()\ndb.Query(q)'],
+  ['a return straight into the sink',
+    'func b(id string) string { return "SELECT id=" + id }\ndb.Query(b(x))',
+    'func b() string { return "SELECT * FROM t" }\ndb.Query(b())'],
+  ['a binding made inside a branch',
+    'q := "SELECT"\nif x {\n\tq = "SELECT id=" + id\n}\ndb.Query(q)',
+    'q := "SELECT 1"\nif x {\n\tq = "SELECT 2"\n}\ndb.Query(q)'],
+  ['a value built in a loop',
+    'q := "SELECT"\nfor _, p := range ps {\n\tq = q + p\n}\ndb.Query(q)',
+    'q := "SELECT"\nfor _, p := range ps {\n\tlog(q + p)\n}\ndb.Query(q)'],
+  ['a wrapped right-hand side',
+    'q :=\n\t"SELECT id=" + id\ndb.Query(q)',
+    'q :=\n\t"SELECT " + "* FROM t"\ndb.Query(q)'],
+  ['a container',
+    'parts := []string{"SELECT id=", id}\nq := strings.Join(parts, "")\ndb.Query(q)',
+    'parts := []string{"SELECT ", "* FROM t"}\nq := strings.Join(parts, "")\ndb.Query(q)'],
+  ['an inner binding of the same name',
+    'q := "SELECT id=" + id\nfunc g() {\n\tq := "SELECT 1"\n\t_ = q\n}\ndb.Query(q)',
+    'q := "SELECT 1"\nfunc g() {\n\tq := "SELECT id=" + id\n\t_ = q\n}\ndb.Query(q)'],
+];
+
+for (const [what, unsafe, safe] of SHAPES) {
+  test(`taint follows ${what}, and its safe twin stays silent`, () => {
+    assert.ok(ids(unsafe).includes('safe/sql-injection'), `unsafe form of ${what} went unreported`);  // procoder: literal safe/sql-injection the id the shape must report
+    assert.ok(!ids(safe).includes('safe/sql-injection'), `safe form of ${what} was reported`);
+  });
+}
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'go');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.go'), 'utf8'),
