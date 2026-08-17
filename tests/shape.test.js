@@ -1187,3 +1187,142 @@ test('tabs and mixed tabs and spaces still measure their real depth', () => {
   const mixed = ['def f():', '  if a:', '\tif b:', '\t  if c:', '\t\tgo()'].join('\n');
   assert.strictEqual(analyzeIndent(mixed, { tabWidth: 4 }).maxDepth, 4);
 });
+
+// --- a member named after a statement is a declaration -----------------------
+//
+// The anchored refusal above reads a bare `<keyword> (…) {` as a statement,
+// because a declaration always puts something in front of the name. A JS method
+// shorthand puts nothing in front of it at all:
+//
+//   class Parser { with(a, b, c, d, e, f) { … } }
+//   const p = { catch(a, b, c, d, e, f) { … } };
+//
+// so a method named after a JS statement was invisible to every shape rule —
+// not length, not nesting, not parameters, not complexity. The line cannot
+// decide it; only the enclosing brace can. A `{` that opens a class body or an
+// object literal holds members, and a member is a declaration however it is
+// named; a `{` that opens a block holds statements.
+const STATEMENT_NAMES = ['with', 'catch', 'case', 'for', 'while', 'switch', 'if'];
+
+const classMember = (name) => [
+  'class Parser {',
+  `  ${name}(a, b, c, d, e, f) {`,
+  '    return a;',
+  '  }',
+  '}',
+].join('\n');
+
+const objectMember = (name) => [
+  'const parser = {',
+  `  ${name}(a, b, c, d, e, f) {`,
+  '    return a;',
+  '  },',
+  '};',
+].join('\n');
+
+test('a class method named after a JS statement is measured, at its own line', () => {
+  for (const name of STATEMENT_NAMES) {
+    const found = paramFinding('ts', classMember(name), 'a.ts');
+    assert.ok(found, `${name}: a six-parameter class method was not measured at all`);
+    assert.strictEqual(found.line, 2, `${name}: reported at the wrong line`);
+    assert.strictEqual(found.message, '6 parameters (limit 4)');
+  }
+});
+
+test('an object-literal method named after a JS statement is measured', () => {
+  for (const name of STATEMENT_NAMES) {
+    const found = paramFinding('ts', objectMember(name), 'a.ts');
+    assert.ok(found, `${name}: a six-parameter object method was not measured at all`);
+    assert.strictEqual(found.line, 2, `${name}: reported at the wrong line`);
+  }
+});
+
+// The other direction, which is the whole reason the refusal exists: the same
+// words in statement position are still not signatures. A block is where
+// statements live, and a `case` label opens a block whatever the colon before
+// its brace suggests — switch-heavy code is where the 104 false positives came
+// from.
+test('the same words in statement position are still not measured', () => {
+  for (const [keyword, body] of Object.entries(CONTROL_BODIES)) {
+    const src = ['function route(kind) {', ...body, '  return 0;', '}'].join('\n');
+    assert.deepStrictEqual(measureTs(src).map((b) => b.startLine), [1],
+      `${keyword}: measured as a function of its own`);
+  }
+});
+
+test('control flow inside a class method is still not measured', () => {
+  const src = [
+    'class Router {',
+    '  route(kind) {',
+    '    switch (kind) {',
+    "      case 'a': {",
+    '        if (kind) {',
+    '          return 1;',
+    '        }',
+    '      }',
+    '    }',
+    '    return 0;',
+    '  }',
+    '}',
+  ].join('\n');
+  assert.deepStrictEqual(measureTs(src).map((b) => b.startLine), [2]);
+});
+
+// An over-threshold member of each kind reports, once, at its signature.
+test('an over-threshold method named after a statement reports once', () => {
+  const long = Array.from({ length: 45 }, (unused, i) => `    step${i}();`);
+  const branches = Array.from({ length: 12 }, (unused, i) => `    if (a === ${i}) return ${i};`);
+  const shapes = [
+    ['obvious/function-too-long', ['class P {', '  with(a) {', ...long, '  }', '}']],
+    ['obvious/too-many-params',
+      ['class P {', '  with(a, b, c, d, e, f) {', '    return a;', '  }', '}']],
+    ['obvious/complexity', ['class P {', '  with(a) {', ...branches, '    return 0;', '  }', '}']],
+  ];
+  for (const [id, lines] of shapes) {
+    const found = findings('ts', lines.join('\n'), 'a.ts').filter((f) => f.id === id);
+    assert.strictEqual(found.length, 1, `${id}: reported ${found.length} times`);
+    assert.strictEqual(found[0].line, 2, `${id}: reported at line ${found[0].line}`);
+  }
+});
+
+// --- raw identifiers ---------------------------------------------------------
+//
+// `r#match` is how Rust spells an identifier that collides with a keyword, and
+// `@match` is C#'s. The `fn` and the `public int` in front of them make these
+// declarations by construction — the packs' name patterns simply did not admit
+// the escape character, so the declaration went unmatched and every shape rule
+// skipped it.
+const RAW_IDENTS = [
+  ['rust', 'a.rs', (name) => [
+    `fn ${name}(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> i32 {`,
+    '    a',
+    '}',
+  ], 'r#match', 'matcher', 1],
+  ['dotnet', 'X.cs', (name) => [
+    'class X {',
+    `    public int ${name}(int a, int b, int c, int d, int e, int f) {`,
+    '        return a;',
+    '    }',
+    '}',
+  ], '@match', 'Matcher', 2],
+];
+
+test('a raw identifier is measured like a plain one', () => {
+  for (const [pack, path, src, raw, plain, line] of RAW_IDENTS) {
+    const found = paramFinding(pack, src(raw).join('\n'), path);
+    assert.ok(found, `${pack}: ${raw} was not measured at all`);
+    assert.strictEqual(found.line, line, `${pack}: reported at the wrong line`);
+    assert.strictEqual(found.message, paramFinding(pack, src(plain).join('\n'), path).message,
+      `${pack}: ${raw} measured differently from ${plain}`);
+  }
+});
+
+// Rust's raw strings start `r#"` too, and C#'s verbatim strings `@"`. Neither
+// is an identifier, and neither may be read as one.
+test('raw and verbatim string prefixes are not raw identifiers', () => {
+  const rust = ['fn go() {', '    let p = r#"a{b"#;', '    p', '}'].join('\n');
+  assert.deepStrictEqual(findings('rust', rust, 'a.rs').map((f) => f.id), []);
+  const cs = ['class X {', '    public int Go() {', '        var p = @"c:\\a{b";',
+    '        return 1;', '    }', '}'].join('\n');
+  assert.deepStrictEqual(findings('dotnet', cs, 'X.cs').map((f) => f.id), []);
+});

@@ -665,10 +665,114 @@ function isControlHead(text, at, headText) {
   return !MEMBER_ACCESS.test(reachedBy(text, at + keyword.index + keyword[0].indexOf(keyword[1])));
 }
 
-function* headMatches(stripped, head, { spans, starts, after }) {
+// The one case the refusal above gets wrong, because the line it is anchored to
+// does not carry the answer. A JS method shorthand puts *nothing* in front of
+// the name — `class Parser { with(a, b, c, d, e, f) { … } }`,
+// `const p = { catch(a, b, c, d, e, f) { … } }` — which is exactly the shape the
+// refusal rejects, so a method named after a JS statement was measured for
+// nothing at all: not length, not nesting, not parameters, not complexity.
+// `with` and `catch` are the realistic ones (a parser, a promise-like, a
+// builder) and `case`, `when` and `for` appear as method names too.
+//
+// `catch (e) {` at statement position inside a function body and `catch(e) {` as
+// a member of a class body are the same text; what differs is the brace they sit
+// directly inside. A `{` that opens a class body or an object literal holds
+// *members*, and a member is a declaration however it is named; every other `{`
+// opens a block, and a block holds statements. That is the whole distinction,
+// and it needs only what a single left-to-right pass already knows: the brace
+// stack, the character that reached each brace, and whether a `class` keyword or
+// a `case` label stands between the last statement delimiter and it.
+//
+// It is exactly as reliable as the brace stack itself — a heuristic scanner over
+// noise-stripped text, the same one every other measurement here rests on. Two
+// shapes it deliberately reads as blocks rather than members, because reading
+// them the other way would let a statement be measured as a function again and
+// that is the error this whole area exists to prevent:
+//
+//   `case 'a': {`  — a colon before the brace is what an object literal's nested
+//                    value also leaves there, and a case block is full of
+//                    statements. A `case`/`default` since the last delimiter
+//                    wins, so a switch — where the 104 false positives came from
+//                    — stays a switch, at the cost of not measuring a method of
+//                    an object literal nested inside a switch case.
+//   `static { … }` — a class-body brace is recognised by a `class`/`interface`
+//                    keyword on the same line with no delimiter after it, so a
+//                    static initialiser's own brace is a block, as it should be.
+//
+// `node.class` and `mod.default` are property reads, not declarations, so a
+// keyword reached through a member access does not count.
+const BODY_WORD = /\b(?:class|interface|case|default)\b/g;
+const LABEL_WORD = /^(?:case|default)$/;
+
+function bodyWords(text) {
+  const words = [];
+  for (const match of text.matchAll(BODY_WORD)) {
+    if (reachedBy(text, match.index) !== '.') words.push(match);
+  }
+  return words;
+}
+
+// The `class`/`interface` declaration and the `case`/`default` label that most
+// recently began, as offsets, up to where the scan has reached.
+function noteWords(state, words) {
+  while (state.next < words.length && words[state.next].index <= state.at) {
+    const word = words[state.next];
+    if (LABEL_WORD.test(word[0])) state.labelled = word.index;
+    else state.declared = word.index;
+    state.next += 1;
+  }
+}
+
+// `{` reached by `=`, `(`, `,` and their siblings is a data literal, which holds
+// members — unless a `case` label is what put the colon there. Otherwise it is a
+// block, and only a `class`/`interface` still open on this line makes it a body.
+function opensMembers(text, state) {
+  const before = text.slice(Math.max(0, state.code - 6), state.code + 1);
+  if (BINDING_BRACE.test(before)) return false;
+  if (LITERAL_BRACE.test(before)) return state.labelled <= state.delim;
+  return state.declared >= state.lineStart && state.declared > state.delim;
+}
+
+function scanChar(text, state, stack, words) {
+  const ch = text[state.at];
+  noteWords(state, words);
+  if (ch === '{') stack.push(opensMembers(text, state));
+  else if (ch === '}') stack.pop();
+  if (ch === '\n') state.lineStart = state.at + 1;
+  if (ch === ';' || ch === '{' || ch === '}') state.delim = state.at;
+  if (!isSpace(ch)) state.code = state.at;
+}
+
+// Answers "is the brace enclosing this offset one that holds members?" for
+// offsets asked in increasing order — which is the order a global head scan
+// produces. The cursor only ever moves forward, so every character of the file
+// is visited at most once however many heads ask, and a file whose heads are
+// never bare keywords is never scanned at all.
+//
+// Only the global heads consult it. A line-anchored head (Java, C#) wants two
+// tokens before the parens and the only statement it can reach is `else if (…)`,
+// which is a statement in a class body as much as anywhere else.
+function memberScanner(text) {
+  const stack = [];
+  const state = {
+    at: 0, next: 0, lineStart: 0, delim: -1, declared: -1, labelled: -1, code: -1,
+  };
+  // Built on the first question rather than up front: most files hold no bare
+  // keyword head at all, and those never pay for either pass.
+  let words = null;
+  return (offset) => {
+    if (!words) words = bodyWords(text);
+    for (; state.at < offset && state.at < text.length; state.at += 1) {
+      scanChar(text, state, stack, words);
+    }
+    return stack.length > 0 && stack[stack.length - 1];
+  };
+}
+
+function* headMatches(stripped, head, { spans, starts, after, member }) {
   if (head.global) {
     for (const match of stripped.matchAll(head)) {
-      if (isControlHead(stripped, match.index, match[0])) continue;
+      if (isControlHead(stripped, match.index, match[0]) && !member(match.index)) continue;
       const found = signatureAt(stripped, spans, after, match);
       yield headMatch({
         startLine: lineAtOffset(starts, match.index),
@@ -718,7 +822,29 @@ function recordHead(maps, stripped, at, found) {
   }
 }
 
-function signaturesFrom(stripped, { head, tail }) {
+// `fn r#match(a: i32) -> i32 {`, `public int @match(int a) {` — Rust and C#
+// spell an identifier that collides with a keyword by prefixing it, and the
+// prefix is not a word character. Every pack's name pattern is `\w+`, so the
+// name did not match, the head did not match, and the declaration was measured
+// for nothing at all — even though the `fn` and the `public int` in front of it
+// make it a declaration by construction. Rust's `r#match` and C#'s `@match` are
+// the two: Go, Java and Python have no such spelling, and JS/TS has none either
+// (a keyword is already a legal member name there, which is DEFECT 1 above).
+// Kotlin's backtick identifiers are a third, and are *not* fixed here: a
+// backticked name may contain spaces, so `\w+` cannot match one however this
+// text is normalised, and widening it belongs to the jvm pack's head.
+//
+// Blanked rather than deleted, so every offset and line number this scan
+// reports is still the source's own — the same rule stripNoise follows.
+//
+// The lookahead is what keeps a raw *string* out of it: Rust's `r#"…"#` and C#'s
+// `@"…"` are followed by a quote, never by an identifier character.
+const RAW_IDENT = /\br#(?=[A-Za-z_])|@(?=[A-Za-z_])/g;
+
+const plainNames = (text) => text.replace(RAW_IDENT, (m) => ' '.repeat(m.length));
+
+function signaturesFrom(source, { head, tail }) {
+  const stripped = plainNames(source);
   const signatures = new Map();
   // Declarations with no block at all — an expression body — keyed by their
   // line. measureFunctions gives each a one-line span, because there is no
@@ -730,6 +856,7 @@ function signaturesFrom(stripped, { head, tail }) {
     // Sticky, and its own copy: the pack's pattern is a module-level regex
     // shared by every file, and exec'ing it here would leave lastIndex adrift.
     after: new RegExp(tail.source, tail.flags.includes('y') ? tail.flags : tail.flags + 'y'),
+    member: memberScanner(stripped),
   };
 
   for (const found of headMatches(stripped, head, at)) {
