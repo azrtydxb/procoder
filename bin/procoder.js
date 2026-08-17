@@ -74,12 +74,18 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
                         code-scanning dashboards, carrying the same fingerprint
                         the ratchet uses so a moved line is not a new finding.
                         Findings go to stdout; every skip notice stays on stderr,
-                        so the document stays parseable.
-  --since <ref>        (check only) check the files changed since <ref> —
-                        'git diff --name-only --diff-filter=ACM <ref>...HEAD'
-                        plus anything uncommitted. Paths may still be given to
-                        narrow it further. A git failure exits 2 rather than
-                        checking nothing quietly.
+                        so the document stays parseable. Both formats name the
+                        files that were skipped — sarif as invocation
+                        notifications — so an unread file cannot read as a clean
+                        one.
+  --since <ref>        check the files changed since <ref> —
+                        'git diff --name-only --diff-filter=ACMRT <ref>...HEAD'
+                        plus anything uncommitted. Renames, copies and type
+                        changes are included at their new path; deletions are
+                        not, having nothing left to read. Paths may still be
+                        given to narrow it further, and --unused-exclusions and
+                        --aging still apply, judged over what this run read. A
+                        git failure exits 2 rather than checking nothing quietly.
   --no-ignore           check files a .procoderignore covers anyway — answers
                         "why is this file not being checked?". [exclude] paths
                         in .procoder.toml still applies, and every file it holds
@@ -554,7 +560,7 @@ function runCheck(files, repoRoot, config, { format = 'text' } = {}) {
   if (!text) {
     const summary = { findings: entries.length, blocking, advisory, pinned, level: sessionLevel };
     process.stdout.write(format === 'sarif'
-      ? sarifReport({ findings: entries, version: VERSION })
+      ? sarifReport({ findings: entries, version: VERSION, skipped: skippedFiles })
       : jsonReport({ findings: entries, level: sessionLevel, summary, skipped: skippedFiles }));
     return blocking > 0 ? 1 : 0;
   }
@@ -994,10 +1000,22 @@ function parseFlags(argv) {
 // having checked nothing. That is the exact silent coverage loss this project
 // exists to refuse, so it exits 2 — "cannot check" — and says which git command
 // failed.
+// The filter is `ACMRT`, not `ACM`. `ACM` dropped `R`, and git reports a moved
+// file as a rename rather than as a delete plus an add — so a commit that
+// renamed a file carrying a live safe/sql-injection selected no files at all,
+// printed "nothing to check" and exited 0. `C` (a copy) and `T` (a type change,
+// including a symlink that became a regular file) are content arriving under a
+// path nothing has checked, and belong for the same reason.
+//
+// `D` stays out, and that is the one narrowing here that is deliberate: a
+// deleted file has no bytes to scan, and `--name-only` for a rename already
+// names the DESTINATION, so the moved content is checked at the path it now
+// lives at. Nothing is lost by leaving `D` out — unlike `R`, which took the
+// surviving file with it.
 function changedSince(ref, repoRoot) {
   const commands = [
-    ['diff', '--name-only', '--diff-filter=ACM', `${ref}...HEAD`],
-    ['diff', '--name-only', '--diff-filter=ACM', 'HEAD'],
+    ['diff', '--name-only', '--diff-filter=ACMRT', `${ref}...HEAD`],
+    ['diff', '--name-only', '--diff-filter=ACMRT', 'HEAD'],
     ['ls-files', '--others', '--exclude-standard'],
   ];
   const files = new Set();
@@ -1029,7 +1047,17 @@ function sinceTargets(since, targets) {
 // "Nothing changed" is a real answer and is said out loud. Exiting 0 in silence
 // is indistinguishable from a clean check of a hundred files, which is how a CI
 // gate quietly stops covering anything.
-async function runSince(since, targets, { command, noIgnore, format, jobs }) {
+//
+// `--unused-exclusions` and `--aging` are honoured here rather than refused.
+// Both used to be accepted and silently dropped, which is the same lie in
+// miniature — a flag that does nothing is how somebody concludes the check ran.
+// Honouring them is what they already mean elsewhere: `--aging` judges the
+// baseline, which no file selection changes, and `--unused-exclusions` behaves
+// exactly as it does for any other partial-scope run — `wholeTree` is false, so
+// the claims that need to have seen the tree stay unmade, and the ones about
+// the files this run did read are enforced.
+async function runSince(since, targets,
+  { command, noIgnore, format, jobs, unusedExclusions = false, aging = null }) {
   let files = [];
   try {
     files = sinceTargets(since, targets);
@@ -1047,7 +1075,8 @@ async function runSince(since, targets, { command, noIgnore, format, jobs }) {
   if (halt !== null) return halt;
   toolAnswers = runToolBatches(files, { repoRoot });
   scanned = await prescan({ command, files, repoRoot, config, jobs });
-  return COMMANDS.get(command)(files, repoRoot, config, { format });
+  return COMMANDS.get(command)(files, repoRoot, config,
+    { format, unusedExclusions, aging, wholeTree: false });
 }
 
 // The commands that read every file once, and how they read it. `rot` builds
@@ -1140,7 +1169,10 @@ async function main(argv) {
 
   const refused = refuseArguments({ command, targets, format, since, aging });
   if (refused !== null) return refused;
-  if (since !== null) return runSince(since, targets, { command, noIgnore, format, jobs });
+  if (since !== null) {
+    return runSince(since, targets,
+      { command, noIgnore, format, jobs, unusedExclusions, aging });
+  }
 
   const files = expand(targets, true);
   if (files.length === 0) return 0;

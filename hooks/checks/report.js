@@ -87,21 +87,97 @@ function sarifResult(f) {
   return result;
 }
 
-function sarifReport({ findings, version }) {
+// A file nothing read is not a file that came back clean, and SARIF used to
+// render the two identically: absent from `results` either way. The JSON format
+// has always carried `skipped`; the format that feeds GitHub code scanning and
+// every security dashboard did not, which made it the widest-reaching version
+// of the failure this project keeps fixing — enforcement narrower than the user
+// believes.
+//
+// The honest place for it in the 2.1.0 spec is `invocations[].
+// toolExecutionNotifications`: notifications are what a tool says ABOUT its
+// run, as opposed to results, which are what it found. A skipped file is not a
+// finding — putting it in `results` under some invented rule would report a
+// problem in the file, and would fail builds that gate on result count.
+//
+// The level split is the one the CLI already makes on stderr. `[exclude] paths`
+// and a .procoderignore are a decision the project made about scope: coverage
+// lost, worth saying, but not a broken run — `warning`. A file that was in
+// scope and could not be read (over the size cap, unreadable) is a hole in the
+// scope itself — `error`, and it is what drops `executionSuccessful` to false,
+// the same distinction `verify` uses when it refuses to claim a ratchet.
+const skip = (kind, level, why) => [kind, { id: `procoder/skipped/${kind}`, level, why }];
+const SKIPS = new Map([
+  skip('excluded', 'warning', 'excluded by [exclude] paths in .procoder.toml'),
+  skip('ignored', 'warning', 'covered by a .procoderignore'),
+  skip('too-large', 'error', 'larger than [limits] max_file_bytes'),
+  skip('unreadable', 'error', 'could not be read'),
+]);
+
+// Anything unrecognised is an error, never silently dropped: a new skip reason
+// that nobody mapped must show up as a hole, not as a clean file.
+const OTHER_SKIP = { id: 'procoder/skipped/other', level: 'error', why: 'not checked' };
+
+const skipKind = (reason) => (String(reason).startsWith('ignored:') ? 'ignored' : String(reason));
+const skipDescriptor = (reason) => SKIPS.get(skipKind(reason)) || OTHER_SKIP;
+
+// The spec says a notification's descriptor SHOULD resolve to a descriptor in
+// `driver.notifications`. An id a consumer cannot look up is the same class of
+// lie as the missing skip itself, so the ones actually used travel with the run.
+function sarifNotificationRules(skipped) {
+  const rules = new Map();
+  for (const s of skipped) {
+    const d = skipDescriptor(s.reason);
+    if (rules.has(d.id)) continue;
+    rules.set(d.id, {
+      id: d.id,
+      shortDescription: { text: `File ${d.why}.` },
+      fullDescription: {
+        text: `procoder did not read this file, so nothing in it was checked. `
+          + 'It is absent from `results` for that reason, not because it is clean.',
+      },
+    });
+  }
+  return Array.from(rules.values());
+}
+
+function sarifNotification({ file, reason }) {
+  const d = skipDescriptor(reason);
+  return {
+    descriptor: { id: d.id },
+    level: d.level,
+    message: { text: `${file} was not checked: ${d.why} (${reason}).` },
+    locations: [{ physicalLocation: { artifactLocation: { uri: file } } }],
+  };
+}
+
+// `runs[].automationDetails` was the other candidate and is deliberately not
+// used: GitHub treats its `id` as the category that groups one analysis with
+// the next, so an id that appeared only on runs that skipped something would
+// split a project's history in two the first time a file went unread.
+function sarifReport({ findings, version, skipped = [] }) {
+  const driver = {
+    name: 'procoder',
+    version,
+    informationUri: 'https://github.com/azrtydxb/procoder',
+    rules: sarifRules(findings),
+  };
+  const run = { tool: { driver }, results: findings.map(sarifResult) };
+  // Nothing skipped means nothing to say, and the document stays byte for byte
+  // what it was before this existed: a consumer that ignores notifications is
+  // never worse off than it was, and one that reads them learns exactly which
+  // files went unread and why.
+  if (skipped.length > 0) {
+    driver.notifications = sarifNotificationRules(skipped);
+    run.invocations = [{
+      executionSuccessful: !skipped.some((s) => skipDescriptor(s.reason).level === 'error'),
+      toolExecutionNotifications: skipped.map(sarifNotification),
+    }];
+  }
   return `${JSON.stringify({
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
-    runs: [{
-      tool: {
-        driver: {
-          name: 'procoder',
-          version,
-          informationUri: 'https://github.com/azrtydxb/procoder',
-          rules: sarifRules(findings),
-        },
-      },
-      results: findings.map(sarifResult),
-    }],
+    runs: [run],
   }, null, 2)}\n`;
 }
 

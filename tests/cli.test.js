@@ -66,6 +66,15 @@ function cli(repo, args, env = {}) {
   return { code: r.status, out: String(r.stdout || '') + String(r.stderr || '') };
 }
 
+// stdout on its own. `cli()` folds stderr in, which is right for reading
+// messages and wrong for parsing a document: every skip notice is on stderr
+// precisely so it cannot land in the middle of one.
+function stdoutOf(repo, args) {
+  return String(spawnSync('node', [CLI, ...args], {
+    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+  }).stdout);
+}
+
 function atLevel(repo, level) {
   fs.writeFileSync(path.join(repo, '.procoder-active'), level + '\n');
   return repo;
@@ -1022,6 +1031,88 @@ test('sarif grades a non-blocking finding as a warning', () => {
   assert.strictEqual(doc.runs[0].results[0].level, 'warning');
 });
 
+// A file nothing read is not a file that came back clean. SARIF is what feeds
+// GitHub code scanning and most dashboards, and it used to render the two
+// identically — absent from `results` either way — which is the widest-reaching
+// version of "enforcement narrower than the user believes" this project has had.
+test('sarif names the files that went unread, and why', () => {
+  const repo = repoWith({
+    'a.ts': DIRTY,
+    'big.ts': `// ${'x'.repeat(200)}\n`,
+    'skipped/b.ts': DIRTY,
+    '.procoder.toml': '[exclude]\npaths = ["skipped/"]\n[limits]\nmax_file_bytes = 64\n',
+  });
+  // stdout only: the skip notices are on stderr, which is the whole reason the
+  // document stays parseable while the coverage it lost is still said out loud.
+  const run = JSON.parse(stdoutOf(repo,
+    ['check', '--format', 'sarif', 'a.ts', 'big.ts', 'skipped/b.ts'])).runs[0];
+  assert.deepStrictEqual(
+    run.results.map((r) => r.locations[0].physicalLocation.artifactLocation.uri), ['a.ts'],
+    'only the file that was actually read may contribute results');
+
+  const notes = run.invocations[0].toolExecutionNotifications;
+  const byFile = new Map(notes.map(
+    (n) => [n.locations[0].physicalLocation.artifactLocation.uri, n]));
+  assert.strictEqual(notes.length, 2, 'a skipped file that reaches no consumer is an invisible hole');
+  assert.strictEqual(byFile.get('big.ts').descriptor.id, 'procoder/skipped/too-large');
+  assert.strictEqual(byFile.get('big.ts').level, 'error',
+    'a file that was in scope and could not be read is a hole in the scope');
+  assert.strictEqual(byFile.get('skipped/b.ts').descriptor.id, 'procoder/skipped/excluded');
+  assert.strictEqual(byFile.get('skipped/b.ts').level, 'warning',
+    'a deliberate exclusion is coverage lost, not a broken run');
+  assert.strictEqual(run.invocations[0].executionSuccessful, false,
+    'a run that could not read a file in scope did not fully execute');
+  // The descriptor a notification names has to resolve to something.
+  assert.deepStrictEqual(
+    run.tool.driver.notifications.map((n) => n.id).sort(),
+    ['procoder/skipped/excluded', 'procoder/skipped/too-large']);
+});
+
+// The other half of the contract: a consumer that ignores notifications must
+// never be worse off than it was before they existed.
+test('a sarif run with nothing skipped is unchanged in shape', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  const run = JSON.parse(cli(repo, ['check', '--format', 'sarif', 'a.ts']).out).runs[0];
+  assert.deepStrictEqual(Object.keys(run), ['tool', 'results']);
+  assert.deepStrictEqual(Object.keys(run.tool.driver),
+    ['name', 'version', 'informationUri', 'rules']);
+});
+
+// A .procoderignore is the same class of skip as an [exclude] path and has to
+// arrive the same way — the asymmetry between them is what let whole
+// directories of coverage disappear silently once before.
+test('an ignored file is a sarif notification too, and does not fail the run', () => {
+  const repo = repoWith({ 'gen/.procoderignore': '*.ts\n', 'gen/a.ts': DIRTY });
+  const run = JSON.parse(stdoutOf(repo, ['check', '--format', 'sarif', 'gen/a.ts'])).runs[0];
+  const note = run.invocations[0].toolExecutionNotifications[0];
+  assert.strictEqual(note.descriptor.id, 'procoder/skipped/ignored');
+  assert.strictEqual(note.level, 'warning');
+  assert.strictEqual(run.invocations[0].executionSuccessful, true,
+    'a scope decision the project made is not a failed run');
+});
+
+// The mapping the dashboard routes on: rung name and number on the rule, the
+// ratchet's own fingerprint on the result, and the level from whether the
+// finding blocked at the level THIS file was judged at.
+test('sarif carries rung, rung number and fingerprint on an advisory finding', () => {
+  const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'pragmatic');
+  const run = JSON.parse(cli(repo, ['check', '--format', 'sarif', 'a.ts']).out).runs[0];
+  assert.strictEqual(run.results[0].level, 'warning');
+  assert.match(run.results[0].partialFingerprints.procoderFingerprint, /^[0-9a-f]{8,}$/);
+  assert.strictEqual(run.tool.driver.rules[0].properties.rung, 'ALONE');
+  assert.strictEqual(run.tool.driver.rules[0].properties.rungNumber, 4);
+});
+
+// A baselined finding is suppressed everywhere or nowhere. Arriving as a
+// `note` would put accepted debt back on the dashboard as a new row.
+test('a baselined finding is absent from sarif entirely', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  cli(repo, ['baseline', 'a.ts']);
+  const run = JSON.parse(cli(repo, ['check', '--format', 'sarif', 'a.ts']).out).runs[0];
+  assert.deepStrictEqual(run.results, []);
+  assert.deepStrictEqual(run.tool.driver.rules, []);
+});
+
 // A skip notice on stdout would break the document for every consumer of it.
 test('a skip notice never lands in the middle of a json document', () => {
   const repo = repoWith({ 'a.ts': DIRTY, '.procoder.toml': '[exclude]\npaths = ["skipped/"]\n' });
@@ -1072,6 +1163,45 @@ test('--since exits 2 when git cannot resolve the ref', () => {
   const result = cli(repo, ['check', '--since', 'no-such-ref']);
   assert.strictEqual(result.code, 2);
   assert.match(result.out, /git diff .* failed/);
+});
+
+// `--diff-filter=ACM` dropped `R`, and git reports a moved file as a rename,
+// not as a delete plus an add. So the one commit shape that moves live code —
+// a rename — selected no files, printed "nothing to check" and exited 0 over a
+// finding that was still there, which is exactly the claim `--since` was
+// written to make impossible.
+test('--since sees a renamed file, at its new path', () => {
+  const repo = repoWithCommit({}, { 'old.ts': DIRTY });
+  const git = (...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args],
+    { cwd: repo, encoding: 'utf8' });
+  git('mv', 'old.ts', 'new.ts');
+  git('commit', '-qm', 'rename');
+  const result = cli(repo, ['check', '--since', 'HEAD~1']);
+  assert.strictEqual(result.code, 1, 'a rename must not pass green over a live finding');
+  assert.match(result.out, /new\.ts/, 'the finding belongs at the path the file lives at now');
+  assert.doesNotMatch(result.out, /no files changed/);
+});
+
+// `--unused-exclusions` and `--aging` were accepted under `--since` and
+// silently dropped. A flag that does nothing is how somebody concludes the
+// check ran.
+test('--since honours --unused-exclusions over the files it read', () => {
+  const repo = repoWithCommit(
+    { 'a.ts': 'const x = 2;\n' },
+    { 'a.ts': 'const x = 1;\n', '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n' });
+  const result = cli(repo, ['verify', '--unused-exclusions', '--since', 'HEAD']);
+  assert.strictEqual(result.code, 1, 'the flag was accepted and then ignored');
+  assert.match(result.out, /suppressed nothing/);
+});
+
+// The baseline is what `--aging` judges, and no file selection changes it —
+// which is why honouring the flag here is the only reading that is true.
+test('--since honours --aging', () => {
+  const repo = repoWithCommit({ 'b.ts': 'const y = 1;\n' }, { 'a.ts': DIRTY });
+  cli(repo, ['baseline', 'a.ts']);
+  const result = cli(repo, ['verify', '--aging', '0', '--since', 'HEAD']);
+  assert.strictEqual(result.code, 1, 'the flag was accepted and then ignored');
+  assert.match(result.out, /older than 0 days/);
 });
 
 test('--since says when nothing changed instead of exiting 0 in silence', () => {
