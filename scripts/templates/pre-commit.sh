@@ -9,14 +9,18 @@ set -euo pipefail
 # procoder is installed globally or only available as a plugin path.
 procoder="${PROCODER_BIN:-npx --no-install procoder}"
 
-staged="$(git diff --cached --name-only --diff-filter=ACM)"
-[ -n "$staged" ] || exit 0
+# NUL-delimited into an array: a path with a space in it used to be split into
+# two paths, and procoder would exit 2 with "no such path" — or, worse, check
+# neither half and say nothing about the file that was really staged.
+staged=()
+while IFS= read -r -d "" file; do staged+=("$file"); done \
+  < <(git diff --cached --name-only --diff-filter=ACM -z)
+[ ${#staged[@]} -gt 0 ] || exit 0
 
-# shellcheck disable=SC2086
-if ! $procoder check $staged; then
+if ! $procoder check "${staged[@]}"; then
   echo ""
   echo "procoder: blocking commit. Fix the findings above, or run:"
-  echo "  $procoder baseline $staged     # accept pre-existing findings"
-  echo "  git commit --no-verify          # bypass once"
+  echo "  $procoder baseline <paths>     # accept pre-existing findings"
+  echo "  git commit --no-verify         # bypass once"
   exit 1
 fi

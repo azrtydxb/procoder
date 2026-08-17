@@ -555,12 +555,31 @@ test('span-derived shape metrics still do not see a minified line', () => {
 // Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: the property
 // under test is elapsed time spent waiting on a hung child process, which costs
 // this process no CPU at all. The budget it defends is a wall-clock budget.
-function wallBestOf(runs, work) {
-  let best = Infinity;
+function wallOnce(work) {
+  const started = Date.now();
+  work();
+  return Date.now() - started;
+}
+
+// Best of three, and the three are INTERLEAVED across the two measurements.
+//
+// Two runs of each, taken one after the other, is what made this test flaky:
+// `node --test` runs twelve files concurrently, and a stall that lands inside
+// both runs of `atCap` but neither run of `tiny` inflates their difference by
+// the stall rather than by anything the engine did. The suite's own convention
+// for that is best-of-three (see tests/perf-guard.js) — a scheduler stall lands
+// in one run of three, not all three — and interleaving means a slow stretch of
+// wall clock is charged to both sides of the comparison or to neither.
+//
+// It stays wall-clock, and it stays best-of rather than a skip: the property is
+// elapsed time spent waiting on a hung child, which costs this process no CPU
+// at all, and a host so starved that all three runs overrun is a host the
+// engine's deadline really would miss. That is a failure worth seeing.
+function wallBestOfPair(runs, first, second) {
+  const best = [Infinity, Infinity];
   for (let i = 0; i < runs; i += 1) {
-    const started = Date.now();
-    work();
-    best = Math.min(best, Date.now() - started);
+    best[0] = Math.min(best[0], wallOnce(first));
+    best[1] = Math.min(best[1], wallOnce(second));
   }
   return best;
 }
@@ -602,11 +621,10 @@ test('a hung linter plus a file at the cap costs no more than a hung linter alon
 
   // No shim on PATH: the linter never resolves, so this is the in-process work
   // alone — read, universal pack, language pack, and the whole reporting tail.
-  const work = wallBestOf(2, () => run('atcap.ts'));
+  const work = Math.min(wallOnce(() => run('atcap.ts')), wallOnce(() => run('atcap.ts')));
 
   withShim('eslint', hang, () => {
-    const tiny = wallBestOf(2, () => run('tiny.ts'));
-    const atCap = wallBestOf(2, () => run('atcap.ts'));
+    const [tiny, atCap] = wallBestOfPair(3, () => run('tiny.ts'), () => run('atcap.ts'));
     assert.ok(atCap - tiny < work * 0.75 + 100,
       `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file, `
       + `an excess of ${atCap - tiny}ms over ${work}ms of in-process work — `

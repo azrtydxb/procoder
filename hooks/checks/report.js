@@ -7,7 +7,7 @@
 // security dashboard, another tool's input.
 //
 //   json   procoder's own shape, versioned, everything the run knew.
-//   sarif  SARIF 2.1.0 — what GitHub code scanning, Azure DevOps, and most
+//   sarif  SARIF 2.1.0 — what GitHub code scanning, Azure DevOps and most
 //          security dashboards ingest. Uploading it puts every finding on the
 //          diff of the pull request that introduced it.
 //
@@ -67,10 +67,10 @@ function sarifRules(findings) {
   return Array.from(rules.values());
 }
 
-// `partialFingerprints` is what stops a dashboard from reporting the same
-// finding as new every time a line moves. procoder already computes a
-// line-independent fingerprint for its own ratchet, so the two agree by
-// construction: what the baseline accepts is what the dashboard tracks.
+// `partialFingerprints` is what stops a dashboard reporting the same finding as
+// new every time a line moves. procoder already computes a line-independent
+// fingerprint for its own ratchet, so the two agree by construction: what the
+// baseline accepts is what the dashboard tracks.
 function sarifResult(f) {
   const result = {
     ruleId: f.id,

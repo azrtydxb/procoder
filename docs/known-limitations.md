@@ -167,7 +167,7 @@ in the gate the day it lands. Both of its hold-out lists — `HELD_OUT` and
 the test at `tests/dogfood.test.js:73` fails if a `HELD_OUT` path matches no
 tracked file or has gone clean.
 
-Measured today over **201** tracked files, `procoder check .` reports **0**
+Measured today over **202** tracked files, `procoder check .` reports **0**
 findings and exits 0, having skipped **18** of them and said so on stderr for
 every one:
 
@@ -184,7 +184,7 @@ every one:
   `examples/*/before.*` (files that violate a rung on purpose, and are still
   checked on every test run through `procoder check --no-ignore`).
 
-So **183** files are actually read, and README.md publishes those three
+So **184** files are actually read, and README.md publishes those three
 numbers; `tests/dogfood.test.js` asserts them against the scan's own output, so
 the paragraph fails the build rather than going quietly out of date. The
 repository root also carries a `.procoderignore` for `.claude/` and

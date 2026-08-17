@@ -9,18 +9,21 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const {
   loadConfig, findRepoRoot, excludingPattern, unusedPathExclusions, levelFor,
 } = require('../hooks/checks/config');
 const { checkFile } = require('../hooks/checks/run');
 const { formatFindings } = require('../hooks/checks/finding');
+const { FORMATS, jsonReport, sarifReport } = require('../hooks/checks/report');
 const { readLevel } = require('../hooks/procoder-runtime');
 const { getClaudeDir } = require('../hooks/procoder-config');
 const {
   fingerprintsFor, writeBaseline, loadBaseline, growthCheck, baselinePath, BASELINE_VERSION,
 } = require('../hooks/checks/baseline');
 
-const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--no-ignore] <paths...>
+const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
+       procoder check [--format text|json|sarif] [--since <ref>] [paths...]
        procoder statusline <install|uninstall|status> [--append] [--force]
 
   check     report findings not present in the baseline; exit 1 if any of them
@@ -37,6 +40,17 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
                         suppression left behind after what it silenced was
                         fixed. The last two are judged only when the run's
                         targets covered the whole repository.
+  --format <fmt>       (check only) text (default), json, or sarif. json is
+                        procoder's own versioned shape; sarif is SARIF 2.1.0 for
+                        code-scanning dashboards, carrying the same fingerprint
+                        the ratchet uses so a moved line is not a new finding.
+                        Findings go to stdout; every skip notice stays on stderr,
+                        so the document stays parseable.
+  --since <ref>        (check only) check the files changed since <ref> —
+                        'git diff --name-only --diff-filter=ACM <ref>...HEAD'
+                        plus anything uncommitted. Paths may still be given to
+                        narrow it further. A git failure exits 2 rather than
+                        checking nothing quietly.
   --no-ignore           check files a .procoderignore covers anyway — answers
                         "why is this file not being checked?". [exclude] paths
                         in .procoder.toml still applies, and every file it holds
@@ -52,6 +66,16 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
 `;
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
+
+// Read, not hardcoded: a tool that reports its own version has to report the
+// one it was installed as.
+const VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version;
+  } catch (e) {
+    return '0.0.0';
+  }
+})();
 
 function expandDirectory(abs) {
   return fs.readdirSync(abs)
@@ -347,23 +371,64 @@ function reportSkipped() {
   ignoredCounts.clear();
 }
 
-function runCheck(files, repoRoot, config) {
+// One pass over the files, in one place, whatever the output format. The text
+// path prints as it goes because a long run should show its findings before it
+// finishes; the machine formats are one document and can only be written at the
+// end, so both collect and only the printing differs.
+function collectCheck(files, repoRoot, config, print) {
   const sessionLevel = readLevel();
-  let blocking = 0;
-  let advisory = 0;
-  let pinned = 0;
+  const counts = { blocking: 0, advisory: 0, pinned: 0 };
+  const entries = [];
+  const skippedFiles = [];
   for (const absPath of files) {
     const { relPath, findings, skipped } = findingsFor(absPath, repoRoot, config);
-    if (skipped || findings.length === 0) continue;
+    if (skipped) { skippedFiles.push({ file: relPath, reason: skipped }); continue; }
+    if (findings.length === 0) continue;
     const level = levelFor(config, relPath, sessionLevel);
-    if (level !== sessionLevel) pinned += 1;
+    if (level !== sessionLevel) counts.pinned += 1;
     const gating = findings.filter((f) => isBlocking(f, level, config)).length;
-    blocking += gating;
-    advisory += findings.length - gating;
-    process.stdout.write(formatFindings(findings, relPath) + '\n');
+    counts.blocking += gating;
+    counts.advisory += findings.length - gating;
+    if (print) process.stdout.write(formatFindings(findings, relPath) + '\n');
+    else pushEntries(entries, { findings, relPath, absPath, level, config });
+  }
+  return { sessionLevel, counts, entries, skippedFiles };
+}
+
+// The machine formats carry two things the text line does not: whether the
+// finding blocked at the level THIS file was judged at — which a [levels] pin
+// can move — and the fingerprint the ratchet uses. The fingerprint is what
+// stops a dashboard calling a moved line a new finding, and computing it here
+// rather than inventing a second identity means the baseline and the dashboard
+// always agree about what a finding is.
+function pushEntries(entries, file) {
+  const { findings, relPath, absPath, level, config } = file;
+  let lines = [];
+  try { lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/); } catch (e) { lines = []; }
+  const fps = fingerprintsFor(findings, relPath, lines);
+  findings.forEach((f, i) => entries.push({
+    ...f, file: relPath, blocking: isBlocking(f, level, config), fingerprint: fps[i],
+  }));
+}
+
+function runCheck(files, repoRoot, config, { format = 'text' } = {}) {
+  const text = format === 'text';
+  const { sessionLevel, counts, entries, skippedFiles } =
+    collectCheck(files, repoRoot, config, text);
+  const { blocking, advisory, pinned } = counts;
+
+  // Skip notices are stderr on every path, so a JSON or SARIF document on
+  // stdout stays parseable while the coverage it lost is still said out loud.
+  reportSkipped();
+
+  if (!text) {
+    const summary = { findings: entries.length, blocking, advisory, pinned, level: sessionLevel };
+    process.stdout.write(format === 'sarif'
+      ? sarifReport({ findings: entries, version: VERSION })
+      : jsonReport({ findings: entries, level: sessionLevel, summary, skipped: skippedFiles }));
+    return blocking > 0 ? 1 : 0;
   }
 
-  reportSkipped();
   if (blocking + advisory === 0) return 0;
   process.stdout.write(summarize(blocking, advisory, sessionLevel, pinned));
   return blocking > 0 ? 1 : 0;
@@ -659,13 +724,97 @@ const COMMANDS = new Map([['check', runCheck], ['baseline', runBaseline], ['veri
 // Isolated so main() can pull the flag out of argv without pushing the
 // function that dispatches commands over the line-count threshold.
 const FLAGS = ['--unused-exclusions', '--no-ignore'];
+const VALUE_FLAGS = ['--format', '--since'];
+
+// Both spellings, `--format json` and `--format=json`, because a user who types
+// the one this parser does not accept gets their argument treated as a path,
+// and "no such path: json" is a worse answer than either.
+function takeValues(argv) {
+  const values = new Map();
+  const rest = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    const eq = VALUE_FLAGS.find((f) => arg.startsWith(`${f}=`));
+    if (eq) { values.set(eq, arg.slice(eq.length + 1)); continue; }
+    if (VALUE_FLAGS.includes(arg)) { values.set(arg, argv[i + 1]); i += 1; continue; }
+    rest.push(arg);
+  }
+  return { values, rest };
+}
 
 function parseFlags(argv) {
+  const { values, rest } = takeValues(argv);
   return {
     unusedExclusions: argv.includes('--unused-exclusions'),
     noIgnore: argv.includes('--no-ignore'),
-    rest: argv.filter((a) => !FLAGS.includes(a)),
+    format: values.get('--format') || 'text',
+    since: values.get('--since') || null,
+    rest: rest.filter((a) => !FLAGS.includes(a)),
   };
+}
+
+// The files git says changed since <ref>, plus anything uncommitted — a review
+// of "what I am about to push" that ignored the working tree would be checking
+// the wrong thing.
+//
+// Every git failure is an error, never an empty list. The shipped CI template
+// used to do this in shell with `|| true`, so a first push (whose "before" SHA
+// is all zeros) made git fail, produced no files, and passed the build green
+// having checked nothing. That is the exact silent coverage loss this project
+// exists to refuse, so it exits 2 — "cannot check" — and says which git command
+// failed.
+function changedSince(ref, repoRoot) {
+  const commands = [
+    ['diff', '--name-only', '--diff-filter=ACM', `${ref}...HEAD`],
+    ['diff', '--name-only', '--diff-filter=ACM', 'HEAD'],
+    ['ls-files', '--others', '--exclude-standard'],
+  ];
+  const files = new Set();
+  for (const argv of commands) {
+    const r = spawnSync('git', argv, { cwd: repoRoot, encoding: 'utf8' });
+    if (r.status !== 0) {
+      throw new Error(`git ${argv.join(' ')} failed: ${String(r.stderr || '').trim()}`);
+    }
+    for (const line of String(r.stdout || '').split('\n')) if (line) files.add(line);
+  }
+  return Array.from(files)
+    .map((rel) => path.join(repoRoot, rel))
+    .filter((abs) => fs.existsSync(abs));
+}
+
+// `--since` needs a repository before it can ask git anything, and the normal
+// path derives the root from the first target. Resolved from the working
+// directory instead, which is the same root for any path inside it.
+function sinceTargets(since, targets) {
+  const repoRoot = findRepoRoot(process.cwd());
+  const changed = changedSince(since, repoRoot);
+  if (targets.length === 0) return changed;
+  // Paths given alongside --since narrow it: the intersection, so `--since main
+  // src/` means "what changed under src/".
+  const under = targets.map((t) => path.resolve(t));
+  return changed.filter((abs) => under.some((t) => abs === t || abs.startsWith(`${t}${path.sep}`)));
+}
+
+// "Nothing changed" is a real answer and is said out loud. Exiting 0 in silence
+// is indistinguishable from a clean check of a hundred files, which is how a CI
+// gate quietly stops covering anything.
+function runSince(since, targets, { command, noIgnore, format }) {
+  let files = [];
+  try {
+    files = sinceTargets(since, targets);
+  } catch (e) {
+    process.stderr.write(`procoder: ${e.message}\n`);
+    return 2;
+  }
+  if (files.length === 0) {
+    process.stdout.write(`procoder: no files changed since ${since} — nothing to check.\n`);
+    return 0;
+  }
+  const repoRoot = findRepoRoot(path.dirname(files[0]));
+  const config = { ...loadConfig(repoRoot), noIgnore };
+  const halt = reportStaleBaseline(command, repoRoot, config);
+  if (halt !== null) return halt;
+  return COMMANDS.get(command)(files, repoRoot, config, { format });
 }
 
 // A baseline from an older procoder suppresses nothing, so a legacy repo would
@@ -683,19 +832,21 @@ function reportStaleBaseline(command, repoRoot, config) {
   return command === 'verify' ? 2 : null;
 }
 
-function main(argv) {
-  const { unusedExclusions, noIgnore, rest } = parseFlags(argv);
-  const [command, ...targets] = rest;
-  // Its arguments are subcommands, not paths, so it branches off before the
-  // path handling below.
-  if (command === 'statusline') return runStatusline(targets);
-
-  const run = COMMANDS.get(command);
-  if (!run || targets.length === 0) {
+// Everything that can refuse a command line before any file is read. Returns
+// an exit code to stop on, or null to carry on — the same shape
+// reportStaleBaseline uses, so main() reads as one list of refusals.
+function refuseArguments({ command, targets, format, since }) {
+  if (!FORMATS.has(format) || (format !== 'text' && command !== 'check')) {
+    process.stderr.write(`procoder: --format ${format} is not available for ${command || 'this'} `
+      + '— text, json and sarif, on `check` only\n');
+    return 2;
+  }
+  // `--since` supplies the targets, so it is the one shape where naming none is
+  // not a usage error.
+  if (!COMMANDS.get(command) || (targets.length === 0 && since === null)) {
     process.stderr.write(USAGE);
     return 2;
   }
-
   // A mistyped or renamed path used to exit 0, which in CI is indistinguishable
   // from "all clean" and turns the gate off permanently. An existing path that
   // yields no checkable files (empty, or entirely excluded) is still a clean run
@@ -705,6 +856,19 @@ function main(argv) {
     process.stderr.write(`procoder: no such path: ${missing.join(', ')}\n`);
     return 2;
   }
+  return null;
+}
+
+function main(argv) {
+  const { unusedExclusions, noIgnore, format, since, rest } = parseFlags(argv);
+  const [command, ...targets] = rest;
+  // Its arguments are subcommands, not paths, so it branches off before the
+  // path handling below.
+  if (command === 'statusline') return runStatusline(targets);
+
+  const refused = refuseArguments({ command, targets, format, since });
+  if (refused !== null) return refused;
+  if (since !== null) return runSince(since, targets, { command, noIgnore, format });
 
   const files = expand(targets, true);
   if (files.length === 0) return 0;
@@ -720,7 +884,8 @@ function main(argv) {
   // when the run actually saw it — see pathAudit.
   const wholeTree = targets.some((t) => path.resolve(t) === repoRoot);
 
-  return run(files, repoRoot, config, { unusedExclusions, wholeTree });
+  return COMMANDS.get(command)(files, repoRoot, config,
+    { unusedExclusions, wholeTree, format });
 }
 
 process.exit(main(process.argv.slice(2)));

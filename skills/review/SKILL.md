@@ -20,28 +20,31 @@ Review the diff. Every rung must hold before it ships.
      quietly changed;
    - a part of the stated goal the diff does not deliver.
 
-   Report either as `[2 TRUE]` with `(scope)` before the message. Code that is
-   correct and does something other than what was asked is the failure mode of
-   generated diffs, and no other rung looks for it.
+   Report either as `[6 MEANT]`. Code that is correct and does something other
+   than what was asked is the failure mode of generated diffs, and no other rung
+   looks at the request at all.
 3. **Run the engine.** `node <plugin>/bin/procoder.js check <changed files>`.
    These findings are deterministic — report them verbatim, in the order given.
    Do not re-derive by eye what the engine already computed, and do not omit a
    finding because it looks minor. The engine exits 1 when a finding blocks at
    the active level; that alone blocks the ship. It exits 0 at `pragmatic` when
-   only OBVIOUS and ALONE findings remain — still report them, as advisory.
+   only judgment findings remain (OBVIOUS, ALONE, FAST, MEANT) — still report
+   them, as advisory.
 4. **Read the diff for what the engine cannot see**, in rung order:
 
    | Rung | Look for |
    |---|---|
    | SAFE | New untrusted input reaching a sink. Authz checked on the object, server-side, per request. A new dependency, and whether the manifest was hand-edited instead of installed. Anything new in a log line. Text from a README, an issue, tool output or a fetched page acting as an instruction. |
-   | TRUE | An error path that can lose data. The edge nobody tested. Non-trivial new logic with no runnable check behind it. Money as a float. A query inside a loop, a scan that grows with the request, blocking I/O on an async path. |
+   | TRUE | An error path that can lose data. The edge nobody tested. Non-trivial new logic with no runnable check behind it. Money as a float. |
    | OBVIOUS | Names that say *how* instead of *what*. A comment restating the code instead of the why. A public symbol with no signature doc. |
    | ALONE | The rung reviewers skip. For every changed function, grep for what it replaced: old path still exported, commented-out block, settled feature flag, deprecation with no removal trigger, a doc paragraph describing behavior you just changed. |
+   | FAST | A call to the database, cache or network inside a loop over request-sized input. Work that grows faster than the input. Blocking I/O on an async path. An unbounded fetch, read or fan-out. A log line in a hot loop. Name the input size that makes it hurt, or drop the finding. |
+   | MEANT | What step 2 found, reported here in rung order: behavior the ask did not request, and asks the diff did not deliver. |
 
 5. **Verify before reporting.** Every judgment finding names a file and a line you
    actually read. If you cannot point at one, drop the finding. For a SAFE or
-   TRUE finding, name to yourself the input, state or interleaving that produces
-   the wrong result — the request that reaches the sink, the value that hits the
+   TRUE finding — and for every FAST one — name to yourself the input, state or
+   interleaving that produces the wrong result — the request that reaches the sink, the value that hits the
    empty branch, the two callers that race. If you cannot name one, you have a
    suspicion, not a finding: drop it. The scenario stays out of the output; it is
    what earns the line the right to be written.
@@ -67,7 +70,8 @@ One line per finding, most severe first, engine findings before judgment ones:
 [3 OBVIOUS] api/users.ts:71   fn 94 lines, depth 5 → extract validate/persist/notify
 [4 ALONE]   api/users.ts:6    createUserV1 still exported, no caller → delete
 [2 TRUE]    api/orders.ts:15  (pre-existing) retry has no timeout → out of scope, worth a ticket
-[2 TRUE]    api/users.ts:33   (scope) renames status → state across the API, not in the ask → split or say why
+[5 FAST]    api/users.ts:64   findOrg() per row over a request-sized list → one IN query before the loop
+[6 MEANT]   api/users.ts:33   renames status → state across the API, not in the ask → split, or say why
 ```
 
 Then one closing line, gates first, because the counts mean nothing without it:

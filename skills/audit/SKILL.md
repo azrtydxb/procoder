@@ -18,10 +18,12 @@ to say which three mistakes are being repeated.
    the one with the most findings, not the most files.
 3. **Sample-read the three worst files** for what the engine cannot compute:
    rung-3 naming quality, rung-4 semantics (is this symbol genuinely
-   unreachable?), rung-1 trust-boundary reasoning. Name a line for each judgment
-   finding or drop it.
-4. **Rank.** Order findings SAFE → TRUE → OBVIOUS → ALONE, then by count of the
-   same rule. Cap the individual list at the **top 15**.
+   unreachable?), rung-1 trust-boundary reasoning, rung-5 cost at real input
+   size. Name a line for each judgment finding or drop it. Rung 6 (MEANT) is not
+   audited: a repository has no single ask to hold itself against, and inventing
+   one produces findings nobody can act on. It belongs to `/procoder:review`.
+4. **Rank.** Order findings SAFE → TRUE → OBVIOUS → ALONE → FAST, then by count
+   of the same rule. Cap the individual list at the **top 15**.
 5. **Name the top three systemic patterns.** One repeated mistake matters more
    than thirty instances of it. For each, give the single change that fixes the
    whole class.
@@ -36,12 +38,14 @@ First a rung summary table:
 | 2 TRUE | 31 | `workers/` |
 | 3 OBVIOUS | 84 | `legacy/` |
 | 4 ALONE | 22 | `legacy/` |
+| 5 FAST | 9 | `workers/` |
 
 Then the ranked top 15, one line per finding:
 
 ```
 [1 SAFE]    api/users.ts:42   raw req.body.role into authz check → validate + server-side role lookup
 [4 ALONE]   legacy/old.ts:6   createUserV1 still exported, no caller → delete
+[5 FAST]    workers/sync.ts:88  fetchUser() per row over an unbounded page → batch, or page the query
 ```
 
 Then the three systemic patterns, one line each: pattern → the one change that

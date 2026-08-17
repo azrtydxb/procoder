@@ -874,3 +874,105 @@ test('statusline install --append twice is a no-op the second time', POSIX_ONLY,
   assert.match(again.out, /already/i);
   assert.strictEqual(fs.readFileSync(settingsIn(repo), 'utf8'), first);
 });
+
+// --- machine-readable output ------------------------------------------------
+//
+// A finding that only exists as a text line cannot reach the two places a gate
+// has to appear: a pull request's diff, and a security dashboard. Both formats
+// are built from the same per-file results the text path prints, so these tests
+// assert the shape AND that the counts agree with the default rendering.
+
+const DIRTY = 'eval(x);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+
+test('--format json reports the same findings the text run does, with fingerprints', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  const result = cli(repo, ['check', '--format', 'json', 'a.ts']);
+  assert.strictEqual(result.code, 1, 'a SAFE finding still fails the run');
+  const doc = JSON.parse(result.out);
+  assert.strictEqual(doc.findings.length, 1);
+  assert.strictEqual(doc.findings[0].id, 'safe/dynamic-eval');  // procoder: literal safe/dynamic-eval the id as data, not a sink
+  assert.strictEqual(doc.findings[0].rungNumber, 1);
+  assert.strictEqual(doc.findings[0].blocking, true);
+  assert.match(doc.findings[0].fingerprint, /^[0-9a-f]{8,}$/, 'no ratchet fingerprint on the finding');
+  assert.strictEqual(doc.summary.blocking, 1);
+});
+
+test('--format sarif emits a 2.1.0 document with a rule per id', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  const doc = JSON.parse(cli(repo, ['check', '--format', 'sarif', 'a.ts']).out);
+  assert.strictEqual(doc.version, '2.1.0');
+  const run = doc.runs[0];
+  assert.strictEqual(run.tool.driver.name, 'procoder');
+  assert.strictEqual(run.tool.driver.rules.length, 1);
+  assert.strictEqual(run.results[0].level, 'error');
+  assert.strictEqual(run.results[0].locations[0].physicalLocation.artifactLocation.uri, 'a.ts');
+  assert.ok(run.results[0].partialFingerprints.procoderFingerprint,
+    'without a fingerprint a dashboard reports every moved line as new');
+});
+
+// An advisory finding must not arrive as a SARIF error: a dashboard that fails
+// a build on a judgment rung is a dashboard somebody turns off.
+test('sarif grades a non-blocking finding as a warning', () => {
+  const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'pragmatic');
+  const doc = JSON.parse(cli(repo, ['check', '--format', 'sarif', 'a.ts']).out);
+  assert.strictEqual(doc.runs[0].results[0].level, 'warning');
+});
+
+// A skip notice on stdout would break the document for every consumer of it.
+test('a skip notice never lands in the middle of a json document', () => {
+  const repo = repoWith({ 'a.ts': DIRTY, '.procoder.toml': '[exclude]\npaths = ["skipped/"]\n' });
+  fs.mkdirSync(path.join(repo, 'skipped'));
+  fs.writeFileSync(path.join(repo, 'skipped', 'b.ts'), DIRTY);
+  const r = spawnSync('node', [CLI, 'check', '--format', 'json', 'a.ts', 'skipped/b.ts'],
+    { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo } });
+  assert.doesNotThrow(() => JSON.parse(String(r.stdout)), 'stdout was not a parseable document');
+  assert.match(String(r.stderr), /skipped/, 'the skip went unreported');
+});
+
+test('an unknown --format is refused, not guessed at', () => {
+  const repo = repoWith({ 'a.ts': DIRTY });
+  const result = cli(repo, ['check', '--format', 'xml', 'a.ts']);
+  assert.strictEqual(result.code, 2);
+  assert.match(result.out, /--format xml is not available/);
+});
+
+// --- --since ----------------------------------------------------------------
+
+function repoWithCommit(files, committed) {
+  const repo = repoWith(committed);
+  const git = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  fs.rmSync(path.join(repo, '.git'), { recursive: true, force: true });
+  git('init', '-q');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base');
+  for (const [rel, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(repo, rel), content);
+  }
+  return repo;
+}
+
+test('--since checks what changed and leaves the rest alone', () => {
+  const repo = repoWithCommit({ 'new.ts': DIRTY }, { 'old.ts': DIRTY });
+  const result = cli(repo, ['check', '--since', 'HEAD']);
+  assert.strictEqual(result.code, 1);
+  assert.match(result.out, /new\.ts/);
+  assert.doesNotMatch(result.out, /old\.ts/, 'an unchanged file was checked anyway');
+});
+
+// The shipped CI template used to do this in shell with `|| true`: a git
+// failure produced an empty file list and the build passed green having checked
+// nothing. Exit 2 — "cannot check" — is the whole point of moving it in here.
+test('--since exits 2 when git cannot resolve the ref', () => {
+  const repo = repoWithCommit({}, { 'old.ts': DIRTY });
+  const result = cli(repo, ['check', '--since', 'no-such-ref']);
+  assert.strictEqual(result.code, 2);
+  assert.match(result.out, /git diff .* failed/);
+});
+
+test('--since says when nothing changed instead of exiting 0 in silence', () => {
+  const repo = repoWithCommit({}, { 'clean.ts': 'const x = 1;\n' });
+  const result = cli(repo, ['check', '--since', 'HEAD']);
+  assert.strictEqual(result.code, 0);
+  assert.match(result.out, /no files changed since HEAD/);
+});
