@@ -26,7 +26,7 @@ const has = (src, relPath, id) => ids(src, relPath).includes(id);
 test('reports a round trip per item, in every language that has the shape', () => {
   const cases = [
     ['a.ts', 'for (const row of rows) {\n  await db.query("select 1", [row.id]);\n}\n'],
-    ['a.js', 'for (const row of rows) {\n  const r = await fetch(row.url);\n}\n'],
+    ['a.js', 'for (const row of rows) {\n  const r = await fetch(row.url);\n}\n'],  // procoder: literal true/missing-timeout fixture text this test feeds the scanner, not a call
     ['a.py', 'for row in rows:\n    cur.execute("select 1", (row.id,))\n'],
     ['a.go', 'for _, row := range rows {\n\tdb.QueryRow(q, row.ID)\n}\n'],
     ['a.rs', 'for row in rows {\n    let r = client.get(&row.url).send().await?;\n}\n'],
@@ -60,7 +60,7 @@ test('a loop over a list this file writes out is silent', () => {
 });
 
 test('a retry loop bounded by a literal is silent', () => {
-  const js = 'for (let i = 0; i < 3; i++) {\n  const r = await fetch(url);\n}\n';
+  const js = 'for (let i = 0; i < 3; i++) {\n  const r = await fetch(url);\n}\n';  // procoder: literal true/missing-timeout fixture text this test feeds the scanner, not a call
   const py = 'for attempt in range(3):\n    requests.get(url)\n';
   assert.deepStrictEqual(ids(js, 'a.ts'), []);
   assert.deepStrictEqual(ids(py, 'a.py'), []);
@@ -72,7 +72,7 @@ test('a while loop is silent — pagination is the fix, not the defect', () => {
 });
 
 test('a C-style loop bounded by a length is reported', () => {
-  const src = 'for (let i = 0; i < rows.length; i++) {\n  await fetch(rows[i].url);\n}\n';
+  const src = 'for (let i = 0; i < rows.length; i++) {\n  await fetch(rows[i].url);\n}\n';  // procoder: literal true/missing-timeout fixture text this test feeds the scanner, not a call
   assert.ok(has(src, 'a.ts', 'fast/query-in-loop'));
 });
 
@@ -85,7 +85,7 @@ test('an in-memory container that answers to the same verbs is silent', () => {
 
 test('a handler registered per item is silent — its body runs per request', () => {
   const src = 'for (const t of tools) {\n  server.tool(t.name, async (args) => {\n'
-    + '    const r = await fetch(t.url);\n  });\n}\n';
+    + '    const r = await fetch(t.url);\n  });\n}\n';  // procoder: literal true/missing-timeout fixture text this test feeds the scanner, not a call
   assert.deepStrictEqual(ids(src, 'a.ts'), []);
 });
 
