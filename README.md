@@ -260,7 +260,7 @@ build on a guess about deletion is how a tool gets switched off.
 
 ## Every rule the engine can report
 
-Forty-seven rule ids, and this is all of them — the set that line markers and
+Forty-nine rule ids, and this is all of them — the set that line markers and
 `[exclude] rules` entries are checked against. Rungs 5 (FAST) and 6 (MEANT)
 have three between them, and that is the point: most of what those two rungs
 ask cannot be decided from the text of a file, so the engine checks the narrow
@@ -305,6 +305,8 @@ Rung 2, TRUE — errors handled, edges covered:
 | true/panic-in-library | A `panic` in library code, which crashes the caller. |
 | true/unwrap-in-library | `unwrap`/`expect` in library code, same reason. |
 | true/budget-exhausted | The 2s per-file budget ran out before some stage ran — the file is only partly checked, and says so. |
+| true/manifest-unreadable | The dependency manifest could not be read — empty, truncated, binary, or not the format its name implies — so nothing in it was checked. |
+| true/lockfile-unreadable | The lockfile exists and could not be read, so nothing in the manifest was verified against it. |
 | true/findings-suppressed | More than 20 findings on one line; the overflow is counted rather than dropped. |
 | true/eslint, true/ruff, true/golangci-lint, true/clippy | A finding from the project's own linter that carried no rule id of its own. The tool's own ids arrive as `true/<tool>:<id>` and are checked on shape, since those namespaces are the tool's to define. |
 
