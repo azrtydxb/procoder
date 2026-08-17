@@ -76,28 +76,81 @@ function lineOf(lines, name) {
 //
 // This is the failure mode the project keeps having to fix: a parse failure
 // that silently reduces coverage. Every dependency in the file went unchecked
-// against the lockfile, and the old code returned an empty finding list, which
-// reads to every caller — the hook, the CLI, CI — as "clean".
+// against the lockfile, and the original code returned an empty finding list,
+// which reads to every caller — the hook, the CLI, CI — as "clean".
 //
-// It carries safe/manifest-not-locked's own id because that is precisely the
-// claim that can no longer be made about this file. Check ids are permanent, so
-// a dedicated id would have to be registered in patterns/markers.js, which this
-// change does not own.
+// Its own id, and NOT safe/manifest-not-locked, which it borrowed while no id
+// existed. Those are two different facts. "this dependency is not in your
+// lockfile" is a finding about the project; "I could not read this file" is a
+// finding about procoder's own coverage, and the two must not share a
+// suppression — excluding a noisy dependency check would otherwise silence
+// every future "I could not read this", which is the wrong half to lose.
+//
+// Rung 2 (TRUE), not rung 1, on the precedent true/budget-exhausted already
+// set: a coverage gap is the tool failing to do its job, not a security fact
+// about the code. Rung 1 was considered — an unverifiable dependency set IS a
+// security exposure — and rejected because that argument promotes every
+// coverage gap to rung 1, and this project already answered it the other way.
+// Nothing is lost in CI by the choice: both rungs default to `error`, both
+// block the hook, and `verify` ratchets on any finding at any rung.
 function unreadableManifest(base, why) {
   return finding({
-    rung: 'SAFE', id: 'safe/manifest-not-locked', line: 1,
+    rung: 'TRUE', id: 'true/manifest-unreadable', line: 1,
     message: `${base} could not be parsed (${why}) — nothing in it was checked against the lockfile`,
     fix: 'fix the manifest syntax; until it parses, no dependency here is verified against anything',
   });
 }
 
-function checkNpmDeps(source, findings) {
+// The sibling fact, and a separate id for the same reason: a lockfile that
+// exists and cannot be READ (a directory under the name, a permission, an I/O
+// error) used to throw straight out of checkManifest and into the PostToolUse
+// hook — the one thing nothing here may do.
+//
+// Separate from true/manifest-unreadable because the two have genuinely
+// different causes and different suppressions: a package.json held as a
+// publish template never parses, and a project excluding that must still hear
+// that its lockfile has gone missing under it.
+//
+// A lockfile that exists, reads, and merely does not PARSE is deliberately not
+// this finding: npmTopLevel already degrades to the text match, which is real
+// coverage rather than none, and yarn/pnpm locks are never parsed at all.
+function unreadableLockfile(base, why) {
+  return finding({
+    rung: 'TRUE', id: 'true/lockfile-unreadable', line: 1,
+    message: `${base} could not be read (${why}) — nothing in this manifest was checked against it`,
+    fix: 'restore the lockfile from version control; until it can be read, no dependency here is verified against anything',
+  });
+}
+
+// Reads a package.json, or says why it could not — the single place that
+// answers that question for npm. It runs for every package.json, lockfile or
+// not, which is why the report lives here and not in checkNpmLocked: a manifest
+// nothing can read also loses the floating-version pass below, and a repo with
+// no lockfile would otherwise hear nothing about it.
+//
+// null means unreadable and already reported; callers add nothing.
+function npmManifest(source, findings) {
   let manifest;
   try {
     manifest = JSON.parse(String(source));
   } catch (e) {
-    return; // Reported once, by checkNpmLocked; two findings for one cause is noise.
+    findings.push(unreadableManifest('package.json', e.message.split('\n')[0]));
+    return null;
   }
+  // JSON that parses to a string, a number, `null` or an array is not a
+  // manifest — it is a file that is not the format its name implies, and
+  // reading no dependency blocks out of it is the same zero coverage a syntax
+  // error gives, only quieter.
+  if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) {
+    findings.push(unreadableManifest('package.json', 'not a JSON object'));
+    return null;
+  }
+  return manifest;
+}
+
+function checkNpmDeps(source, findings) {
+  const manifest = npmManifest(source, findings);
+  if (manifest === null) return;
   const lines = String(source).split(/\r?\n/);
 
   for (const block of DEP_BLOCKS) {
@@ -123,15 +176,13 @@ function checkNpmDeps(source, findings) {
 // appears anywhere in the lockfile counts as locked, which is the conservative
 // direction: the rule only ever reports a name the lockfile does not mention
 // once, and never invents a finding out of a format it half-understood.
-function lockfileText(lockPath) {
-  // existsSync rather than try/catch in findLockfile: an ecosystem lists three
-  // or four possible lockfile names and at most one of them is there, so
-  // "absent" is the normal answer and not an error to swallow. A file that
-  // exists and cannot be read IS an error, and is left to throw into the
-  // caller's own handling rather than being turned into "no lockfile", which
-  // would report every dependency in the manifest as unlocked.
-  return lockPath === null ? null : fs.readFileSync(lockPath, 'utf8');
-}
+// existsSync rather than try/catch in findLockfile: an ecosystem lists three or
+// four possible lockfile names and at most one of them is there, so "absent" is
+// the normal answer and not an error to swallow. A file that exists and cannot
+// be read IS an error — but not one to throw into a hook, and not one to turn
+// into "no lockfile", which would report every dependency in the manifest as
+// unlocked. checkManifest reads it once, and turns a failure into
+// true/lockfile-unreadable.
 
 // How far above the manifest to look for the lockfile.
 //
@@ -169,7 +220,14 @@ const WORKSPACE_MARKERS = [['package.json', '"workspaces"'], ['Cargo.toml', '[wo
 // measured against no lockfile at all.
 function declares(dir, file, marker) {
   const full = path.join(dir, file);
-  return fs.existsSync(full) && fs.readFileSync(full, 'utf8').includes(marker);
+  try {
+    return fs.existsSync(full) && fs.readFileSync(full, 'utf8').includes(marker);
+  } catch (e) {
+    // Loud, not silent, and that is why this one may be swallowed: no workspace
+    // evidence means the walk stops, which means no lockfile is found, which
+    // reports safe/missing-lockfile. The alternative is throwing into a hook.
+    return false;
+  }
 }
 
 function declaresWorkspace(dir) {
@@ -268,22 +326,14 @@ function npmTopLevel(lockPath, text) {
   return names.size ? names : null;
 }
 
-function checkNpmLocked(source, lockPath, findings) {
-  const lock = lockfileText(lockPath);
-  // No lockfile at all is safe/missing-lockfile's finding, already reported.
-  // Two findings for one cause would be noise.
-  if (lock === null) return;
-
-  let manifest;
-  try {
-    manifest = JSON.parse(String(source));
-  } catch (e) {
-    findings.push(unreadableManifest('package.json', e.message.split('\n')[0]));
-    return;
-  }
+function checkNpmLocked(source, lock, findings) {
+  // Unreadable is checkNpmDeps' finding, already pushed: it runs first and for
+  // every package.json. Two findings for one cause is noise.
+  const manifest = npmManifest(source, []);
+  if (manifest === null) return;
   const lines = String(source).split(/\r?\n/);
-  const topLevel = npmTopLevel(lockPath, lock);
-  const isLocked = (name) => (topLevel ? topLevel.has(name) : lockedIn(lock, name));
+  const topLevel = npmTopLevel(lock.path, lock.text);
+  const isLocked = (name) => (topLevel ? topLevel.has(name) : lockedIn(lock.text, name));
 
   for (const block of LOCK_BLOCKS) {
     unlockedInBlock({ deps: manifest[block], block, isLocked, lines }, findings);
@@ -347,10 +397,8 @@ function goModules(source) {
   return required.filter((mod) => !replaced.has(mod.name));
 }
 
-function checkGoLocked(source, lockPath, findings) {
-  const lock = lockfileText(lockPath);
-  if (lock === null) return;
-  const locked = new Set(lock.split(/\r?\n/).map((line) => line.split(/\s+/)[0]).filter(Boolean));
+function checkGoLocked(source, lock, findings) {
+  const locked = new Set(lock.text.split(/\r?\n/).map((line) => line.split(/\s+/)[0]).filter(Boolean));
 
   for (const mod of goModules(source)) {
     if (locked.has(mod.name)) continue;
@@ -421,10 +469,8 @@ function cargoDependencies(source) {
 
 const CARGO_LOCK_NAME = /^name\s*=\s*"([^"]+)"/gm;
 
-function checkCargoLocked(source, lockPath, findings) {
-  const lock = lockfileText(lockPath);
-  if (lock === null) return;
-  const locked = new Set([...lock.matchAll(CARGO_LOCK_NAME)].map((m) => m[1]));
+function checkCargoLocked(source, lock, findings) {
+  const locked = new Set([...lock.text.matchAll(CARGO_LOCK_NAME)].map((m) => m[1]));
 
   for (const dep of cargoDependencies(source)) {
     if (locked.has(dep.name)) continue;
@@ -471,7 +517,20 @@ function checkManifest(manifestPath, source) {
   }
 
   if (base === 'package.json') checkNpmDeps(source, findings);
-  if (lockPath !== null && PER_ENTRY[base]) PER_ENTRY[base](source, lockPath, findings);
+
+  // Read once, here, so that a lockfile which exists and cannot be read is one
+  // finding rather than an exception out of a hook. No lockfile at all is
+  // safe/missing-lockfile's finding, already pushed above.
+  if (lockPath !== null && PER_ENTRY[base]) {
+    let text;
+    try {
+      text = fs.readFileSync(lockPath, 'utf8');
+    } catch (e) {
+      findings.push(unreadableLockfile(path.basename(lockPath), e.code || e.message.split('\n')[0]));
+      return findings;
+    }
+    PER_ENTRY[base](source, { path: lockPath, text }, findings);
+  }
 
   return findings;
 }

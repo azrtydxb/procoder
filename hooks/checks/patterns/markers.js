@@ -151,7 +151,7 @@ const BUILTIN_RULE_IDS = Object.freeze([
   'safe/unsafe-block', 'safe/unsafe-deserialize', 'safe/weak-hash',
   'safe/weak-random', 'safe/xss-sink', 'safe/xxe-risk',
   'true/bare-except', 'true/budget-exhausted', 'true/findings-suppressed',
-  'true/ignored-error',
+  'true/ignored-error', 'true/lockfile-unreadable', 'true/manifest-unreadable',
   'true/mutable-default', 'true/panic-in-library', 'true/printstacktrace',
   'true/missing-timeout',
   'true/swallowed-error', 'true/unclosed-resource', 'true/unwrap-in-library',
