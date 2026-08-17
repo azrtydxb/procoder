@@ -27,8 +27,7 @@ turn and run it first. A skipped gate is reported, never assumed.
 ## The ladder
 
 Ponytail's ladder is *stop at the first rung that holds* — a search. procoder's
-ladder is **every rung must hold before it ships** — a gate. Checked in this
-order because the cost of getting it wrong descends.
+ladder is **every rung must hold before it ships** — a gate.
 
 | # | Rung | Question | Negotiable |
 |---|------|----------|------------|
@@ -36,15 +35,22 @@ order because the cost of getting it wrong descends.
 | 2 | **TRUE** | Are errors handled and edges covered, with one runnable check left behind? | No |
 | 3 | **OBVIOUS** | Would the next reader get it in one pass? | Judgment |
 | 4 | **ALONE** | Did you leave a twin behind? | Judgment |
+| 5 | **FAST** | Does it stay cheap at the size production arrives at? | Judgment |
+| 6 | **MEANT** | Is this what was asked for, and only that? | Judgment |
+
+Rungs 1–4 come in that order because the cost of getting one wrong descends.
+Rungs 5 and 6 come last for a different reason: neither can be answered from the
+line in front of you — FAST needs the size the input really reaches, MEANT needs
+the whole change held against the whole ask.
 
 Rung 4 is the rung nobody ships, and the reason procoder exists: **a change
 isn't done until the thing it replaced is gone.**
 
 <!-- digest:skip -->
-Levels: **pragmatic** enforces rungs 1–2, flags 3–4 in one line, non-blocking.
-**strict** (default) enforces all four on code touched this session.
-**paranoid** is strict plus a threat-model note on every new trust boundary and
-rung 4 over the whole file touched rather than the diff.
+Levels: **pragmatic** enforces rungs 1–2, flags the rest in one line,
+non-blocking. **strict** (default) enforces all six on code touched this
+session. **paranoid** is strict plus a threat-model note on every new trust
+boundary and rung 4 over the whole file touched rather than the diff.
 <!-- /digest -->
 
 ## Rung 1 — SAFE
@@ -125,15 +131,6 @@ concurrent access, partial failure, retry/idempotency. Money is never a float.
 **Concurrency and resources.** No unbounded queues, unclosed handles, or leaked
 connections. Shared mutable state is guarded or eliminated.
 Cancellation/timeouts exist on every outbound call.
-
-**Cost is behavior.** A query inside a loop, a scan that grows with the request,
-blocking I/O on an async path, a log line in a hot loop — each is correct in the
-small and a failure at the size production arrives at. Judged against the input
-the code will actually see.
-
-**Intent.** Code that is correct and does something other than what was asked is
-still wrong. Compare the diff against the ask both ways before it ships: nothing
-extra, nothing missing.
 
 **Gates.** Run the project's own, in this order: typecheck → lint → tests →
 build. The commands come from the project (CLAUDE.md/AGENTS.md, package
@@ -265,6 +262,58 @@ Applies to the diff.
 At paranoid, extend this to every file touched, not only the changed lines.
 <!-- /level -->
 
+## Rung 5 — FAST
+
+Cost is behavior. Correct in the small and ruinous at the size production
+arrives at is still a defect, and it is the one nobody sees in review because
+the test fixture has three rows in it.
+
+- **A query per item.** A call to the database, the cache or the network inside
+  a loop over request-sized input. One round trip per row is the defect that
+  takes a service down at the size nobody tested.
+- **Work that grows faster than the input.** A nested scan over the same
+  collection, a sort inside a loop, a linear lookup where a set was available.
+  Judged at the size the input really reaches, never at the fixture's.
+- **Blocking the thread that must not block.** Synchronous I/O on an async path,
+  a CPU-bound loop in an event loop, a lock held across an await.
+- **Unbounded anything, per request.** A fetch with no page size, a response
+  read fully into memory, a fan-out with no concurrency limit, a retry with no
+  ceiling.
+- **Chatter.** A log line, a metric or a trace span in a hot loop. Observability
+  is I/O and serialization, and at rate it costs more than the work it describes.
+
+What discharges the rung is a number, not a feeling: the size of the input, the
+count of round trips, the measurement. A guess that something *might* be slow is
+not a finding — name the input that makes it slow, or drop it.
+<!-- level:paranoid -->
+At paranoid, a new query, loop or outbound call carries its expected input size
+in one clause: what it costs at 10x that size is then somebody's decision rather
+than a surprise.
+<!-- /level -->
+
+## Rung 6 — MEANT
+
+Code that is correct and does something other than what was asked is still
+wrong. This rung is checked against the ask, in both directions.
+
+- **Nothing extra.** Behavior the request did not ask for: a rename riding
+  along, a second fix in the same diff, a default quietly changed, an
+  abstraction nobody requested, a dependency added in passing. Each is a
+  separate decision, and each is somebody else's to make.
+- **Nothing missing.** A part of the ask the change does not deliver, including
+  the parts that turned out to be hard. Scope reduced silently is the worst
+  shape: it reads as done.
+- **The ask itself is written down.** The commit message, the PR body or the
+  task says what this change is for. A change whose purpose exists only in
+  somebody's memory cannot be checked against anything.
+- **Say the drift, do not hide it.** A change that must go wider than the ask is
+  fine when it is named — "this also renames X, because Y". Unnamed, the same
+  edit is scope drift.
+
+This is the failure mode of generated code specifically: the model is fluent
+enough to produce something plausible and adjacent, and no other rung looks at
+the request at all.
+
 ## Interop with ponytail
 
 <!-- digest:skip -->
@@ -300,6 +349,8 @@ verdict on the diff, and a gate that fails on it stops being read.
 [3 OBVIOUS] api/users.ts:71   fn 94 lines, depth 5 → extract validate/persist/notify
 [4 ALONE]   api/users.ts:6    createUserV1 still exported, no caller → delete
 [2 TRUE]    api/orders.ts:15  (pre-existing) retry has no timeout → out of scope, worth a ticket
+[5 FAST]    api/users.ts:64   findOrg() per row over a request-sized list → one IN query before the loop
+[6 MEANT]   api/users.ts:33   renames status → state across the API, not in the ask → split, or say why
 ```
 
 Close with gates, then counts:

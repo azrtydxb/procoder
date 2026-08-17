@@ -28,8 +28,10 @@ job, and it checks reachability before it recommends deleting anything, so what
 it cannot prove is reported as needing confirmation rather than deleted.
 
 Three rungs sit in front of it, in cost order — **SAFE**, **TRUE**,
-**OBVIOUS** — and all four are checked while the code is being written, not at
-review time. The doctrine is injected at session start, so the model is
+**OBVIOUS** — and two behind it that need the whole change in view: **FAST**
+(does it stay cheap at production size?) and **MEANT** (is this what was asked
+for, and only that?). All six are checked while the code is being written, not
+at review time. The doctrine is injected at session start, so the model is
 *following* the rungs before anything is checked, and a `PostToolUse` hook runs
 the deterministic engine over every file the agent writes. A finding lands in
 the same turn that produced it, when the change is still cheap to undo, instead
@@ -52,8 +54,9 @@ what the tool is known to miss, linked from every page rather than buried.
 ## The ladder
 
 Ponytail's ladder is *stop at the first rung that holds* — a search. procoder's
-ladder is **every rung must hold before it ships** — a gate. Checked in this
-order because the cost of getting it wrong descends.
+ladder is **every rung must hold before it ships** — a gate. Rungs 1–4 come in
+cost order; 5 and 6 come last because neither can be answered from the line in
+front of you.
 
 | # | Rung | Question | Negotiable |
 |---|------|----------|------------|
@@ -61,6 +64,8 @@ order because the cost of getting it wrong descends.
 | 2 | **TRUE** | Are errors handled and edges covered, with one runnable check left behind? | No |
 | 3 | **OBVIOUS** | Would the next reader get it in one pass? | Judgment |
 | 4 | **ALONE** | Did you leave a twin behind? | Judgment |
+| 5 | **FAST** | Does it stay cheap at the size production arrives at? | Judgment |
+| 6 | **MEANT** | Is this what was asked for, and only that? | Judgment |
 
 Rung 4 is the rung nobody ships, and the reason procoder exists: **a change
 isn't done until the thing it replaced is gone.**
@@ -135,7 +140,7 @@ material on the site.
 |---|---|
 | `off` | procoder is disabled entirely. |
 | `pragmatic` | Rungs SAFE and TRUE enforced; OBVIOUS and ALONE flagged only, non-blocking. |
-| `strict` (default) | All four rungs enforced on code touched this session. |
+| `strict` (default) | All six rungs enforced on code touched this session. |
 | `paranoid` | strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff. |
 
 Switch levels mid-session with `/procoder:level <level>`, or say "stop procoder" /
@@ -148,7 +153,7 @@ level) when you want procoder back.
 | Command | Purpose |
 |---|---|
 | `/procoder:level` | Set the procoder intensity level: pragmatic, strict, or paranoid. |
-| `/procoder:review` | Review the current diff against the four rungs. |
+| `/procoder:review` | Review the current diff against the six rungs. |
 | `/procoder:audit` | Audit the whole repository, ranked by rung severity. |
 | `/procoder:rot` | Find dead, stale, and superseded code left behind. |
 | `/procoder:threat` | Map every trust boundary and what validates it. |
@@ -181,6 +186,8 @@ safe = "error"
 true = "error"
 obvious = "warn"
 alone = "warn"
+fast = "warn"
+meant = "warn"
 
 [thresholds]
 function_lines = 40

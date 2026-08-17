@@ -20,9 +20,18 @@ const DEFAULTS = {
   exclude: { paths: ['node_modules/', 'vendor/', 'dist/', 'build/', '.git/'], rules: [] },
   limits: { max_file_bytes: MAX_FILE_BYTES },
   thresholds: { function_lines: 40, nesting_depth: 3, params: 4, complexity: 10 },
-  // Rungs 1-2 are facts (it is injectable, or it is not); rungs 3-4 are
-  // judgment. Only `pragmatic` acts on the difference — see procoder-check.js.
-  rungs: { safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' },
+  // Rungs 1-2 are facts (it is injectable, or it is not); 3-6 are judgment.
+  // Only `pragmatic` acts on the difference — see procoder-check.js.
+  //
+  // FAST and MEANT default to `warn` for a reason that is not "they matter
+  // less": neither can be decided from one file. FAST needs the size the input
+  // really reaches and MEANT needs the request the diff answers to, and the
+  // engine has neither — so what it can compute for them is a candidate, and a
+  // candidate must not block a commit. A project that wants them enforced
+  // promotes them here, the same as any other rung.
+  rungs: {
+    safe: 'error', true: 'error', obvious: 'warn', alone: 'warn', fast: 'warn', meant: 'warn',
+  },
   levels: [],
   baseline: { file: '.procoder-baseline.json' },
 };

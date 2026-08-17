@@ -1,4 +1,4 @@
-description = "Review the current diff against procoder's four rungs."
+description = "Review the current diff against procoder's six rungs."
 prompt = """
 Use the procoder:review skill on the current diff. Arguments (optional target,
 e.g. a commit range or path): $ARGUMENTS

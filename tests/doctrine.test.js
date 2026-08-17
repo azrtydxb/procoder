@@ -16,9 +16,9 @@ test('has valid skill frontmatter with name and description', () => {
   assert.match(m[1], /^description: .{40,1024}$/m);
 });
 
-test('the four rungs appear in order within the first 2000 chars', () => {
+test('the six rungs appear in order within the first 2000 chars', () => {
   const head = doctrine.slice(0, 2000);
-  const order = ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE'].map((r) => head.indexOf(r));
+  const order = ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT'].map((r) => head.indexOf(r));
   assert.ok(order.every((i) => i > -1), 'a rung is missing from the first screen');
   assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), 'rungs out of order');
 });
@@ -71,7 +71,9 @@ test('covers every spec requirement area', () => {
     'typecheck → lint → tests → build',
     'three attempts at one file',
     'cost is behavior',
-    'compare the diff against the ask both ways',
+    'a query per item',
+    'nothing extra',
+    'nothing missing',
     '(pre-existing)',
     'ponytail chooses **what to write**',
   ]) {
@@ -101,6 +103,12 @@ test('the four level names and their order are consistent everywhere they are do
 // rule is added, never to make room for prose — the last two rules (cost is
 // behavior, intent) were paid for by trimming, not by moving the number.
 //
+// It moved again, 14000 -> 17000, for rungs 5 (FAST) and 6 (MEANT): two rungs
+// split out of TRUE at the author's direction, each carrying what a rung needs
+// — what it asks, what fails it, what discharges it. That is the largest single
+// increase this file has authorised, and it is the last one available: past
+// ~17000 the doctrine stops being one screen of rules and starts being a manual.
+//
 // Measured on the RENDERED text at the widest level, not on the source file:
 // frontmatter, level markers and digest markers are all stripped before the
 // model sees any of it, and a budget that counted them would be a budget on
@@ -108,13 +116,13 @@ test('the four level names and their order are consistent everywhere they are do
 // ceiling — it is what every subagent pays, so the multiplier lives there.
 test('doctrine stays under the context budget', () => {
   const rendered = getProcoderInstructions('paranoid');
-  assert.ok(rendered.length < 14000,
-    `rendered doctrine is ${rendered.length} chars; budget is 14000`);
+  assert.ok(rendered.length < 17000,
+    `rendered doctrine is ${rendered.length} chars; budget is 17000`);
 });
 
 test('the subagent digest stays well under the full text', () => {
   const digest = getProcoderInstructions('paranoid', { digest: true });
-  assert.ok(digest.length < 11000, `digest is ${digest.length} chars; budget is 11000`);
+  assert.ok(digest.length < 13500, `digest is ${digest.length} chars; budget is 13500`);
 });
 
 test('suppression rule requires narrowest scope and a named rule', () => {

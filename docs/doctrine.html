@@ -1,14 +1,14 @@
 ---
 layout: page
 href: doctrine.html
-title: The four rungs
-pagetitle: The four rungs — procoder
+title: The six rungs
+pagetitle: The six rungs — procoder
 description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which two are non-negotiable, and what the deterministic engine catches versus what the doctrine catches.
 ---
 
 <p class="eyebrow">The gate</p>
 
-<h1>The four rungs</h1>
+<h1>The six rungs</h1>
 
 <p class="lede">
   ponytail's ladder is <em>stop at the first rung that holds</em> — a search.
@@ -120,21 +120,6 @@ description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which 
 </p>
 
 <p>
-  <strong>Cost is behavior.</strong> A query inside a loop, a scan that grows
-  with the request, blocking I/O on an async path, a log line in a hot loop —
-  each is correct in the small and a failure at the size production arrives at,
-  and each is judged against the input the code will actually see rather than a
-  benchmark.
-</p>
-
-<p>
-  <strong>Intent.</strong> Code that is correct and does something other than
-  what was asked is still wrong. The diff is compared against the ask in both
-  directions before it ships: nothing extra, nothing missing. It is the failure
-  mode of generated code, and no other rung looks for it.
-</p>
-
-<p>
   <strong>Gates</strong> are the project's own, run in one order: typecheck →
   lint → tests → build. The commands come from the project — CLAUDE.md/AGENTS.md,
   package scripts, Makefile, CI config — never from memory, and the result is
@@ -202,6 +187,45 @@ description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which 
   </li>
 </ul>
 
+<h2>5 — FAST</h2>
+
+<p>
+  Cost is behavior. Correct in the small and ruinous at the size production
+  arrives at is still a defect — and it is the one nobody catches in review,
+  because the test fixture has three rows in it.
+</p>
+
+<ul>
+  <li>A call to the database, cache or network inside a loop over request-sized input.</li>
+  <li>Work that grows faster than the input: a nested scan, a sort inside a loop, a linear lookup where a set was available.</li>
+  <li>Blocking the thread that must not block — synchronous I/O on an async path, a lock held across an await.</li>
+  <li>Unbounded anything, per request: no page size, no concurrency limit, no retry ceiling, a whole response read into memory.</li>
+  <li>A log line, metric or trace span in a hot loop. Observability is I/O, and at rate it costs more than the work it describes.</li>
+</ul>
+
+<p>
+  What discharges the rung is a number: the input size, the count of round
+  trips, the measurement. A guess that something might be slow is not a finding.
+</p>
+
+<h2>6 — MEANT</h2>
+
+<p>
+  Code that is correct and does something other than what was asked is still
+  wrong. This rung is checked against the ask, in both directions: nothing
+  extra — no rename riding along, no second fix, no default quietly changed, no
+  dependency added in passing — and nothing missing, including the parts that
+  turned out to be hard. Scope reduced silently is the worst shape, because it
+  reads as done.
+</p>
+
+<p>
+  It is the failure mode of generated code specifically: a model is fluent
+  enough to produce something plausible and adjacent, and no other rung looks at
+  the request at all. A change that must go wider than the ask is fine when it
+  is named; unnamed, the same edit is scope drift.
+</p>
+
 <h2>Levels</h2>
 
 <div class="scroll">
@@ -209,8 +233,8 @@ description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which 
   <thead><tr><th>Level</th><th>Enforces</th></tr></thead>
   <tbody>
     <tr><td class="nowrap"><code>off</code></td><td>procoder is disabled entirely.</td></tr>
-    <tr><td class="nowrap"><code>pragmatic</code></td><td>SAFE and TRUE enforced. OBVIOUS and ALONE are flagged in one line, non-blocking.</td></tr>
-    <tr><td class="nowrap"><code>strict</code> (default)</td><td>All four rungs enforced on code touched this session.</td></tr>
+    <tr><td class="nowrap"><code>pragmatic</code></td><td>SAFE and TRUE enforced. OBVIOUS, ALONE, FAST and MEANT are flagged in one line, non-blocking.</td></tr>
+    <tr><td class="nowrap"><code>strict</code> (default)</td><td>All six rungs enforced on code touched this session.</td></tr>
     <tr><td class="nowrap"><code>paranoid</code></td><td>strict, plus a threat-model note on every new trust boundary, and rung 4 applied to whole files touched rather than to the diff.</td></tr>
   </tbody>
 </table>

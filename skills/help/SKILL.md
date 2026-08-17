@@ -13,12 +13,14 @@ description: Reference for procoder — what it checks, its rungs, its levels, a
 | 2 | TRUE | Errors handled, edges covered, one runnable check left behind. |
 | 3 | OBVIOUS | Whether the next reader gets it in one pass. |
 | 4 | ALONE | Whether a stale twin was left behind. |
+| 5 | FAST | Whether it stays cheap at the size production arrives at. |
+| 6 | MEANT | Whether it is what was asked for, and only that. |
 
 ## Levels
 
 - **off** — procoder does not activate.
-- **pragmatic** — rungs SAFE and TRUE enforced; OBVIOUS and ALONE flagged only, non-blocking.
-- **strict** (default) — all four rungs enforced on code touched this session.
+- **pragmatic** — rungs SAFE and TRUE enforced; OBVIOUS, ALONE, FAST and MEANT flagged only, non-blocking.
+- **strict** (default) — all six rungs enforced on code touched this session.
 - **paranoid** — strict, plus a threat-model note on every new trust boundary, and ALONE applied to whole files rather than just the diff.
 
 `[levels]` in `.procoder.toml` pins a level to the paths that earn it

@@ -1,5 +1,5 @@
 ---
-description: Audit the whole repository against procoder's four rungs.
+description: Audit the whole repository against procoder's six rungs.
 ---
 
 <!-- DO NOT EDIT. Generated from skills/procoder/SKILL.md by scripts/sync-rules.js.

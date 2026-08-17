@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review the current diff against procoder's four rungs — SAFE, TRUE, OBVIOUS, ALONE. Use when the user says "procoder review", "review my changes", "review this diff", "is this safe to ship", "check this diff", "review before commit", "review my staged changes", or invokes /procoder:review. Reviews changed code only; use /procoder:audit for the whole repo.
+description: Review the current diff against procoder's six rungs — SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT. Use when the user says "procoder review", "review my changes", "review this diff", "is this safe to ship", "check this diff", "review before commit", "review my staged changes", or invokes /procoder:review. Reviews changed code only; use /procoder:audit for the whole repo.
 ---
 
 # procoder:review

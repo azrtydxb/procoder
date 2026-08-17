@@ -234,7 +234,7 @@ procoder verify <paths...>    # exit 1 if any finding isn't in the baseline — 
 ```
 
 At `pragmatic`, `check` reports OBVIOUS and ALONE findings but does not exit 1
-on them; every other level gates all four rungs, and so does CI, which has no
+on them; every other level gates all six rungs, and so does CI, which has no
 level file and therefore resolves to the default `strict`.
 
 `verify`'s exit codes are **0** the ratchet holds, **1** findings appeared that

@@ -1,5 +1,5 @@
 ---
-description: Review the current diff against procoder's four rungs.
+description: Review the current diff against procoder's six rungs.
 ---
 
 <!-- DO NOT EDIT. Generated from skills/procoder/SKILL.md by scripts/sync-rules.js.

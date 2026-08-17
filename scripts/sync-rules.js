@@ -21,7 +21,7 @@ const WARNING = [
 
 const TARGETS = [
   { path: 'AGENTS.md', level: 'strict' },
-  { path: '.cursor/rules/procoder.mdc', level: 'strict', frontmatter: '---\nalwaysApply: true\ndescription: procoder — four-rung ship gate\n---\n' },
+  { path: '.cursor/rules/procoder.mdc', level: 'strict', frontmatter: '---\nalwaysApply: true\ndescription: procoder — six-rung ship gate\n---\n' },
   { path: '.windsurf/rules/procoder.md', level: 'strict' },
   { path: '.clinerules/procoder.md', level: 'strict' },
   { path: '.kiro/steering/procoder.md', level: 'strict' },

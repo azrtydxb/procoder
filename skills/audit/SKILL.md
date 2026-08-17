@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Audit a whole repository against procoder's four rungs — SAFE, TRUE, OBVIOUS, ALONE. Use when the user says "procoder audit", "audit this codebase", "audit the whole repo", "audit the entire codebase", "where is this codebase weakest", "how bad is this repo", or invokes /procoder:audit. Whole-repo sweep; use /procoder:review for a diff.
+description: Audit a whole repository against procoder's six rungs — SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT. Use when the user says "procoder audit", "audit this codebase", "audit the whole repo", "audit the entire codebase", "where is this codebase weakest", "how bad is this repo", or invokes /procoder:audit. Whole-repo sweep; use /procoder:review for a diff.
 ---
 
 # procoder:audit

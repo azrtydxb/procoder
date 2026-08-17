@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // procoder — the finding shape and its one-line output format.
 
-const RUNGS = ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE'];
+// Order is the ladder's order, and it is load-bearing: rungIndex drives the
+// number in the label, the sort, and (via config.rungs) which findings block.
+// Appending is safe; reordering renumbers every finding anybody has ever read.
+const RUNGS = ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT'];
 
 function rungIndex(rung) {
   return RUNGS.indexOf(rung);

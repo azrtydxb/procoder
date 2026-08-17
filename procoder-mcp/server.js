@@ -32,7 +32,7 @@ const PROTOCOL_VERSION = '2024-11-05';
 const TOOLS = [
   {
     name: 'procoder_doctrine',
-    description: 'Return the procoder doctrine — the four rungs (SAFE, TRUE, OBVIOUS, ALONE) that gate whether code may ship — filtered to an intensity level.',
+    description: 'Return the procoder doctrine — the six rungs (SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT) that gate whether code may ship — filtered to an intensity level.',
     inputSchema: {
       type: 'object',
       properties: {

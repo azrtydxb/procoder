@@ -15,9 +15,11 @@ test('sorts by rung order first, then by line', () => {
 });
 
 test('rungIndex follows the doctrine order', () => {
-  assert.deepStrictEqual(RUNGS, ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE']);
+  assert.deepStrictEqual(RUNGS, ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT']);
   assert.ok(rungIndex('SAFE') < rungIndex('TRUE'));
   assert.ok(rungIndex('OBVIOUS') < rungIndex('ALONE'));
+  assert.ok(rungIndex('ALONE') < rungIndex('FAST'));
+  assert.ok(rungIndex('FAST') < rungIndex('MEANT'));
 });
 
 test('caps to the limit after sorting, keeping the most severe', () => {
@@ -42,5 +44,5 @@ test('formatting an empty list yields an empty string', () => {
 });
 
 test('finding rejects an unknown rung', () => {
-  assert.throws(() => finding({ rung: 'FAST', id: 'a/b', line: 1, message: 'm', fix: 'f' }));
+  assert.throws(() => finding({ rung: 'QUICK', id: 'a/b', line: 1, message: 'm', fix: 'f' }));
 });

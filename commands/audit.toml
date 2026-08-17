@@ -1,4 +1,4 @@
-description = "Audit the whole repository against procoder's four rungs."
+description = "Audit the whole repository against procoder's six rungs."
 prompt = """
 Use the procoder:audit skill. Arguments (optional path scope; default the whole
 repository): $ARGUMENTS

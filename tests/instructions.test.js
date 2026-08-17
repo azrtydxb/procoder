@@ -110,7 +110,7 @@ test('the digest is materially smaller than the full text', () => {
 
 // The point of the digest is that a subagent still writes gated code. Every
 // rung, and every non-negotiable rule inside rungs 1 and 2, has to survive it.
-test('the digest keeps all four rungs and every rule the engine cannot compute', () => {
+test('the digest keeps all six rungs and every rule the engine cannot compute', () => {
   const digest = getProcoderInstructions('strict', { digest: true }).toLowerCase().replace(/\s+/g, ' ');
   for (const phrase of [
     'safe', 'true', 'obvious', 'alone',

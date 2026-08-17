@@ -5,8 +5,9 @@ The user invoked /procoder:level with arguments: $ARGUMENTS
 If the arguments name a level (pragmatic, strict, paranoid, or off), the
 UserPromptSubmit hook has already persisted it — confirm the new level in one
 line and state what changed:
-- pragmatic: rungs SAFE and TRUE enforced; OBVIOUS and ALONE flagged only.
-- strict: all four rungs enforced on code touched this session.
+- pragmatic: rungs SAFE and TRUE enforced; OBVIOUS, ALONE, FAST and MEANT
+  flagged only.
+- strict: all six rungs enforced on code touched this session.
 - paranoid: strict, plus a threat-model note on every new trust boundary, and
   ALONE applied to whole files rather than just the diff.
 

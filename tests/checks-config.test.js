@@ -37,10 +37,11 @@ test('config values override defaults, unset keys keep them', () => {
   assert.strictEqual(cfg.baseline.file, 'b.json');
 });
 
-test('rung severities default to error on 1-2 and warn on 3-4', () => {
+test('rung severities default to error on 1-2 and warn on the judgment rungs', () => {
   const cfg = loadConfig(tempRepo());
-  assert.deepStrictEqual(cfg.rungs,
-    { safe: 'error', true: 'error', obvious: 'warn', alone: 'warn' });
+  assert.deepStrictEqual(cfg.rungs, {
+    safe: 'error', true: 'error', obvious: 'warn', alone: 'warn', fast: 'warn', meant: 'warn',
+  });
 });
 
 test('a project can promote a judgment rung to error', () => {

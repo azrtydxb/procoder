@@ -20,8 +20,8 @@ test('runs the deterministic engine rather than eyeballing', () => {
   assert.match(skill, /git diff/);
 });
 
-test('covers all four rungs by name', () => {
-  for (const rung of ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE']) {
+test('covers all six rungs by name', () => {
+  for (const rung of ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT']) {
     assert.match(skill, new RegExp(`\\b${rung}\\b`), `missing rung ${rung}`);
   }
 });

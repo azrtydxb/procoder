@@ -25,7 +25,7 @@ const USAGE = `usage: procoder <check|baseline|verify> [--unused-exclusions] [--
 
   check     report findings not present in the baseline; exit 1 if any of them
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
-            reported but do not block; every other level gates all four rungs;
+            reported but do not block; every other level gates all six rungs;
             [levels] in .procoder.toml pins a level to the paths that earn it)
   baseline  record every current finding as accepted, so only new code is gated
   verify    exit 1 if any finding present today is not in the baseline — the CI ratchet
@@ -274,7 +274,7 @@ function runVerify(files, repoRoot, config, { unusedExclusions = false, wholeTre
 
 // Same rule the PostToolUse hook applies: at `pragmatic` the judgment rungs
 // (OBVIOUS, ALONE — the ones the severity map marks `warn`) are flagged but do
-// not gate. Every other level enforces all four, and so does a missing level
+// not gate. Every other level enforces all six, and so does a missing level
 // file, which readLevel resolves to the default `strict` — CI, which has no
 // user-level config at all, therefore stays strict.
 function isBlocking(finding, level, config) {
