@@ -289,3 +289,22 @@ test("a generic Exec with no evidence anywhere stays silent", () => {
   assert.ok(!ids('func run(s Step, n string) error {\n\tlabel := base + "@" + n\n\treturn s.Exec(label)\n}\n')
     .includes("safe/sql-injection"));
 });
+
+// http.DefaultClient has no timeout and neither does the zero-value Client, so
+// http.Get and an empty literal both park a goroutine indefinitely. Only those
+// two shapes: a client that configures anything at all is left alone, because
+// its Timeout is on a line of its own and rung 2 blocks.
+test('an HTTP client with no timeout is reported', () => {
+  assert.ok(ids('func f() { c := &http.Client{} }\n').includes('true/missing-timeout'));
+  assert.ok(ids('func f() { http.Get(url) }\n').includes('true/missing-timeout'));
+});
+
+test('a configured client is silent', () => {
+  for (const src of [
+    'func f() { c := &http.Client{Timeout: 5 * time.Second} }\n',
+    'func f() { c := &http.Client{\n\tTimeout: d,\n} }\n',
+    'func f() { c.Get(url) }\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});

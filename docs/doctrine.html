@@ -74,6 +74,7 @@ description: SAFE, TRUE, OBVIOUS, ALONE in depth — what each rung asks, which 
   authorization header in log output; no stack trace or internal path returned to
   a client — log the detail with a correlation id and return the id. PII is
   redacted or hashed in logs, analytics and third-party telemetry. A redaction
+  <!-- procoder: literal safe/redaction-marker the page names the marker shape, it is not one -->
   marker (<code>[REDACTED:...]</code>) means the real file still holds the
   secret: it is never written back into a file and never matched on when
   editing.

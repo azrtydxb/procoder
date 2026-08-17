@@ -52,6 +52,22 @@ const LINE_RULES = [
     fix: 'use json, or yaml.safe_load',
   },
   {
+    // An outbound call that cannot time out is a thread — or a whole worker
+    // pool — parked until the far end feels like answering. requests has no
+    // default timeout at all, which is the trap: the code looks complete.
+    //
+    // Deliberately narrow. The call must OPEN AND CLOSE on this line: a
+    // multi-line call whose timeout sits on a later line would otherwise be
+    // reported as missing one, and this rung blocks. The 300-character span is
+    // a stated ceiling, not a guess — past it the argument list is generated or
+    // minified, and a bounded span is what keeps the scan linear on a long line
+    // (see tests/perf-guard.js).
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: /\brequests\.(?:get|post|put|patch|delete|head|request)\s*\((?![^)]{0,300}timeout\s*=)[^)]{0,300}\)/,
+    message: 'HTTP call with no timeout — requests waits forever by default',
+    fix: 'pass timeout=<seconds>, or a (connect, read) pair',
+  },
+  {
     id: 'safe/weak-hash', rung: 'SAFE',
     re: /\bhashlib\.(?:md5|sha1)\s*\(/,
     message: 'weak hash used where a secure one is expected',

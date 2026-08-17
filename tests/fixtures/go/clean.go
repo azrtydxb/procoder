@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"time"
 )
 
 func doWorkClean() (int, error) {
@@ -71,7 +72,8 @@ func mustNotPanic() error {
 }
 
 func fetchPageClean(url string) (*http.Response, error) {
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}

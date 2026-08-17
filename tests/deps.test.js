@@ -55,3 +55,59 @@ test('every ecosystem declares an audit command', () => {
     assert.ok(Array.isArray(AUDIT_COMMANDS[name].argv));
   }
 });
+
+// A manifest entry with no lockfile entry was hand-written, not installed:
+// nothing resolved the version and nothing recorded the tree it pulls in, so
+// what CI installs is not what anybody reviewed. It is also the shape an agent
+// produces when it edits package.json directly instead of running the manager.
+test('a dependency the lockfile has never heard of is reported', () => {
+  const repo = repoWith({
+    'package.json': '{"dependencies":{"left-pad":"1.0.0","real":"1.0.0"}}',
+    'package-lock.json': '{"packages":{"node_modules/real":{"version":"1.0.0"}}}',
+  });
+  const findings = checkManifest(path.join(repo, 'package.json'),
+    fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+  const unlocked = findings.filter((f) => f.id === 'safe/manifest-not-locked');
+  assert.strictEqual(unlocked.length, 1, 'expected exactly the unlocked dependency');
+  assert.match(unlocked[0].message, /left-pad/);
+});
+
+// npm v1 keys the name, npm v2/v3 key a path, yarn and pnpm key name@range.
+// A rule that only understood one of them would report every dependency in the
+// other three as hand-written.
+test('every lockfile spelling counts as locked', () => {
+  for (const [file, content] of [
+    ['package-lock.json', '{"dependencies":{"real":{"version":"1.0.0"}}}'],
+    ['package-lock.json', '{"packages":{"node_modules/real":{"version":"1.0.0"}}}'],
+    ['yarn.lock', 'real@^1.0.0:\n  version "1.0.0"\n'],
+    ['pnpm-lock.yaml', 'packages:\n  /real@1.0.0:\n    resolution: {}\n'],
+  ]) {
+    const repo = repoWith({ 'package.json': '{"dependencies":{"real":"1.0.0"}}', [file]: content });
+    const findings = checkManifest(path.join(repo, 'package.json'),
+      fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+    assert.ok(!findings.some((f) => f.id === 'safe/manifest-not-locked'),
+      `${file} spelling was not recognised as locking the dependency`);
+  }
+});
+
+// The false positive that matters: a shorter name must not be answered by a
+// longer one that contains it.
+test('a name is not locked by another name that contains it', () => {
+  const repo = repoWith({
+    'package.json': '{"dependencies":{"pad":"1.0.0"}}',
+    'package-lock.json': '{"packages":{"node_modules/left-pad":{"version":"1.0.0"}}}',
+  });
+  const findings = checkManifest(path.join(repo, 'package.json'),
+    fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+  assert.ok(findings.some((f) => f.id === 'safe/manifest-not-locked'));
+});
+
+// No lockfile at all is safe/missing-lockfile's finding. Reporting every
+// dependency as unlocked on top of it would be one cause, many findings.
+test('a repo with no lockfile reports the missing lockfile, not every dependency', () => {
+  const repo = repoWith({ 'package.json': '{"dependencies":{"a":"1.0.0","b":"1.0.0"}}' });
+  const findings = checkManifest(path.join(repo, 'package.json'),
+    fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+  assert.ok(findings.some((f) => f.id === 'safe/missing-lockfile'));
+  assert.ok(!findings.some((f) => f.id === 'safe/manifest-not-locked'));
+});

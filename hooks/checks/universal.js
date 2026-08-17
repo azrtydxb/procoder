@@ -42,6 +42,15 @@ const SECRET_PATTERNS = [
 const CREDENTIAL_ASSIGN =
   /(?:password|passwd|secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*["'`]([^"'`]{8,})["'`]/i;
 
+// A redaction marker written INTO a file. A security layer between the model
+// and the file system replaces a credential it recognises with one of these
+// before the text is handed over, so the marker means "the real file still
+// holds a secret here, and you were not shown it". Writing that text back is
+// the one edit that must never happen: it destroys the credential the file was
+// carrying and leaves a placeholder that reads, to every later reader, like a
+// value somebody chose.
+const REDACTION_MARKER = /\[REDACTED[:\]]/;  // procoder: literal safe/redaction-marker the pattern the rule matches, not an instance of it
+
 const PLACEHOLDER = /^(?:x{3,}|\.{3,}|<[^>]+>|\{\{.*\}\}|\$\{.*\}|changeme|placeholder|example|test|dummy|redacted|your[_-]?\w+)$/i;
 
 const FROM_SECRET_STORE = /process\.env|os\.environ|getenv|secrets?\./i;
@@ -168,6 +177,15 @@ function secretFindings(line, lineNo) {
     rung: 'SAFE', id: 'safe/hardcoded-secret', line: lineNo,
     message: 'credential assigned a literal value',
     fix: 'read from env or a secret manager; fail loudly at startup if absent',
+  })];
+}
+
+function redactionFindings(line, lineNo) {
+  if (!REDACTION_MARKER.test(line)) return [];
+  return [finding({
+    rung: 'SAFE', id: 'safe/redaction-marker', line: lineNo,
+    message: 'a redaction marker written into the file',
+    fix: 'restore the real value from the source of truth — the marker overwrote a credential you were never shown',
   })];
 }
 
@@ -428,6 +446,7 @@ function checkUniversal(source, { relPath, config } = {}) {
     const lineNo = index + 1;
     findings.push(
       ...secretFindings(line, lineNo),
+      ...redactionFindings(line, lineNo),
       ...logLeakFindings(line, lineNo),
       ...markerFindings(line, lineNo));
   });

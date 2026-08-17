@@ -722,3 +722,25 @@ test('marker scanning is cheap on a large marker-free file', () => {
   });
   assert.ok(ms < 200, `marker scan cost ${ms}ms over 20 passes of a 20k-line file`);
 });
+
+// A redaction marker means the real file still holds a secret at that spot and
+// the model was never shown it. Writing the marker back destroys the credential
+// and leaves something that reads, to everyone after, like a chosen value.
+test('a redaction marker written into a file is a rung-1 finding', () => {
+  const source = 'const token = "[REDACTED:github-pat]";\n';  // procoder: literal safe/redaction-marker the fixture this test hands the scanner, not an instance
+  const findings = checkUniversal(source, { relPath: 'a.ts', config });
+  assert.ok(findings.some((f) => f.id === 'safe/redaction-marker'),
+    'a redaction marker in source went unreported');
+});
+
+// The bracket form is what the redaction layers emit, so the rule matches
+// `[REDACTED` followed by a colon or a closing bracket and nothing looser: an
+// identifier that merely starts with the word is ordinary code.
+test('ordinary bracketed text is not a redaction marker', () => {
+  const marked = (source) => checkUniversal(source, { relPath: 'a.ts', config })
+    .some((f) => f.id === 'safe/redaction-marker');
+  assert.ok(!marked('const a = list[REDACTION_INDEX];\n'));
+  assert.ok(!marked('const a = REDACTEDVALUE;\n'));
+  assert.ok(marked('const a = "[' + 'REDACTED:token]";\n'),
+    'the real marker shape must still be caught');
+});

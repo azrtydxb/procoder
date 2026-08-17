@@ -67,6 +67,7 @@ for which resource?
 **Secrets.** Never in source, a committed config, a default value, or a test
 fixture that is a real credential. Read from environment or a secret manager;
 fail loudly at startup when absent rather than falling back to a baked-in
+<!-- procoder: literal safe/redaction-marker the doctrine names the marker shape, it is not one -->
 default. A redaction marker (`[REDACTED:...]`) means the real file still holds
 the secret: never write one back into a file, and never match on one when
 editing — that overwrites a credential with a placeholder and calls it a fix.

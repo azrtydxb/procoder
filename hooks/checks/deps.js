@@ -87,6 +87,86 @@ function checkNpmDeps(source, findings) {
   }
 }
 
+// Which package names a lockfile knows about.
+//
+// Read as text, not parsed: package-lock.json, yarn.lock and pnpm-lock.yaml are
+// three unrelated formats across five format versions, and what this rule needs
+// from all of them is one bit per name — is it in there at all. A name that
+// appears anywhere in the lockfile counts as locked, which is the conservative
+// direction: the rule only ever reports a name the lockfile does not mention
+// once, and never invents a finding out of a format it half-understood.
+function lockfileText(repoRoot, lockfiles) {
+  // existsSync rather than try/catch: an ecosystem lists three or four possible
+  // lockfile names and at most one of them is there, so "absent" is the normal
+  // answer and not an error to swallow. A file that exists and cannot be read
+  // IS an error, and is left to throw into the caller's own handling rather
+  // than being turned into "no lockfile", which would report every dependency
+  // in the manifest as unlocked.
+  const found = lockfiles.find((file) => fs.existsSync(path.join(repoRoot, file)));
+  return found === undefined ? null : fs.readFileSync(path.join(repoRoot, found), 'utf8');
+}
+
+// One name, four lockfile spellings, one question. npm v1 keys the name
+// (`"left-pad": {`), npm v2/v3 key a path (`"node_modules/left-pad": {`), yarn
+// and pnpm key name@range at the start of a line or after a quote. Matching the
+// name bounded by any of those neighbours covers all four without parsing any
+// of them, and cannot be satisfied by a name that merely CONTAINS this one —
+// which is the false positive that matters, since `pad` must not be answered
+// by `left-pad`.
+// Built by concatenation from two plain strings, not by interpolating into a
+// template literal. A template literal that CONTAINS a quote character —
+// ["'/] is exactly that — desynchronises the brace scanner, which counts
+// quotes and braces without parsing: the closing brace of this function went
+// missing and the next one was swallowed into a 57-line span that does not
+// exist. See docs/known-limitations.md.
+const LOCK_BEFORE = '(?:^|["\'/])';
+const LOCK_AFTER = '(?:["\'@:]|\\s*:)';
+
+function lockedIn(lock, name) {
+  // Escapes by allowlist — anything that is not a package-name character gets a
+  // backslash — rather than by listing the regex metacharacters. The listing
+  // form has to spell both curly braces inside a character class, and the shape
+  // scanner counts braces without parsing, so those two opened a block that
+  // does not exist and swallowed the next function into a 51-line span. Same
+  // escaping, no braces on either side of the comment.
+  const escaped = name.replace(/[^\w@/.-]/g, (c) => '\\' + c);
+  return new RegExp(LOCK_BEFORE + escaped + LOCK_AFTER, 'm').test(lock);
+}
+
+// A manifest entry with no lockfile entry was hand-written, not installed.
+//
+// That is a rung-1 finding and not a style note: nothing resolved the version,
+// nothing recorded the tree it pulls in, and what CI installs is therefore not
+// what anybody here reviewed. It is also the exact shape of a dependency added
+// by an agent editing package.json directly — the reason the doctrine says
+// dependencies are added with the package manager.
+function checkNpmLocked(source, repoRoot, findings) {
+  const lock = lockfileText(repoRoot, ECOSYSTEMS[0].lockfiles);
+  // No lockfile at all is safe/missing-lockfile's finding, already reported.
+  // Two findings for one cause would be noise.
+  if (lock === null) return;
+
+  let manifest;
+  try { manifest = JSON.parse(String(source)); } catch (e) { return; }
+  const lines = String(source).split(/\r?\n/);
+
+  for (const block of DEP_BLOCKS) {
+    unlockedInBlock({ deps: manifest[block], block, lock, lines }, findings);
+  }
+}
+
+function unlockedInBlock({ deps, block, lock, lines }, findings) {
+  if (!deps || typeof deps !== 'object') return;
+  for (const name of Object.keys(deps)) {
+    if (lockedIn(lock, name)) continue;
+    findings.push(finding({
+      rung: 'SAFE', id: 'safe/manifest-not-locked', line: lineOf(lines, name),
+      message: `${name} is in ${block} and not in the lockfile`,
+      fix: 'install it with the package manager (npm install <pkg>) so the version resolves and the lockfile records it',
+    }));
+  }
+}
+
 function checkManifest(manifestPath, source) {
   const findings = [];
   const base = path.basename(manifestPath);
@@ -101,7 +181,10 @@ function checkManifest(manifestPath, source) {
     }));
   }
 
-  if (base === 'package.json') checkNpmDeps(source, findings);
+  if (base === 'package.json') {
+    checkNpmDeps(source, findings);
+    checkNpmLocked(source, repoRoot, findings);
+  }
 
   return findings;
 }

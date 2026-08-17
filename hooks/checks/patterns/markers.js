@@ -145,13 +145,15 @@ const EXTERNAL_TOOLS = Object.freeze([...EXTERNAL_RULE_SHAPES.keys()]);
 // EXTERNAL_TOOLS.
 const BUILTIN_RULE_IDS = Object.freeze([
   'safe/dynamic-eval', 'safe/floating-version', 'safe/hardcoded-secret',
-  'safe/missing-lockfile', 'safe/pii-in-log', 'safe/secret-in-log',
+  'safe/manifest-not-locked', 'safe/missing-lockfile', 'safe/pii-in-log',
+  'safe/redaction-marker', 'safe/secret-in-log',
   'safe/shell-injection', 'safe/sql-injection', 'safe/tls-disabled',
   'safe/unsafe-block', 'safe/unsafe-deserialize', 'safe/weak-hash',
   'safe/weak-random', 'safe/xss-sink', 'safe/xxe-risk',
   'true/bare-except', 'true/budget-exhausted', 'true/findings-suppressed',
   'true/ignored-error',
   'true/mutable-default', 'true/panic-in-library', 'true/printstacktrace',
+  'true/missing-timeout',
   'true/swallowed-error', 'true/unclosed-resource', 'true/unwrap-in-library',
   'obvious/complexity', 'obvious/function-too-long', 'obvious/nested-ternary',
   'obvious/nesting-depth', 'obvious/too-many-params',

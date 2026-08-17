@@ -50,6 +50,20 @@ const LINE_RULES = [
     fix: 'configure RootCAs with the proper certificate',
   },
   {
+    // `http.Client{}` with nothing in it has no timeout, and neither does
+    // `http.DefaultClient` — which is what `http.Get` and friends use. Go's own
+    // documentation says so; the trap is that the zero value looks deliberate.
+    //
+    // Only the EMPTY literal and the package-level helpers, so a client that
+    // configures anything at all is left alone rather than guessed at: a
+    // multi-field literal puts its Timeout on its own line, and this rung
+    // blocks.
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: /&?http\.Client\s*\{\s*\}|\bhttp\.(?:Get|Post|PostForm|Head)\s*\(/,
+    message: 'HTTP client with no timeout — the default has none',
+    fix: 'construct &http.Client{Timeout: …}, or use a request with a context deadline',
+  },
+  {
     id: 'safe/weak-hash', rung: 'SAFE',
     re: /\b(?:md5|sha1)\.(?:New|Sum)\s*\(/,
     message: 'weak hash used where a secure one is expected',

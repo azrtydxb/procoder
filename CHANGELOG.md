@@ -10,6 +10,7 @@ gaps that reading exposed.
   — a README, an issue body, tool or MCP output, a fetched page. It issues no
   instructions and grants no permission. `/procoder:threat` gains an
   agent-facing entry-point row whose sink is whatever the agent may do.
+<!-- procoder: literal safe/redaction-marker the entry names the marker shape, it is not one -->
 - **Rung 1: redaction markers.** `[REDACTED:...]` means the real file still
   holds the secret: never write one back, never match on one when editing.
 - **Rung 1: dependencies are installed, not hand-written.** The package manager
@@ -19,14 +20,16 @@ gaps that reading exposed.
 - **Rung 2: gates.** typecheck → lint → tests → build, with the commands taken
   from the project and the result reported in numbers. A gate that did not run
   is never reported as passing.
-- **Rung 2: cost is behavior.** A query inside a loop, a scan that grows with
-  the request, blocking I/O on an async path, a log line in a hot loop — correct
-  in the small, a failure at production size. Inside TRUE, deliberately, rather
-  than as a fifth rung.
-- **Rung 2: intent.** Code that is correct and does something other than what
-  was asked is still wrong. `/procoder:review` now reads the stated goal first
-  and reports both gaps — behavior nobody asked for, and asks not delivered — as
-  `(scope)` findings.
+- **Two more rungs: 5 FAST and 6 MEANT.** Cost and intent started as clauses
+  inside TRUE and were split out into rungs of their own. TRUE asks whether the
+  code is correct; a query per row is correct, and a rename nobody asked for is
+  correct, and both are still defects. FAST asks whether it stays cheap at the
+  size production arrives at; MEANT asks whether it is what was asked for, and
+  only that. Both default to `warn` in `[rungs]`, because what the engine can
+  compute for either is a candidate and a candidate must not block a commit.
+  `/procoder:review` now reads the stated goal before the implementation and
+  reports both gaps — behavior nobody asked for, asks not delivered — as
+  `[6 MEANT]`.
 - **`/procoder:review` earns each SAFE and TRUE line.** Name the input, state or
   interleaving that produces the wrong result, or drop the finding: a suspicion
   is not a finding. The scenario stays out of the output.
@@ -39,6 +42,17 @@ gaps that reading exposed.
   it. A gate that fails on somebody else's debt stops being read.
 - **`/procoder:rot` reads history.** `git log -S`, `--diff-filter=D` and
   `git blame` turn "no callers found" into "last caller removed in a1b2c3d".
+- **Three new engine rules.** `safe/redaction-marker` (a redaction marker
+  written into a file overwrote a credential nobody was shown),
+  `safe/manifest-not-locked` (a manifest entry the lockfile has never heard of
+  was hand-written, not installed), and `true/missing-timeout` for Python's
+  `requests` and Go's default HTTP client — each narrow enough that a
+  multi-line call is left alone rather than guessed at.
+- **`procoder check --format json|sarif` and `--since <ref>`.** SARIF 2.1.0
+  carries the ratchet's own fingerprint, so a dashboard and the baseline agree
+  about what a finding is. `--since` moves diff scoping out of the CI template's
+  shell, where a failed `git diff` was being swallowed by `|| true` and the job
+  passed green having checked nothing.
 - **Subagents inherit a digest, not the whole doctrine** — ~24% smaller
   (≈3,400 → ≈2,580 tokens at `strict`). The session pays once; SubagentStart pays
   per subagent, so that is the only multiplier worth trimming. Three kinds of

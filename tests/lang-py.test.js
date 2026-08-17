@@ -474,3 +474,24 @@ test('a widely wrapped def is measured whole, once, at its def line', () => {
   assert.strictEqual(found.length, 1, `reported at lines ${found.map((f) => f.line)}`);
   assert.strictEqual(found[0].line, 1);
 });
+
+// requests has no default timeout, so a call without one parks the thread until
+// the far end feels like answering. The rule is narrow on purpose: the call has
+// to open and close on its own line, because a multi-line call whose timeout
+// sits further down would otherwise be reported as missing one — and rung 2
+// blocks.
+test('an HTTP call with no timeout is reported', () => {
+  assert.ok(ids('r = requests.get(url)\n').includes('true/missing-timeout'));
+  assert.ok(ids('r = requests.post(url, json=body)\n').includes('true/missing-timeout'));
+});
+
+test('a timeout, or a call this line does not close, is silent', () => {
+  for (const src of [
+    'r = requests.get(url, timeout=5)\n',
+    'r = requests.get(url, timeout=(3, 10))\n',
+    'r = requests.get(\n    url,\n    timeout=5,\n)\n',
+    'r = session.get(url)\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});
