@@ -985,7 +985,10 @@ function parseFlags(argv) {
     format: values.get('--format') || 'text',
     since: values.get('--since') || null,
     aging: values.has('--aging') ? Number(values.get('--aging')) : null,
-    jobs: values.has('--jobs') ? Number(values.get('--jobs')) : null,
+    // Raw string, not Number(...): clampJobs echoes the value as written, and
+    // converting here defeats that — `--jobs abc` warned about `NaN` and
+    // `--jobs Infinity` about `null`, naming something the user never typed.
+    jobs: values.has('--jobs') ? values.get('--jobs') : null,
     rest: rest.filter((a) => !FLAGS.includes(a)),
   };
 }
