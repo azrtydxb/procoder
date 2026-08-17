@@ -54,12 +54,15 @@ const LINE_RULES = [
     // `http.DefaultClient` — which is what `http.Get` and friends use. Go's own
     // documentation says so; the trap is that the zero value looks deliberate.
     //
-    // Only the EMPTY literal and the package-level helpers, so a client that
+    // Only the EMPTY literal, the package-level helpers, and a call ON
+    // http.DefaultClient — which is the trap named above and the shape a
+    // hand-built request takes, `http.DefaultClient.Do(req)`. A client that
     // configures anything at all is left alone rather than guessed at: a
     // multi-field literal puts its Timeout on its own line, and this rung
-    // blocks.
+    // blocks. `http.DefaultClient.Timeout = …` is a call to nothing and is not
+    // matched: it is the fix, not the defect.
     id: 'true/missing-timeout', rung: 'TRUE',
-    re: /&?http\.Client\s*\{\s*\}|\bhttp\.(?:Get|Post|PostForm|Head)\s*\(/,
+    re: /&?http\.Client\s*\{\s*\}|\bhttp\.(?:Get|Post|PostForm|Head)\s*\(|\bhttp\.DefaultClient\.(?:Do|Get|Post|PostForm|Head)\s*\(/,
     message: 'HTTP client with no timeout — the default has none',
     fix: 'construct &http.Client{Timeout: …}, or use a request with a context deadline',
   },
@@ -156,6 +159,23 @@ const FUNC_SIGNATURE = {
 
 const DEFERRED_CLOSE = /defer\s+\w+(?:\.\w+)*\.Close\s*\(/;
 
+// A request built under a context deadline already has its timeout, which is
+// the second half of this rule's own fix text — `http.DefaultClient.Do(req)`
+// after `ctx, cancel := context.WithTimeout(...)` is the correct code, not the
+// defect. Measured: the one false positive this rule produced over a 5,000-file
+// Go corpus was exactly that shape (azure-sdk-for-go).
+//
+// Only `.Do(`, because only `Do` sends a request that can carry a context —
+// `http.Get(url)` ignores every deadline in scope. Ten lines back reaches the
+// `defer cancel()` and the `http.NewRequestWithContext` between the two.
+const DEADLINE_LOOKBACK = 10;
+const CONTEXT_DEADLINE = /context\.With(?:Timeout|Deadline)\s*\(/;
+
+function deadlineNearby(rule, lines, lineNo) {
+  if (rule.id !== 'true/missing-timeout' || !/\.Do\s*\(/.test(lines[lineNo - 1])) return false;
+  return CONTEXT_DEADLINE.test(lines.slice(Math.max(0, lineNo - 1 - DEADLINE_LOOKBACK), lineNo - 1).join('\n'));
+}
+
 // A nearby `defer x.Close()` discharges the unclosed-resource rule.
 function closedNearby(rule, lines, lineNo) {
   if (rule.id !== 'true/unclosed-resource') return false;
@@ -183,6 +203,7 @@ function check(source, { relPath, config } = {}) {
   const ctx = packContext({ lines, stripped: stripped.split(/\r?\n/), spec: TAINT });
   const inline = lineRuleFindings(LINE_RULES, lines, {
     skip: (rule, line, lineNo) => closedNearby(rule, lines, lineNo)
+      || deadlineNearby(rule, lines, lineNo)
       || skipConstant(rule, line, ctx),
   });
 

@@ -31,6 +31,17 @@ def insecure_request(session):
     session.get("https://example.com", verify=True)
 
 
+def load_profile_bounded(url):
+    s = requests.Session()
+    return s.get(url, timeout=5)
+
+
+def load_profile_defaults(url, defaults):
+    # The timeout may well be in `defaults`; the rule reads text and cannot
+    # follow a name, so this must stay silent.
+    return requests.get(url, **defaults)
+
+
 def add(item, into=None):
     if into is None:
         into = []

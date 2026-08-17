@@ -107,6 +107,11 @@ func listColumns(db *sql.DB) (*sql.Rows, error) {
 	return db.Query(q)
 }
 
+func sendRequestBounded(req *http.Request) (*http.Response, error) {
+	c := &http.Client{Timeout: 5 * time.Second}
+	return c.Do(req)
+}
+
 func rebuildQuery(db *sql.DB, id string) (*sql.Rows, error) {
 	q := "SELECT * FROM t WHERE id = " + id
 	q = "SELECT * FROM t"

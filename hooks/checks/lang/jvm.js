@@ -50,6 +50,20 @@ const LINE_RULES = [
     fix: 'log with context through the project logger, then rethrow or handle',
   },
   {
+    // `HttpClient.newHttpClient()` is the no-argument factory, and it
+    // configures no connect timeout at all — the request it sends has none
+    // either unless the builder gave it one.
+    //
+    // That exact call and nothing looser. The builder form
+    // (`HttpClient.newBuilder()...`) puts its `.connectTimeout(...)` on a line
+    // of its own and this rung blocks, and OkHttp is absent because its client
+    // does ship defaults (10s connect, read and write).
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: /\bHttpClient\.newHttpClient\s*\(\s*\)/,
+    message: 'HttpClient with no timeout — the no-argument factory sets none',
+    fix: 'HttpClient.newBuilder().connectTimeout(..).build(), and give the request a timeout too',
+  },
+  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /System\.(?:out|err)\.print(?:ln|f)?\s*\(/,
     message: 'leftover debugging statement',

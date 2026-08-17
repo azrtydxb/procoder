@@ -69,6 +69,10 @@ class DirtyExamples {
 
     // Assign-then-use: the same two violations the inline forms above commit,
     // written the way real code writes them.
+    HttpClient httpClient() {
+        return HttpClient.newHttpClient();
+    }
+
     void lookupUserTainted(Statement stmt, String id) throws Exception {
         String q = "SELECT * FROM t WHERE id = " + id;
         stmt.executeQuery(q);

@@ -187,6 +187,35 @@ test('a bare parameter reaching a sink is still not a finding', () => {
   assert.ok(!ids('function f(db, q) { db.query(q); }').includes('safe/sql-injection'));
 });
 
+// fetch has no timeout at all — not in the browser, not in Node — and neither
+// has an axios call with no `timeout`. Only the single-argument form is read: a
+// second argument the rule cannot see inside may carry the AbortSignal, and
+// this rung blocks.
+test('an outbound call with no timeout is reported', () => {
+  assert.ok(ids('const r = await fetch(url);\n').includes('true/missing-timeout'));  // procoder: literal true/missing-timeout scanner input for that rule, not an instance of it
+  assert.ok(ids('const r = await axios.get(url);\n').includes('true/missing-timeout'));  // procoder: literal true/missing-timeout scanner input for that rule, not an instance of it
+});
+
+test('a signal, a timeout, or an argument this rule cannot see into, is silent', () => {
+  for (const src of [
+    'const r = await fetch(url, { signal: AbortSignal.timeout(5000) });\n',
+    'const r = await fetch(url, opts);\n',
+    'const r = await axios.get(url, { timeout: 5000 });\n',
+    'const r = cache.fetch(key);\n',
+    'const r = this.fetch(url);\n',
+    // The three shapes a 6,000-file corpus reported, each of them correct
+    // code: a passthrough wrapper's spread, the bare axios call whose single
+    // config argument is where its `timeout` lives, and a module that declares
+    // its own fetch.
+    'const defaultFetchFn = (...args) => fetch(...args);\n',
+    'const r = await axios(config);\n',
+    'function fetch(url) {\n  return https.get(url);\n}\nfetch(next);\n',
+    'var fetch = require("..");\nvar p = fetch("NOTFOUND");\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'ts');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.ts'), 'utf8'),

@@ -260,6 +260,20 @@ test('stays linear on a very long single line', () => {
   });
 });
 
+// true/missing-timeout builds its receiver alternation out of the file's own
+// Session bindings, so a file full of DISTINCT ones is its adversarial shape:
+// every branch is tried on every line. Deduplicated and capped, a megabyte of
+// them costs what the pack costs on anything else; unbounded it was 33,787ms
+// against 337ms.
+test('a file full of distinct Session bindings stays linear', () => {
+  const src = Array.from({ length: 8000 },
+    (_, i) => `s${i} = requests.Session()\nr = s${i}.get(url)`).join('\n');
+  const at = process.hrtime.bigint();
+  check(src, { relPath: 'x.py', config });
+  const ms = Number(process.hrtime.bigint() - at) / 1e6;
+  assert.ok(ms < 4000, `${(src.length / 1024).toFixed(0)}KB of distinct session bindings cost ${ms.toFixed(0)}ms`);
+});
+
 // Local taint: the assign-then-use form, at least as common as the inline one.
 // Reported at the sink, naming the line the value was built on.
 test('tracks an f-string, % or format value from its assignment to a sink', () => {
@@ -528,4 +542,45 @@ test('a receiver that is not a database handle does not inherit the file SQL', (
 test('a real handle in the same file still fires', () => {
   assert.ok(ids('cur.execute("SELECT 1")\nq = "SELECT * FROM t WHERE id=" + request.args["id"]\ncur.execute(q)\n')  // procoder: literal safe/sql-injection scanner input for that rule, not an instance of it
     .includes('safe/sql-injection'));
+});
+
+// --- true/missing-timeout: the shapes the limitations audit named -----------
+//
+// The rule reads the argument list as text, so a name it cannot follow has to
+// buy silence rather than a finding: `**DEFAULTS` may well carry the timeout,
+// and a blocking rung-2 finding on correct code costs more than the miss.
+test('a call whose keyword arguments are unpacked from a name is silent', () => {
+  assert.ok(!ids('r = requests.get(url, **DEFAULTS)\n').includes('true/missing-timeout'));
+  assert.ok(!ids('r = requests.get(url, **kw)\n').includes('true/missing-timeout'));
+});
+
+// A Session is the shape a real client takes and has no default timeout
+// either; the receiver is a bound name, so the binding is what identifies it.
+test('the other requests spellings are reported', () => {
+  assert.ok(ids('s = requests.Session()\nr = s.get(url)\n').includes('true/missing-timeout'));
+  assert.ok(ids('self.session = requests.Session()\nr = self.session.post(url, json=b)\n')
+    .includes('true/missing-timeout'));
+  assert.ok(ids('from requests import get\nr = get(url)\n').includes('true/missing-timeout'));
+  assert.ok(ids('r = urllib.request.urlopen(url)\n').includes('true/missing-timeout'));
+});
+
+test('the correct twin of each new spelling is silent', () => {
+  for (const src of [
+    's = requests.Session()\nr = s.get(url, timeout=5)\n',
+    'self.session = requests.Session()\nr = self.session.post(url, timeout=5)\n',
+    'from requests import get\nr = get(url, timeout=5)\n',
+    'r = urllib.request.urlopen(url, timeout=5)\n',
+    's = requests.Session()\nr = s.get(url, **DEFAULTS)\n',
+    // A receiver nothing in the file bound to a Session, and a `get` nothing
+    // imported from requests: the name on its own means nothing.
+    'r = s.get(url)\n',
+    'r = self.get(url)\n',
+    'r = cache.get(key)\n',
+    // No peer to wait for: these open a file. Two of the 47 findings over
+    // CPython's own library and test suite were this shape.
+    'r = urllib.request.urlopen("file:%s" % path)\n',
+    "r = urllib.request.urlopen('file://localhost/a/file.py')\n",
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
 });

@@ -189,6 +189,22 @@ test('code quoted inside a text block is not code', () => {
   assert.ok(ids('String doc = "x";\nString q = "SELECT id=" + id;\nstmt.executeQuery(q);\n').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the unquoted twin the pack must still report
 });
 
+// HttpClient.newHttpClient() is the no-argument factory and it configures no
+// connect timeout at all. The builder form is left alone: its
+// `.connectTimeout(...)` is on a line of its own and this rung blocks.
+test('the no-argument HttpClient factory is reported', () => {
+  assert.ok(ids('HttpClient c = HttpClient.newHttpClient();\n').includes('true/missing-timeout'));
+});
+
+test('a configured client is silent', () => {
+  for (const src of [
+    'HttpClient c = HttpClient.newBuilder().connectTimeout(d).build();\n',
+    'HttpClient c = factory.newHttpClient(cfg);\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'jvm');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.java'), 'utf8'),

@@ -195,6 +195,25 @@ test('code quoted inside a raw string is not code', () => {
   assert.ok(ids('let doc = "x";\nlet q = format!("SELECT id={}", id);\nconn.query(&q);\n').includes('safe/sql-injection'));  // procoder: literal safe/sql-injection the unquoted twin the pack must still report
 });
 
+// reqwest ships no default timeout: `Client::new()` and the one-shot helpers
+// wait for as long as the far end likes. A builder chain is left alone — its
+// `.timeout(...)` is on a line of its own and this rung blocks.
+test('a reqwest client with no timeout is reported', () => {
+  assert.ok(ids('async fn f() { let r = reqwest::get(url).await; }\n').includes('true/missing-timeout'));
+  assert.ok(ids('fn f() { let c = reqwest::Client::new(); }\n').includes('true/missing-timeout'));
+  assert.ok(ids('fn f() { let c = reqwest::blocking::Client::new(); }\n').includes('true/missing-timeout'));
+});
+
+test('a configured or unqualified client is silent', () => {
+  for (const src of [
+    'fn f() { let c = reqwest::Client::builder().timeout(d).build(); }\n',
+    'fn f() { let c = Client::new(); }\n',
+    'fn f() { let c = pool::Client::new(); }\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});
+
 test('the clean fixture is silent and the dirty one is not', () => {
   const dir = path.join(__dirname, 'fixtures', 'rust');
   const clean = check(fs.readFileSync(path.join(dir, 'clean.rs'), 'utf8'),

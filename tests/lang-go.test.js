@@ -309,6 +309,27 @@ test('a configured client is silent', () => {
   }
 });
 
+// http.DefaultClient is the trap the rule's own comment names, and Do is how a
+// hand-built request reaches it: no timeout on the client, none on the request.
+test('the default client is reported', () => {
+  assert.ok(ids('func f() { http.DefaultClient.Do(req) }\n').includes('true/missing-timeout'));
+  assert.ok(ids('func f() { resp, err := http.DefaultClient.Get(u) }\n').includes('true/missing-timeout'));
+});
+
+test('a client that is not the default one is silent', () => {
+  for (const src of [
+    'func f() { c.Do(req) }\n',
+    'func f() { client.Do(req) }\n',
+    'func f() { http.DefaultClient.Timeout = 5 * time.Second }\n',
+    // A request built under a context deadline HAS its timeout — the second
+    // half of this rule's own fix. The one false positive the rule produced
+    // over a 5,000-file Go corpus was this shape.
+    'func f() {\n\tctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)\n\tdefer cancel()\n\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)\n\tres, err := http.DefaultClient.Do(req)\n}\n',
+  ]) {
+    assert.ok(!ids(src).includes('true/missing-timeout'), `false positive on ${JSON.stringify(src)}`);
+  }
+});
+
 // What makes taint die — see taint.js.
 test("a named escaper at a binding kills the taint", () => {
   assert.ok(!ids('q := "SELECT * FROM t WHERE id=" + r.FormValue("id")\nq = SanitizeSQL(q)\ndb.Query(q)\n')

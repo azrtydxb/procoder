@@ -89,6 +89,10 @@ fn list_columns(pool: &Pool) {
     sqlx::query(&q);
 }
 
+fn http_client_bounded() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder().timeout(Duration::from_secs(5)).build()
+}
+
 fn rebuild_query(pool: &Pool, id: &str) {
     let mut q = format!("SELECT * FROM t WHERE id = {}", id);
     q = "SELECT * FROM t".to_string();

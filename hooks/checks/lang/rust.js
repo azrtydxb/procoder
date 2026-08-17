@@ -36,6 +36,19 @@ const LINE_RULES = [
     fix: 'add the proper root certificate instead',
   },
   {
+    // reqwest ships no default timeout: `Client::new()` and the one-shot
+    // helpers wait for as long as the far end likes.
+    //
+    // Fully qualified only, and only the two shapes that cannot carry a
+    // timeout by construction. A `Client::builder()` chain is left alone —
+    // its `.timeout(...)` is on a line of its own and this rung blocks — and an
+    // unqualified `Client::new()` may be any crate's client.
+    id: 'true/missing-timeout', rung: 'TRUE',
+    re: /\breqwest::(?:blocking::)?(?:get\s*\(|Client::new\s*\(\s*\))/,
+    message: 'reqwest client with no timeout — reqwest sets none by default',
+    fix: 'build it with Client::builder().timeout(Duration::from_secs(..))',
+  },
+  {
     id: 'alone/debug-leftover', rung: 'ALONE',
     re: /\bdbg!\s*\(|\bprintln!\s*\(|\beprintln!\s*\(/,
     message: 'leftover debugging statement',
