@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+Documentation.
+
+- **The limitations page was split in two.** A decision made deliberately is not
+  a limitation, so the ratchet's fingerprint semantics, the TOML subset, the
+  baseline's version wall, the ceilings the performance work left behind and the
+  self-scan's own 18 skips moved to a new page,
+  [Why it works this way](https://azrtydxb.github.io/procoder/design.html). A
+  deliberate decision that still costs a finding — the escaper allow-list, the
+  tainted parameter nobody follows, the hook's five-finding cap,
+  `unimplemented!()` and Node's `*Sync` excluded from the new rungs, three
+  silent performance ceilings — stays on *what it misses* under **accepted
+  trade-offs**, each stating what it buys as well as what it costs. Everything
+  else there is a genuine gap.
+- **Twenty-three entries were struck from the limitations record**, each
+  re-verified fixed by running the tool: rungs 5 and 6 having no engine;
+  fourteen rows across the three widened rules; `PARALLEL_MIN_FILES`; the
+  `--jobs` warning naming `NaN` rather than what was typed; `init --baseline`
+  exiting 0 over unreadable files; three MCP edges; the baseline nobody pruned
+  and the `unknown` date nobody stamped; and Kotlin counting as a language
+  outside the packs, which it no longer is — `.kt` and `.kts` are in the jvm
+  pack.
+
 Doctrine additions, drawn from reading how the other agent harnesses (Amp,
 Cursor, Augment, Codex CLI, Comet, Kiro) state the same rules — and from the
 gaps that reading exposed.
@@ -158,8 +180,11 @@ gaps that reading exposed.
   context budget is now measured on the rendered text rather than the source
   file, where authoring markers were being counted as context.
 - **`procoder check .` scans in parallel.** One worker process per core (max 8,
-  `--jobs n` to override), and sequential under 250 files where forking costs
-  more than it saves. Measured on a 2,000-file tree: 1.57s to 0.55s. The report
+  `--jobs n` to override), and sequential under 900 ms of *measured* sequential
+  work — a strided sample of the run's own files is scanned for real and the
+  rest extrapolated from it, so a per-file subprocess linter is seen where a
+  file count or a byte count would not be. Measured on a 2,000-file tree: 1.57s
+  to 0.55s. The report
   is identical either way — slices are contiguous and reassembled in input
   order — and a worker that dies has its slice scanned in the parent rather than
   dropped, because a parallel scan that lost a slice would be a gate reporting

@@ -182,8 +182,11 @@ description: The twelve /procoder slash commands — what each one does, grouped
   process. The default is one per <em>usable</em> core —
   <code>os.availableParallelism()</code>, which sees a container's CPU quota
   where <code>os.cpus()</code> reports the host's cores through it — capped at 8,
-  and <strong>1 — this process, no workers — for a run of fewer than 250
-  files</strong>, where forking costs more than it saves. The report is
+  and <strong>1 — this process, no workers — for a run whose measured sequential
+  cost is under 900&nbsp;ms</strong>, where forking costs more than it saves. The
+  cost is measured, not guessed: a strided sample of the run's own files is
+  scanned for real and the rest extrapolated from it, so a subprocess linter, a
+  cold disk or a slow host is seen. The report is
   identical either way: slices are reassembled in input order, every file runs
   at the same 2,000&nbsp;ms budget whichever process reads it, and a worker that
   dies, or hangs past a derived slice bound, has its slice rescanned here rather

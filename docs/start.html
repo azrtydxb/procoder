@@ -117,8 +117,9 @@ procoder rot &lt;paths...&gt;       # exports nothing else mentions; always exit
 <p>
   <code>--jobs &lt;n&gt;</code> sets how many worker processes a scan splits
   across: one per usable core by default — a container's CPU quota is seen, not
-  the host's core count — capped at 8, and 1 — no workers at all — for a run of
-  fewer than 250 files, where forking costs more than it saves. A value over the
+  the host's core count — capped at 8, and 1 — no workers at all — for a run
+  whose measured sequential cost is under 900&nbsp;ms, where forking costs more
+  than it saves. A value over the
   ceiling, or one that is not a usable count, is refused with a warning rather
   than coerced in silence. The report is identical either way, every file runs at
   the same budget in a worker as here, and a worker that dies or hangs has its

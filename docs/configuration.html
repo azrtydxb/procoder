@@ -70,9 +70,12 @@ file = ".procoder-baseline.json"</code></pre>
   judgment rungs are flagged without blocking language, while SAFE and TRUE always
   demand a fix. The keys are the six rung names verbatim, <code>true</code>
   included — it is a bare key, not a boolean. <code>[rungs] fast</code> and
-  <code>[rungs] meant</code> default to <code>warn</code> and are currently
-  inert either way: no deterministic check produces a finding at rung 5 or 6,
-  so promoting them changes nothing until one exists. See
+  <code>[rungs] meant</code> default to <code>warn</code> and are read like any
+  other rung: the engine has three rules between those two — <code>fast/query-in-loop</code>,
+  <code>fast/blocking-in-async</code> and <code>meant/unimplemented-stub</code> —
+  so promoting either to <code>error</code> makes those findings blocking, even
+  at <code>pragmatic</code>. Most of what rungs 5 and 6 ask still cannot be
+  decided from one file and stays doctrine; see
   <a href="limitations.html">what it misses</a>.
 </p>
 

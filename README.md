@@ -99,15 +99,17 @@ new trust boundary does not get to add one for convenience.
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **211** tracked files the scan
-reads **193** and skips **18** — 9 by `[exclude] paths` and 9 by two
+arithmetic is published instead of implied: of **212** tracked files the scan
+reads **194** and skips **18** — 9 by `[exclude] paths` and 9 by two
 `.procoderignore` files. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
 itself so they cannot drift from this paragraph, and every exclusion is
 re-judged on every `verify`: one whose path is gone, that matches no file, or
 whose files have all gone clean is reported, and fails under
-`--unused-exclusions`. The whole-repository finding count — currently 0 — and
-what each of the 18 buys is on
+`--unused-exclusions`. The whole-repository finding count is currently 0; what
+each of the 18 buys is on
+[why it works this way](https://azrtydxb.github.io/procoder/design.html), and
+what a green self-scan still does not prove is on
 [what it misses](https://azrtydxb.github.io/procoder/limitations.html).
 
 ## Install
@@ -172,8 +174,9 @@ where untrusted data enters and what validates it. Each command is described in
 full on [Commands](https://azrtydxb.github.io/procoder/commands.html).
 
 See [`examples/`](examples/) for a worked before/after pair for each of rungs
-1–4 — there is no `fast/` or `meant/` pair, because the engine has no rule to
-write one against. Each
+1–4. There is no `fast/` or `meant/` pair: those two rungs grew an engine after
+the examples were written, and the three rules they have are not yet worked
+through here. Each
 `before.*` trips its rung through `node bin/procoder.js check`, each `after.*`
 is clean, and both are proved on every test run.
 
@@ -220,8 +223,12 @@ hundred files must not look the same.
 `--jobs <n>` sets how many worker processes the scan splits across. The default
 is one per usable core — `os.availableParallelism()`, so a CPU quota is seen and
 a one-core container does not fork eight workers — capped at 8, and **1 — this
-process, no workers — for a run of fewer than 250 files**, where forking costs
-more than it saves. A value above 8 is refused with a warning naming the value
+process, no workers — for a run whose measured sequential cost is under 900 ms**,
+where forking costs more than it saves. The cost is measured rather than guessed
+from the file list: a strided sample of the run's own files is scanned for real
+and the rest extrapolated from it, so a per-file subprocess linter or a slow host
+is seen where a file count or a byte count would not be. A value above 8 is
+refused with a warning naming the value
 and the ceiling; zero, negative and non-numeric are refused the same way and the
 default is used. The report is identical either way: slices are contiguous,
 reassembled in input order, every file runs at the same 2,000 ms budget, and a
@@ -280,7 +287,7 @@ Rung 1, SAFE — untrusted data reaching a sink, and credentials at rest:
 | safe/unsafe-deserialize | Deserialization of untrusted bytes — `pickle.loads`, `yaml.load`, Java native deserialization. |
 | safe/xxe-risk | An XML parser created without external entities disabled. |
 | safe/hardcoded-secret | A credential literal in source, or a credential-named identifier assigned a literal. |
-| safe/redaction-marker | A redaction marker written **into** a file, meaning a real credential was overwritten with a placeholder. |
+| safe/redaction-marker | A redaction marker written **into** a file where a value belongs, meaning a real credential was overwritten with a placeholder. Case-insensitive, and the bracketed, angle-bracketed, suffixed and unterminated spellings all count; prose about redaction does not. |
 | safe/secret-in-log | A credential interpolated into a log call. |
 | safe/pii-in-log | Personal data interpolated into a log call. |
 | safe/tls-disabled | Certificate or hostname verification switched off. |
@@ -288,7 +295,7 @@ Rung 1, SAFE — untrusted data reaching a sink, and credentials at rest:
 | safe/weak-random | A non-cryptographic RNG used for a token, key, nonce, salt or session id. |
 | safe/unsafe-block | A Rust `unsafe` block with no `SAFETY:` comment. |
 | safe/missing-lockfile | An ecosystem manifest with no lockfile committed beside it. |
-| safe/manifest-not-locked | A dependency in `package.json` that the lockfile has never heard of — hand-edited rather than installed. |
+| safe/manifest-not-locked | A dependency in `package.json`, `go.mod` or `Cargo.toml` that the lockfile has never heard of — hand-edited rather than installed. A manifest the parser cannot read is reported under the same id, since nothing in it was checked against anything. |
 | safe/floating-version | A dependency range that does not resolve to a version you audited. |
 
 Rung 2, TRUE — errors handled, edges covered:
@@ -299,7 +306,7 @@ Rung 2, TRUE — errors handled, edges covered:
 | true/bare-except | A bare `except:`, which catches `SystemExit` and `KeyboardInterrupt` too. |
 | true/ignored-error | An error assigned to `_` and dropped. |
 | true/printstacktrace | An exception printed to stderr instead of handled. |
-| true/missing-timeout | An outbound HTTP call or client with no timeout — Python `requests`, Go's empty `http.Client{}` and package-level helpers. |
+| true/missing-timeout | An outbound HTTP call or client with no timeout, in five of the six packs — Python `requests` and `urlopen`, Go's empty `http.Client{}`, its package-level helpers and `http.DefaultClient`, `fetch` and `axios.get`, `reqwest`, and Java's `HttpClient.newHttpClient()`. |
 | true/unclosed-resource | A resource opened with no visible close. |
 | true/mutable-default | A mutable default argument, shared across calls. |
 | true/panic-in-library | A `panic` in library code, which crashes the caller. |
@@ -382,9 +389,9 @@ file = ".procoder-baseline.json"
 `[rungs]` sets each rung's severity — `error` findings are must-fix, `warn`
 findings advisory — and the active level modulates it. The keys are the six
 rung names verbatim, `true` included: it is a bare key, not a boolean.
-`[rungs] fast` and `[rungs] meant` parse and are read, and are inert in
-practice: no deterministic check produces a finding at rung 5 or 6, so
-promoting either changes nothing until one exists. A line
+`[rungs] fast` and `[rungs] meant` are read like any other rung: the engine has
+three rules between those two, so promoting either to `error` makes those
+findings blocking even at `pragmatic`. A line
 the parser cannot recognize is warned about on stderr and skipped, never
 silently dropped, and so is a value it cannot read exactly. A key written
 **twice** has *both* values dropped and the key left unset, with a warning

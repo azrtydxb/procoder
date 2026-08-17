@@ -265,15 +265,16 @@ Four more flags:
   it judges, and no file selection narrows that.
 - `--jobs <n>` — how many worker processes the scan splits across. One per
   usable core by default (a container's CPU quota, not the host's core count),
-  capped at 8, and 1 for a run of fewer than 250 files. A value over the ceiling
-  or one that is not a usable count is refused with a warning. The report is
-  identical either way.
+  capped at 8, and 1 for a run whose measured sequential cost is under 900 ms.
+  A value over the ceiling or one that is not a usable count is refused with a
+  warning. The report is identical either way.
 
 At `pragmatic`, `check` reports OBVIOUS, ALONE, FAST and MEANT findings but does
 not exit 1 on them — every rung whose `[rungs]` severity is `warn`; every other
 level gates all six rungs, and so does CI, which has no level file and therefore
-resolves to the default `strict`. In practice rungs 5 and 6 never produce a
-finding at all: no deterministic check exists for either.
+resolves to the default `strict`. Rungs 5 and 6 have three rules between them —
+`fast/query-in-loop`, `fast/blocking-in-async` and `meant/unimplemented-stub` —
+so `[rungs] fast = "error"` makes a FAST finding blocking even at `pragmatic`.
 
 `verify`'s exit codes are **0** the ratchet holds, **1** findings appeared that
 are not in the baseline, and **2** *cannot verify* — either the baseline is from

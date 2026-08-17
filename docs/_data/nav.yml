@@ -16,3 +16,5 @@
   items:
     - href: limitations.html
       label: What it misses
+    - href: design.html
+      label: Why it works this way
