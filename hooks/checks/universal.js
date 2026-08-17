@@ -303,30 +303,51 @@ function commentedCodeFindings(lines) {
 // is reported rather than swallowed.
 //
 // A configured linter's own *rule* ids are the tool's to define and cannot be
-// enumerated. The tool itself can be: registry.js invokes four, and only those
-// four ever appear on the left of the colon, always on rung TRUE. So the id is
-// checked as far as it can be — `true/<known tool>:<anything>` — and a
-// misspelt tool (`true/eslnit:no-eval`) is reported like any other typo
-// instead of being accepted on shape. The rule half stays open, which is the
-// honest limit: procoder does not know eslint's rule list.
+// enumerated. Two halves of the id are checked anyway, each as far as it
+// honestly can be. The tool half is a closed set: registry.js invokes four, and
+// only those four ever appear on the left of the colon, always on rung TRUE, so
+// `true/eslnit:no-eval` is reported like any other typo. The rule half is
+// checked against that tool's own id GRAMMAR — see EXTERNAL_RULE_SHAPES — which
+// catches an id pasted under the wrong tool (`true/ruff:no-eval`) without
+// needing a registry of anyone's rules.
+//
+// What remains unvalidated, stated plainly because a user who thinks otherwise
+// is back in the position this whole mechanism exists to prevent: a
+// well-shaped id for a rule that does not exist. `true/eslint:no-such-rule`,
+// `true/ruff:ZZ999`. See EXTERNAL_RULE_SHAPES for why guessing there would
+// trade a silent no-op for a warning on correct markers.
 const KNOWN_RULE_IDS = new Set(markers.BUILTIN_RULE_IDS);
-const EXTERNAL_RULE_ID = new RegExp(`^true\\/(?:${markers.EXTERNAL_TOOLS.join('|')}):\\S+$`);
+const EXTERNAL_RULE_ID = /^true\/([\w-]+):(.+)$/;
+
+function isExternalRuleId(id) {
+  const m = EXTERNAL_RULE_ID.exec(id);
+  const shape = m && markers.EXTERNAL_RULE_SHAPES.get(m[1]);
+  return Boolean(shape && shape.test(m[2]));
+}
 
 // Which unknown ids have already been complained about, keyed by file as well
 // as id and line: the same typo on the same line of two files is two mistakes
 // in two places, and warning once named neither of them.
 //
-// The bare `id@line` key is kept alongside because filterMarkedLiterals runs
-// twice over a file — once here for this pack's findings, once in run.js over
-// every pack's — and the second pass does not know the path. A file-aware
-// warning claims the bare key too, so the second pass stays quiet; a caller
-// that never supplies a path (a direct API call) dedups on it as before.
+// Both engine passes over a file supply the path — this pack's own, and
+// run.js's over every pack's findings — so they share a key and warn once
+// between them. That was not always true. run.js used to call in without a
+// path, and because THIS pass returns early when the universal pack found
+// nothing, the path-less pass was usually the only one to run: through the CLI
+// the warning therefore never named a file, and a typo on the same line of two
+// files warned once for both. A diagnostic that cannot say which file to open
+// is close to useless on a repository-wide run.
+//
+// The bare `id@line` key is still claimed alongside, for a caller that supplies
+// no path at all (a direct API call). It dedups on that key as before, and a
+// file-aware warning satisfies it — one warning per occurrence, never one per
+// pass.
 const reported = new Set();
 
 // stderr, never stdout: the PostToolUse hook's stdout carries a JSON protocol,
 // and stderr is where config.js already reports an exclusion it is dropping.
 function unknownRuleId(id, lineNo, relPath) {
-  if (KNOWN_RULE_IDS.has(id) || EXTERNAL_RULE_ID.test(id)) return false;
+  if (KNOWN_RULE_IDS.has(id) || isExternalRuleId(id)) return false;
   const bare = `${id}@${lineNo}`;
   const seen = relPath ? `${relPath}|${bare}` : bare;
   if (!reported.has(seen)) {
@@ -362,8 +383,10 @@ function markedLines(lines, relPath) {
 //
 // The `indexOf` guard is what keeps this free on the files that have no marker
 // at all, which is nearly all of them: no split, no regex, no allocation.
-// `relPath` is optional and only names the file in an unknown-id warning:
-// run.js calls this without one, over findings from every pack at once.
+// `relPath` is optional and only names the file in an unknown-id warning. Every
+// caller inside the engine supplies it — run.js included, over findings from
+// every pack at once — because a warning that cannot name the file cannot be
+// acted on. It stays optional for a direct API call that has no path to give.
 function filterMarkedLiterals(source, findings, relPath) {
   if (!findings.length || String(source).indexOf('procoder:') < 0) return findings;
   const marked = markedLines(String(source).split(/\r?\n/), relPath);

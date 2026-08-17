@@ -273,7 +273,10 @@ function reportOf(relPath, findings, source, { repoRoot, config, applyBaseline, 
   // and a test asserting on one are the same problem as a test asserting on a
   // credential, and one mechanism has to cover all three. The marker names its
   // rules and reaches at most two lines — see universal.js.
-  const scoped = capFindingsPerLine(filterMarkedLiterals(source, findings))
+  // relPath is passed so an unknown-id warning names the file. Without it this
+  // pass — the one that actually runs, since the pack's own returns early when
+  // the pack found nothing — printed "at line N" and no path.
+  const scoped = capFindingsPerLine(filterMarkedLiterals(source, findings, relPath))
     .filter((f) => !isRuleExcluded(config, relPath, f.id));
 
   const lines = source.split(/\r?\n/);
