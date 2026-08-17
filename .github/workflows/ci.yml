@@ -3,13 +3,29 @@ on: [push, pull_request]
 jobs:
   test:
     strategy:
+      # A red leg must not hide the other five. With fail-fast on, the first
+      # failure cancelled every other combination in the matrix, so for this
+      # project's whole history exactly one leg's result has ever been visible
+      # and "does this fail everywhere or only on macOS" was unanswerable — the
+      # single most useful thing a matrix is for.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node-version: ['18', '20', '22']
+        # Node 18 went end-of-life in April 2025 and 20 in April 2026; runners
+        # have been dropping both. A leg that cannot be provisioned is not
+        # support, so the set is the two maintained lines plus the current LTS.
+        #
+        # This makes `engines.node` in package.json wrong at >=18 — see the
+        # report: package.json, the README badge and docs/install.md belong to
+        # other owners and must move to >=20 with this.
+        node-version: ['20', '22', '24']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5 of both: v4 runs on the Node 20 action runtime, which GitHub is
+      # force-migrating to Node 24, and a forced migration is a thing to do
+      # deliberately rather than be surprised by mid-week.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
       # Drift check runs first: it must judge the committed tree, never a tree
