@@ -15,9 +15,11 @@
 //   - A worker that dies costs nothing but time. Its slice is scanned in this
 //     process instead, and the run continues. A parallel scan that lost a
 //     slice would be a gate reporting on less than it claims.
-//   - Below the threshold, no process is forked at all. Forking costs tens of
-//     milliseconds per child; a scan of eleven files would pay more for the
-//     workers than the work.
+//   - Below the threshold, no process is forked at all. Forking costs hundreds
+//     of milliseconds before a single file is read, so a scan worth less than
+//     that pays more for the workers than the work. The threshold is a measured
+//     amount of WORK and not a file count — see PARALLEL_MIN_WORK_MS, and the
+//     defect that comment exists to close.
 //
 // "IDENTICAL" was a claim, not a fact, and three things broke it. All three are
 // closed here, and all three are closed the same way — by this file deciding,
@@ -47,10 +49,79 @@ const { spawn } = require('child_process');
 
 const WORKER = path.join(__dirname, 'worker.js');
 
-// Under this many files, sequential wins: each fork costs process startup plus
-// the engine's own require graph, and both are paid before a single file is
-// read.
-const PARALLEL_MIN_FILES = 250;
+// --- when forking pays -----------------------------------------------------
+//
+// This used to be a file count — 250 — and a file count is the wrong unit,
+// because forking pays for itself when the WORK is large and a file is not a
+// unit of work. Measured on this machine (10 cores, jobs 8, best of three,
+// through scanFiles so the fork is reachable at any size):
+//
+//   shape                      files   bytes   sequential  8 workers  ratio
+//   one-line files             2,500    48KB      187ms      200ms     0.94
+//   one-line files             4,000    78KB      288ms      263ms     1.10
+//   third-party JS (npm tree)    125   538KB      252ms      434ms     0.58
+//   third-party JS (npm tree)    175   2.1MB      849ms      760ms     1.12
+//   16 x 60KB                     16   960KB      336ms      374ms     0.90
+//   32 x 250KB                    32   8.0MB    2,516ms    1,135ms     2.22
+//   one 900KB file                 1   900KB      291ms      419ms     0.69
+//   Rust crate, [lints.clippy]     5   200 B      298ms      177ms     1.68
+//   Rust crate, [lints.clippy]    34   1.4KB    1,663ms      763ms     2.18
+//
+// Three of those rows kill every predictor that can be computed from the file
+// list alone. 250 one-liners fork SIX times slower than not forking (108ms
+// against 18ms, and that is what shipped); 32 files of 250KB are 2.2x faster
+// forked and were left sequential; and the clippy crate — five files, two
+// hundred BYTES — is 1.7x faster forked, because each file costs a `cargo`
+// spawnSync that neither a byte count nor a file count can see. Bytes are a
+// better predictor than files and still wrong by 30x across those rows.
+//
+// What every row agrees on is the sequential MILLISECONDS. Each shape's own
+// crossover lands between 230ms and 870ms of sequential work — a 3.8x band,
+// against 23x for file count and 30x for bytes — so the predictor here is time,
+// and it is measured rather than modelled: probeCost scans a few files and
+// reports what they actually cost, which is the only estimator that sees a
+// linter subprocess, a cold disk or a slow host at all.
+//
+// Derivation of the number. A forked run costs a startup floor F plus the work
+// divided by the speedup S actually achieved; measured here F is 250–400ms at
+// eight workers and S is 2.2–2.5 (not 8: each worker JITs the packs from cold,
+// and slices are equal in file count rather than in bytes). So forking wins
+// once the work still to do exceeds
+//
+//     F * S / (S - 1)   =   450ms .. 730ms
+//
+// and the highest crossover actually observed is 870ms — third-party JS at
+// `--cpus 4`, where 175 files cost 871ms sequential and 875ms forked. 900 is
+// that worst case rounded up, because the threshold has to be the WORST shape's
+// crossover: being wrong above it costs a fraction of a scan, being wrong below
+// it costs a multiple of one. Verified at jobs 3 and jobs 8, and in containers
+// at --cpus 4 and at --cpus 1 — where defaultJobs is 1 and nothing forks at all,
+// which is the case an earlier version got wrong by 2.3x.
+//
+// What this costs, said out loud: a shape whose own crossover is near the bottom
+// of the band scans sequentially between there and 900ms. A clippy crate of 16
+// files measures 897ms sequential against 318ms forked and just misses. The
+// alternative is a threshold that forks a tree of one-liners six times slower
+// than not forking, and that is the defect being fixed.
+const PARALLEL_MIN_WORK_MS = 900;
+
+// How the work is measured: scan a few files for real and see. Strided rather
+// than the first few, because a repository whose first file is a 900KB bundle
+// is not a repository of 900KB bundles, and the largest sample is dropped for
+// the same reason — one outlier in a sample of four would otherwise multiply
+// the estimate by thirty and fork a scan that had nothing left to do.
+//
+// The sample is not a rehearsal: those files are scanned once, by this process,
+// with the same options a worker would get, and their results are the ones
+// reported. The measurement is therefore free — it is work that had to happen
+// anyway — and all it can cost is the parallelism of at most 16 files.
+//
+// 100ms of it, at most, so a tree of expensive files does not measure itself to
+// death; four files at minimum, because a single sample is one file's JIT
+// warm-up and nothing else.
+const PROBE_MAX_FILES = 16;
+const PROBE_MIN_FILES = 4;
+const PROBE_MS = 100;
 
 // The per-file budget for a scan, down BOTH paths, and the same 2,000ms
 // `run.js` applies to a file it is given no budget for (BUDGET_MS there). Named
@@ -238,22 +309,44 @@ function runSlice(payload, timeoutMs) {
   });
 }
 
-function scanSequentially(files, options, checkFile) {
-  const config = options.config;
-  return files.map((absPath) => {
-    const out = checkFile(absPath, {
-      repoRoot: options.repoRoot,
-      config,
-      maxFindings: Infinity,
-      applyBaseline: options.applyBaseline,
-      // The same budget the worker is handed, said out loud rather than left to
-      // run.js's default, because the whole point is that one number governs
-      // both paths and is visible in one place.
-      budgetMs: budgetOf(options),
-      toolAnswer: (options.toolAnswers && options.toolAnswers.get(absPath)) || null,
-    });
-    return { absPath, relPath: out.relPath, findings: out.findings, skipped: out.skipped };
+// One file, exactly as a worker would check it. The single place this process
+// scans anything, so the probe and the sequential path cannot drift apart.
+function scanOne(absPath, options, checkFile) {
+  const out = checkFile(absPath, {
+    repoRoot: options.repoRoot,
+    config: options.config,
+    maxFindings: Infinity,
+    applyBaseline: options.applyBaseline,
+    // The same budget the worker is handed, said out loud rather than left to
+    // run.js's default, because the whole point is that one number governs
+    // both paths and is visible in one place.
+    budgetMs: budgetOf(options),
+    toolAnswer: (options.toolAnswers && options.toolAnswers.get(absPath)) || null,
   });
+  return { absPath, relPath: out.relPath, findings: out.findings, skipped: out.skipped };
+}
+
+function scanSequentially(files, options, checkFile) {
+  return files.map((absPath) => scanOne(absPath, options, checkFile));
+}
+
+// What a file costs on this host, right now, from files this scan had to do
+// anyway. Returns the results by index — the caller keeps them — and the
+// per-file cost to extrapolate from, with the single most expensive sample
+// dropped so one outlier cannot decide the run.
+function probeCost(files, options, checkFile) {
+  const stride = Math.max(1, Math.floor(files.length / PROBE_MAX_FILES));
+  const done = new Map();
+  const times = [];
+  const started = Date.now();
+  for (let i = 0; i < files.length; i += stride) {
+    const at = Date.now();
+    done.set(i, scanOne(files[i], options, checkFile));
+    times.push(Date.now() - at);
+    if (times.length >= PROBE_MIN_FILES && Date.now() - started >= PROBE_MS) break;
+  }
+  if (times.length >= PROBE_MIN_FILES) times.splice(times.indexOf(Math.max(...times)), 1);
+  return { done, msPerFile: times.reduce((a, b) => a + b, 0) / times.length };
 }
 
 // The payload a worker needs. `toolAnswers` travels with it because the linters
@@ -281,17 +374,7 @@ function payloadFor(slice, options) {
 // Async, because the workers run at the same time. Callers that do not want to
 // be async can pass jobs: 1 and get the sequential path, which is also what a
 // small file list gets.
-async function scanFiles(files, options, checkFile) {
-  const jobs = clampJobs(options.jobs === undefined ? null : options.jobs);
-  // `forceParallel` exists for the tests and for nothing else: this repository
-  // has fewer tracked files than the threshold, so its own gate never forks,
-  // and a parity test that relies on file count is a test of the threshold
-  // rather than of the workers. It cannot make a scan wrong — a forked slice is
-  // required to answer identically — only slower.
-  if (jobs < 2 || (files.length < PARALLEL_MIN_FILES && !options.forceParallel)) {
-    return scanSequentially(files, options, checkFile);
-  }
-
+async function runPool(files, options, checkFile, jobs) {
   const slices = sliceInto(files, jobs);
   const timeoutMs = sliceTimeoutMs(slices[0].length, budgetOf(options));
   const settled = await Promise.all(
@@ -305,6 +388,35 @@ async function scanFiles(files, options, checkFile) {
     : out));
 }
 
+async function scanFiles(files, options, checkFile) {
+  const jobs = clampJobs(options.jobs === undefined ? null : options.jobs);
+  // One job means one process, and it means that ahead of everything else:
+  // `--jobs 1` is how a user says "do not fork", and a container with a single
+  // usable core says the same thing through defaultJobs.
+  if (jobs < 2 || files.length < 2) return scanSequentially(files, options, checkFile);
+  // `forceParallel` exists for the tests and for nothing else: it skips both the
+  // measurement and the threshold, so a test can exercise the workers on a file
+  // list far too cheap to be worth forking — which every list in this
+  // repository is. It cannot make a scan wrong — a forked slice is required to
+  // answer identically — only slower.
+  if (options.forceParallel) return runPool(files, options, checkFile, jobs);
+
+  const { done, msPerFile } = probeCost(files, options, checkFile);
+  const rest = files.filter((file, i) => !done.has(i));
+  // The decision, made once, on measured work: what is LEFT has to be worth a
+  // pool, since what the probe scanned is already scanned. A single enormous
+  // file leaves nothing behind and so never forks — which is exactly right,
+  // because one file is one slice and forking it is pure loss (measured: 419ms
+  // against 291ms).
+  const scanned = (rest.length === 0 || msPerFile * rest.length < PARALLEL_MIN_WORK_MS)
+    ? scanSequentially(rest, options, checkFile)
+    : await runPool(rest, options, checkFile, jobs);
+  // Back into input order: the probe's files sit where they came from and the
+  // rest fill in around them, so the report is the sequential one either way.
+  let next = 0;
+  return files.map((file, i) => (done.has(i) ? done.get(i) : scanned[next++]));
+}
+
 module.exports = {
-  scanFiles, defaultJobs, clampJobs, PARALLEL_MIN_FILES, MAX_JOBS, SCAN_BUDGET_MS,
+  scanFiles, defaultJobs, clampJobs, PARALLEL_MIN_WORK_MS, MAX_JOBS, SCAN_BUDGET_MS,
 };

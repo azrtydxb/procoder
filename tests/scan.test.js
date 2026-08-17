@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const {
-  scanFiles, defaultJobs, clampJobs, PARALLEL_MIN_FILES, MAX_JOBS, SCAN_BUDGET_MS,
+  scanFiles, defaultJobs, clampJobs, PARALLEL_MIN_WORK_MS, MAX_JOBS, SCAN_BUDGET_MS,
 } = require('../hooks/checks/scan');
 const { checkFile, BUDGET_MS } = require('../hooks/checks/run');
 const { loadConfig } = require('../hooks/checks/config');
@@ -23,9 +23,11 @@ test.after(() => {
   for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// Enough files to cross the threshold, half of them carrying one finding, so a
-// slice that went missing changes the answer rather than merely the timing.
-function bigRepo(count = PARALLEL_MIN_FILES + 40) {
+// Enough files that a slice that went missing changes the answer rather than
+// merely the timing: half of them carry one finding. These files are trivial,
+// so the pool is reached with `forceParallel` — 290 one-liners are nowhere near
+// enough WORK to be worth forking, and the threshold knows it.
+function bigRepo(count = 290) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-scan-'));
   tempDirs.push(dir);
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
@@ -33,6 +35,24 @@ function bigRepo(count = PARALLEL_MIN_FILES + 40) {
     const dirty = i % 2 === 0;
     fs.writeFileSync(path.join(dir, `m${i}.ts`),
       dirty ? 'eval(x);\n' : 'const x = 1;\n');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  }
+  return dir;
+}
+
+// The other end of the shape range: few files, each one real work. 16 files is
+// a sixteenth of the file count the pool used to demand, and about two seconds
+// of scanning — which is the only thing that decides whether forking pays. Held
+// well clear of the threshold rather than just over it, so that a host twice as
+// fast as this one still forks and the test still means what it says.
+const HEAVY_LINE = 'const someIdentifier = compute(value, other); // a line of code\n';
+function heavyRepo(count = 16, kb = 400) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-heavy-'));
+  tempDirs.push(dir);
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  const body = HEAVY_LINE.repeat(Math.ceil((kb * 1024) / HEAVY_LINE.length));
+  for (let i = 0; i < count; i += 1) {
+    // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    fs.writeFileSync(path.join(dir, `h${i}.ts`), `eval(x);\n${body}`);
   }
   return dir;
 }
@@ -47,7 +67,8 @@ test('a parallel scan returns exactly what a sequential one does, in the same or
   const options = { repoRoot: repo, config: loadConfig(repo), applyBaseline: false };
 
   const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
-  const parallel = await scanFiles(files, { ...options, jobs: 4 }, checkFile);
+  const parallel = await scanFiles(files,
+    { ...options, jobs: 4, forceParallel: true }, checkFile);
 
   assert.strictEqual(parallel.length, sequential.length);
   assert.deepStrictEqual(
@@ -84,7 +105,8 @@ test('a worker that produces nothing is scanned in this process instead', async 
   fs.writeFileSync(fake, '#!/bin/sh\necho not-json\n', { mode: 0o755 });
   Object.defineProperty(process, 'execPath', { value: fake, configurable: true });
   try {
-    const out = await scanFiles(files, { ...options, jobs: 4 }, checkFile);
+    const out = await scanFiles(files,
+      { ...options, jobs: 4, forceParallel: true }, checkFile);
     assert.strictEqual(out.length, files.length, 'a slice went missing');
     assert.ok(out.some((r) => r.findings.length > 0), 'the fallback lost every finding');
   } finally {
@@ -109,8 +131,14 @@ test('the default is bounded by the parallelism actually available', () => {
 
 // End to end, because the CLI is where the exit code lives and an async main()
 // that lost its rejection would exit 0 — a gate reading as a pass.
-test('the CLI reports the same findings and exit code at any --jobs', () => {
-  const repo = bigRepo();
+//
+// The fixture is the HEAVY one on purpose: the CLI has no `forceParallel`, so
+// this is the only test that reaches the pool the way a user does, and sixteen
+// 250KB files is over the work threshold where 290 one-liners are nowhere near
+// it. Under a file-count threshold this scan was sequential at every --jobs and
+// the test proved nothing about the pool at all.
+test('the CLI reports the same findings and exit code at any --jobs', { timeout: 120000 }, () => {
+  const repo = heavyRepo();
   const run = (jobs) => spawnSync('node', [CLI, 'check', '--jobs', String(jobs), '.'],
     { cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo } });
   const one = run(1);
@@ -164,7 +192,7 @@ test('a budget that runs out reports identically down both paths', async () => {
 
 // --- the forked path, exercised as itself ----------------------------------
 //
-// This repository has fewer tracked files than PARALLEL_MIN_FILES, so its own
+// This repository has less work than the fork threshold, so its own
 // gate never forks and every parity test that reaches the pool by file count is
 // really a test of the threshold. These reach it directly, and prove a child
 // actually ran rather than assuming it.
@@ -236,7 +264,7 @@ test('a worker that dies mid-slice loses no file and no finding', async () => {
 // — at 1ms it is a coin flip whether the pack starts, and the two paths then
 // disagree for a reason that is not the one under test.
 test('a worker that hangs is killed, and its slice is scanned here', { timeout: 60000 }, async () => {
-  const repo = bigRepo(PARALLEL_MIN_FILES + 10);
+  const repo = bigRepo(260);
   const files = filesIn(repo);
   const options = {
     repoRoot: repo, config: loadConfig(repo), applyBaseline: false, budgetMs: 0,
@@ -253,6 +281,75 @@ test('a worker that hangs is killed, and its slice is scanned here', { timeout: 
     parallel.map((r) => [r.relPath, r.findings.map((f) => f.id)]),
     sequential.map((r) => [r.relPath, r.findings.map((f) => f.id)]));
   assert.ok(parallel.some((r) => r.findings.length > 0), 'the fallback lost every finding');
+});
+
+// --- the threshold is work, not file count ---------------------------------
+//
+// The defect these close: the pool used to fork on a FILE COUNT of 250, and a
+// file count does not predict what a file costs. 3,000 one-liners are 60KB of
+// nothing and forked six times slower than not forking; twelve 250KB files are
+// a second of real scanning and stayed sequential. Both are asserted by whether
+// a worker was actually started, because that is the decision under test.
+
+const forkCount = (marker) => (fs.existsSync(marker)
+  ? fs.readFileSync(marker, 'utf8').trim().split('\n').length : 0);
+
+test('a tree of trivial files is not forked, however many of them there are', async () => {
+  const repo = bigRepo(3000);
+  const files = filesIn(repo);
+  const options = { repoRoot: repo, config: loadConfig(repo), applyBaseline: false };
+  const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
+
+  const { shim, marker } = recordingNode(repo, `exec ${JSON.stringify(process.execPath)} "$@"`);
+  const out = await withExecPath(shim,
+    () => scanFiles(files, { ...options, jobs: 8 }, checkFile));
+
+  assert.strictEqual(forkCount(marker), 0,
+    'a tree of one-line files was forked, which measured 6x slower than not forking');
+  assert.deepStrictEqual(
+    out.map((r) => [r.relPath, r.findings.map((f) => f.id)]),
+    sequential.map((r) => [r.relPath, r.findings.map((f) => f.id)]));
+});
+
+test('a tree of few heavy files is forked, far under any file count', async () => {
+  const repo = heavyRepo();
+  const files = filesIn(repo);
+  const options = { repoRoot: repo, config: loadConfig(repo), applyBaseline: false };
+  const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
+
+  const { shim, marker } = recordingNode(repo, `exec ${JSON.stringify(process.execPath)} "$@"`);
+  const out = await withExecPath(shim,
+    () => scanFiles(files, { ...options, jobs: 4 }, checkFile));
+
+  assert.ok(forkCount(marker) > 0,
+    'sixteen 250KB files — over a second of scanning — were left to one core');
+  assert.deepStrictEqual(
+    out.map((r) => [r.relPath, r.findings.map((f) => f.id)]),
+    sequential.map((r) => [r.relPath, r.findings.map((f) => f.id)]));
+});
+
+// The probe is real work, not a rehearsal: the files it measures are scanned
+// once, by this process, and their results are the ones reported. A probe that
+// re-scanned them would pay for the measurement twice, and a probe that dropped
+// them would lose findings — so the count is asserted, in order, both ways.
+test('the files the threshold measures are reported once, in place', async () => {
+  const repo = heavyRepo(14);
+  const files = filesIn(repo);
+  const options = { repoRoot: repo, config: loadConfig(repo), applyBaseline: false };
+
+  const sequential = await scanFiles(files, { ...options, jobs: 1 }, checkFile);
+  const out = await scanFiles(files, { ...options, jobs: 4 }, checkFile);
+
+  assert.strictEqual(out.length, files.length);
+  assert.deepStrictEqual(out.map((r) => r.absPath), files);
+  assert.deepStrictEqual(
+    out.map((r) => [r.relPath, r.findings.map((f) => f.id)]),
+    sequential.map((r) => [r.relPath, r.findings.map((f) => f.id)]));
+});
+
+test('the work threshold is a duration, and one this host can actually spend', () => {
+  assert.ok(PARALLEL_MIN_WORK_MS >= 100 && PARALLEL_MIN_WORK_MS <= 10000,
+    'the fork threshold stopped being a plausible number of milliseconds');
 });
 
 // --- --jobs, clamped -------------------------------------------------------
@@ -319,7 +416,7 @@ test('a scan asked for 9999 jobs forks the ceiling, not 9999', async () => {
 // caller built by hand governed the files this process scanned and not the ones
 // a worker did — the same class of divergence as the budget.
 test('a worker checks against the caller\'s config, not the one on disk', async () => {
-  const repo = bigRepo(PARALLEL_MIN_FILES + 10);
+  const repo = bigRepo(260);
   const files = filesIn(repo);
   const config = loadConfig(repo);
   // An exclusion that exists only in the caller's object: nothing on disk says
