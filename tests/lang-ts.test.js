@@ -218,6 +218,13 @@ test('stays linear on a very long single line', () => {
       'var x = f(a, b) + "s" + c; ',
       'const q = "SELECT " + id; db.query(q); ',
       'const a = "x" + b; ',
+      // The two shapes the escaper work added: the per-call receiver read
+      // (RECEIVER_CALL) and the backward callee-path read (calleePath). Both
+      // are pinned — one by a non-path character before the receiver, the
+      // other by a fixed lookback — and these are what keep them pinned.
+      'redis.execute(k); ',
+      'q = sanitizeSql(q); ',
+      'mysql.escape(a).',
     ],
     sources: [
       'x'.repeat(100 * 1024), '$a'.repeat(50 * 1024), 'x'.repeat(100 * 1024) + '(a){',
