@@ -44,9 +44,13 @@ jobs:
           # and the docs report must only ever see this repository's files
           curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /tmp
           sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
+          sudo apt-get install -y -q universal-ctags
+          go install github.com/scip-code/scip-go/cmd/scip-go@latest
+          curl -sL https://github.com/sourcegraph/scip/releases/download/v0.9.0/scip-linux-amd64.tar.gz | tar xz -C /tmp scip
+          sudo mv /tmp/scip /usr/local/bin/
       - name: puppeteer config for mmdc on a runner
         run: |
-          echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"]}" > /tmp/puppeteer.json
+          echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"], \"timeout\": 120000, \"protocolTimeout\": 180000}" > /tmp/puppeteer.json
           echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
       - name: doctor
         run: procoder doctor

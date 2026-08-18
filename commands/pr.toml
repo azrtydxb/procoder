@@ -14,6 +14,9 @@ The launcher for every procoder command below is:
 
 1. Run `launcher.sh git` and `launcher.sh check`. Fix everything BLOCKING
    before going further — a PR that fails its own gate wastes the reviewer.
+   The gate's `info` impact lines are the change's blast radius: open each
+   referencing file it names and verify the change breaks nothing there
+   (or run `launcher.sh index impact` for the full list).
 2. Read the real diff (`git diff <default-branch>...HEAD`) and the commits.
    Summarise what actually changed, not what you remember intending.
 3. Fill .procoder/github/PULL_REQUEST_TEMPLATE.md section by section from that

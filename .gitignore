@@ -7,3 +7,4 @@ site/
 docs/changelog.md
 .lycheecache
 *.test
+.procoder/index/

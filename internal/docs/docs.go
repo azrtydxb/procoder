@@ -31,6 +31,10 @@ const MermaidConfigPath = ".procoder/docs/mermaid.json"
 
 const hungToolTimeout = 30 * time.Second
 
+// mermaidTimeout gives puppeteer's browser launch the headroom a cold CI
+// runner needs; 30s was observed flaking while the twin run passed.
+const mermaidTimeout = 90 * time.Second
+
 // Registered tools: doctor and init treat them like any formatter.
 var Lychee = &tools.Tool{
 	Name:        "lychee",
@@ -260,7 +264,9 @@ func compileMermaid(root, bin, body string) string {
 	if pc := os.Getenv("PROCODER_PUPPETEER_CONFIG"); pc != "" {
 		args = append(args, "--puppeteerConfigFile", pc)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
+	// mmdc launches a whole browser; a cold start on a busy CI runner can
+	// exceed the ordinary tool budget without anything being wrong
+	ctx, cancel := context.WithTimeout(context.Background(), mermaidTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var buf bytes.Buffer
@@ -268,7 +274,7 @@ func compileMermaid(root, bin, body string) string {
 	cmd.Stderr = &buf
 	err = cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("mmdc gave no answer in %s — the diagram was NOT checked", hungToolTimeout)
+		return fmt.Sprintf("mmdc gave no answer in %s — the diagram was NOT checked", mermaidTimeout)
 	}
 	if err != nil {
 		return firstLine(buf.String())

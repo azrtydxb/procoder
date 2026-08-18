@@ -1,0 +1,39 @@
+description = "The code index: build it, then find, search, refs, outline, and impact instead of grepping blind."
+prompt = """
+The user invoked /procoder:index with arguments: $ARGUMENTS
+
+The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
+
+The index is your fast map of the codebase — reach for it before grepping:
+
+- `launcher.sh index build` — build both tiers (universal-ctags broad,
+  SCIP precise where the language has an indexer). Run this first, and
+  rerun when stats says the index is stale.
+- `launcher.sh index find <symbol>` — where a symbol is defined
+  (file:line, kind, signature).
+- `launcher.sh index search <text>` — fuzzy symbol search when you don't
+  know the exact name.
+- `launcher.sh index refs <symbol>` — every reference; the output says
+  whether it answered precise (SCIP) or textual (git grep).
+- `launcher.sh index outline <file>` — a file's symbols in order; read
+  this before reading the whole file.
+- `launcher.sh index impact` — which symbols the working-tree change
+  defines and which files reference them; verify those files before
+  calling the work finished.
+- `launcher.sh index callers <symbol>` — who calls it and what it calls
+  (precise tier).
+- `launcher.sh index unused` — dead-code candidates: defined, never
+  referenced; exported API is marked, you judge it.
+- `launcher.sh index entrypoints` — main functions and the exported
+  surface, the security starting set.
+- `launcher.sh index graph` — the full caller→callee edge list as JSON,
+  for tools that walk reachability.
+- `launcher.sh index stats` — what's indexed and how fresh.
+
+If a command answers "no index" or names missing tools, run
+`launcher.sh init` and then `launcher.sh index build`. Staleness notes in
+the output are real — refresh before trusting line numbers.
+
+With arguments, run the matching subcommand directly and act on its output.
+Without arguments, run `stats` and report the index's state.
+"""
