@@ -23,6 +23,7 @@ import (
 	"procoder/internal/gitcmd"
 	"procoder/internal/gitx"
 	"procoder/internal/hook"
+	"procoder/internal/infra"
 	"procoder/internal/initcmd"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
@@ -76,6 +77,20 @@ func init() {
 				break
 			}
 		}
+		// domain 8: each infra tool only where its files exist
+		inv := infra.Detect(root)
+		if len(inv.Dockerfiles) > 0 {
+			out = append(out, infra.Hadolint)
+		}
+		if len(inv.TfDirs) > 0 {
+			out = append(out, infra.Terraform, infra.Tflint)
+		}
+		if len(inv.K8sFiles) > 0 {
+			out = append(out, infra.Kubeconform)
+		}
+		if len(inv.ChartDirs) > 0 {
+			out = append(out, infra.Helm)
+		}
 		// the index: universal-ctags always (any code repo), the SCIP tools
 		// where the repository's language has an indexer
 		out = append(out, codeindex.Ctags)
@@ -114,6 +129,9 @@ const usage = `usage: procoder <command> [args]
                        checks, workflow lint, template state
   ci                   workflow hygiene: pinned actions, job timeouts,
                        concurrency cancellation, tests exist
+  infra                DevOps hygiene where the files exist: Dockerfiles
+                       (hadolint), Terraform (fmt/validate/tflint),
+                       Kubernetes manifests (kubeconform), Helm charts
   maintain             the maintainability report: dead-code candidates from
                        the index, complexity and function length — judgment
                        calls, never blocking
@@ -191,6 +209,37 @@ func run(args []string) int {
 			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
 		}
 		fmt.Printf("procoder ci: %d finding(s) (%d blocking)\n", len(findings), blocking)
+		if blocking > 0 {
+			return 1
+		}
+		return 0
+	case "infra":
+		root := doctor.Root()
+		if infra.Detect(root).Empty() {
+			fmt.Println("procoder infra: no infrastructure files in this repository")
+			return 0
+		}
+		findings := infra.Check(root)
+		blocking := 0
+		for _, f := range findings {
+			mark := "  info "
+			if f.Blocking {
+				mark = "  BLOCK"
+				blocking++
+			}
+			loc := f.File
+			if rel, err := filepath.Rel(root, loc); err == nil && !strings.HasPrefix(rel, "..") {
+				loc = rel
+			}
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			if loc != "" {
+				loc += "  "
+			}
+			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
+		}
+		fmt.Printf("procoder infra: %d finding(s) (%d blocking)\n", len(findings), blocking)
 		if blocking > 0 {
 			return 1
 		}

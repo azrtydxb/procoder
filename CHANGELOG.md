@@ -2,6 +2,18 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.13.0 — 2026-08-19
+
+Domain 8, DevOps/IaaS/CaaS: each instrument only where its files exist.
+
+- `procoder infra` and `/procoder:infra`: hadolint over Dockerfiles,
+  `terraform fmt`/`validate`/tflint over *.tf directories (a failing
+  validate BLOCKS — objectively broken; uninitialised dirs say NOT
+  validated instead of failing on providers), kubeconform over Kubernetes
+  manifests, `helm lint` over charts. Rides the gate and `procoder git`;
+  a repo with no infrastructure pays nothing.
+- doctor/init learn the five tools, each required only by inventory.
+
 ## 0.12.0 — 2026-08-19
 
 Domain 7, CI/CD/CT: pipeline discipline as deterministic checks.

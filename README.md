@@ -6,7 +6,7 @@ runs itself and hooks it cannot skip. The agent stays in control; nothing ever
 touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.12.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.13.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 ## Quick start
@@ -57,7 +57,7 @@ level by level:
 5. **Documentation** ← shipped (v1)
 6. **Clean code / readability / pretty** ← shipped (v1: formatting)
 7. **CI / CD / CT** ← shipped (v1)
-8. DevOps / IaaS / CaaS / infrastructure and deployment
+8. **DevOps / IaaS / CaaS** ← shipped (v1)
 9. **GitOps / GitHub / Git Actions** ← shipped (v1)
 
 Beneath the domains sits the **code index** (shipped) — the shared platform
