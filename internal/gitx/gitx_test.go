@@ -82,6 +82,56 @@ func TestJunkAndOversized(t *testing.T) {
 	}
 }
 
+// Caches and garbage are junk wherever they hide: by name, by extension, or
+// by living inside a cache directory. Deliberately shipped artifacts (dist/)
+// are not junk.
+func TestCachesAndGarbageAreJunk(t *testing.T) {
+	junk := []string{
+		"a/.lycheecache", "b/debug.log", "c/x.pyc", "d/.file.swp",
+		"src/__pycache__/m.cpython-312.pyc", "web/node_modules/x/i.js",
+		".venv/bin/python", ".pytest_cache/v/cache",
+	}
+	for _, f := range junk {
+		if got := JunkFiles([]string{f}); len(got) != 1 || !got[0].Blocking {
+			t.Fatalf("%s must be blocking junk: %+v", f, got)
+		}
+	}
+	fine := []string{"dist/linux-amd64/procoder", "internal/gitx/gitx.go", "CHANGELOG.md"}
+	if got := JunkFiles(fine); len(got) != 0 {
+		t.Fatalf("shipped artifacts and source are not junk: %+v", got)
+	}
+}
+
+// A repo whose ecosystems generate garbage needs a .gitignore that covers it;
+// the finding names the missing entry and the marker that demands it.
+func TestIgnoreCoverageNamesTheGapAndTheReason(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "package.json"), []byte("{}"), 0o644)
+	os.WriteFile(filepath.Join(root, "mkdocs.yml"), []byte("site_name: x"), 0o644)
+
+	got := IgnoreCoverage(root)
+	if len(got) != 1 || !strings.Contains(got[0].Message, ".gitignore is missing") {
+		t.Fatalf("missing .gitignore must be one finding: %+v", got)
+	}
+
+	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules\n"), 0o644)
+	got = IgnoreCoverage(root)
+	if len(got) != 1 || !strings.Contains(got[0].Message, `"site"`) ||
+		!strings.Contains(got[0].Message, "mkdocs.yml") {
+		t.Fatalf("want exactly the site/mkdocs gap named: %+v", got)
+	}
+	for _, f := range got {
+		if f.Blocking {
+			t.Fatal("ignore coverage reports; the one-line fix is the agent's call")
+		}
+	}
+
+	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules\nsite\n"), 0o644)
+	if got = IgnoreCoverage(root); len(got) != 0 {
+		t.Fatalf("covered repo must be silent: %+v", got)
+	}
+}
+
 func TestAttributionBlocksInAllItsCostumes(t *testing.T) {
 	bad := []string{
 		"fix parser\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",

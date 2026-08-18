@@ -59,7 +59,9 @@ var Mkdocs = &tools.Tool{
 	Install:     "pipx install mkdocs-material   (mkdocs comes with it)",
 	VersionArgs: []string{"--version"},
 	InstallVia: []tools.InstallCandidate{
-		{Manager: "pipx", Args: []string{"install", "mkdocs-material"}},
+		// mkdocs-material has no entry point of its own, so pipx must be told
+		// the app is mkdocs — plain `pipx install mkdocs-material` fails.
+		{Manager: "pipx", Args: []string{"install", "--preinstall", "mkdocs-material", "mkdocs"}},
 		{Manager: "pip3", Args: []string{"install", "--user", "mkdocs-material"}},
 		{Manager: "brew", Args: []string{"install", "mkdocs"}},
 	},

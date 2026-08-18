@@ -82,6 +82,7 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
 	out = append(out, gitx.OnDefaultBranch(root, cfg.BlockDefaultBranch)...)
+	out = append(out, gitx.IgnoreCoverage(root)...)
 
 	msgs := gitx.UnpushedMessages(root)
 	out = append(out, gitx.Attribution(msgs)...)

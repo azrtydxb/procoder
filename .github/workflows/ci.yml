@@ -35,11 +35,11 @@ jobs:
       - name: install the tools the gate needs
         run: |
           go build -o /usr/local/bin/procoder ./cmd/procoder
-          sudo apt-get update -q && sudo apt-get install -y -q shfmt pipx
+          sudo apt-get update -q && sudo apt-get install -y -q shfmt
           npm install -g prettier @mermaid-js/mermaid-cli
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
-          pipx install mkdocs-material
+          pip install mkdocs-material
           curl -sL https://github.com/lycheeverse/lychee/releases/latest/download/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz
           sudo mv lychee /usr/local/bin/
       - name: doctor

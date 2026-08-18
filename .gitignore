@@ -6,3 +6,4 @@ node_modules/
 site/
 docs/changelog.md
 .lycheecache
+*.test
