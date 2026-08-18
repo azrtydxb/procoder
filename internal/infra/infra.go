@@ -165,7 +165,7 @@ func dockerfiles(root string, files []string) []gitx.Finding {
 	if bin == "" {
 		return notChecked(files[0], "hadolint")
 	}
-	raw, _, timedOut := run(root, bin, append([]string{"--no-color"}, files...))
+	raw, code, timedOut := run(root, bin, append([]string{"--no-color"}, files...))
 	if timedOut {
 		return timeout(files[0], "hadolint")
 	}
@@ -177,6 +177,7 @@ func dockerfiles(root string, files []string) []gitx.Finding {
 				Message: m[3] + " (infra)"})
 		}
 	}
+	out = append(out, failedClean(len(out), code, []int{1}, raw, files[0], "hadolint")...)
 	return out
 }
 
@@ -187,17 +188,20 @@ func terraformDir(root, dir string) []gitx.Finding {
 	}
 	var out []gitx.Finding
 
-	// fmt -check lists unformatted files
-	raw, _, timedOut := run(dir, bin, []string{"fmt", "-check"})
+	// fmt -check lists unformatted files; exit 3 is its findings-exist code
+	raw, code, timedOut := run(dir, bin, []string{"fmt", "-check"})
 	if timedOut {
 		return timeout(dir, "terraform")
 	}
+	fmtCount := 0
 	for _, f := range strings.Split(strings.TrimSpace(raw), "\n") {
-		if f != "" {
+		if f != "" && code != 0 {
 			out = append(out, gitx.Finding{File: filepath.Join(dir, f),
 				Message: "not terraform-formatted — run `terraform fmt` and review (infra)"})
+			fmtCount++
 		}
 	}
+	out = append(out, failedClean(fmtCount, code, []int{3}, raw, dir, "terraform fmt")...)
 
 	// validate needs an initialised working dir; validating uninitialised
 	// code would fail on providers, not on the code — say so instead
@@ -217,17 +221,20 @@ func terraformDir(root, dir string) []gitx.Finding {
 	}
 
 	if tfl := tools.Resolve(Tflint, root); tfl != "" {
-		raw, _, timedOut := run(dir, tfl, []string{"--format", "compact", "--no-color"})
+		raw, code, timedOut := run(dir, tfl, []string{"--format", "compact", "--no-color"})
 		if timedOut {
 			return append(out, timeout(dir, "tflint")...)
 		}
+		tflCount := 0
 		for _, line := range strings.Split(raw, "\n") {
 			t := strings.TrimSpace(line)
 			if t == "" || !strings.Contains(t, ":") || strings.HasPrefix(t, "Warning") {
 				continue
 			}
 			out = append(out, gitx.Finding{File: dir, Message: t + " (infra)"})
+			tflCount++
 		}
+		out = append(out, failedClean(tflCount, code, []int{2}, raw, dir, "tflint")...)
 	} else {
 		out = append(out, gitx.Finding{File: dir,
 			Message: "tflint not installed — Terraform lint NOT run; `procoder init` (infra)"})
@@ -240,7 +247,7 @@ func kubernetes(root string, files []string) []gitx.Finding {
 	if bin == "" {
 		return notChecked(files[0], "kubeconform")
 	}
-	raw, _, timedOut := run(root, bin, append([]string{"-output", "text"}, files...))
+	raw, code, timedOut := run(root, bin, append([]string{"-output", "text"}, files...))
 	if timedOut {
 		return timeout(files[0], "kubeconform")
 	}
@@ -257,6 +264,7 @@ func kubernetes(root string, files []string) []gitx.Finding {
 		out = append(out, gitx.Finding{File: file,
 			Message: strings.TrimPrefix(t, file+" - ") + " (infra)"})
 	}
+	out = append(out, failedClean(len(out), code, []int{1}, raw, files[0], "kubeconform")...)
 	return out
 }
 
@@ -308,6 +316,24 @@ func runExit(dir, bin string, args []string) (string, int, bool) {
 		}
 	}
 	return buf.String(), code, false
+}
+
+// failedClean applies the honesty rule: exit codes outside the tool's
+// documented findings-exist set, with nothing parsed, mean the check did
+// not happen — never clean. okCodes are the exits that legitimately carry
+// zero-or-more findings (hadolint 1 = findings, terraform fmt 3 = diffs,
+// tflint 2 = issues, kubeconform 1 = invalid found).
+func failedClean(parsed int, code int, okCodes []int, raw, file, tool string) []gitx.Finding {
+	if parsed > 0 || code == 0 {
+		return nil
+	}
+	for _, ok := range okCodes {
+		if code == ok {
+			return nil
+		}
+	}
+	return []gitx.Finding{{File: file, Blocking: true,
+		Message: fmt.Sprintf("NOT checked — %s failed (exit %d): %s (infra)", tool, code, firstLine(raw))}}
 }
 
 func notChecked(file, tool string) []gitx.Finding {

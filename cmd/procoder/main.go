@@ -215,11 +215,11 @@ func run(args []string) int {
 		return 0
 	case "infra":
 		root := doctor.Root()
-		findings := infra.Check(root)
-		if findings == nil {
+		if infra.Detect(root).Empty() {
 			fmt.Println("procoder infra: no infrastructure files in this repository")
 			return 0
 		}
+		findings := infra.Check(root)
 		blocking := 0
 		for _, f := range findings {
 			mark := "  info "
