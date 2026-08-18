@@ -198,12 +198,13 @@ func HasProjectConfig(t *Tool, file string) bool {
 	}
 }
 
-// RepoRoot walks upward from dir to the directory holding .git, or returns
-// dir unchanged when there is none — every caller degrades gracefully.
+// RepoRoot walks upward from dir to the directory holding .git — a directory
+// in a normal checkout, a file in a worktree or submodule — or returns dir
+// unchanged when there is none; every caller degrades gracefully.
 func RepoRoot(dir string) string {
 	d := dir
 	for {
-		if info, err := os.Stat(filepath.Join(d, ".git")); err == nil && info.IsDir() {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
 			return d
 		}
 		parent := filepath.Dir(d)

@@ -1,10 +1,22 @@
-description = "Finish a PR properly: every check green, every review addressed — human and bot — then merge."
+description = "Finish a PR properly: every check green, every review addressed — human and bot — then merge and clean up."
 prompt = """
 The user invoked /procoder:merge with arguments: $ARGUMENTS
 (The argument is the PR number or branch; with none, use the PR for the
 current branch: `gh pr view --json number`.)
 
-A PR merges when EVERYTHING answers — never before. Loop until done:
+First read .procoder/github/WORKFLOW.md and follow it — the repo's rules win
+over the defaults below. If it is missing, get the default via
+"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh" templates, write it, then follow it.
+
+A PR merges when EVERYTHING answers — never before.
+
+0. Don't block on the waiting: spawn a BACKGROUND agent whose only job is to
+   poll `gh pr checks <pr>` and `gh pr view <pr> --json reviews,reviewDecision`
+   and report status back. The watcher never fixes, never replies, never
+   merges — it gathers information; you act on it. Continue other work while
+   it watches, and pick up the loop below each time it reports.
+
+Loop until done:
 
 1. Checks:  `gh pr checks <pr>` — every required check must pass. For a
    failing check, open its run (`gh run view <id> --log-failed`), fix the
@@ -20,11 +32,14 @@ A PR merges when EVERYTHING answers — never before. Loop until done:
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments
    remain.
-4. Only then merge: `gh pr merge <pr> --squash` (or the repo's configured
-   strategy). The merge commit message follows the commit template and
-   carries no AI-attribution line — run `launcher.sh scrub` on it if you
-   wrote one.
-5. Confirm the merge, and offer to delete the branch.
+4. Only then merge: `gh pr merge <pr> --squash --delete-branch` (or the
+   repo's configured strategy). The merge commit message follows the commit
+   template and carries no AI-attribution line — run `launcher.sh scrub` on
+   it if you wrote one.
+5. Clean up after the confirmed merge (--delete-branch removed the remote):
+   delete the local branch, remove the worktree if the work lived in one
+   (`git worktree remove <path>`), run `git fetch --prune`, and return to an
+   updated default branch (`git checkout <default> && git pull`).
 
 Never merge over a red check. Never merge with an unaddressed review comment.
 If a required gate cannot be satisfied, say exactly which one and why, and

@@ -5,6 +5,13 @@ The user invoked /procoder:pr with arguments: $ARGUMENTS
 The launcher for every procoder command below is:
 "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
 
+0. Read .procoder/github/WORKFLOW.md and follow it — the repo's rules win
+   over this skill's defaults. If it is missing, get the default via
+   `launcher.sh templates`, write it, then follow it. Default rule: feature
+   work happens in a git worktree (one per branch/agent), never dirtying the
+   default-branch checkout — if this work isn't in one yet, note it and keep
+   the branch clean.
+
 1. Run `launcher.sh git` and `launcher.sh check`. Fix everything BLOCKING
    before going further — a PR that fails its own gate wastes the reviewer.
 2. Read the real diff (`git diff <default-branch>...HEAD`) and the commits.

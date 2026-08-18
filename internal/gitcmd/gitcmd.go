@@ -21,6 +21,7 @@ import (
 const (
 	prTemplatePath     = ".procoder/github/PULL_REQUEST_TEMPLATE.md"
 	commitTemplatePath = ".procoder/github/COMMIT_TEMPLATE.md"
+	workflowPath       = ".procoder/github/WORKFLOW.md"
 )
 
 // Status prints the full picture and returns an exit code: non-zero when
@@ -42,6 +43,7 @@ func Status(root string, stdout io.Writer) int {
 	fmt.Fprintf(stdout, "pr template     %s\n", presence(filepath.Join(root, prTemplatePath)))
 	fmt.Fprintf(stdout, "commit template %s, %s\n",
 		presence(filepath.Join(root, commitTemplatePath)), registered(root))
+	fmt.Fprintf(stdout, "workflow rules  %s\n", presence(filepath.Join(root, workflowPath)))
 
 	findings := Collect(root, cfg, changed)
 	blocking := 0
@@ -100,6 +102,9 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	if _, err := os.Stat(filepath.Join(root, commitTemplatePath)); err != nil {
 		out = append(out, gitx.Finding{Message: commitTemplatePath + " is missing — run `procoder templates` and write it"})
 	}
+	if _, err := os.Stat(filepath.Join(root, workflowPath)); err != nil {
+		out = append(out, gitx.Finding{Message: workflowPath + " is missing — run `procoder templates` and write it"})
+	}
 	return out
 }
 
@@ -115,8 +120,12 @@ func Templates(root string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", commitTemplatePath, CommitTemplate)
 		printed = true
 	}
+	if _, err := os.Stat(filepath.Join(root, workflowPath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", workflowPath, WorkflowTemplate)
+		printed = true
+	}
 	if !printed {
-		fmt.Fprintln(stdout, "both templates exist")
+		fmt.Fprintln(stdout, "all templates exist")
 	}
 	fmt.Fprintf(stdout, "== then register the commit template (once per clone):\ngit config commit.template %s\n", commitTemplatePath)
 	return 0
