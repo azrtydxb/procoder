@@ -78,10 +78,10 @@ func Secrets(root string, paths []string) []gitx.Finding {
 			continue
 		}
 		report := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-gitleaks-%d.json", time.Now().UnixNano()))
+		common := []string{"--report-format", "json", "--report-path", report,
+			"--no-banner", "--exit-code", "1"}
 		ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
-		cmd := exec.CommandContext(ctx, bin, "dir", p, // nosemgrep -- resolved from the fixed tool table, never user input
-			"--report-format", "json", "--report-path", report,
-			"--no-banner", "--exit-code", "1")
+		cmd := exec.CommandContext(ctx, bin, append([]string{"dir", p}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
 		cmd.Dir = root
 		var errb bytes.Buffer
 		cmd.Stderr = &errb
@@ -91,6 +91,22 @@ func Secrets(root string, paths []string) []gitx.Finding {
 			out = append(out, gitx.Finding{File: p, Blocking: true,
 				Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)})
 			continue
+		}
+		if bytes.Contains(errb.Bytes(), []byte(`unknown command "dir"`)) {
+			// gitleaks before v8.19 has no `dir`; the same scan is spelled
+			// `detect --no-git --source` there — apt still ships that era
+			ctx2, cancel2 := context.WithTimeout(context.Background(), secretsTimeout)
+			legacy := exec.CommandContext(ctx2, bin, append([]string{"detect", "--no-git", "--source", p}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
+			legacy.Dir = root
+			errb.Reset()
+			legacy.Stderr = &errb
+			runErr = legacy.Run()
+			cancel2()
+			if ctx2.Err() == context.DeadlineExceeded {
+				out = append(out, gitx.Finding{File: p, Blocking: true,
+					Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)})
+				continue
+			}
 		}
 		raw, readErr := os.ReadFile(report)
 		os.Remove(report)
