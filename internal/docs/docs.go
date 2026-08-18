@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -385,6 +386,50 @@ func RequiredDocs(root string, r Rules) []gitx.Finding {
 
 // firstScreen is how much of the README counts as "what a visitor sees first".
 const firstScreenLines = 40
+
+// versionSources are the files a project declares its version in, tried in
+// order; the first that exists and parses wins.
+var versionSources = []struct{ path, key string }{
+	{".claude-plugin/plugin.json", "version"},
+	{"package.json", "version"},
+}
+
+// VersionSync checks the README's first screen carries the project's current
+// version. Drift here shipped three releases in a row unnoticed: prose claims
+// aren't file paths, so the drift check never fires on them — this is the
+// mechanical tripwire that forces the README to be touched, and therefore
+// read, at every release. Objectively wrong, so blocking.
+func VersionSync(root string) []gitx.Finding {
+	version := ""
+	source := ""
+	for _, vs := range versionSources {
+		raw, err := os.ReadFile(filepath.Join(root, vs.path))
+		if err != nil {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		if v, ok := m[vs.key].(string); ok && v != "" {
+			version, source = v, vs.path
+			break
+		}
+	}
+	if version == "" {
+		return nil // no declared version, nothing to hold the README to
+	}
+	readme := filepath.Join(root, "README.md")
+	data, err := os.ReadFile(readme)
+	if err != nil {
+		return nil // RequiredDocs already reports a missing README
+	}
+	if !strings.Contains(firstN(string(data), firstScreenLines), version) {
+		return []gitx.Finding{{File: readme, Blocking: true,
+			Message: fmt.Sprintf("README first screen does not carry the current version %s (%s) — a release without a reviewed README is how docs go stale", version, source)}}
+	}
+	return nil
+}
 
 // Badges checks the required badge set appears in the README's first screen.
 func Badges(root string, r Rules) []gitx.Finding {

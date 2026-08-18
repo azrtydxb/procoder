@@ -2,6 +2,18 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.8.2 — 2026-08-19
+
+- The README must carry the current version on its first screen — a
+  blocking docs check, born from three releases shipping against a badge
+  frozen at 0.7.0. Prose claims aren't file paths, so drift never fired;
+  now a release without a reviewed README reds the gate. The README's
+  domain list also caught up (documentation shipped, the index noted).
+- The call graph dropped its noise: compiler-local temporaries and bare
+  package descriptors are excluded from the edges (7,012 → 2,587 on this
+  repo, all signal), `callers` shows each named call once with readable
+  symbols (`io/ReadAll()`, not the SCIP provenance header).
+
 ## 0.8.1 — 2026-08-19
 
 - The skills are back: command definitions moved from TOML with multiline

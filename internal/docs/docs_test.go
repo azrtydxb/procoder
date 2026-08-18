@@ -208,6 +208,30 @@ our ci is great and the license is Apache
 	}
 }
 
+// The failure this pins: three releases shipped while the README's badge
+// said 0.7.0 — prose claims aren't file paths, so drift never fired. The
+// version tripwire makes a release without a reviewed README block.
+func TestReadmeMustCarryTheCurrentVersion(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".claude-plugin/plugin.json", `{"name":"x","version":"0.8.2"}`)
+	write(t, root, "README.md", "# x\n\n![Version](https://img.shields.io/badge/version-0.7.0-blue)\n")
+
+	got := VersionSync(root)
+	if len(got) != 1 || !got[0].Blocking || !strings.Contains(got[0].Message, "0.8.2") {
+		t.Fatalf("stale version must block and name the current one: %+v", got)
+	}
+
+	write(t, root, "README.md", "# x\n\n![Version](https://img.shields.io/badge/version-0.8.2-blue)\n")
+	if got = VersionSync(root); len(got) != 0 {
+		t.Fatalf("matching version is silent: %+v", got)
+	}
+
+	// no declared version anywhere → nothing to hold the README to
+	if got = VersionSync(t.TempDir()); len(got) != 0 {
+		t.Fatalf("no version source must be silent: %+v", got)
+	}
+}
+
 func TestGoExportedSymbolWithoutDocIsReported(t *testing.T) {
 	root := t.TempDir()
 	f := write(t, root, "x.go", `package x

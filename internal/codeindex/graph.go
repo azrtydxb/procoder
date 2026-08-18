@@ -50,9 +50,15 @@ func loadScip(root string) (*scipIndex, error) {
 	return &idx, nil
 }
 
-// shortSym trims a SCIP symbol to its readable tail: pkg/Name().
+// shortSym trims a SCIP symbol to its readable descriptor: pkg/Name().
+// The grammar is `scheme manager package version descriptors` — everything
+// before the descriptors is provenance the human reader doesn't need.
 func shortSym(s string) string {
-	if i := strings.Index(s, "`"); i >= 0 {
+	if parts := strings.SplitN(s, " ", 5); len(parts) == 5 {
+		s = parts[4]
+	} else if i := strings.Index(s, "`"); i >= 0 {
+		// minimal symbol shapes carry fewer provenance fields; the
+		// descriptor still starts at the first backtick
 		s = s[i:]
 	}
 	return strings.TrimSuffix(strings.ReplaceAll(s, "`", ""), ".")
@@ -91,7 +97,7 @@ func Edges(root string) ([]Edge, error) {
 					}
 				}
 			}
-			if best < 0 || defs[best].sym == occ.Symbol {
+			if best < 0 || defs[best].sym == occ.Symbol || !namedSymbol(occ.Symbol) {
 				continue
 			}
 			edges = append(edges, Edge{From: defs[best].sym, To: occ.Symbol,
@@ -99,6 +105,13 @@ func Edges(root string) ([]Edge, error) {
 		}
 	}
 	return edges, nil
+}
+
+// namedSymbol rejects the occurrences that carry no cross-file meaning:
+// compiler-local temporaries and bare package descriptors. They would only
+// bury the real edges for every consumer of the graph.
+func namedSymbol(sym string) bool {
+	return !strings.HasPrefix(sym, "local ") && !strings.HasSuffix(sym, "/")
 }
 
 // Callers prints who calls the symbol and what the symbol itself calls —
@@ -116,11 +129,16 @@ func Callers(root, symbol string, out func(string)) int {
 			callers++
 		}
 	}
+	// the callee view shows CALLS — functions and methods — once each;
+	// type/field mentions belong to refs, and repeats add nothing here
+	seen := map[string]bool{}
 	for _, e := range edges {
-		if scipSymbolIs(e.From, symbol) {
-			out(fmt.Sprintf("callee  %s:%d  %s  (precise)", e.File, e.Line, shortSym(e.To)))
-			callees++
+		if !scipSymbolIs(e.From, symbol) || !strings.HasSuffix(e.To, "().") || seen[e.To] {
+			continue
 		}
+		seen[e.To] = true
+		out(fmt.Sprintf("callee  %s:%d  %s  (precise)", e.File, e.Line, shortSym(e.To)))
+		callees++
 	}
 	if callers+callees == 0 {
 		out(fmt.Sprintf("no call edges for %q in the precise tier — the symbol may be unused, external, or the index stale", symbol))

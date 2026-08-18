@@ -1,6 +1,6 @@
 {
   "name": "procoder",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "A harness that gives AI coders the tools and skills to work like a senior developer. Shipped: formatting (domain 6), GitOps/GitHub (domain 9), and documentation (domain 5) \u2014 hooks hand the agent results, the agent stays in control.",
   "author": {
     "name": "Pascal Watteel"
