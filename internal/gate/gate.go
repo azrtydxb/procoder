@@ -15,6 +15,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
+	"procoder/internal/lint"
 )
 
 // Run checks the given paths, or the repository's changed files when none are
@@ -65,9 +66,13 @@ func Run(paths []string, root string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "UNCHECKED    %s — %s\n", r.File, r.Reason)
 	}
 
+	cfg := config.Load(root)
 	// Domain 9: git hygiene, workflow lint, message checks — same rules as
 	// `procoder git`, via the shared Collect, so the two cannot drift apart.
-	hygiene := gitcmd.Collect(root, config.Load(root), paths)
+	hygiene := gitcmd.Collect(root, cfg, paths)
+	// Domain 2: the canonical linters over the changed set — report by
+	// default, blocking when the repo opted in ([lint] policy = "block").
+	hygiene = append(hygiene, lint.Files(root, paths, cfg.LintBlock)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "
