@@ -2,6 +2,7 @@ package docs
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -251,6 +252,38 @@ export class Naked {}
 	}
 	if got := MissingAPIDocs([]string{ts}); len(got) != 1 || !strings.Contains(got[0].Message, "Naked") {
 		t.Fatalf("ts: want only Naked, got %+v", got)
+	}
+}
+
+// Gitignored scratch is not the repository's documentation: inside a git
+// repo, only tracked and untracked-but-not-ignored Markdown is listed. The
+// 65-files-in-a-10-doc-repo bug, pinned.
+func TestGitignoredMarkdownIsNotScanned(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	write(t, root, "README.md", "# x\n")
+	write(t, root, "scratch/notes.md", "private\n")
+	write(t, root, ".gitignore", "scratch/\n")
+
+	got := MarkdownFiles(root)
+	var names []string
+	for _, f := range got {
+		names = append(names, filepath.Base(f))
+	}
+	if len(got) != 1 || names[0] != "README.md" {
+		t.Fatalf("want exactly README.md (untracked counts, ignored does not), got %v", names)
+	}
+	for _, f := range got {
+		if strings.Contains(f, "scratch") {
+			t.Fatalf("gitignored markdown was scanned: %v", names)
+		}
 	}
 }
 

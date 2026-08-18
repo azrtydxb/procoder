@@ -20,4 +20,4 @@ body:
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Existing config (.procoder.toml, .procoderignore, a literal marker) that almost does this, or another tool that already covers it.
+      description: Existing config (.procoder/config.toml, the rules files under .procoder/) that almost does this, or another tool that already covers it.

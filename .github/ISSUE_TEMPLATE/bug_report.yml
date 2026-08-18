@@ -6,34 +6,29 @@ body:
     id: procoder-version
     attributes:
       label: procoder version
-      description: From `.claude-plugin/plugin.json`, or `procoder --version` if you have the CLI.
-      placeholder: "0.2.0"
+      description: From `procoder version`, or `.claude-plugin/plugin.json`.
+      placeholder: "0.7.0"
     validations:
       required: true
   - type: input
     id: claude-code-version
     attributes:
       label: Claude Code version
-      description: Only relevant if this is a hook/plugin issue rather than a CLI-only one.
+      description: Only relevant if this is a hook/skill issue rather than a CLI-only one.
       placeholder: "claude --version output, or N/A for CLI-only use"
   - type: input
     id: os
     attributes:
-      label: OS
-      placeholder: "macOS 15 / Ubuntu 24.04 / Windows 11, and Node version if known"
+      label: OS and architecture
+      placeholder: "macOS 15 arm64 / Ubuntu 24.04 amd64 / Windows 11 amd64"
     validations:
       required: true
-  - type: dropdown
-    id: level
+  - type: input
+    id: command
     attributes:
-      label: Level
-      description: The active procoder level when this happened.
-      options:
-        - pragmatic
-        - strict (default)
-        - paranoid
-        - "off (still misbehaving somehow)"
-        - not sure
+      label: Command or moment
+      description: The procoder command (`check`, `git`, `docs`, ...) or the hook moment (a Write of which file type) where it happened.
+      placeholder: "procoder docs --external"
     validations:
       required: true
   - type: textarea

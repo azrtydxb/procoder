@@ -2,6 +2,14 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.7.1 — 2026-08-19
+
+- The docs scan now asks git which Markdown belongs to the repository
+  (tracked plus untracked-but-not-ignored) instead of walking every
+  directory — gitignored scratch is no longer scanned.
+- Issue templates caught up with the reset: no more dropped "levels",
+  Node-era fields, or renamed config paths.
+
 ## 0.7.0 — 2026-08-19
 
 Domain 5, documentation: docs treated as a product.
