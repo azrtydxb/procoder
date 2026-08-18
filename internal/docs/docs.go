@@ -315,9 +315,14 @@ func Drift(root string, changed []string) []gitx.Finding {
 	return out
 }
 
-// MarkdownFiles lists tracked-ish Markdown files under root, skipping the
-// directories no doc lives in.
+// MarkdownFiles lists the repository's Markdown files: what git considers
+// part of the repo (tracked, plus untracked-but-not-ignored), so gitignored
+// scratch directories are never scanned. Outside a git repo it falls back to
+// a directory walk that skips the places no doc lives.
 func MarkdownFiles(root string) []string {
+	if out, ok := gitMarkdownFiles(root); ok {
+		return out
+	}
 	var out []string
 	skip := map[string]bool{".git": true, "node_modules": true, "vendor": true,
 		"dist": true, ".claude": true}
@@ -337,6 +342,24 @@ func MarkdownFiles(root string) []string {
 		return nil
 	})
 	return out
+}
+
+func gitMarkdownFiles(root string) ([]string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", root,
+		"ls-files", "--cached", "--others", "--exclude-standard")
+	raw, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	var out []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if line != "" && IsMarkdownFile(line) {
+			out = append(out, filepath.Join(root, filepath.FromSlash(line)))
+		}
+	}
+	return out, true
 }
 
 // RequiredDocs reports rule-listed documents missing at the repo root, and a

@@ -2,6 +2,19 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.7.1 — 2026-08-19
+
+- The docs scan now asks git which Markdown belongs to the repository
+  (tracked plus untracked-but-not-ignored) instead of walking every
+  directory — gitignored scratch is no longer scanned.
+- The PR-template mirror is enforced: drift between .github/ (the path
+  GitHub reads) and the .procoder/github/ master now blocks the gate.
+- The merge watcher got a protocol: calibrate against previous runs, poll
+  per job in the foreground, report the first failure immediately with its
+  log excerpt, poll dynamically — never a fire-and-forget monitor.
+- Issue templates caught up with the reset: no more dropped "levels",
+  Node-era fields, or renamed config paths.
+
 ## 0.7.0 — 2026-08-19
 
 Domain 5, documentation: docs treated as a product.

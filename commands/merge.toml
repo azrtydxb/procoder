@@ -11,10 +11,16 @@ over the defaults below. If it is missing, get the default via
 A PR merges when EVERYTHING answers — never before.
 
 0. Don't block on the waiting: spawn a BACKGROUND agent whose only job is to
-   poll `gh pr checks <pr>` and `gh pr view <pr> --json reviews,reviewDecision`
-   and report status back. The watcher never fixes, never replies, never
-   merges — it gathers information; you act on it. Continue other work while
-   it watches, and pick up the loop below each time it reports.
+   watch and report. The watcher never fixes, never replies, never merges —
+   it gathers information; you act on it. Continue other work while it
+   watches, and pick up the loop below each time it reports. Give the
+   watcher the merge-watching protocol from .procoder/github/WORKFLOW.md
+   verbatim: calibrate against previous runs of the same workflow, poll PER
+   JOB in the foreground (`gh run view <run-id> --json jobs` — never a
+   fire-and-forget monitor), report the FIRST failing job immediately with
+   its `--log-failed` excerpt instead of waiting for the rest, poll
+   dynamically (fast early and near the calibrated finish, never slower
+   than 90s), and report on every state change.
 
 Loop until done:
 

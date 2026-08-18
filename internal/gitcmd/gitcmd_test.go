@@ -55,6 +55,35 @@ func TestWorkflowRulesArePrintedWhenMissingAndRespectedWhenPresent(t *testing.T)
 	}
 }
 
+// GitHub reads the PR template only from .github/; the repo's master lives
+// under .procoder/github/. A drifted mirror means someone edited the wrong
+// copy silently — that blocks; a matching mirror is silent; a missing mirror
+// is reported with the fix.
+func TestPRTemplateMirrorMustMatchTheMaster(t *testing.T) {
+	root := t.TempDir()
+	master := filepath.Join(root, ".procoder", "github", "PULL_REQUEST_TEMPLATE.md")
+	mirror := filepath.Join(root, ".github", "PULL_REQUEST_TEMPLATE.md")
+	os.MkdirAll(filepath.Dir(master), 0o755)
+	os.MkdirAll(filepath.Dir(mirror), 0o755)
+	os.WriteFile(master, []byte("## What\n"), 0o644)
+
+	got := mirrorSync(root)
+	if len(got) != 1 || got[0].Blocking || !strings.Contains(got[0].Message, "missing") {
+		t.Fatalf("missing mirror is reported, not blocked: %+v", got)
+	}
+
+	os.WriteFile(mirror, []byte("## Something else\n"), 0o644)
+	got = mirrorSync(root)
+	if len(got) != 1 || !got[0].Blocking {
+		t.Fatalf("drifted mirror must block: %+v", got)
+	}
+
+	os.WriteFile(mirror, []byte("## What\n"), 0o644)
+	if got = mirrorSync(root); len(got) != 0 {
+		t.Fatalf("matching mirror is silent: %+v", got)
+	}
+}
+
 // A git worktree marks its root with a .git FILE, not a directory. Since the
 // workflow rules make worktrees the default place work happens, the harness
 // must resolve the worktree as the root — not climb past it to the parent
