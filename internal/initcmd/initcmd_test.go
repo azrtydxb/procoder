@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,7 @@ func TestInstalledToolProducesNoStep(t *testing.T) {
 }
 
 func TestMissingToolPicksTheAvailableManager(t *testing.T) {
+	skipOnWindows(t)
 	dir := goRepo(t)
 	// Only brew exists; gofmt does not.
 	t.Setenv("PATH", fakeBin(t, "brew"))
@@ -61,6 +63,7 @@ func TestMissingToolPicksTheAvailableManager(t *testing.T) {
 }
 
 func TestPreferenceOrderIsTheListOrder(t *testing.T) {
+	skipOnWindows(t)
 	dir := goRepo(t)
 	// brew and apt-get both exist; brew is listed first for gofmt.
 	t.Setenv("PATH", fakeBin(t, "brew", "apt-get"))
@@ -71,6 +74,7 @@ func TestPreferenceOrderIsTheListOrder(t *testing.T) {
 }
 
 func TestNoManagerFallsBackToTheHumanLine(t *testing.T) {
+	skipOnWindows(t)
 	dir := goRepo(t)
 	t.Setenv("PATH", fakeBin(t)) // nothing at all
 	steps := Plan(dir)
@@ -90,6 +94,7 @@ func TestNoManagerFallsBackToTheHumanLine(t *testing.T) {
 }
 
 func TestPlanOnlyExitsNonZeroWhileGapsRemain(t *testing.T) {
+	skipOnWindows(t)
 	dir := goRepo(t)
 	t.Setenv("PATH", fakeBin(t, "brew"))
 	var out bytes.Buffer
@@ -105,6 +110,7 @@ func TestPlanOnlyExitsNonZeroWhileGapsRemain(t *testing.T) {
 // argv and "installs" nothing, so the re-survey must still find the gap and
 // the exit must say so — an installer's exit 0 is a claim, not the fact.
 func TestYesExecutesAndTrustsTheResurveyNotTheInstaller(t *testing.T) {
+	skipOnWindows(t)
 	dir := goRepo(t)
 	bin := t.TempDir()
 	logFile := filepath.Join(t.TempDir(), "argv.log")
@@ -129,5 +135,14 @@ func TestYesExecutesAndTrustsTheResurveyNotTheInstaller(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "still missing") {
 		t.Fatalf("did not report the remaining gap:\n%s", out.String())
+	}
+}
+
+// Windows cannot execute the #!/bin/sh stubs these tests build their fake
+// tools from; the POSIX legs of the CI matrix carry this coverage.
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("sh-stub fixtures cannot run on Windows")
 	}
 }
