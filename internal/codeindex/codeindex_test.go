@@ -243,6 +243,19 @@ func TestUnusedFindsGammaAndOnlyGamma(t *testing.T) {
 	}
 }
 
+// shortSym must return just the descriptor for both full five-field SCIP
+// symbols and the minimal shapes fixtures use.
+func TestShortSymHandlesFullAndMinimalShapes(t *testing.T) {
+	full := "scip-go gomod github.com/golang/go/src go1.23 io/ReadAll()."
+	if got := shortSym(full); got != "io/ReadAll()" {
+		t.Fatalf("full shape: got %q", got)
+	}
+	minimal := "x `pkg`/alpha()."
+	if got := shortSym(minimal); got != "pkg/alpha()" {
+		t.Fatalf("minimal shape: got %q", got)
+	}
+}
+
 func TestGraphQueriesWithoutPreciseTierSayHowToGetIt(t *testing.T) {
 	root := t.TempDir()
 	var lines []string

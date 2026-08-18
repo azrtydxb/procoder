@@ -56,6 +56,10 @@ func loadScip(root string) (*scipIndex, error) {
 func shortSym(s string) string {
 	if parts := strings.SplitN(s, " ", 5); len(parts) == 5 {
 		s = parts[4]
+	} else if i := strings.Index(s, "`"); i >= 0 {
+		// minimal symbol shapes carry fewer provenance fields; the
+		// descriptor still starts at the first backtick
+		s = s[i:]
 	}
 	return strings.TrimSuffix(strings.ReplaceAll(s, "`", ""), ".")
 }
