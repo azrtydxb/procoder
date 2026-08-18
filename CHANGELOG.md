@@ -2,6 +2,16 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.11.0 — 2026-08-19
+
+Domain 3, maintainability: a thin layer over the index and the linters.
+
+- `procoder maintain` and `/procoder:maintain`: dead-code candidates from
+  the precise index (exported API marked for judgment), cyclomatic
+  complexity and function length from isolated linter runs with procoder's
+  own thresholds (gocyclo 15, funlen 80/50, C901) — the repo's lint config
+  is neither required nor touched. Everything reports; nothing blocks.
+
 ## 0.10.0 — 2026-08-19
 
 Domain 1, security: the priority level, built on lint's rails and the index.
