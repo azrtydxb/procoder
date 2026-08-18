@@ -50,7 +50,7 @@ jobs:
           sudo mv /tmp/scip /usr/local/bin/
       - name: puppeteer config for mmdc on a runner
         run: |
-          echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"]}" > /tmp/puppeteer.json
+          echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"], \"timeout\": 120000, \"protocolTimeout\": 180000}" > /tmp/puppeteer.json
           echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
       - name: doctor
         run: procoder doctor

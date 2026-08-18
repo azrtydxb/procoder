@@ -89,7 +89,8 @@ const usage = `usage: procoder <command> [args]
                        structure; --external adds link checking and Pages health
   index <sub> [arg]    the code index (built from universal-ctags + SCIP):
                        build | find <symbol> | search <text> | refs <symbol> |
-                       outline <file> | impact | stats
+                       outline <file> | impact | callers <symbol> | unused |
+                       entrypoints | graph | stats
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
   scrub <file|->       check text (a commit message, a drafted PR body) for
@@ -168,6 +169,18 @@ func indexCmd(args []string) int {
 			return 1
 		}
 		return 0
+	case "callers":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return codeindex.Callers(root, args[1], out)
+	case "unused":
+		return codeindex.Unused(root, out)
+	case "entrypoints":
+		return codeindex.Entrypoints(root, out)
+	case "graph":
+		return codeindex.Graph(root, out)
 	case "find", "search", "refs", "outline":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)

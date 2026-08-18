@@ -270,9 +270,11 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	ctx2, cancel2 := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel2()
 	conv := exec.CommandContext(ctx2, scipBin, "print", "--json", scipPath)
+	var convErr bytes.Buffer
+	conv.Stderr = &convErr
 	out, err := conv.Output()
 	if err != nil {
-		stdout("precise tier: scip print failed — refs stay textual")
+		stdout("precise tier: scip print failed — " + firstLine(convErr.String()+err.Error()) + " (refs stay textual)")
 		return false
 	}
 	if err := os.WriteFile(filepath.Join(dir, refsFile), out, 0o644); err != nil {

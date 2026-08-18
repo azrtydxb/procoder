@@ -12,7 +12,13 @@ The code index (D-INDEX): the shared platform layer under the domains.
   exact references — every answer says which tier produced it, and a stale
   index says so out loud.
 - `index impact`: the blast radius of the working-tree change — which
-  symbols it defines and which files reference them.
+  symbols it defines and which files reference them; the gate prints it
+  and /procoder:pr makes the agent verify the named files.
+- The security/maintainability surface, built now: `index callers` (the
+  call graph from SCIP occurrences), `index unused` (dead-code
+  candidates, exported API marked), `index entrypoints` (mains and the
+  exported surface), and `index graph` (the machine-readable edge list
+  future domains walk).
 - The write hook keeps the broad tier current for each file written; the
   gate rebuilds a stale index at the finishing moment, covering editor
   edits and the precise tier the hook cannot reach.

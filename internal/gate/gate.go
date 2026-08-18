@@ -38,6 +38,9 @@ func Run(paths []string, root string, stdout io.Writer) int {
 	if note := codeindex.RebuildIfStale(root); note != "" {
 		fmt.Fprintln(stdout, note)
 	}
+	// the change's blast radius, put in front of the agent at the moment it
+	// matters — informational, the agent judges
+	codeindex.ImpactIfIndexed(root, paths, func(line string) { fmt.Fprintln(stdout, "  info  "+line) })
 
 	var unformatted, unchecked []format.Result
 	clean, skipped := 0, 0

@@ -24,3 +24,20 @@ func RebuildIfStale(root string) string {
 	}
 	return "index: refreshed (" + notes[0] + ")"
 }
+
+// ImpactIfIndexed runs the blast-radius report for the gate — only when an
+// index exists, and capped so the gate's own findings stay readable.
+func ImpactIfIndexed(root string, changed []string, out func(string)) {
+	if _, err := os.Stat(filepath.Join(root, Dir, tagsFile)); err != nil {
+		return
+	}
+	var lines []string
+	Impact(root, changed, func(s string) { lines = append(lines, s) })
+	const capLines = 12
+	if len(lines) > capLines {
+		lines = append(lines[:capLines], "… more — run `procoder index impact` for the full list")
+	}
+	for _, l := range lines {
+		out(l)
+	}
+}

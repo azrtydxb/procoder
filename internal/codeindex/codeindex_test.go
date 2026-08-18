@@ -193,6 +193,65 @@ func TestScipSymbolMatching(t *testing.T) {
 	}
 }
 
+// A minimal precise-tier fixture: alpha calls beta; gamma is defined and
+// never referenced — the graph queries must read exactly that from it.
+const fakeRefs = "{\"documents\":[{\"relative_path\":\"a.go\",\"occurrences\":[" +
+	"{\"range\":[0,5,10],\"symbol\":\"x `pkg`/alpha().\",\"symbol_roles\":1,\"enclosing_range\":[0,0,5,1]}," +
+	"{\"range\":[2,8,12],\"symbol\":\"x `pkg`/beta().\",\"symbol_roles\":0}," +
+	"{\"range\":[8,5,9],\"symbol\":\"x `pkg`/beta().\",\"symbol_roles\":1,\"enclosing_range\":[8,0,9,1]}," +
+	"{\"range\":[12,5,10],\"symbol\":\"x `pkg`/gamma().\",\"symbol_roles\":1,\"enclosing_range\":[12,0,13,1]}" +
+	"]}]}"
+
+func writeFakePrecise(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, Dir), 0o755)
+	if err := os.WriteFile(filepath.Join(root, Dir, "refs.json"), []byte(fakeRefs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestCallersReadsTheEdgeFromTheFixture(t *testing.T) {
+	root := writeFakePrecise(t)
+	var lines []string
+	out := func(s string) { lines = append(lines, s) }
+	if code := Callers(root, "beta", out); code != 0 {
+		t.Fatalf("callers: %v", lines)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "caller  a.go:3") || !strings.Contains(joined, "alpha") {
+		t.Fatalf("alpha calls beta at a.go:3: %v", lines)
+	}
+}
+
+func TestUnusedFindsGammaAndOnlyGamma(t *testing.T) {
+	root := writeFakePrecise(t)
+	var lines []string
+	out := func(s string) { lines = append(lines, s) }
+	if code := Unused(root, out); code != 0 {
+		t.Fatalf("unused: %v", lines)
+	}
+	joined := strings.Join(lines, "\n")
+	// gamma is never referenced; alpha calls others but nothing calls it —
+	// both are unreferenced. beta is referenced and must not appear.
+	if !strings.Contains(joined, "gamma") || !strings.Contains(joined, "alpha") {
+		t.Fatalf("gamma and alpha are unreferenced and must be reported: %v", lines)
+	}
+	if strings.Contains(joined, "beta") {
+		t.Fatalf("beta is referenced and is not dead: %v", lines)
+	}
+}
+
+func TestGraphQueriesWithoutPreciseTierSayHowToGetIt(t *testing.T) {
+	root := t.TempDir()
+	var lines []string
+	out := func(s string) { lines = append(lines, s) }
+	if code := Callers(root, "x", out); code != 1 || !strings.Contains(lines[0], "procoder index build") {
+		t.Fatalf("missing precise tier must say the fix: %v", lines)
+	}
+}
+
 func TestNormalizeTagsDropsNonTagLinesAndKeepsShape(t *testing.T) {
 	raw := []byte(`{"_type":"program","name":"ctags"}
 {"_type":"tag","name":"Greet","path":"demo.go","line":4,"kind":"func","signature":"(name string)","language":"Go"}

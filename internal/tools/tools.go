@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -176,9 +177,11 @@ func Resolve(t *Tool, repoRoot string) string {
 		// use are often missing from PATH; a tool sitting there is installed
 		if home, herr := os.UserHomeDir(); herr == nil {
 			for _, dir := range []string{filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin")} {
-				cand := filepath.Join(dir, t.Name)
-				if runnable(cand) && (t.Probe == nil || t.Probe(cand)) {
-					return cand
+				for _, name := range candidateNames(t.Name) {
+					cand := filepath.Join(dir, name)
+					if runnable(cand) && (t.Probe == nil || t.Probe(cand)) {
+						return cand
+					}
 				}
 			}
 		}
@@ -190,12 +193,23 @@ func Resolve(t *Tool, repoRoot string) string {
 	// The first PATH hit is an impostor (macOS's BSD ctags); the real tool
 	// may still sit later on the PATH.
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
-		cand := filepath.Join(dir, t.Name)
-		if cand != p && runnable(cand) && t.Probe(cand) {
-			return cand
+		for _, name := range candidateNames(t.Name) {
+			cand := filepath.Join(dir, name)
+			if cand != p && runnable(cand) && t.Probe(cand) {
+				return cand
+			}
 		}
 	}
 	return ""
+}
+
+// candidateNames covers Windows, where the executable carries an extension
+// the bare tool name lacks.
+func candidateNames(name string) []string {
+	if runtime.GOOS == "windows" {
+		return []string{name + ".exe", name + ".cmd", name + ".bat", name}
+	}
+	return []string{name}
 }
 
 func runnable(path string) bool {

@@ -2,8 +2,10 @@ package codeindex
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +33,11 @@ func loadTags(root string) ([]Tag, error) {
 		if json.Unmarshal(sc.Bytes(), &t) == nil {
 			tags = append(tags, t)
 		}
+	}
+	if err := sc.Err(); err != nil {
+		// a partial index answering as if whole is the lie the honesty rule
+		// bans — better no answer with the reason than a wrong one
+		return nil, fmt.Errorf("the index could not be read fully (%v) — run `procoder index build`", err)
 	}
 	return tags, nil
 }
@@ -246,10 +253,19 @@ func textualRefs(root, symbol string, out func(string)) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", root, "grep", "--untracked", "-I", "-nw", "--", symbol)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
 	raw, err := cmd.Output()
 	if err != nil {
-		out(fmt.Sprintf("no references to %q found (textual search)", symbol))
-		return 1
+		// git grep exits 1 for "no matches"; anything else is a failure and
+		// must never read as "the symbol is unused"
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 && ctx.Err() == nil {
+			out(fmt.Sprintf("no references to %q found (textual search)", symbol))
+			return 1
+		}
+		out(fmt.Sprintf("textual search FAILED — references were NOT checked: %s", firstLine(errb.String()+err.Error())))
+		return 2
 	}
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	for _, l := range lines {
@@ -419,6 +435,14 @@ func Refresh(root, file string) {
 			buf.WriteByte('\n')
 		}
 	}
+	if sc.Err() != nil {
+		return // leave the index untouched rather than write a truncated one
+	}
 	buf.Write(fresh)
-	os.WriteFile(filepath.Join(root, Dir, tagsFile), []byte(buf.String()), 0o644)
+	// atomic swap: a crash mid-write must never leave a half index behind
+	tmp := filepath.Join(root, Dir, tagsFile+".tmp")
+	if os.WriteFile(tmp, []byte(buf.String()), 0o644) != nil {
+		return
+	}
+	os.Rename(tmp, filepath.Join(root, Dir, tagsFile))
 }
