@@ -16,6 +16,7 @@ import (
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
 	"procoder/internal/lint"
+	"procoder/internal/security"
 )
 
 // Run checks the given paths, or the repository's changed files when none are
@@ -73,6 +74,8 @@ func Run(paths []string, root string, stdout io.Writer) int {
 	// Domain 2: the canonical linters over the changed set — report by
 	// default, blocking when the repo opted in ([lint] policy = "block").
 	hygiene = append(hygiene, lint.Files(root, paths, cfg.LintBlock)...)
+	// Domain 1: a secret in a changed file blocks, always
+	hygiene = append(hygiene, security.SecretsChangedFiles(root, paths)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "

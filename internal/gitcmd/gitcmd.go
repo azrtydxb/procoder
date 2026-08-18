@@ -17,6 +17,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/gitx"
+	"procoder/internal/security"
 )
 
 // Paths under D-HOME.
@@ -160,6 +161,10 @@ func Templates(root string, stdout io.Writer) int {
 	}
 	if _, err := os.Stat(filepath.Join(root, docs.MermaidConfigPath)); err != nil {
 		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", docs.MermaidConfigPath, docs.DefaultMermaidConfig)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, security.RulesPath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", security.RulesPath, security.DefaultRules)
 		printed = true
 	}
 	if !printed {

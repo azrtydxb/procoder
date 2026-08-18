@@ -23,6 +23,7 @@ import (
 	"procoder/internal/hook"
 	"procoder/internal/initcmd"
 	"procoder/internal/lint"
+	"procoder/internal/security"
 	"procoder/internal/tools"
 )
 
@@ -62,6 +63,16 @@ func init() {
 		if lint.HasEslintConfig(root) {
 			out = append(out, lint.Eslint)
 		}
+		// domain 1: gitleaks guards every repo; SAST and dependency scans
+		// where there is code and manifests to scan
+		out = append(out, security.Gitleaks)
+		out = append(out, security.Semgrep)
+		for _, m := range []string{"/go.mod", "/package.json", "/pyproject.toml", "/requirements.txt", "/Cargo.toml"} {
+			if _, err := os.Stat(root + m); err == nil {
+				out = append(out, security.OsvScanner)
+				break
+			}
+		}
 		// the index: universal-ctags always (any code repo), the SCIP tools
 		// where the repository's language has an indexer
 		out = append(out, codeindex.Ctags)
@@ -98,6 +109,9 @@ const usage = `usage: procoder <command> [args]
   git                  the pre-finish status: branch vs default, hygiene
                        findings (conflict markers, junk, oversized), message
                        checks, workflow lint, template state
+  security [--deep]    secrets over the changed files (gitleaks — blocking);
+                       --deep adds SAST (semgrep) and dependency vulns
+                       (osv-scanner) over the whole repository
   lint [paths...]      the canonical linter per ecosystem over the changed
                        files (or the given paths); report by default,
                        blocking when [lint] policy = "block"
@@ -146,6 +160,35 @@ func run(args []string) int {
 		return initcmd.Run(doctor.Root(), execute, os.Stdout)
 	case "git":
 		return gitcmd.Status(doctor.Root(), os.Stdout)
+	case "security":
+		root := doctor.Root()
+		changed, _ := gitx.ChangedFiles(root)
+		findings := security.SecretsChangedFiles(root, changed)
+		if len(args) > 1 && args[1] == "--deep" {
+			findings = append(findings, security.Sast(root)...)
+			findings = append(findings, security.Deps(root)...)
+		}
+		blocking := 0
+		for _, f := range findings {
+			mark := "  info "
+			if f.Blocking {
+				mark = "  BLOCK"
+				blocking++
+			}
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			if loc != "" {
+				loc += "  "
+			}
+			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
+		}
+		fmt.Printf("procoder security: %d finding(s) (%d blocking)\n", len(findings), blocking)
+		if blocking > 0 {
+			return 1
+		}
+		return 0
 	case "lint":
 		root := doctor.Root()
 		paths := args[1:]

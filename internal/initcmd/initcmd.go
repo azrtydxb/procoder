@@ -112,7 +112,7 @@ func Run(root string, execute bool, stdout io.Writer) int {
 func runInstall(s Step, stdout io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), installTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, s.Manager, s.Args...)
+	cmd := exec.CommandContext(ctx, s.Manager, s.Args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	err := cmd.Run()

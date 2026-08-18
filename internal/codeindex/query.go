@@ -412,7 +412,7 @@ func Refresh(root, file string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin,
+	cmd := exec.CommandContext(ctx, bin, // nosemgrep -- resolved from the fixed tool table, never user input
 		"--output-format=json", "--fields=+nSl", "-o", "-", rel)
 	cmd.Dir = root
 	raw, err := cmd.Output()

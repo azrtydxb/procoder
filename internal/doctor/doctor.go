@@ -98,7 +98,7 @@ func version(bin string, t *tools.Tool) string {
 	if len(t.VersionArgs) == 0 {
 		return "present"
 	}
-	out, err := exec.Command(bin, t.VersionArgs...).Output()
+	out, err := exec.Command(bin, t.VersionArgs...).Output() // nosemgrep -- resolved from the fixed tool table, never user input
 	if err != nil {
 		return "present (version unknown)"
 	}

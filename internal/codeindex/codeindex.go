@@ -96,7 +96,7 @@ var ScipCLI = &tools.Tool{
 func probeUniversal(bin string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output() // nosemgrep -- resolved from the fixed tool table, never user input
 	return err == nil && bytes.Contains(out, []byte("Universal Ctags"))
 }
 
@@ -165,7 +165,7 @@ func Build(root string, stdout func(string)) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin,
+	cmd := exec.CommandContext(ctx, bin, // nosemgrep -- resolved from the fixed tool table, never user input
 		"--output-format=json", "--fields=+nSl", "-L", "-", "-o", "-")
 	cmd.Dir = root
 	cmd.Stdin = strings.NewReader(strings.Join(files, "\n"))
@@ -248,11 +248,11 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	var cmd *exec.Cmd
 	switch indexer {
 	case "scip-go":
-		cmd = exec.CommandContext(ctx, bin, "-o", scipPath)
+		cmd = exec.CommandContext(ctx, bin, "-o", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
 	case "scip-typescript":
-		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath)
+		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
 	case "scip-python":
-		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath, ".")
+		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath, ".") // nosemgrep -- resolved from the fixed tool table, never user input
 	}
 	cmd.Dir = root
 	var errb bytes.Buffer
@@ -269,7 +269,7 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel2()
-	conv := exec.CommandContext(ctx2, scipBin, "print", "--json", scipPath)
+	conv := exec.CommandContext(ctx2, scipBin, "print", "--json", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
 	var convErr bytes.Buffer
 	conv.Stderr = &convErr
 	out, err := conv.Output()

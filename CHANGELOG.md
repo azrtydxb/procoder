@@ -2,6 +2,21 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.10.0 — 2026-08-19
+
+Domain 1, security: the priority level, built on lint's rails and the index.
+
+- Secrets (gitleaks): BLOCKING always — in the write hook the moment a
+  secret lands in a file, in the gate over the changed set. The finding
+  names rule and location, never the value, and orders a rotation.
+- SAST (semgrep, community rules) and dependency vulnerabilities
+  (osv-scanner): `procoder security --deep` and CI; ERROR severity and
+  CVSS ≥ 7.0 block, the rest is judged.
+- `/procoder:security` reviews from the index's entry points and call
+  graph; rules live in .procoder/security/RULES.md.
+- Missing scanners read as blocking NOT-checked — a security check that
+  silently didn't run is worse than a red one.
+
 ## 0.9.0 — 2026-08-19
 
 Domain 2, best practices: the canonical linter per ecosystem.

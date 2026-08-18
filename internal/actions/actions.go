@@ -76,7 +76,7 @@ func Lint(files []string) []gitx.Finding {
 	defer cancel()
 	// -no-color keeps the output parseable; actionlint exits 1 on findings,
 	// which is not an error for us.
-	cmd := exec.CommandContext(ctx, bin, append([]string{"-no-color"}, files...)...)
+	cmd := exec.CommandContext(ctx, bin, append([]string{"-no-color"}, files...)...) // nosemgrep -- resolved from the fixed tool table, never user input
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
