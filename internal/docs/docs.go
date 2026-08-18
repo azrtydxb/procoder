@@ -254,6 +254,12 @@ func compileMermaid(root, bin, body string) string {
 	if _, err := os.Stat(filepath.Join(root, MermaidConfigPath)); err == nil {
 		args = append(args, "--configFile", filepath.Join(root, MermaidConfigPath))
 	}
+	// CI runners need puppeteer told which browser to use and to skip the
+	// sandbox; the environment provides that, never the repo (a committed
+	// executablePath would be wrong on every other machine).
+	if pc := os.Getenv("PROCODER_PUPPETEER_CONFIG"); pc != "" {
+		args = append(args, "--puppeteerConfigFile", pc)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
