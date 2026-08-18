@@ -61,3 +61,24 @@ func TestOutOfScopeIsCountedNotFailed(t *testing.T) {
 		t.Fatalf("skip was not counted out loud:\n%s", out.String())
 	}
 }
+
+// The regression that live testing caught: five blocking hygiene findings were
+// printed and the gate exited 0, because the exit condition only knew about
+// formatting. A gate whose report and exit code disagree is worse than either
+// alone — CI reads the exit, humans read the report.
+func TestBlockingHygieneFailsTheExitCodeNotJustTheReport(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "conflicted.txt")
+	content := "ok\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> other\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	code := Run([]string{p}, dir, &out)
+	if !strings.Contains(out.String(), "BLOCKING") {
+		t.Fatalf("the conflict marker was not reported:\n%s", out.String())
+	}
+	if code != 1 {
+		t.Fatalf("exit %d with a blocking finding in the report, want 1\n%s", code, out.String())
+	}
+}

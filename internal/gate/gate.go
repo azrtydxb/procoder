@@ -79,8 +79,10 @@ func Run(paths []string, root string, stdout io.Writer) int {
 		clean, len(unformatted), len(unchecked), skipped, len(hygiene), blockingHygiene)
 
 	// Unchecked fails the gate exactly like unformatted does: a file the gate
-	// could not look at is not a passing file.
-	if len(unformatted) > 0 || len(unchecked) > 0 {
+	// could not look at is not a passing file. Blocking hygiene findings fail
+	// it for the same reason a human reviewer would — this condition is pinned
+	// by a test, because the first release printed the findings and exited 0.
+	if len(unformatted) > 0 || len(unchecked) > 0 || blockingHygiene > 0 {
 		return 1
 	}
 	return 0
