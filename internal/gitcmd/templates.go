@@ -4,6 +4,8 @@ package gitcmd
 // `procoder templates` — and the agent writes the files under
 // .procoder/github/ (D-HOME). Plain Markdown, made to be edited.
 
+// PRTemplate is the default pull-request template: What/Why/How/Testing and
+// notes for the reviewer.
 const PRTemplate = `## What
 
 <!-- One paragraph: what this change does, in the reader's terms. -->
