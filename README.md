@@ -1,12 +1,12 @@
 # procoder
 
-**Make your AI coder work like a senior developer** — real formatters, git
-discipline, documentation checks and merge gates, delivered as tools the agent
-runs itself and hooks it cannot skip. The agent stays in control; nothing ever
-touches your code behind its back.
+**Make your AI coder work like a senior developer** — all nine domains of
+senior work, from security scans to merge discipline, delivered as tools the
+agent runs itself and hooks it cannot skip. The agent stays in control;
+nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.13.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.14.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 ## Quick start
@@ -53,7 +53,7 @@ level by level:
 1. **Security** ← shipped (v1)
 2. **Best practices** ← shipped (v1: lint)
 3. **Maintainability** ← shipped (v1)
-4. Performance
+4. **Performance** ← shipped (v1: skills)
 5. **Documentation** ← shipped (v1)
 6. **Clean code / readability / pretty** ← shipped (v1: formatting)
 7. **CI / CD / CT** ← shipped (v1)

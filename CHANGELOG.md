@@ -2,6 +2,17 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.14.0 — 2026-08-19
+
+Domain 4, performance — and with it, all nine domains shipped.
+
+- `/procoder:perf`: the measure-first discipline as a skill. Deterministic
+  perf checks barely exist, so v1 teaches the real instruments (go test
+  -bench/pprof/benchstat, cProfile/py-spy, node --cpu-prof) and the law:
+  baseline, change, re-measure, report the delta with the command — a fix
+  without a benchmark is a hope. Heavier tooling arrives when a real need
+  shows.
+
 ## 0.13.0 — 2026-08-19
 
 Domain 8, DevOps/IaaS/CaaS: each instrument only where its files exist.
