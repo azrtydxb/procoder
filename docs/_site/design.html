@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why it works this way — procoder</title>
+<meta name="description" content="The decisions behind procoder's shape — the ratchet's semantics, the TOML subset, the performance ceilings and the self-scan's own skips — each with the measurement that chose it.">
+<link rel="stylesheet" href="assets/procoder.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <nav class="nav" aria-label="Documentation">
+  <a class="brand" href="index.html">
+    <span class="brand-name">procoder</span>
+    <span class="brand-meta">v0.2.0</span>
+  </a>
+  
+  <div class="nav-section">
+  <p class="nav-group">The gate</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="index.html">Overview</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="doctrine.html">The six rungs</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Using it</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="start.html">Get started</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="commands.html">Commands</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="configuration.html">Configuration</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Honesty</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="limitations.html">What it misses</a></li>
+    
+    
+    
+    <li><a class="nav-link is-current" href="design.html" aria-current="page">Why it works this way</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Elsewhere</p>
+  <ul class="nav-list">
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder">Source on GitHub</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/install.md">Install guide, all hosts</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known limitations</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md">Changelog</a></li>
+  </ul>
+  </div>
+</nav>
+
+  <main class="content" id="main" tabindex="-1">
+    <!-- Badges, drawn rather than fetched. A shields.io image would be one
+         external request per badge on a site whose whole claim is that it makes
+         none, from a tool whose first rung calls a new dependency a new trust
+         boundary. Every value here is a fact of the release, not a status that
+         can change between builds: a CI badge belongs on the README, where
+         GitHub serves it from the workflow itself. -->
+    <ul class="badges" aria-label="Release facts">
+      <li class="badge"><span class="badge-k">version</span><span class="badge-v">0.2.0</span></li>
+      <li class="badge"><span class="badge-k">licence</span><span class="badge-v">Apache-2.0</span></li>
+      <li class="badge"><span class="badge-k">node</span><span class="badge-v">≥ 18</span></li>
+      <li class="badge"><span class="badge-k">runtime deps</span><span class="badge-v">0</span></li>
+    </ul>
+    <p class="eyebrow">Honesty</p>
+
+<h1>Why it works this way</h1>
+
+<p class="lede">
+  These are decisions, not shortcomings. Each one narrows what procoder does, each
+  one was measured before it was taken, and none of them costs a finding the tool
+  would otherwise have reported. They lived on
+  <a href="limitations.html">what it misses</a> for five editions, where they read
+  as apologies. They are rationale, and they belong here.
+</p>
+
+<div class="note">
+  <p>
+    The test that split the two pages: <strong>a decision we made deliberately is
+    not a limitation.</strong> Where a deliberate decision <em>does</em> cost the
+    reader a finding — an escaper trusted by name, a cap on how much the hook
+    prints — it stays on
+    <a href="limitations.html">what it misses</a>, under <em>accepted
+    trade-offs</em>, with what it buys stated next to what it costs. Everything
+    on this page fails silently in the safe direction, or does not fail at all.
+  </p>
+</div>
+
+<h2>The ratchet: what a fingerprint is made of</h2>
+
+<p>
+  <code>hooks/checks/baseline.js</code> fingerprints each finding from its rule id,
+  its file path, the normalized text of the <em>statement</em> the finding sits in
+  — extended forward while a bracket or an operator is still open — and an
+  occurrence ordinal. The line number is deliberately excluded.
+</p>
+
+<p>
+  Every property below was verified against a baselined finding. What the choice
+  buys is stability under edits that changed nothing: reindenting a file, or moving
+  a suppressed line up or down, does not resurrect a suppressed finding, and a
+  re-wrapping formatter no longer breaks it — <code>statementAt</code> reads the
+  whole open construct and drops a comma added before a closer, so
+  <code>db.query(x)</code> and the prettier-wrapped form of the same call
+  fingerprint alike. Copy-pasting a suppressed line does not ride in for free
+  either: the occurrence ordinal gives each copy its own identity, so only the
+  first is suppressed.
+</p>
+
+<p>
+  What it costs is in one direction only — a finding is <em>re-reported</em>, never
+  missed:
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Edit</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Moving code between files</td>
+      <td>The path is part of the fingerprint, so a relocated violation is a brand-new finding rather than a tracked move. Verified: baseline <code>a.js</code>, move the function verbatim into <code>b.js</code>, and <code>verify</code> exits 1 with the finding listed as new. Tracking moves would mean matching content across a whole tree, and a ratchet that guesses at identity is a ratchet that silently forgives.</td>
+    </tr>
+    <tr>
+      <td>Editing line 1 of a file with a file-level finding</td>
+      <td><code>obvious/nesting-depth</code> is reported at line 1, so its fingerprint is over whatever the file's first line says. Add a copyright header or an import and the accepted finding returns. Verified end to end.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The baseline itself no longer grows without end. <code>procoder baseline</code>
+  prunes an entry whose finding is fixed or gone and says how many it dropped —
+  verified: three accepted entries, fix every finding in the tree, re-run, and the
+  file reports <code>0 accepted findings, 3 pruned — fixed or gone</code>. An entry
+  carrying the string <code>unknown</code> for its date is stamped with today's on
+  the next write, exactly as <code>verify --aging</code> says it will be — verified:
+  a hand-edited <code>unknown</code> entry came back as
+  <code>{"id":"safe/dynamic-eval","path":"a.js","added":"2026-08-17"}</code>.
+</p>
+
+<p>
+  One thing about <code>added</code> is worth saying plainly: <strong>it is data
+  the user owns.</strong> It is hand-editable, nothing signs it, nothing
+  cross-checks it against git, and exactly one thing reads it —
+  <code>--aging</code>. A date edited to last week resets the clock on a year-old
+  suppression, silently. That is the same trust the config file already has.
+</p>
+
+<h2>The baseline format is versioned, and old baselines are not migrated</h2>
+
+<p>
+  <code>BASELINE_VERSION</code> in <code>hooks/checks/baseline.js</code> is
+  <strong>4</strong>. It moved from 3 when entries began recording their rule, path
+  and date, and earlier fingerprints cannot be reconstructed from what a v3 file
+  holds. A stale-version file therefore loads as an <em>empty</em> accepted set,
+  never a partial one — a partial migration would suppress an arbitrary subset and
+  call it a ratchet. Verified against a hand-edited v1 file:
+</p>
+
+<ul>
+  <li><code>procoder verify</code> exits <strong>2</strong>, distinct from the
+    <strong>1</strong> used for "the ratchet grew", and says the baseline is the
+    wrong format — CI does not blame the user for a backlog they did not add.</li>
+  <li><code>procoder check</code> prints the same stderr notice but still reports
+    every finding in the repository, because nothing is suppressed. The exit code
+    is the ordinary one.</li>
+  <li><code>procoder baseline</code> always overwrites with a current-version file,
+    so running it is the fix in both cases.</li>
+</ul>
+
+<p>
+  The failure direction is more findings, never fewer, which is why this is a
+  decision and not a defect.
+</p>
+
+<h2>The TOML parser is a documented subset</h2>
+
+<p>
+  <code>hooks/checks/toml.js</code> exists to read <code>.procoder.toml</code> and
+  nothing else. A general TOML parser would be a dependency, and rung 1 says a new
+  dependency is a new trust boundary. What it supports: <code>[tables]</code>,
+  <code>[dotted.tables]</code>, dotted keys (<code>a.b = 1</code>), basic strings
+  with escapes, literal strings, int, float, bool, and arrays — single-line or
+  spanning several lines, with trailing commas and comments inside the array.
+  Verified working: <code>s = "a\"b"</code> loads <code>a"b</code>,
+  <code>s = 'C:\src\'</code> loads the backslashes as written,
+  <code>paths = ["a, b", "c"]</code> yields two entries, and so do nested arrays,
+  mixed-type arrays, CRLF and a BOM.
+</p>
+
+<p>
+  What makes the subset safe rather than lossy is that <strong>everything the
+  parser cannot read exactly is warned about on stderr</strong>, with file and
+  line, and the key is left unset — which falls back to the stricter default.
+  Verified refusals, each warned and none guessed at: inline tables
+  (<code>t = {a=1}</code>, including inside an array), dates and times,
+  hexadecimal (<code>0x1f</code>), underscored (<code>1_000</code>), exponent
+  (<code>1e6</code>), <code>inf</code>, <code>+1</code>, bare unquoted words,
+  quoted keys (<code>"a b" = 1</code>), multi-line strings, arrays of tables
+  (<code>[[x]]</code>), unknown escapes, unterminated strings, and an array that
+  never closes.
+</p>
+
+<p>
+  A duplicate key is refused in both directions rather than resolved: <code>x =
+  1</code> then <code>x = 2</code> warns <code>.procoder.toml:2: duplicate key,
+  both values ignored: x</code> and leaves <code>x</code> unset, rather than taking
+  the last. A repeated <code>[table]</code> header warns <code>duplicate table
+  header, section ignored</code>. Verified end to end: a <code>.procoder.toml</code>
+  with <code>paths</code> written twice under <code>[exclude]</code> excludes
+  nothing and says so. A duplicate says two things and TOML permits neither, so
+  keeping either one would be a guess.
+</p>
+
+<p>
+  One construct still loads a value nobody wrote, and because it does so in
+  <em>silence</em> it is the one row of this section that stayed on
+  <a href="limitations.html">what it misses</a>: a scalar and a table of the same
+  name.
+</p>
+
+<h2>Deliberate narrowings from performance work</h2>
+
+<p>
+  Every long-line path in the engine was made linear, and each rewrite was proven
+  behaviour-identical by differential runs. The ceilings that survived are real
+  and are listed here rather than left in the source. Each one <em>announces</em>
+  itself when it bites — which is what separates these from the three that cut
+  silently, and those three are on
+  <a href="limitations.html">what it misses</a> as accepted trade-offs.
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Narrowing</th><th>Where</th><th>Effect, measured</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>20 findings per line</td>
+      <td><code>hooks/checks/run.js</code></td>
+      <td>Overflow is reported as its own finding (<code>true/findings-suppressed</code>) naming the count, never silently dropped. Verified: a line of 3,000 minified <code>try{f()}catch(e){}</code> blocks reports 20 findings plus <code>line 1: 2980 further findings suppressed (cap 20 per line)</code>. No honest line reaches 20.</td>
+    </tr>
+    <tr>
+      <td><strong>1 MB</strong> per-file skip</td>
+      <td><code>hooks/checks/config.js</code>, applied in <code>run.js</code></td>
+      <td>Down from 4 MB to 2 MB, and again to 1 MB. The language pack is the one stage that cannot be abandoned part-way — everything after it is deadline-driven — so the size of what it is handed is the only lever on its cost, and the taint rebuild roughly doubled the ts pack's constant. 1 MB of ordinary source costs the worst pack ~400 ms of the 2,000 ms budget here, which still finishes on a host three times slower; 2 MB did not. Verified: a file of exactly 1,048,576 bytes is checked; at 1,048,577 <code>procoder check</code> prints <code>skipped exact.js (too-large) — not checked.</code> on stderr, and <code>procoder verify</code> over the same tree exits <strong>2</strong>.</td>
+    </tr>
+    <tr>
+      <td><code>[limits] max_file_bytes</code>, downward only</td>
+      <td><code>hooks/checks/config.js</code></td>
+      <td>A project may lower the cap, never raise it. <code>max_file_bytes = 999999999</code> warns <code>is above the measured ceiling 1048576 — using 1048576</code>; <code>0</code>, <code>-5</code>, <code>"big"</code> and <code>true</code> each warn <code>must be a positive number of bytes, ignored</code> and fall back to 1 MB. Set it too low to admit any file and <code>procoder verify</code> names every file it could not check and exits <strong>2</strong> rather than declaring a ratchet over a run that read nothing.</td>
+    </tr>
+    <tr>
+      <td>2 s budget, and what it cuts</td>
+      <td><code>hooks/checks/run.js</code></td>
+      <td>Checks after the deadline are skipped. The language pack runs <em>before</em> the project's linter, and the linter is paid a <em>share</em> of what is left on the clock (0.6, floor 100 ms) rather than a precomputed split, so the total is under budget by arithmetic on any host rather than by a constant measured on one. Worst case at a 3× slowdown went from 1,797 ms to 1,448 ms of 2,000 ms, and holds to 6×. What the deadline cuts is loud on both channels: a <code>true/budget-exhausted</code> finding appended <em>after</em> the per-file cap, so five SAFE findings cannot push it out, plus a stderr line naming the stage. The universal pack (rung 1) runs first of all and can never be the stage that is cut.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The budget is <strong>uniform</strong>: the parent puts it in the worker's
+  payload and passes it on the sequential path too, so a file scanned inside a
+  worker runs at the same 2,000 ms. Verified — <code>hooks/checks/scan.js</code>
+  exports <code>SCAN_BUDGET_MS</code> at 2,000 and no <code>SLICE_BUDGET_MS</code>
+  at all. The 200-character <code>SPAN_MAX</code> that used to bound the universal
+  pack is gone.
+</p>
+
+<h2>The self-scan's own arithmetic</h2>
+
+<p>
+  <code>tests/dogfood.test.js</code> derives its file list from <code>git
+  ls-files</code>, so a file is inside the gate the day it lands. Both of its
+  hold-out lists — <code>HELD_OUT</code> and <code>PENDING</code> — are empty, and
+  both are checked for still earning their place: the test fails if a
+  <code>HELD_OUT</code> path matches no tracked file or has gone clean.
+</p>
+
+<p>
+  Measured today over <strong>212</strong> tracked files, <code>procoder check
+  .</code> reports <strong>0</strong> findings and exits 0, having skipped
+  <strong>18</strong> of them and said so on stderr for every one:
+</p>
+
+<ul>
+  <li><strong>9 by <code>[exclude] paths</code> in <code>.procoder.toml</code></strong>,
+    one line per pattern with its count: 7 <code>tests/fixtures/*/dirty.*</code>,
+    and one each for <code>.opencode/command/rot.md</code> and
+    <code>.openclaw/commands/rot.md</code>. The dirty fixtures exist to be scanned
+    by the tests rather than by the scan, and a line marker in one would change the
+    input the test reads. The other two carry exactly one finding each, named in
+    <code>.procoder.toml</code> next to the entry, with the source fix named too.</li>
+  <li><strong>9 by two <code>.procoderignore</code> files</strong>: 5 under
+    <code>docs/superpowers/</code> — 1,500-line planning documents for work already
+    executed, quoting rule ids by the hundred, verified at 56 findings under
+    <code>--no-ignore</code> and every one of them meta-text — and 4
+    <code>examples/*/before.*</code>, files that violate a rung on purpose,
+    verified at 10 findings under <code>--no-ignore</code> and still checked on
+    every test run through that flag.</li>
+</ul>
+
+<p>
+  So <strong>194</strong> files are actually read, and README.md publishes those
+  three numbers; <code>tests/dogfood.test.js</code> asserts them against the scan's
+  own output, so the paragraph fails the build rather than going quietly out of
+  date. The repository root also carries a <code>.procoderignore</code> for
+  <code>.claude/</code> and <code>.superpowers/</code>; both are untracked agent
+  scratch, so the count it skips is whatever the machine happens to be holding and
+  is not a reproducible number.
+</p>
+
+<p>
+  This list was 46 files until the staleness rules existed to judge it. Of the 32
+  generated rule files then excluded on the "it is generated" argument, 30 held
+  nothing back at all — they are rendered from
+  <code>skills/procoder/SKILL.md</code>, which is itself in the gate, so the
+  markers that keep the source clean render into them too. They are gated now. The
+  remaining two are one false positive, not a category.
+</p>
+
+<h3>Every exclusion is re-judged, and where that stops</h3>
+
+<p>
+  <code>unusedPathExclusions</code> in <code>hooks/checks/config.js</code> reports a
+  configured path exclusion three ways — its path no longer exists, it matches no
+  file in the tree, or every file it covers is clean — under plain
+  <code>verify</code>, failing the build only under
+  <code>--unused-exclusions</code>, which is the contract
+  <code>unusedRuleExclusions</code> has always had. Verified in a throwaway
+  repository: <code>paths = ["keep/", "**/*.gen.ts"]</code> with <code>keep/</code>
+  holding one clean file and no <code>.gen.ts</code> anywhere names both and exits
+  non-zero under the flag. <code>unusedIgnorePatterns</code> judges a
+  <code>.procoderignore</code> the same way and on the same contract, one pattern at
+  a time, naming file, line and the pattern as written.
+</p>
+
+<p>
+  The two tree-wide rules are decided only when the run's targets covered the whole
+  repository — "this glob matches nothing" is a claim about the tree, and a
+  <code>verify</code> over one file has not seen it — so a partial run says nothing,
+  deliberately. Three more limits on the same instrument are deliberate too. There
+  is no "the path is gone" rule for an ignore file: a literal path there is a fence
+  around a location, and such a location is legitimately absent from a fresh clone,
+  as this repository's own <code>.claude/</code> and <code>.superpowers/</code>
+  lines are in CI. A pattern covering only untracked files is never judged, because
+  content the repository does not own cannot go clean in any sense procoder can
+  verify — and where <code>git ls-files</code> cannot answer, no ignore pattern is
+  judged at all. And a <strong>negated</strong> pattern (<code>!keep.js</code>) is
+  never judged, because "this exception stopped mattering" is not a claim about
+  coverage lost. All three of this repository's own ignore files are silent under
+  these rules, by rule rather than by exemption.
+</p>
+
+<h3><code>--no-ignore</code> does not reach <code>[exclude] paths</code></h3>
+
+<p>
+  The flag answers "why is this file not being checked?" by turning off every
+  <code>.procoderignore</code> for the run, and nothing else. <code>[exclude]
+  paths</code> is the project-wide contract, written once at the root and reviewable
+  in one place, and it carries the built-in <code>node_modules/</code>,
+  <code>vendor/</code>, <code>dist/</code> defaults — so a flag that reached it
+  would be a back door into <code>node_modules</code>, not a diagnostic. Verified:
+  with <code>[exclude] paths = ["sub/"]</code>, an injected
+  <code>safe/sql-injection</code> in <code>sub/x.js</code> is silent under
+  <code>procoder check .</code> and under <code>procoder check --no-ignore .</code>
+  alike. It is not silent <em>about itself</em>: both runs print <code>2 files
+  skipped by [exclude] paths "sub/" in .procoder.toml</code>, and naming the file on
+  the command line prints <code>skipped sub/x.js ([exclude] paths "sub/" in
+  .procoder.toml)</code> rather than answering a direct question with silence.
+</p>
+
+<p>
+  <code>.claude/</code> is deliberately <em>not</em> in procoder's built-in
+  defaults, so a user starting a scan at their repository root sees findings from
+  whatever their agent tooling leaves there until they write an ignore file of
+  their own. <code>.claude/</code> also holds hand-written hooks and scripts, and a
+  default exclusion would un-gate those silently for everybody.
+</p>
+
+<h2>Config keys</h2>
+
+<p>
+  <code>.procoder.toml</code>'s supported keys are documented in
+  <a href="configuration.html">Configuration</a> and in <code>README.md</code>, and
+  are deliberately not duplicated into the limitations record — a key documented in
+  two places is a key that will be wrong in one of them.
+  <code>tests/docs-drift.test.js</code> fails the build when the engine reads a key
+  the reference does not mention, and when the reference documents a key the engine
+  no longer reads.
+</p>
+
+<div class="note">
+  <p>
+    Every measurement on this page was produced by running the tool at 0.2.0, not
+    read off a previous edition. Where a number here and a number in
+    <a href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">docs/known-limitations.md</a>
+    disagree, the markdown is the record and this page is stale.
+  </p>
+</div>
+
+    <footer class="foot">
+      <p>No fonts, no analytics, no scripts. This page makes no external request.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

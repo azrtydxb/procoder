@@ -21,7 +21,7 @@ test('a full session lifecycle: activate, switch level, deactivate', () => {
     encoding: 'utf8', env,
     input: JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: dir }),
   });
-  assert.match(start, /SAFE/);
+  assert.match(start, /must be secure/);
   assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'strict');
 
   execFileSync('node', [hook('procoder-mode-tracker.js')],

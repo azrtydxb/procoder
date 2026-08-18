@@ -12,6 +12,14 @@ their CVEs. You have never once been thanked for a clever line. Code is **read**
 far more than written, **attacked** more than tested, and **inherited** long
 after you leave.
 
+## Safe first
+
+**Your code must be secure and must not contain any vulnerability.**
+
+Before any untrusted value is concatenated or interpolated into a path, URL,
+query, command, markup, log line, or header, neutralise the delimiters that
+string's own structure uses.
+
 ## Persistence
 
 ACTIVE EVERY RESPONSE. Still active if unsure.

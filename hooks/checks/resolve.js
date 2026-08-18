@@ -10,20 +10,35 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-const { toolFor } = require('./registry');
+const { toolFor, toolsFor } = require('./registry');
 
 const WHICH = process.platform === 'win32' ? 'where' : 'which';
 
 const toolCache = new Map();
 
-function hasTool(name) {
+// A project's analyzers usually are not on PATH. eslint, and anything else a
+// repo installs with npm, lives in <repo>/node_modules/.bin — so a gate that
+// only consults PATH reports "eslint is not installed" to a project that has
+// installed eslint, which is the most annoying possible way to be wrong. The
+// local bin dir is searched first: the version a project pinned is the version
+// its config was written against, and it beats whatever is global.
+function binPath(repoRoot) {
+  const local = repoRoot ? path.join(repoRoot, 'node_modules', '.bin') : null;
+  const current = process.env.PATH || '';
+  return local && fs.existsSync(local) ? local + path.delimiter + current : current;
+}
+
+function hasTool(name, repoRoot) {
   // Keyed by PATH as well as name: the answer is only valid for the PATH that
   // produced it, and a stale hit would outlive any change to it.
-  const key = `${name}\0${process.env.PATH || ''}`;
+  const search = binPath(repoRoot);
+  const key = `${name}\0${search}`;
   if (toolCache.has(key)) return toolCache.get(key);
   let found = false;
   try {
-    execFileSync(WHICH, [name], { stdio: 'ignore', timeout: 1000 });
+    execFileSync(WHICH, [name], {
+      stdio: 'ignore', timeout: 1000, env: { ...process.env, PATH: search },
+    });
     found = true;
   } catch (e) {
     found = false;
@@ -69,12 +84,28 @@ function isConfigured(repoRoot, tool) {
   });
 }
 
+// An analyzer runs because the file is in a language it answers for — not
+// because the project happened to configure it. That inversion is the point of
+// the rewrite: under the old rule a repo with no eslint config was simply not
+// checked, and silence read as a pass. A project's own config is still honoured
+// when present, because the analyzer reads it; its ABSENCE no longer excuses
+// the file from being looked at.
+//
+// A missing binary is not handled here. It is reported as a gap by
+// toolchain.js, at rung 1, on the file that could not be checked.
 function resolveFor(relPath, { repoRoot }) {
   const tool = toolFor(relPath);
   if (!tool) return null;
-  if (!isConfigured(repoRoot, tool)) return null;
-  if (!hasTool(tool.name)) return null;
+  if (!hasTool(tool.name, repoRoot)) return null;
   return tool;
+}
+
+// Every installed analyzer that answers for this file. A file is checked by all
+// of them, not by whichever one the extension map happened to name first —
+// semgrep carries the cross-language security rules and no language tool
+// replaces them.
+function resolveAllFor(relPath, { repoRoot }) {
+  return toolsFor(relPath).filter((tool) => hasTool(tool.name, repoRoot));
 }
 
 const MAX_TOOL_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -106,8 +137,9 @@ function reportingStdio(tool) {
 // discards stderr entirely on a zero exit. That is exactly clippy's case, so
 // stderr capture is unreachable through execFileSync.
 function spawnTool(tool, { repoRoot, absPath, timeoutMs, argv }) {
-  const run = spawnSync(tool.name, argv || tool.argv(absPath), {
+  const run = spawnSync(tool.name, argv || tool.argv(absPath), {  // procoder: literal safe/semgrep:javascript.lang.security.detect-child-process.detect-child-process the binary name comes from the tool table above, never from a caller; argv is an array and shell is false
     cwd: repoRoot,
+    env: { ...process.env, PATH: binPath(repoRoot) },
     encoding: 'utf8',
     timeout: timeoutMs,
     maxBuffer: MAX_TOOL_OUTPUT_BYTES,
@@ -256,25 +288,38 @@ function batchGroup(tool, { repoRoot, files, timeoutMs }) {
   return answers;
 }
 
+// One spawn per ANALYZER for the whole run — and every analyzer that answers for
+// a file, not just its language one. This is also where semgrep gets the time it
+// needs: the CLI's budget is generous where a write hook's is 2s, so the tool
+// that is skipped on every write is the one that runs here, over everything, in
+// a single process.
+//
+// Answers are merged per file rather than overwritten. A Go file is answered by
+// golangci-lint AND semgrep, and keeping only the last one to report would
+// silently delete the other's findings.
 function runToolBatches(files, { repoRoot, timeoutMs = 120000 }) {
   const byTool = new Map();
   for (const absPath of files) {
     const rel = path.relative(repoRoot, absPath).replace(/\\/g, '/');
-    const tool = resolveFor(rel, { repoRoot });
-    if (!canBatch(tool)) continue;
-    if (!byTool.has(tool.name)) byTool.set(tool.name, { tool, files: [] });
-    byTool.get(tool.name).files.push(absPath);
+    for (const tool of resolveAllFor(rel, { repoRoot })) {
+      if (!canBatch(tool)) continue;
+      if (!byTool.has(tool.name)) byTool.set(tool.name, { tool, files: [] });
+      byTool.get(tool.name).files.push(absPath);
+    }
   }
 
   const answers = new Map();
   for (const { tool, files: group } of byTool.values()) {
     for (const [file, answer] of batchGroup(tool, { repoRoot, files: group, timeoutMs })) {
-      answers.set(file, answer);
+      const prior = answers.get(file);
+      answers.set(file, prior
+        ? { findings: [...prior.findings, ...answer.findings], ok: prior.ok && answer.ok }
+        : answer);
     }
   }
   return answers;
 }
 
 module.exports = {
-  hasTool, isConfigured, resolveFor, runTool, runToolResult, runToolBatches, canBatch,
+  hasTool, binPath, resolveAllFor, isConfigured, resolveFor, runTool, runToolResult, runToolBatches, canBatch,
 };

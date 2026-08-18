@@ -128,6 +128,19 @@ file = ".procoder-baseline.json"</code></pre>
 </p>
 
 <p>
+  <strong><code>[codeql] build_command</code></strong> is the command that
+  compiles this project, and it is the one setting <code>procoder deep</code>
+  needs. CodeQL learns an interpreted language by reading it, and a compiled one
+  by <em>watching a build</em> — so Python, JavaScript, TypeScript, Ruby and Go
+  need nothing here, while C, C++, Java and C# cannot be analysed until this is
+  set. Leaving it unset is not a silent skip: <code>deep</code> names every
+  language it could not analyse and why.
+</p>
+
+<pre><code>[codeql]
+build_command = "make -B"</code></pre>
+
+<p>
   <strong><code>[limits] max_file_bytes</code></strong> is the largest file the
   engine will open. A file above it is skipped — and said so on stderr by the
   hook and by every subcommand, because "too large to check" and "nothing wrong"

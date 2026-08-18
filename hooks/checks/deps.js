@@ -67,7 +67,7 @@ const CONCRETE = /^\^?\d+\.\d+\.\d+$/;
 // line, so a line-by-line scan finds nothing. JSON.parse gives the truth; this
 // only decorates it with a location.
 function lineOf(lines, name) {
-  const needle = new RegExp(`"${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:\\s*"`);
+  const needle = new RegExp(`"${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s*:\\s*"`);  // procoder: literal safe/eslint:security/detect-non-literal-regexp the name is regex-escaped on the line above
   const index = lines.findIndex((line) => needle.test(line));
   return index >= 0 ? index + 1 : 1;
 }
@@ -280,7 +280,7 @@ function lockedIn(lock, name) {
   // does not exist and swallowed the next function into a 51-line span. Same
   // escaping, no braces on either side of the comment.
   const escaped = name.replace(/[^\w@/.-]/g, (c) => '\\' + c);
-  return new RegExp(LOCK_BEFORE + escaped + LOCK_AFTER, 'm').test(lock);
+  return new RegExp(LOCK_BEFORE + escaped + LOCK_AFTER, 'm').test(lock);  // procoder: literal safe/eslint:security/detect-non-literal-regexp escaped to a closed character class on the line above
 }
 
 // A manifest entry with no lockfile entry was hand-written, not installed.

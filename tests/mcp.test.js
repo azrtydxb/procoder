@@ -252,9 +252,23 @@ function call(name, args) {
     .then(([res]) => res);
 }
 
+// The fixture repo borrows this repo's own analyzers. procoder finds a
+// project's linters in node_modules/.bin (see resolve.js binPath), so linking
+// them in is what makes a temp repo a gated one — without it every fixture below
+// reports "eslint is not installed" instead of the findings it is about.
+const REPO_ROOT = path.join(__dirname, '..');
+
 const tempRepo = (files = {}) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-mcp-'));
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  try {
+    fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+    fs.copyFileSync(path.join(REPO_ROOT, 'eslint.config.mjs'), path.join(dir, 'eslint.config.mjs'));
+  } catch (e) {
+    // A machine without the dev dependencies installed still runs every other
+    // assertion in this file; the finding-count test is the only one that needs
+    // a working analyzer, and it says so when it cannot get one.
+  }
   for (const [rel, content] of Object.entries(files)) {
     fs.writeFileSync(path.join(dir, rel), content);
   }
@@ -270,11 +284,22 @@ test('procoder_check fails the call for a file it cannot read', async () => {
   assert.match(out, /not checked/);
 });
 
+// The hook caps its report at five findings, because it is writing into a
+// model's context. The MCP tool has no such constraint and must not inherit the
+// cap: a caller asking for a file's findings gets the file's findings.
 test('procoder_check reports every finding, not the hook\'s top five', async () => {
-  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  const dir = tempRepo({ 'many.ts': Array.from({ length: 8 }, (_, i) => `eval(x${i});`).join('\n') + '\n' });
+  // Eight non-literal RegExp constructions, one per line, so the expected count
+  // is exact. The rule is detect-non-literal-regexp, which this repo keeps ON
+  // for shipped source — the fixture lives in a temp dir, so the tests/** block
+  // that switches it off does not reach it.
+  const body = Array.from({ length: 8 }, (_, i) => `const r${i} = new RegExp(p${i});`).join('\n');
+  const dir = tempRepo({ 'many.ts': `${body}\n` });
   const res = await call('procoder_check', { path: path.join(dir, 'many.ts') });
-  const lines = res.result.content[0].text.split('\n').filter((l) => /many\.ts:/.test(l));
+  const text = res.result.content[0].text;
+  if (/is not installed/.test(text)) {
+    assert.fail('the fixture repo has no analyzer — run npm install first');
+  }
+  const lines = text.split('\n').filter((l) => /many\.ts:/.test(l));
   assert.strictEqual(lines.length, 8, `reported ${lines.length} of 8 findings, silently`);
 });
 

@@ -17,7 +17,7 @@ const {
 const { checkFile } = require('../hooks/checks/run');
 const { runToolBatches } = require('../hooks/checks/resolve');
 const { scanFiles, defaultJobs } = require('../hooks/checks/scan');
-const { formatFindings } = require('../hooks/checks/finding');
+const { formatFindings, sortFindings } = require('../hooks/checks/finding');
 const { FORMATS, jsonReport, sarifReport } = require('../hooks/checks/report');
 const { buildIndex, deadExports } = require('../hooks/checks/exports');
 const { readLevel } = require('../hooks/procoder-runtime');
@@ -32,7 +32,21 @@ const USAGE = `usage: procoder <check|baseline|verify> [options] <paths...>
        procoder rot <paths...>
        procoder check [--format text|json|sarif] [--since <ref>] [paths...]
        procoder statusline <install|uninstall|status> [--append] [--force]
+       procoder doctor
+       procoder deep [paths...]
 
+  deep      taint analysis with CodeQL over the whole tree, at
+            --threat-model=all so command-line arguments, environment variables
+            and local files count as untrusted. This is the tier that catches
+            injection, traversal and log forging — the classes where the code is
+            idiomatic and only the data's provenance makes it wrong, which no
+            pattern matcher can see. Minutes, not milliseconds: run it from a
+            pre-commit hook or CI, never on every write.
+  doctor    report which mandated analyzers are installed and how to update
+            them; exit 1 if any is missing or incomplete. procoder gates with
+            real analyzers and carries no rules of its own, so a missing one is
+            a hole in the gate rather than a preference — see
+            hooks/checks/toolchain.js
   check     report findings not present in the baseline; exit 1 if any of them
             blocks at the active level (at pragmatic, OBVIOUS and ALONE are
             reported but do not block; every other level gates all six rungs;
@@ -189,6 +203,10 @@ function findingsFor(absPath, repoRoot, config, applyBaseline = true) {
   }
   const out = checkFile(absPath, {
     repoRoot, config, maxFindings: Infinity, applyBaseline,
+    // The CLI is the commit gate, so it runs the commit tier too — see the
+    // `tiers` note in main(). The write hook passes neither and gets the
+    // default, which is the write tier alone.
+    tiers: ['write', 'commit'],
     toolAnswer: toolAnswers.get(path.normalize(absPath)) || null,
   });
   if (out.skipped && !skipsReported.has(out.relPath)) {
@@ -369,7 +387,8 @@ function treeAudit(files, repoRoot, config, wholeTree) {
   };
   const scan = (rel, liftedConfig) => {
     const out = checkFile(abs.get(rel),
-      { repoRoot, config: liftedConfig, maxFindings: Infinity, applyBaseline: false });
+      { repoRoot, config: liftedConfig, maxFindings: Infinity,
+        applyBaseline: false, tiers: ['write', 'commit'] });
     return out.skipped ? null : out.findings.length;
   };
   const tracked = trackedFiles(config.root);
@@ -1220,6 +1239,101 @@ function refuseArguments({ command, targets, format, since, aging }) {
   return null;
 }
 
+// `doctor` answers the two questions the per-write gate deliberately does not
+// ask, because asking them on every Write would spend the 2s budget on version
+// probes: is every analyzer this project needs installed, and is it current.
+//
+// Currency is checked, not enforced. procoder cannot know whether a pinned
+// version was pinned for a reason, and a gate that refused to run against
+// last month's ruff would be uninstalled within the hour. What it can do is
+// refuse to be quiet about it.
+function runDoctor() {
+  const repoRoot = findRepoRoot(process.cwd());
+  const { ANALYZERS, probe, hasPlugin } = require('../hooks/checks/toolchain');
+
+  const rows = [];
+  for (const [key, a] of Object.entries(ANALYZERS)) {
+    const { present, version } = probe(key, repoRoot);
+    const missingPlugin = present && a.requiresPlugin && !hasPlugin(a.requiresPlugin, repoRoot);
+    rows.push({
+      name: a.name,
+      langs: a.languages === '*' ? 'every language' : a.languages.join(', '),
+      state: !present ? 'missing' : missingPlugin ? 'incomplete' : 'ok',
+      version: version || '?',
+      detail: !present ? a.install
+        : missingPlugin ? `${a.requiresPlugin} is not installed — ${a.install}`
+          : `update with: ${a.upgrade}`,
+    });
+  }
+
+  const width = Math.max(...rows.map((r) => r.name.length));
+  for (const r of rows) {
+    const mark = r.state === 'ok' ? '  ok' : r.state === 'missing' ? ' GAP' : 'PART';
+    process.stdout.write(`${mark}  ${r.name.padEnd(width)}  ${String(r.version).padEnd(10)}  ${r.langs}\n`);
+    if (r.state !== 'ok') process.stdout.write(`      ${r.detail}\n`);
+  }
+
+  const gaps = rows.filter((r) => r.state !== 'ok');
+  if (!gaps.length) {
+    process.stdout.write('\nEvery analyzer procoder mandates is installed.\n');
+    process.stdout.write('Check they are current with the upgrade lines above; procoder does not\n');
+    process.stdout.write('pin versions for you, and an old rule set is one nobody is reading.\n');
+    return 0;
+  }
+  process.stdout.write(`\n${gaps.length} analyzer${gaps.length === 1 ? '' : 's'} missing or incomplete.\n`);
+  process.stdout.write('Files in the affected languages are reported as ungated rather than clean,\n');
+  process.stdout.write('which is why this exits non-zero: an unchecked file is not a passing one.\n');
+  return 1;
+}
+
+// `deep` is the taint tier: CodeQL over the whole tree, with --threat-model=all.
+// It is a separate command rather than a flag on `check` because it is a
+// different shape of run — minutes, not milliseconds, and a database build
+// rather than a file read. Pre-commit hooks and CI call it; the write hook never
+// does. See hooks/checks/codeql.js for what the threat model is worth.
+function runDeep(targets) {
+  const { deepScan } = require('../hooks/checks/codeql');
+  const files = expand(targets.length ? targets : ['.'], true);
+  if (!files.length) return 0;
+  const repoRoot = findRepoRoot(path.dirname(files[0]));
+  const config = loadConfig(repoRoot);
+  const buildCommand = (config.codeql && config.codeql.build_command) || null;
+
+  const { findings, version, skipped } = deepScan(files, {
+    repoRoot,
+    buildCommand,
+    onProgress: (line) => process.stderr.write(`procoder: ${line}\n`),
+  });
+
+  if (!version) {
+    for (const s of skipped) process.stdout.write(`procoder: ${s.why} — ${s.fix}\n`);
+    return 1;
+  }
+
+  const scanned = new Set(files.map((f) => path.resolve(f)));
+  let total = 0;
+  for (const [file, list] of [...findings].sort()) {
+    if (!scanned.has(path.resolve(file))) continue;
+    const rel = path.relative(repoRoot, file).replace(/\\/g, '/');
+    for (const f of sortFindings(list)) {
+      process.stdout.write(`${formatFindings([f], rel)}\n`);
+      total += 1;
+    }
+  }
+
+  // A language that could not be analysed is named, never omitted. The whole
+  // point of this tier is the classes a pattern matcher cannot reach; silently
+  // skipping one of them would put those classes back out of reach without
+  // saying so.
+  for (const s of skipped) {
+    process.stdout.write(`procoder: ${s.language} was not analysed — ${s.why}. ${s.fix}\n`);
+  }
+  process.stdout.write(total
+    ? `\nprocoder: ${total} finding${total === 1 ? '' : 's'} from CodeQL ${version} (threat-model=all).\n`
+    : `\nprocoder: CodeQL ${version} found nothing (threat-model=all).\n`);
+  return total || skipped.length ? 1 : 0;
+}
+
 async function main(argv) {
   const { unusedExclusions, noIgnore, format, since, aging, jobs, rest } = parseFlags(argv);
   const [command, ...targets] = rest;
@@ -1227,6 +1341,8 @@ async function main(argv) {
   // path handling below.
   if (command === 'statusline') return runStatusline(targets);
   if (command === 'init') return runInit(targets);
+  if (command === 'doctor') return runDoctor();
+  if (command === 'deep') return runDeep(targets);
 
   const refused = refuseArguments({ command, targets, format, since, aging });
   if (refused !== null) return refused;

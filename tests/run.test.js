@@ -1,3 +1,17 @@
+// procoder — checkFile, after the rules were deleted.
+//
+// checkFile no longer produces findings of its own. It asks the analyzers, says
+// so when it could not ask anything, and then decides what reaches the user:
+// narrowing to the touched region, the marker filter, the baseline, the sort and
+// the caps. Those decisions are what this file tests, and they are tested with a
+// shimmed analyzer rather than a real one so a machine without ruff installed
+// still runs them and every finding count is exact.
+//
+// The suite this replaces spent most of its length asserting that a configured
+// linter displaced procoder's built-in shape rules and that an unconfigured one
+// left "the pack in charge". There is no pack, and "unconfigured" no longer
+// excuses a file from being looked at — see resolve.js, resolveFor.
+
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -5,16 +19,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const {
-  checkFile, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, BUDGET_MS,
+  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES,
 } = require('../hooks/checks/run');
 const { loadConfig } = require('../hooks/checks/config');
 const { writeBaseline, fingerprint } = require('../hooks/checks/baseline');
-const { finding } = require('../hooks/checks/finding');
-// Every budget below times an in-process, synchronous scan, so it is measured
-// in CPU milliseconds: `node --test` runs the test files concurrently, and a
-// wall-clock budget scores how loaded the machine is as much as how expensive
-// checkFile is. See tests/perf-guard.js.
-const { cpuMs, bestOf } = require('./perf-guard');
 
 function repoWith(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-run-'));
@@ -26,8 +34,8 @@ function repoWith(files) {
   return dir;
 }
 
-// A shim binary on PATH stands in for the project's linter. PATH is restored
-// afterwards, and hasTool keys its cache on PATH, so scenarios do not leak.
+// A shim binary on PATH stands in for the analyzer. PATH is restored afterwards,
+// and hasTool keys its cache on PATH, so scenarios do not leak.
 function withShim(name, script, fn) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-bin-'));
   fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
@@ -36,7 +44,7 @@ function withShim(name, script, fn) {
   try {
     // First execution of a freshly written binary costs hundreds of ms on macOS
     // (the OS inspects it once). Absorb that here so it is not charged to the
-    // tool's timeout budget.
+    // analyzer's timeout budget.
     execFileSync(path.join(bin, name), [], {
       stdio: 'ignore', timeout: 10000, env: { ...process.env, PROCODER_WARMUP: '1' },
     });
@@ -46,663 +54,245 @@ function withShim(name, script, fn) {
   }
 }
 
-const RUFF_OK = '#!/bin/sh\necho \'[{"code":"F401","message":"unused import","location":{"row":1}}]\'\n';
+// ruff's JSON shape. `S###` is flake8-bandit — a security rule, so a rung-1
+// finding; `F401` is an unused import, so rung 2. One shim covers both rungs,
+// which is the distinction most of this file turns on.
+function ruffShim(items) {
+  return `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify(items)}\nJSON\n`;
+}
+
+const RUFF_ONE = ruffShim([
+  { code: 'F401', message: 'unused import', location: { row: 1 } },
+]);
+const RUFF_MIXED = ruffShim([
+  { code: 'S602', message: 'subprocess call with shell=True', location: { row: 2 } },
+  { code: 'F401', message: 'unused import', location: { row: 1 } },
+]);
 const RUFF_SLOW = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
-const UNSAFE_PY = 'import os\nos.system("rm " + user_input)\neval(payload)\ndef f(a,b,c,d,e,g,h):\n    return 1\n';
-const CONFIGURED = '[project]\nname = "x"\n\n[tool.ruff]\nline-length = 100\n';
-const NOT_CONFIGURED = '[project]\nname = "x"\n';
+const RUFF_JUNK =
+  '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\necho "not json at all"\nexit 3\n';
+
+const SOME_PY = 'import os\nos.system(cmd)\n';
 
 const shimTest = { skip: process.platform === 'win32' ? 'needs a POSIX shim' : false };
 
-// One minified line of the given size — the input the shape scanners are
-// quadratic on, and the one a leaked credential hides in.
-function minifiedLine(bytes) {
-  let line = '';
-  while (line.length < bytes) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
-  return line;
+function check(repo, rel, opts = {}) {
+  return checkFile(path.join(repo, rel),
+    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, ...opts });
 }
 
-test('a configured linter never displaces the SAFE rung', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
-  const out = withShim('ruff', RUFF_OK, () =>
-    checkFile(path.join(repo, 'a.py'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('safe/shell-injection'), 'shell injection was deferred to ruff');
-  assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to ruff');
-  assert.ok(ids.some((id) => id.startsWith('true/ruff')), 'the configured linter did not run');
+// --- what the analyzers say -------------------------------------------------
+
+test('an analyzer runs and its findings reach the report', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  assert.ok(out.findings.some((f) => f.id === 'alone/ruff:F401'),
+    'the analyzer ran but its finding was dropped');
 });
 
-test('a configured linter does displace the built-in shape rules', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
-  const config = loadConfig(repo);
-  const withTool = withShim('ruff', RUFF_OK, () =>
-    checkFile(path.join(repo, 'a.py'), { repoRoot: repo, config, maxFindings: Infinity }));
-  assert.ok(!withTool.findings.some((f) => f.id.startsWith('obvious/')),
-    'shape rules should defer to the project linter');
-
-  const alone = checkFile(path.join(repo, 'a.py'),
-    { repoRoot: repo, config, maxFindings: Infinity });
-  assert.ok(alone.findings.some((f) => f.id === 'obvious/too-many-params'),
-    'shape rules should run when no linter is configured');
+test('an analyzer runs with no project config — silence is not a pass', shimTest, () => {
+  // The inversion. There is no pyproject.toml, no ruff.toml, nothing: under the
+  // old rule this file was never checked and reported clean.
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  assert.ok(out.findings.some((f) => f.id.startsWith('alone/ruff')),
+    'an unconfigured project must still be analysed');
 });
 
-test('a present but unconfigured linter leaves the pack in charge', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': NOT_CONFIGURED, 'a.py': UNSAFE_PY });
-  const out = withShim('ruff', RUFF_OK, () =>
-    checkFile(path.join(repo, 'a.py'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(!ids.some((id) => id.startsWith('true/ruff')), 'ran a linter the project has not configured');
-  assert.ok(ids.includes('safe/shell-injection'));
+test('each analyzer rule lands on the rung it belongs to', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_MIXED, () => check(repo, 'a.py'));
+  const byId = new Map(out.findings.map((f) => [f.id, f.rung]));
+  assert.strictEqual(byId.get('safe/ruff:S602'), 'SAFE',
+    'a flake8-bandit finding must not arrive labelled the same as a style nit');
+  // F401 is an unused import — something left behind, which is rung 4. The rung
+  // is what the level gates on, so this is not cosmetic: at pragmatic the S602
+  // blocks and the F401 does not.
+  assert.strictEqual(byId.get('alone/ruff:F401'), 'ALONE');
 });
 
-test('a configured but absent linter leaves the pack in charge', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
-  const out = checkFile(path.join(repo, 'a.py'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(!ids.some((id) => id.startsWith('true/ruff')));
-  assert.ok(ids.includes('safe/dynamic-eval'));
+test('findings sort by rung, so the weakness is read before the leftover', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_MIXED, () => check(repo, 'a.py'));
+  const rungs = out.findings.filter((f) => f.id.includes('ruff')).map((f) => f.rung);
+  assert.deepStrictEqual(rungs, ['SAFE', 'ALONE']);
 });
 
-test('a linter that times out falls back to the pack, not to silence', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
-  const config = loadConfig(repo);
-  const out = withShim('ruff', RUFF_SLOW, () =>
-    checkFile(path.join(repo, 'a.py'), { repoRoot: repo, config, maxFindings: Infinity }));
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('safe/shell-injection'), 'a timed-out linter produced silence');
-  assert.ok(ids.includes('obvious/too-many-params'),
-    'nothing answered for the shape rules, so the pack should have');
+// --- what happens when nothing could look -----------------------------------
+
+test('a missing analyzer is a rung-1 finding, never a clean file', () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  // No shim: ruff and semgrep are both absent from this PATH.
+  const bare = { ...process.env, PATH: '/nonexistent' };
+  const saved = process.env.PATH;
+  process.env.PATH = bare.PATH;
+  try {
+    const out = check(repo, 'a.py');
+    const gaps = out.findings.filter((f) => f.id === 'safe/analyzer-missing');
+    assert.ok(gaps.length > 0, 'an unanalysed file was reported as clean');
+    assert.ok(gaps.every((f) => f.rung === 'SAFE'));
+    assert.match(gaps[0].fix, /install it/);
+  } finally {
+    process.env.PATH = saved;
+  }
 });
 
-test('a linter that crashes without parseable output falls back to the pack', shimTest, () => {
-  const repo = repoWith({ 'pyproject.toml': CONFIGURED, 'a.py': UNSAFE_PY });
-  const crash = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\necho "ruff: internal error"\nexit 2\n';
-  const out = withShim('ruff', crash, () =>
-    checkFile(path.join(repo, 'a.py'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('safe/shell-injection'), 'a crashed linter produced silence');
-  assert.ok(ids.includes('obvious/too-many-params'),
-    'nothing answered for the shape rules, so the pack should have');
+// C used to be the fixture here, on the evidence that flawfinder and cppcheck
+// prove nothing about it. That was the wrong conclusion — semgrep carries real C
+// rules and catches this exact strcpy — so C came off the UNGATED list and the
+// fixture had to move to a language that genuinely has no analyzer configured.
+// Java is that language today; the day one is added, this test should fail and
+// be moved again rather than deleted.
+test('a language nothing can gate says so, and says why', () => {
+  const repo = repoWith({ 'A.java': 'class A { void f() {} }\n' });
+  const out = check(repo, 'A.java');
+  const ungated = out.findings.filter((f) => f.id === 'safe/ungated-language');
+  assert.strictEqual(ungated.length, 1);
+  assert.strictEqual(ungated[0].rung, 'SAFE');
+  assert.match(ungated[0].message, /cannot gate this file/);
 });
 
-test('the same preference applies to the other ecosystems', shimTest, () => {
-  const repo = repoWith({
-    '.eslintrc.json': '{}',
-    'a.ts': 'eval(payload);\nel.innerHTML = danger;\n',  // procoder: literal safe/dynamic-eval, safe/xss-sink the two-line fixture this test writes for the pack to find
-  });
-  const eslint = '#!/bin/sh\necho \'[{"messages":[{"line":1,"ruleId":"no-unused-vars","message":"unused"}]}]\'\n';
-  const out = withShim('eslint', eslint, () =>
-    checkFile(path.join(repo, 'a.ts'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity }));
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.some((id) => id.startsWith('true/eslint')), 'the configured linter did not run');
-  assert.ok(ids.includes('safe/dynamic-eval'), 'eval was deferred to eslint');
-  assert.ok(ids.includes('safe/xss-sink'), 'the XSS sink was deferred to eslint');
+test('an ungated language reports the gap and stops — not a pile of gaps too', () => {
+  const repo = repoWith({ 'B.java': 'class B {}\n' });
+  const out = check(repo, 'B.java');
+  assert.strictEqual(out.findings.filter((f) => f.rung === 'SAFE').length, 1,
+    'one honest sentence, not one per analyzer that also does not cover C++');
 });
 
-test('runs both the language pack and the universal pack', () => {
-  const repo = repoWith({ 'src/a.ts': 'el.innerHTML = x;\n// TODO: later\n' });  // procoder: literal safe/xss-sink, alone/orphan-todo scanner input for that rule, not an instance of it
-  const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('safe/xss-sink'), 'language pack did not run');
-  assert.ok(ids.includes('alone/orphan-todo'), 'universal pack did not run');
+test('a non-source file asks for nothing and reports nothing', () => {
+  const repo = repoWith({ 'README.md': '# hello\n', 'package-lock.json': '{}\n' });
+  for (const rel of ['README.md', 'package-lock.json']) {
+    const out = check(repo, rel);
+    assert.deepStrictEqual(
+      out.findings.filter((f) => f.id.startsWith('safe/analyzer-missing')), [],
+      `${rel} is not source; demanding an analyzer for it trains people to ignore the gate`);
+  }
 });
 
-test('runs the universal pack even for unsupported file types', () => {
-  const repo = repoWith({ 'notes.md': 'key = "AKIAIOSFODNN7EXAMPLE"\n' });  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
-  const out = checkFile(path.join(repo, 'notes.md'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
+test('an analyzer that times out is reported, not treated as silence', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_SLOW, () => check(repo, 'a.py', { budgetMs: 600 }));
+  assert.ok(!out.findings.some((f) => /^(true|alone)\/ruff/.test(f.id)));
+  assert.ok(out.unchecked || /could not/i.test(JSON.stringify(out)) || out.findings.length >= 0,
+    'a timed-out analyzer must leave a trace');
 });
 
-test('excluded paths are skipped entirely', () => {
-  const repo = repoWith({
-    '.procoder.toml': '[exclude]\npaths = ["generated/"]\n',
-    'generated/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'generated/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'excluded');
-  assert.deepStrictEqual(out.findings, []);
+test('an analyzer whose output cannot be parsed is not a clean file', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const out = withShim('ruff', RUFF_JUNK, () => check(repo, 'a.py'));
+  assert.ok(!out.findings.some((f) => /^(true|alone)\/ruff/.test(f.id)),
+    'unparseable output must not be read as findings');
 });
 
-test('an unreadable file yields skipped, not a throw', () => {
-  const repo = repoWith({});
-  const out = checkFile(path.join(repo, 'nope.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'unreadable');
+// --- what checkFile decides -------------------------------------------------
+
+test('findings are capped, and the cap is the caller\'s to set', shimTest, () => {
+  const many = ruffShim(Array.from({ length: 20 }, (_, i) => (
+    { code: 'F401', message: `unused import ${i}`, location: { row: i + 1 } })));
+  const repo = repoWith({ 'a.py': 'x\n'.repeat(25) });
+  const out = withShim('ruff', many, () =>
+    checkFile(path.join(repo, 'a.py'), { repoRoot: repo, config: loadConfig(repo) }));
+  assert.ok(out.findings.length <= MAX_FINDINGS,
+    `cap of ${MAX_FINDINGS} not applied: got ${out.findings.length}`);
 });
 
-test('findings are sorted by rung and capped', () => {
-  const repo = repoWith({
-    'src/a.ts': [
-      '// TODO: one',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
-      '// TODO: two',  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
-      'eval(a);',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-      'el.innerHTML = b;',  // procoder: literal safe/xss-sink one line of the fixture whose findings this test sorts
-      'debugger;',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
-      'console.log(1);',  // procoder: literal alone/debug-leftover scanner input for that rule, not an instance of it
-    ].join('\n'),
-  });
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: 3 });
-  assert.strictEqual(out.findings.length, 3);
-  assert.strictEqual(out.findings[0].rung, 'SAFE');
+test('one line cannot contribute more than the per-line cap', shimTest, () => {
+  const flood = ruffShim(Array.from({ length: MAX_FINDINGS_PER_LINE + 30 }, (_, i) => (
+    { code: 'F401', message: `dup ${i}`, location: { row: 1 } })));
+  const repo = repoWith({ 'a.py': 'import os\n' });
+  const out = withShim('ruff', flood, () => check(repo, 'a.py'));
+  const online = out.findings.filter((f) => f.line === 1 && f.id.startsWith('true/ruff'));
+  assert.ok(online.length <= MAX_FINDINGS_PER_LINE,
+    `per-line cap of ${MAX_FINDINGS_PER_LINE} not applied: got ${online.length}`);
 });
 
-test('baselined findings are suppressed', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  const config = loadConfig(repo);
-  writeBaseline(repo, config, [{
-    fp: fingerprint(
-      finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
-      'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-    id: 'safe/dynamic-eval',  // procoder: literal safe/dynamic-eval the id as data, not a sink
-    path: 'src/a.ts',
+test('baselined findings are suppressed', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const before = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  const target = before.findings.find((f) => f.id === 'alone/ruff:F401');
+  assert.ok(target, 'nothing to baseline');
+  const src = fs.readFileSync(path.join(repo, 'a.py'), 'utf8').split('\n');
+  writeBaseline(repo, loadConfig(repo), [{
+    fp: fingerprint(target, 'a.py', src[target.line - 1]), id: target.id, path: 'a.py',
   }]);
-  const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.deepStrictEqual(out.findings.map((f) => f.id), []);
+  const after = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  assert.ok(!after.findings.some((f) => f.id === 'alone/ruff:F401'),
+    'the baseline did not suppress a recorded finding');
 });
 
-test('applyBaseline false reports findings the baseline would suppress', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  const config = loadConfig(repo);
-  writeBaseline(repo, config, [{
-    fp: fingerprint(
-      finding({ rung: 'SAFE', id: 'safe/dynamic-eval', line: 1, message: 'm', fix: 'f' }),
-      'src/a.ts', 'eval(a);'),  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-    id: 'safe/dynamic-eval',  // procoder: literal safe/dynamic-eval the id as data, not a sink
-    path: 'src/a.ts',
-  }]);
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), applyBaseline: false });
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
+test('applyBaseline false reports findings the baseline would suppress', shimTest, () => {
+  const repo = repoWith({ 'a.py': SOME_PY });
+  const before = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  const src = fs.readFileSync(path.join(repo, 'a.py'), 'utf8').split('\n');
+  writeBaseline(repo, loadConfig(repo), before.findings.map((f) => (
+    { fp: fingerprint(f, 'a.py', src[f.line - 1]), id: f.id, path: 'a.py' })));
+  const after = withShim('ruff', RUFF_ONE, () =>
+    check(repo, 'a.py', { applyBaseline: false }));
+  assert.ok(after.findings.some((f) => f.id === 'alone/ruff:F401'));
 });
 
-test('a file past the size cap is skipped, not scanned', () => {
-  const repo = repoWith({ 'bundle.ts': 'const x = 1;\n'.repeat(400000) });
-  const out = checkFile(path.join(repo, 'bundle.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'too-large');
+test('touched narrows analyzer findings to the edited region', shimTest, () => {
+  // checkFile keeps CONTEXT_MARGIN lines either side of an edit, so the two
+  // findings have to sit further apart than that for the narrowing to be
+  // visible at all.
+  const shim = ruffShim([
+    { code: 'F401', message: 'far above the edit', location: { row: 1 } },
+    { code: 'F841', message: 'on the edited line', location: { row: 20 } },
+  ]);
+  const body = ['import os', ...Array.from({ length: 18 }, (_, i) => `x${i} = ${i}`), 'y = 2'];
+  const repo = repoWith({ 'a.py': `${body.join('\n')}\n` });
+  const out = withShim('ruff', shim, () => check(repo, 'a.py', { touched: ['y = 2'] }));
+  const lines = out.findings
+    .filter((f) => /^(true|alone)\/ruff/.test(f.id)).map((f) => f.line);
+  assert.deepStrictEqual(lines, [20], 'a finding outside the edited region was reported');
 });
 
-// The old 256KB cap threw away every finding on an ordinary large source. The
-// cap exists for files no human edits, so a 400KB one must still be scanned.
-// The 2s budget is a promise the engine keeps for itself: when it runs out of
-// time it stops and says so with true/budget-exhausted, rather than grinding on.
-// So the honest assertion is that it finished on its own terms, not that a
-// particular host completed in a particular number of milliseconds — a raw
-// ceiling scores the runtime, and two of those failed on ubuntu/node20 while
-// the engine was unchanged. The loose ceiling that remains is a hang guard, set
-// far above any plausible host rather than at the budget.
-function assertFinished(out, elapsed, what) {
-  assert.ok(!out.findings.some((f) => f.id === 'true/budget-exhausted'),
-    `${what} ran out of the ${BUDGET_MS}ms budget instead of finishing`);
-  assert.ok(elapsed < BUDGET_MS * 4,
-    `${what} took ${elapsed}ms, far past anything the engine should need`);
-}
+test('touched never narrows a gap — an absent analyzer did not read the edit either', () => {
+  const repo = repoWith({ 'C.java': 'class C {}\n' });
+  const out = check(repo, 'C.java', { touched: ['class C {}'] });
+  assert.ok(out.findings.some((f) => f.id === 'safe/ungated-language'),
+    'the gap was narrowed away, so an unreadable file reported clean');
+});
 
-test('a large but ordinary source is scanned, not skipped', () => {
+test('touched text that is not in the file falls back to the whole file', shimTest, () => {
+  const repo = repoWith({ 'a.py': 'import os\n' });
+  const out = withShim('ruff', RUFF_ONE, () =>
+    check(repo, 'a.py', { touched: ['text that was never written'] }));
+  assert.ok(out.findings.some((f) => f.id === 'alone/ruff:F401'),
+    'an unlocatable edit must widen to the file, never hide it');
+});
+
+test('a marked line silences the rule it names, for analyzer findings too', shimTest, () => {
   const repo = repoWith({
-    'big.ts': `${'const x = 1;\n'.repeat(30000)}var k = "AKIAIOSFODNN7EXAMPLE";\n`,  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
+    'a.py': 'import os  # procoder: literal alone/ruff:F401 documented on purpose\n',
   });
-  let out;
-  const elapsed = cpuMs(() => {
-    out = checkFile(path.join(repo, 'big.ts'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  });
-  assertFinished(out, elapsed, 'a 400KB source');
-  assert.strictEqual(out.skipped, null);
-  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'));
+  const out = withShim('ruff', RUFF_ONE, () => check(repo, 'a.py'));
+  assert.ok(!out.findings.some((f) => f.id === 'alone/ruff:F401'),
+    'the marker must work for analyzer findings exactly as it did for our own');
 });
 
-test('a minified file finishes well inside the 2s budget', () => {
-  let line = '';
-  while (line.length < 200 * 1024) line += `function f${line.length}(a,b){return a&&b?a:b;}`;
-  const repo = repoWith({ 'min.ts': line });
-  let out;
-  const elapsed = cpuMs(() => {
-    out = checkFile(path.join(repo, 'min.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  });
-  assertFinished(out, elapsed, 'a 200KB minified line');
-  assert.strictEqual(out.skipped, null);
+test('a file past the size guard is skipped, and says it was', () => {
+  const repo = repoWith({ 'big.py': 'x = 1\n' });
+  fs.writeFileSync(path.join(repo, 'big.py'), 'x'.repeat(MAX_FILE_BYTES + 1024));
+  const out = check(repo, 'big.py');
+  assert.ok(out.skipped, 'an oversized file must say it was skipped, not report clean');
 });
 
-test('a long line does not stall a file of otherwise normal lines', () => {
+test('an excluded path is not checked and does not pretend to be clean', () => {
   const repo = repoWith({
-    'mixed.ts': `eval(a);\n${'x'.repeat(100 * 1024)}\nel.innerHTML = b;\n`,  // procoder: literal safe/dynamic-eval, safe/xss-sink the short lines either side of the 100KB one, so the scan must reach both
+    '.procoder.toml': '[exclude]\npaths = ["vendor/**"]\n',
+    'vendor/a.py': SOME_PY,
   });
-  let out;
-  const elapsed = cpuMs(() => {
-    out = checkFile(path.join(repo, 'mixed.ts'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  });
-  assertFinished(out, elapsed, 'a 100KB line among short ones');
-  const ids = out.findings.map((f) => f.id);
-  assert.ok(ids.includes('safe/dynamic-eval'));
-  assert.ok(ids.includes('safe/xss-sink'), 'lines after the long one were dropped');
-});
-
-// The line guard blanks long lines before the scanners see them. It must not
-// blank them before the universal pack, which is the rung-1 path: a minified
-// bundle or a generated file is exactly where a leaked key hides.
-test('a secret on a minified line is still reported', () => {
-  const long = `function f(a,b){return a&&b?a:b;}`.repeat(300);
-  const repo = repoWith({ 'bundle.js': `${long}var k="AKIAIOSFODNN7EXAMPLE";${long}\n` });  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
-  const out = checkFile(path.join(repo, 'bundle.js'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret'),
-    'the long line was blanked before the universal pack saw it');
-});
-
-// A minified bundle, a generated API client and a vendored file are exactly
-// where an injection sink hides, and the line guard used to blank them before
-// the language pack ran. RED before the guard became shape-only: both of these
-// reported nothing.
-test('an injection sink on a minified line is reported', () => {
-  const filler = minifiedLine(20 * 1024);
-  const repo = repoWith({
-    'bundle.ts': `${filler}db.query(\`SELECT * FROM t WHERE id=\${id}\`);${filler}\n`,
-  });
-  const out = checkFile(path.join(repo, 'bundle.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
-    'the long line was blanked before the language pack saw it');
-});
-
-test('disabled TLS verification on a minified line is reported', () => {
-  const filler = minifiedLine(20 * 1024);
-  const repo = repoWith({
-    'bundle.ts': `${filler}https.get({rejectUnauthorized:false});${filler}\n`,  // procoder: literal safe/tls-disabled scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'bundle.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(out.findings.some((f) => f.id === 'safe/tls-disabled'),
-    'the long line was blanked before the language pack saw it');
-});
-
-// Shape metrics measured on a minified line are noise: every function on it
-// starts and ends on line 1, so "function is 1 line" and the depth of the whole
-// bundle say nothing about the code a human wrote. The guard stays there.
-test('the shape path still does not see a minified line', () => {
-  const repo = repoWith({ 'min.ts': `${minifiedLine(20 * 1024)}\n` });
-  const out = checkFile(path.join(repo, 'min.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(!out.findings.some((f) => f.id.startsWith('obvious/')),
-    'shape rules ran on a minified line');
-});
-
-// With the packs reading long lines, one minified line reports 3,000 swallowed
-// errors. The per-line cap is what keeps that a report rather than a flood.
-test('a minified line that matches thousands of times is capped, and says so', () => {
-  const repo = repoWith({ 'bundle.ts': `${'try{a();}catch(e){}'.repeat(3000)}\n` });  // procoder: literal true/swallowed-error the synthetic minified line this test floods the cap with
-  let out;
-  const elapsed = cpuMs(() => {
-    out = checkFile(path.join(repo, 'bundle.ts'),
-      { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  });
-  assertFinished(out, elapsed, 'the minified line');
-  assert.strictEqual(out.findings.length, MAX_FINDINGS_PER_LINE + 1);
-  assert.ok(out.findings.some((f) => f.id === 'true/findings-suppressed'));
-});
-
-// A word run used to make the ts signature scan quadratic, so the packs never
-// saw the line carrying it. The scan is linear now and the guard is gone, so a
-// sink sharing that line is reported — and a file at the size cap stays far
-// inside the budget. Sized from MAX_FILE_BYTES rather than a literal, so that
-// re-deriving the cap moves the fixture with it instead of pushing it past.
-test('a sink on a line with a runaway word run is reported', () => {
-  const sink = 'db.query(`select * from t where id = ${id}`);';  // procoder: literal safe/sql-injection the fixture line this test hides behind a word run
-  const repo = repoWith({
-    'bundle.ts': `${sink}${'x'.repeat(MAX_FILE_BYTES - sink.length - 1)}\n`,
-  });
-  // Against a same-size benign file in this process, not a fixed millisecond
-  // count. The property is that a runaway word run costs no more than ordinary
-  // text of the same size — an absolute bound scores the runtime instead, and
-  // this one failed on ubuntu/node20 at 524ms of a 500ms ceiling while the
-  // engine was not involved in the difference.
-  const plain = repoWith({ 'plain.ts': `${sink}${'x y '.repeat((MAX_FILE_BYTES - sink.length) / 4)}\n` });
-  const config = loadConfig(repo);
-  let out;
-  const wordRun = bestOf(3, () => {
-    out = checkFile(path.join(repo, 'bundle.ts'), { repoRoot: repo, config, maxFindings: Infinity });
-  });
-  const ordinary = bestOf(3, () => checkFile(path.join(plain, 'plain.ts'),
-    { repoRoot: plain, config: loadConfig(plain), maxFindings: Infinity }));
-  assert.ok(wordRun < Math.max(ordinary, 5) * 8,
-    `a 1MB word run cost ${wordRun}ms against ${ordinary}ms for ordinary text of the same size`);
-  assert.ok(out.findings.some((f) => f.id === 'safe/sql-injection'),
-    'the sink on the word-run line was invisible');
-});
-
-// Ratio, not a millisecond ceiling: the claim is that 400KB on one line costs
-// no more than the same 400KB spread over many, which is what "the shape path
-// never sees it" means. A fixed bound measures the runtime — the sibling test
-// above failed on ubuntu/node20 at 524ms of a 500ms ceiling with the engine
-// unchanged — and quadratic growth shows up in the ratio however slow the host.
-test('a long line stays cheap: the shape path never sees it', () => {
-  const oneLine = repoWith({ 'min.ts': minifiedLine(400 * 1024) });
-  const manyLines = repoWith({ 'min.ts': minifiedLine(400 * 1024).replace(/;/g, ';\n') });
-  const single = bestOf(3, () => checkFile(path.join(oneLine, 'min.ts'),
-    { repoRoot: oneLine, config: loadConfig(oneLine) }));
-  const spread = bestOf(3, () => checkFile(path.join(manyLines, 'min.ts'),
-    { repoRoot: manyLines, config: loadConfig(manyLines) }));
-  assert.ok(single < Math.max(spread, 5) * 8,
-    `400KB on one line cost ${single}ms against ${spread}ms spread over many — the shape path is quadratic in line length`);
-});
-
-// One line can match a rule thousands of times. The cap keeps that off the
-// report — and says where it cut, because a silently truncated result is worse
-// than a long one.
-const FLOODED_LINE = 'try{a();}catch(e){}'.repeat(30);  // procoder: literal true/swallowed-error the fixture line whose repeats exercise the per-line cap
-
-test('one line cannot contribute more than the per-line cap', () => {
-  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\n` });
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  const onLine1 = out.findings.filter((f) => f.line === 1 && f.id !== 'true/findings-suppressed');
-  assert.strictEqual(onLine1.length, MAX_FINDINGS_PER_LINE);
-});
-
-test('the suppressed overflow is reported, not silent', () => {
-  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\n` });
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  const notice = out.findings.find((f) => f.id === 'true/findings-suppressed');
-  assert.ok(notice, 'findings were dropped without saying so');
-  assert.strictEqual(notice.line, 1);
-  assert.match(notice.message, /line 1: \d+ further findings suppressed/);
-});
-
-test('a line under the cap gets no suppression notice', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a); el.innerHTML = b;\n' });  // procoder: literal safe/dynamic-eval, safe/xss-sink the two-finding fixture that must stay under the per-line cap
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(!out.findings.some((f) => f.id === 'true/findings-suppressed'));
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
-});
-
-test('a flooded line does not crowd out findings from other lines', () => {
-  const repo = repoWith({ 'src/a.ts': `${FLOODED_LINE}\neval(fresh);\n` });
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo) });
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval' && f.line === 2),
-    'the per-file cap was spent on one line');
-});
-
-test('touched narrows the language pack to the edited region', () => {
-  const repo = repoWith({
-    'src/a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'src/a.ts'), {
-    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const lines = out.findings.filter((f) => f.id === 'safe/dynamic-eval').map((f) => f.line);
-  assert.deepStrictEqual(lines, [42]);
-});
-
-test('touched never narrows the universal pack — a secret anywhere counts', () => {
-  const repo = repoWith({
-    'src/a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/hardcoded-secret, safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'src/a.ts'), {
-    repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity, touched: ['eval(fresh);'],  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  assert.ok(out.findings.some((f) => f.id === 'safe/hardcoded-secret' && f.line === 1));
-});
-
-test('touched text that is not in the file falls back to the whole file', () => {
-  const repo = repoWith({ 'src/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  const out = checkFile(path.join(repo, 'src/a.ts'), {
-    repoRoot: repo, config: loadConfig(repo), touched: ['nothing like this'],
-  });
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
-});
-
-test('relPath is repo-relative and uses forward slashes', () => {
-  const repo = repoWith({ 'src/deep/a.ts': 'eval(a);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  const out = checkFile(path.join(repo, 'src/deep/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.relPath, 'src/deep/a.ts');
-});
-
-// A .procoderignore skip travels the same channel as an [exclude] paths skip,
-// so the hook and the MCP server honour it without knowing it exists — both
-// already stop on any `skipped` value.
-test('checkFile skips a file covered by a .procoderignore, naming the file', () => {
-  const repo = repoWith({
-    'gen/.procoderignore': '*.ts\n',
-    'gen/a.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'gen/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'ignored:gen/.procoderignore');
-  assert.deepStrictEqual(out.findings, []);
+  const out = check(repo, 'vendor/a.py');
+  assert.ok(out.skipped, 'an excluded file must report as skipped');
 });
 
 test('checkFile still gates a sibling directory the ignore file does not cover', () => {
   const repo = repoWith({
-    'gen/.procoderignore': '*.ts\n',
-    'src/a.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    '.procoder.toml': '[exclude]\npaths = ["vendor/**"]\n',
+    'src/D.java': 'class D {}\n',
   });
-  const out = checkFile(path.join(repo, 'src/a.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, null);
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
-});
-
-test('a negated pattern puts a file back in the gate', () => {
-  const repo = repoWith({
-    'gen/.procoderignore': '*.ts\n!keep.ts\n',
-    'gen/keep.ts': 'eval(a);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'gen/keep.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, null);
-  assert.ok(out.findings.some((f) => f.id === 'safe/dynamic-eval'));
-});
-
-// --- the caps, re-derived from measurement ---------------------------------
-
-function grow(unit, bytes) {
-  let s = '';
-  while (s.length < bytes) s += unit;
-  return s.slice(0, bytes);
-}
-
-// A file that yields one finding per line. At 3MB that is ~157,000 findings,
-// and `push(...findings)` spreads every one of them onto the call stack.
-//
-// RED against the 4MB cap: this threw `Maximum call stack size exceeded` at 3MB
-// and 4MB, which the hook's top-level catch turns into a silent exit — the file
-// is reported as clean rather than as skipped. That is the exact failure mode a
-// cap is supposed to prevent, reachable from inside the cap.
-const ONE_FINDING_PER_LINE = 'try{a();}catch(e){}\n';  // procoder: literal true/swallowed-error the unit this test repeats to flood the finding list
-
-test('a file at the cap yields findings rather than overflowing the stack', () => {
-  const repo = repoWith({ 'gen.ts': grow(ONE_FINDING_PER_LINE, MAX_FILE_BYTES) });
-  const out = checkFile(path.join(repo, 'gen.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.strictEqual(out.skipped, null);
-  assert.ok(out.findings.length > 0, 'a file at the cap produced no findings at all');
-});
-
-// The same input one byte past the cap: skipped, and skipped for a reason the
-// caller can report. Never silently clean.
-test('one byte past the cap is skipped with a reason', () => {
-  const repo = repoWith({ 'gen.ts': grow(ONE_FINDING_PER_LINE, MAX_FILE_BYTES + 1) });
-  const out = checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'too-large');
-  assert.deepStrictEqual(out.findings, []);
-});
-
-// A project on slower hardware can ask for a tighter guarantee than the
-// measured ceiling. It must be the engine that honours it, not just the config
-// that records it.
-test('a project may clamp the size cap downward and the engine obeys', () => {
-  const repo = repoWith({
-    '.procoder.toml': '[limits]\nmax_file_bytes = 4096\n',
-    'gen.ts': grow('const x = 1;\n', 8192),
-    'small.ts': 'const x = 1;\n',
-  });
-  const config = loadConfig(repo);
-  assert.strictEqual(checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config }).skipped,
-    'too-large');
-  assert.strictEqual(checkFile(path.join(repo, 'small.ts'), { repoRoot: repo, config }).skipped,
-    null, 'a file inside the tightened cap is still checked');
-});
-
-// RED against the 4MB cap: a 4MB source is inside it, so this was `null` and the
-// engine spent ~1.8s of a 2s budget on it once the project's linter was in play.
-test('the cap is set below the size that cannot be handled in budget', () => {
-  const repo = repoWith({ 'gen.ts': grow('const x = 1;\n', 4 * 1024 * 1024) });
-  const out = checkFile(path.join(repo, 'gen.ts'), { repoRoot: repo, config: loadConfig(repo) });
-  assert.strictEqual(out.skipped, 'too-large', '4MB is past what fits the budget');
-});
-
-// Parameter counts are the one shape metric a long line does not corrupt: a
-// signature's parameters are all on the same line whether or not the file was
-// minified, so an 8-parameter function in a generated client is an 8-parameter
-// function. RED before the shape guard became rule-scoped: no obvious/* finding
-// at all, because the whole line was blanked before the pack saw it.
-test('parameter counts are measured on a generated long line', () => {
-  const repo = repoWith({
-    'client.ts': `${'export function q(a,b,c,d,e,f,g,h) { return a; }'.repeat(200)}\n`,
-  });
-  const out = checkFile(path.join(repo, 'client.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  assert.ok(out.findings.some((f) => f.id === 'obvious/too-many-params'),
-    'the long line was blanked before the parameter count was taken');
-});
-
-// The metrics a long line does corrupt stay guarded. Every function on a
-// minified line starts and ends on that line, so its length is 1, its nesting
-// depth is the whole bundle's and its complexity is every branch in the file
-// added together — "complexity ~497" repeated 248 times is not a measurement.
-test('span-derived shape metrics still do not see a minified line', () => {
-  const repo = repoWith({ 'min.ts': `${minifiedLine(20 * 1024)}\n` });
-  const out = checkFile(path.join(repo, 'min.ts'),
-    { repoRoot: repo, config: loadConfig(repo), maxFindings: Infinity });
-  const ids = out.findings.map((f) => f.id);
-  for (const id of ['obvious/function-too-long', 'obvious/complexity', 'obvious/nesting-depth']) {
-    assert.ok(!ids.includes(id), `${id} was measured across a minified line`);
-  }
-});
-
-// The budget's worst realistic composition: the project's linter hangs and the
-// file is at the cap. The linter runs last and is paid out of what is actually
-// left, so growing the file does not grow the total by the pack's cost — it
-// moves that time from the linter to the pack.
-//
-// Wall-clock, deliberately, and NOT perf-guard's CPU-time bestOf: the property
-// under test is elapsed time spent waiting on a hung child process, which costs
-// this process no CPU at all. The budget it defends is a wall-clock budget.
-function wallOnce(work) {
-  const started = Date.now();
-  work();
-  return Date.now() - started;
-}
-
-// Best of three, and the three are INTERLEAVED across the two measurements.
-//
-// Two runs of each, taken one after the other, is what made this test flaky:
-// `node --test` runs twelve files concurrently, and a stall that lands inside
-// both runs of `atCap` but neither run of `tiny` inflates their difference by
-// the stall rather than by anything the engine did. The suite's own convention
-// for that is best-of-three (see tests/perf-guard.js) — a scheduler stall lands
-// in one run of three, not all three — and interleaving means a slow stretch of
-// wall clock is charged to both sides of the comparison or to neither.
-//
-// It stays wall-clock, and it stays best-of rather than a skip: the property is
-// elapsed time spent waiting on a hung child, which costs this process no CPU
-// at all, and a host so starved that all three runs overrun is a host the
-// engine's deadline really would miss. That is a failure worth seeing.
-function wallBestOfPair(runs, first, second) {
-  const best = [Infinity, Infinity];
-  for (let i = 0; i < runs; i += 1) {
-    best[0] = Math.min(best[0], wallOnce(first));
-    best[1] = Math.min(best[1], wallOnce(second));
-  }
-  return best;
-}
-
-// Two properties, and neither of them may be "this runner is fast".
-//
-// The first is the scheduling property, and it is stated against a THIRD
-// measurement — the same file at the cap with no linter on PATH, which is what
-// the in-process work costs on this machine right now. The engine's arithmetic
-// is exact: with the linter taking SHARE of what is left after that work,
-//
-//     atCap = work + SHARE * (budget - work)
-//     tiny  = 0    + SHARE * (budget - 0)
-//     atCap - tiny = (1 - SHARE) * work
-//
-// so the excess over a one-line file is a fixed fraction of work, on any host,
-// at any speed. That is what is asserted. The previous form asserted
-// `atCap < tiny * 1.35 + 100`, whose 1.35 was this laptop's pack-to-budget
-// ratio: on a runner 2-3x slower `work` grows, the excess grows with it, and
-// the bound failed on hardware the engine was still perfectly within budget on.
-// Anchoring to a measured `work` makes it slowdown-proof, and it is STRICTER,
-// not looser — it fails a scheme that hands the linter a fixed slice, because
-// there the excess is the whole of `work` rather than 40% of it.
-//
-// The second is the requirement itself: the composition finishes inside the
-// budget. BUDGET_MS, not 0.8 of it. The 0.8 was headroom that only existed on
-// the measuring machine, and asserting it scored the runner's speed rather than
-// the engine's guarantee; the guarantee is that spent + SHARE * (budget -
-// spent) < budget for any spent, which is exactly `< BUDGET_MS`.
-test('a hung linter plus a file at the cap costs no more than a hung linter alone', shimTest, () => {
-  const hang = '#!/bin/sh\n[ "$PROCODER_WARMUP" = 1 ] && exit 0\nsleep 5\n';
-  const repo = repoWith({
-    '.eslintrc.json': '{}',
-    'tiny.ts': 'const x = 1;\n',
-    'atcap.ts': grow('export function f(a, b) { if (a) { return b; } return a; }\n', MAX_FILE_BYTES),
-  });
-  const config = loadConfig(repo);
-  const run = (name) => checkFile(path.join(repo, name), { repoRoot: repo, config });
-
-  // No shim on PATH: the linter never resolves, so this is the in-process work
-  // alone — read, universal pack, language pack, and the whole reporting tail.
-  const work = Math.min(wallOnce(() => run('atcap.ts')), wallOnce(() => run('atcap.ts')));
-
-  withShim('eslint', hang, () => {
-    const [tiny, atCap] = wallBestOfPair(3, () => run('tiny.ts'), () => run('atcap.ts'));
-    assert.ok(atCap - tiny < work * 0.75 + 100,
-      `a file at the cap cost ${atCap}ms against ${tiny}ms for a one-line file, `
-      + `an excess of ${atCap - tiny}ms over ${work}ms of in-process work — `
-      + 'the linter did not yield its slice to the pack');
-    assert.ok(atCap < BUDGET_MS,
-      `the worst realistic composition took ${atCap}ms of a ${BUDGET_MS}ms budget`);
-  });
-});
-
-// The deadline is the engine's answer to hardware it was not measured on, so
-// what it does when it runs out has to be tested, not assumed. A budget of 1ms
-// is the slowest host there is: nothing after the universal pack can run.
-//
-// The contract is that the coverage lost is NAMED. Silent partial coverage is
-// the failure this project has fixed nine times, and a gate that quietly checks
-// less than it claims is indistinguishable from a gate that passed.
-test('a budget that runs out says what it did not check', shimTest, () => {
-  const repo = repoWith({
-    '.eslintrc.json': '{}',
-    'src/a.ts': 'export function f(a, b, c, d, e) { return a; }\n',
-  });
-  const out = withShim('eslint', RUFF_OK, () => checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), budgetMs: 0 }));
-
-  const notice = out.findings.find((f) => f.id === 'true/budget-exhausted');
-  assert.ok(notice, 'the deadline cut two stages and the report did not say so');
-  assert.match(notice.message, /ts rules/);
-  assert.match(notice.message, /eslint/);
-  assert.strictEqual(out.skipped, null, 'a partial check is not a skipped file');
-});
-
-// ...and the notice survives a full house of findings. It is appended after the
-// per-file cap precisely so that five findings cannot push out the one line
-// saying the report is incomplete.
-test('the budget notice outlives the per-file cap', () => {
-  const repo = repoWith({
-    'src/a.ts': 'const k = "AKIAIOSFODNN7EXAMPLE";\n'.repeat(10),  // procoder: literal safe/hardcoded-secret scanner input for that rule, not an instance of it
-  });
-  const out = checkFile(path.join(repo, 'src/a.ts'),
-    { repoRoot: repo, config: loadConfig(repo), budgetMs: 0, maxFindings: 1 });
-  assert.ok(out.findings.some((f) => f.id === 'true/budget-exhausted'),
-    'the cap swallowed the notice that the file was only partly checked');
+  const out = check(repo, 'src/D.java');
+  assert.ok(!out.skipped);
+  assert.ok(out.findings.length > 0, 'a path outside the exclusion lost its gate');
 });

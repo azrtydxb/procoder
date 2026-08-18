@@ -34,6 +34,12 @@ const DEFAULTS = {
   },
   levels: [],
   baseline: { file: '.procoder-baseline.json' },
+  // The deep tier — `procoder deep`, CodeQL. Only compiled languages need a
+  // setting: CodeQL learns C, C++, Java and C# by WATCHING a build, so it has to
+  // be told the build. Python, JavaScript, TypeScript, Ruby and Go need nothing.
+  // An unset build_command is not a silent skip: `deep` names each language it
+  // could not analyse and why.
+  codeql: { build_command: null },
 };
 
 function findRepoRoot(startDir) {
@@ -134,6 +140,7 @@ function loadConfig(repoRoot) {
     thresholds: mergeSection(DEFAULTS.thresholds, raw.thresholds),
     rungs: mergeSection(DEFAULTS.rungs, raw.rungs),
     baseline: mergeSection(DEFAULTS.baseline, raw.baseline),
+    codeql: mergeSection(DEFAULTS.codeql, raw.codeql),
   };
 }
 
@@ -147,7 +154,7 @@ function matchesPattern(pattern, normalized) {
   // must be escaped like the other regex metacharacters, else patterns such as
   // "?abc.ts" build an invalid regex ("nothing to repeat").
   try {
-    const regex = new RegExp(
+    const regex = new RegExp(  // procoder: literal safe/eslint:security/detect-non-literal-regexp metacharacters are escaped on the next line
       '^' + pattern
         .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
         .replace(/\*\*\//g, '(?:.*/)?')
@@ -219,7 +226,7 @@ function compileIgnore(line, base, lineNo) {
       negate,
       text,
       line: lineNo,
-      re: new RegExp(`^${anchored ? '' : '(?:.*/)?'}${globBody(pattern)}${dirOnly ? '/.+' : '(?:/.+)?'}$`),
+      re: new RegExp(`^${anchored ? '' : '(?:.*/)?'}${globBody(pattern)}${dirOnly ? '/.+' : '(?:/.+)?'}$`),  // procoder: literal safe/eslint:security/detect-non-literal-regexp every metacharacter is escaped by literalBody before it reaches here
     };
   } catch (e) {
     // A pattern shape we did not anticipate must never throw into the hook.

@@ -32,28 +32,35 @@ function run(script, env = {}) {
   return { stdout, dir, levelFile: path.join(dir, '.procoder-active') };
 }
 
-test('activate emits the doctrine and persists the level', () => {
+test('activate emits the rung-1 imperative and persists the level', () => {
   const { stdout, levelFile } = run(HOOK, { PROCODER_DEFAULT_LEVEL: 'strict' });
-  assert.match(stdout, /SAFE/);
-  assert.match(stdout, /ALONE/);
+  assert.match(stdout, /must be secure/);
   assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'strict');
 });
 
-test('paranoid emits strictly more than pragmatic', () => {
+// The hook used to emit the whole level-filtered doctrine, so paranoid was
+// necessarily longer than pragmatic and the test could assert on length alone.
+// It now emits one imperative, identical at every level: the level still decides
+// what BLOCKS (config.rungs) and what the engine reports, but it no longer
+// changes a byte of what the session is told. Asserting sameness is the only
+// honest version of this test — asserting length again would pass for the wrong
+// reason the moment anyone re-attached level-filtered prose.
+test('every level emits the same imperative — the level gates, it does not lecture', () => {
   const lean = run(HOOK, { PROCODER_DEFAULT_LEVEL: 'pragmatic' }).stdout;
   const full = run(HOOK, { PROCODER_DEFAULT_LEVEL: 'paranoid' }).stdout;
-  assert.ok(full.length > lean.length);
+  assert.strictEqual(full, lean);
+  assert.match(lean, /must be secure/);
 });
 
 test('off emits nothing and writes no level file', () => {
   const { stdout, levelFile } = run(HOOK, { PROCODER_DEFAULT_LEVEL: 'off' });
-  assert.ok(!/SAFE/.test(stdout));
+  assert.ok(!/must be secure/.test(stdout));
   assert.ok(!fs.existsSync(levelFile));
 });
 
 test('PROCODER_NO_HOOK disables activation entirely', () => {
   const { stdout, levelFile } = run(HOOK, { PROCODER_NO_HOOK: '1' });
-  assert.ok(!/SAFE/.test(stdout));
+  assert.ok(!/must be secure/.test(stdout));
   assert.ok(!fs.existsSync(levelFile), 'PROCODER_NO_HOOK must not write a level file');
 });
 
@@ -61,7 +68,7 @@ test('subagent hook wraps context in hookSpecificOutput', () => {
   const { stdout } = run(SUBAGENT, { PROCODER_DEFAULT_LEVEL: 'strict' });
   const parsed = JSON.parse(stdout);
   assert.strictEqual(parsed.hookSpecificOutput.hookEventName, 'SubagentStart');
-  assert.match(parsed.hookSpecificOutput.additionalContext, /SAFE/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /must be secure/);
 });
 
 test('a persisted "off" level suppresses subagent doctrine injection', () => {
@@ -106,7 +113,7 @@ test('deactivation survives a session restart, for the session and its subagents
 
     // Session 2 starts.
     const start = execHook(HOOK, { env });
-    assert.ok(!/SAFE/.test(start), 'doctrine emitted after deactivation');
+    assert.ok(!/must be secure/.test(start), 'imperative emitted after deactivation');
     assert.strictEqual(fs.readFileSync(levelFile, 'utf8').trim(), 'off',
       'session start erased the persisted deactivation');
 
@@ -133,7 +140,7 @@ test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
 });
 
 // The config dir is unwritable in the way a real one is: a directory the user
-// cannot write into. The hook must still emit the doctrine — losing the level
+// cannot write into. The hook must still emit the imperative — losing the level
 // file is a small thing, losing the session's rules is not.
 //
 // It used to point CLAUDE_CONFIG_DIR at `/proc/nope-procoder`, and that one
@@ -146,14 +153,14 @@ test('PROCODER_DEFAULT_LEVEL=off clears a stale persisted level', () => {
 //
 // Windows has no chmod worth the name, hence the skip: the property is about a
 // POSIX permission the platform actually enforces.
-test('hooks exit 0 and still emit the doctrine when the config dir is unwritable', POSIX_ONLY, () => {
+test('hooks exit 0 and still emit the imperative when the config dir is unwritable', POSIX_ONLY, () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-ro-'));
   fs.chmodSync(parent, 0o500);
   try {
     const stdout = execHook(HOOK, {
       env: { ...process.env, CLAUDE_CONFIG_DIR: path.join(parent, 'nope') },
     });
-    assert.match(stdout, /SAFE/, 'an unwritable config dir cost the session its doctrine');
+    assert.match(stdout, /must be secure/, 'an unwritable config dir cost the session its imperative');
   } finally {
     fs.chmodSync(parent, 0o700);
     fs.rmSync(parent, { recursive: true, force: true });
@@ -183,8 +190,8 @@ test('a payload larger than the pipe buffer does not fail the writer', () => {
       assert.doesNotThrow(() => execHook(script, { env }, big),
         `${path.basename(script)} did not consume a 70KB payload`);
     }
-    assert.match(execHook(HOOK, { env }, big), /SAFE/,
-      'reading stdin cost the session its doctrine');
+    assert.match(execHook(HOOK, { env }, big), /must be secure/,
+      'reading stdin cost the session its imperative');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -469,50 +476,50 @@ function seedCache(cache) {
   return dir;
 }
 
-test('the hook carries the notice alongside the doctrine, not instead of it', () => {
+test('the hook carries the notice alongside the imperative, not instead of it', () => {
   const dir = seedCache({ checkedAt: Date.now(), latest: '9.9.9' });
   try {
     const { stdout } = runHook(dir);
     assert.match(stdout, /9\.9\.9/);
     assert.match(stdout, /\/procoder:update/);
-    assert.match(stdout, /SAFE/);
-    assert.match(stdout, /ALONE/);
+    assert.match(stdout, /must be secure/);
+    assert.match(stdout, /must be secure/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('the hook stays silent when up to date, and still injects the doctrine', () => {
+test('the hook stays silent when up to date, and still injects the imperative', () => {
   const dir = seedCache({ checkedAt: Date.now(), latest: INSTALLED });
   try {
     const { stdout } = runHook(dir);
     assert.ok(!/procoder:update/.test(stdout), 'notified while up to date');
-    assert.match(stdout, /SAFE/);
+    assert.match(stdout, /must be secure/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('a broken check cannot stop the doctrine reaching the session', () => {
+test('a broken check cannot stop the imperative reaching the session', () => {
   // The cache path is a directory, so every read and write against it throws.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-upd-'));
   fs.mkdirSync(path.join(dir, CACHE_NAME));
   try {
     const { stdout } = runHook(dir);
-    assert.match(stdout, /SAFE/);
-    assert.match(stdout, /ALONE/);
+    assert.match(stdout, /must be secure/);
+    assert.match(stdout, /must be secure/);
     assert.ok(!/\n\s+at .*:\d+:\d+/.test(stdout), 'a stack trace leaked into the session');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('PROCODER_NO_UPDATE_CHECK leaves no cache behind and still injects the doctrine',
+test('PROCODER_NO_UPDATE_CHECK leaves no cache behind and still injects the imperative',
   async () => {
     const dir = seedCache(null);
     try {
       const { stdout } = runHook(dir, { PROCODER_NO_UPDATE_CHECK: '1' });
-      assert.match(stdout, /SAFE/);
+      assert.match(stdout, /must be secure/);
       await wait(300);
       assert.ok(!fs.existsSync(path.join(dir, CACHE_NAME)),
         'the opt-out did not suppress the refresh spawn');

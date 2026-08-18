@@ -20,6 +20,54 @@ function repoWith(files) {
   return dir;
 }
 
+
+// The same pinned analyzer toolchain cli.test.js uses, and for the same reason:
+// these tests are about the HOOK's decisions — which findings it reports, how it
+// narrows an Edit to the region it touched, what it says at each level — and
+// none of them is about which analyzers this machine happens to have. Each stub
+// reports one finding per line carrying a needle, so every count below is exact.
+const NEEDLE = 'PROCODER_TEST_VIOLATION';          // rung 1 — a weakness
+const NEEDLE_ADVISORY = 'PROCODER_TEST_ADVISORY';  // rung 3 — readability, advisory at pragmatic
+
+const SHIM_BIN = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-hook-bin-'));
+  fs.writeFileSync(path.join(dir, 'eslint'), `#!/usr/bin/env node
+const fs = require('fs');
+const files = process.argv.slice(2).filter((a) => !a.startsWith('--') && fs.existsSync(a));
+const out = files.map((f) => {
+  const messages = [];
+  fs.readFileSync(f, 'utf8').split('\\n').forEach((text, i) => {
+    if (text.includes(${JSON.stringify(NEEDLE)})) {
+      messages.push({ ruleId: 'security/detect-eval-with-expression', message: 'eval with expression', line: i + 1 });
+    }
+    if (text.includes(${JSON.stringify(NEEDLE_ADVISORY)})) {
+      messages.push({ ruleId: 'complexity', message: 'too complex', line: i + 1 });
+    }
+  });
+  return { filePath: f, messages };
+});
+process.stdout.write(JSON.stringify(out));
+`, { mode: 0o755 });
+  fs.writeFileSync(path.join(dir, 'semgrep'), `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ results: [], errors: [] }));
+`, { mode: 0o755 });
+  return dir;
+})();
+
+const SHIM_MODULES = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-hook-mod-'));
+  const pkg = path.join(dir, 'eslint-plugin-security');
+  fs.mkdirSync(pkg, { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'package.json'),
+    JSON.stringify({ name: 'eslint-plugin-security', version: '0.0.0', main: 'index.js' }));
+  fs.writeFileSync(path.join(pkg, 'index.js'), 'module.exports = {};\n');
+  return dir;
+})();
+
+function shimEnv() {
+  return { PATH: SHIM_BIN + path.delimiter + process.env.PATH, NODE_PATH: SHIM_MODULES };
+}
+
 function runHookRaw(repo, filePath, env = {}, payload = {}) {
   const res = spawnSync('node', [HOOK], {
     encoding: 'utf8',
@@ -30,7 +78,7 @@ function runHookRaw(repo, filePath, env = {}, payload = {}) {
       ...payload,
       tool_input: { file_path: filePath, ...(payload.tool_input || {}) },
     }),
-    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...shimEnv(), ...env },
   });
   return { stdout: res.stdout || '', stderr: res.stderr || '', status: res.status };
 }
@@ -45,7 +93,7 @@ function contextOf(out) {
 }
 
 test('emits findings as PostToolUse additionalContext', () => {
-  const repo = repoWith({ 'a.ts': 'el.innerHTML = danger;\n' });  // procoder: literal safe/xss-sink the one-line fixture the hook is asked to report on
+  const repo = repoWith({ 'a.ts': `const a = 1; // ${NEEDLE}\n` });
   const out = runHook(repo, path.join(repo, 'a.ts'));
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolUse');
   assert.match(out.hookSpecificOutput.additionalContext, /SAFE/);
@@ -59,7 +107,7 @@ test('emits nothing for a clean file', () => {
 });
 
 test('never blocks — no decision or permission field is ever emitted', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   for (const level of ['pragmatic', 'strict', 'paranoid']) {
     const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_DEFAULT_LEVEL: level });
     assert.strictEqual(out.decision, undefined);
@@ -70,7 +118,7 @@ test('never blocks — no decision or permission field is ever emitted', () => {
 
 // Rungs 1-2 are enforced at every level; 3-4 are judgment, and at `pragmatic`
 // the user asked to be told about them rather than told to fix them.
-const MIXED_RUNGS = `eval(x);\nfunction big(a) {\n${'  const v = 1;\n'.repeat(45)}}\n`;  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+const MIXED_RUNGS = `const x = 1; // ${NEEDLE}\nconst y = 2; // ${NEEDLE_ADVISORY}\n`;
 
 test('pragmatic presents SAFE as blocking and OBVIOUS as advisory', () => {
   const repo = repoWith({ 'a.ts': MIXED_RUNGS });
@@ -94,7 +142,7 @@ test('strict presents every rung as blocking', () => {
 
 test('a stale baseline is reported once, with the command that fixes it', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const x = 1; // ${NEEDLE}\n`,
     '.procoder-baseline.json': JSON.stringify({ version: 1, fingerprints: [] }),
   });
   assert.match(contextOf(runHook(repo, path.join(repo, 'a.ts'))), /procoder baseline/);
@@ -102,14 +150,14 @@ test('a stale baseline is reported once, with the command that fixes it', () => 
 
 test('a current baseline draws no re-baseline notice', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const x = 1; // ${NEEDLE}\n`,
     '.procoder-baseline.json': JSON.stringify({ version: BASELINE_VERSION, fingerprints: [] }),
   });
   assert.ok(!/procoder baseline/.test(contextOf(runHook(repo, path.join(repo, 'a.ts')))));
 });
 
 test('PROCODER_NO_HOOK disables the hook', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   const out = runHook(repo, path.join(repo, 'a.ts'), { PROCODER_NO_HOOK: '1' });
   assert.deepStrictEqual(out, {});
 });
@@ -118,7 +166,7 @@ test('malformed input exits cleanly', () => {
   const repo = repoWith({});
   assert.doesNotThrow(() => execFileSync('node', [HOOK], {
     encoding: 'utf8', cwd: repo, input: 'not json',
-    env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...shimEnv() },
   }));
 });
 
@@ -176,7 +224,7 @@ function hookCpuMs(repo, filePath) {
     encoding: 'utf8',
     cwd: repo,
     input: JSON.stringify({ tool_name: 'Write', cwd: repo, tool_input: { file_path: filePath } }),
-    env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...shimEnv() },
   });
   const at = new RegExp(`${CPU_MARK} ([\\d.]+)`).exec(res.stderr || '');
   assert.ok(at, `the hook process did not report its CPU time:\n${res.stderr}`);
@@ -285,7 +333,7 @@ test('a skipped file says why on stderr rather than passing as clean', () => {
 test('an excluded file also says why, naming the reason', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["generated/"]\n',
-    'generated/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'generated/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const { stderr } = runHookRaw(repo, path.join(repo, 'generated/a.ts'));
   assert.match(stderr, /excluded/);
@@ -298,13 +346,15 @@ test('a clean file stays silent on both channels', () => {
   assert.strictEqual(stderr.trim(), '', 'a clean file must not be announced as skipped');
 });
 
+// The untouched finding here is rung 3, because rung 1 is deliberately exempt
+// from narrowing — see the test below it, and checkFile.
 test('an Edit reports only the region it touched', () => {
   const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const old = 1; // ${NEEDLE_ADVISORY}\n${'const filler = 1;\n'.repeat(40)}const fresh = 1; // ${NEEDLE}\n`,
   });
   const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
     tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    tool_input: { old_string: 'nothing;', new_string: `const fresh = 1; // ${NEEDLE}` },
   });
   assert.match(contextOf(out), /a\.ts:42/);
   assert.ok(!/a\.ts:1\s/.test(contextOf(out)), 'reported an untouched line of the file');
@@ -312,20 +362,25 @@ test('an Edit reports only the region it touched', () => {
 
 test('a Write reports the whole file it wrote', () => {
   const repo = repoWith({
-    'a.ts': `eval(old);\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const old = 1; // ${NEEDLE}\n${'const filler = 1;\n'.repeat(40)}const fresh = 1; // ${NEEDLE}\n`,
   });
   const out = runHook(repo, path.join(repo, 'a.ts'));
   assert.match(contextOf(out), /a\.ts:1\b/);
   assert.match(contextOf(out), /a\.ts:42/);
 });
 
-test('a secret outside the edited region is still reported', () => {
+// Narrowing exists so an edit is not blamed for the rest of the file. Rung 1 is
+// the exception, and always was: procoder's own credential rule used to be
+// exempt from narrowing because a leaked key is a leak wherever it sits. The
+// rule now comes from an analyzer instead of from procoder, but the reason is
+// unchanged, so the exemption follows the RUNG rather than the rule's author.
+test('a weakness outside the edited region is still reported', () => {
   const repo = repoWith({
-    'a.ts': `const k = "AKIAIOSFODNN7EXAMPLE";\n${'const filler = 1;\n'.repeat(40)}eval(fresh);\n`,  // procoder: literal safe/hardcoded-secret, safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const k = 1; // ${NEEDLE}\n${'const filler = 1;\n'.repeat(40)}const fresh = 1; // ${NEEDLE}\n`,
   });
   const out = runHook(repo, path.join(repo, 'a.ts'), {}, {
     tool_name: 'Edit',
-    tool_input: { old_string: 'nothing;', new_string: 'eval(fresh);' },  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    tool_input: { old_string: 'nothing;', new_string: `const fresh = 1; // ${NEEDLE}` },
   });
   assert.match(contextOf(out), /a\.ts:1\b/);
 });

@@ -59,9 +59,93 @@ function gitRepoWith(files, untracked = {}, commit = false) {
 // CLAUDE_CONFIG_DIR defaults to the throwaway repo, which holds no level file:
 // the CLI then sees the default level (strict), not whatever the developer
 // running the suite happens to have set for themselves.
+
+// A deterministic analyzer toolchain, on PATH for every CLI invocation below.
+//
+// These tests are about the CLI's own decisions — the baseline, verify's ratchet,
+// exclusion reporting, the output formats — and none of them is about which
+// analyzers happen to be installed on the machine running the suite. Without a
+// shim every fixture below inherits whatever semgrep/eslint this laptop has, and
+// a `.ts` fixture on a machine with no eslint-plugin-security reports a rung-1
+// gap instead of the finding the test is about. So the toolchain is pinned here:
+// each stub reports one finding for a file containing NEEDLE and nothing at all
+// otherwise, which gives every fixture an exact, explainable finding count.
+const NEEDLE = 'PROCODER_TEST_VIOLATION';          // rung 1 — a weakness
+const NEEDLE_OTHER = 'PROCODER_TEST_VIOLATION_2';  // rung 1 — a DIFFERENT weakness
+const NEEDLE_ADVISORY = 'PROCODER_TEST_ADVISORY';  // rung 4 — left behind, advisory at pragmatic
+
+const SHIM_BIN = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cli-bin-'));
+  // eslint's JSON: one result object per file, `filePath` and `messages`.
+  fs.writeFileSync(path.join(dir, 'eslint'), `#!/usr/bin/env node
+const fs = require('fs');
+const files = process.argv.slice(2).filter((a) => !a.startsWith('--') && fs.existsSync(a));
+const out = files.map((f) => {
+  const messages = [];
+  fs.readFileSync(f, 'utf8').split('\\n').forEach((text, i) => {
+    const line = i + 1;
+    if (text.includes(${JSON.stringify(NEEDLE)})) {
+      messages.push({ ruleId: 'security/detect-eval-with-expression', message: 'eval with expression', line });
+    }
+    if (text.includes(${JSON.stringify(NEEDLE_OTHER)})) {
+      messages.push({ ruleId: 'security/detect-non-literal-fs-filename', message: 'path from a variable', line });
+    }
+    if (text.includes(${JSON.stringify(NEEDLE_ADVISORY)})) {
+      messages.push({ ruleId: 'no-unused-vars', message: 'assigned but never used', line });
+    }
+  });
+  return { filePath: f, messages };
+});
+process.stdout.write(JSON.stringify(out));
+`, { mode: 0o755 });
+
+  // ruff's JSON: a flat array, each item carrying its own `filename`.
+  fs.writeFileSync(path.join(dir, 'ruff'), `#!/usr/bin/env node
+const fs = require('fs');
+const files = process.argv.slice(2).filter((a) => !a.startsWith('--') && fs.existsSync(a));
+const out = [];
+for (const f of files) {
+  if (fs.readFileSync(f, 'utf8').includes(${JSON.stringify(NEEDLE)})) {
+    out.push({ code: 'S307', message: 'eval detected', filename: f, location: { row: 1 } });
+  }
+}
+process.stdout.write(JSON.stringify(out));
+`, { mode: 0o755 });
+
+  // semgrep is required for every source file; a clean exit with no results is
+  // how it says "looked, found nothing".
+  fs.writeFileSync(path.join(dir, 'semgrep'), `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ results: [], errors: [] }));
+`, { mode: 0o755 });
+
+  return dir;
+})();
+
+// eslint-plugin-security is resolved with require.resolve, not spawned, so the
+// shim above cannot stand in for it. A stub package on NODE_PATH can.
+const SHIM_MODULES = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-cli-mod-'));
+  const pkg = path.join(dir, 'eslint-plugin-security');
+  fs.mkdirSync(pkg, { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'package.json'),
+    JSON.stringify({ name: 'eslint-plugin-security', version: '0.0.0', main: 'index.js' }));
+  fs.writeFileSync(path.join(pkg, 'index.js'), 'module.exports = {};\n');
+  return dir;
+})();
+
+function shimEnv(env = {}) {
+  return {
+    PATH: SHIM_BIN + path.delimiter + process.env.PATH,
+    NODE_PATH: SHIM_MODULES,
+    ...env,
+  };
+}
+
 function cli(repo, args, env = {}) {
   const r = spawnSync('node', [CLI, ...args], {
-    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...env },
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...shimEnv(), ...env },
   });
   return { code: r.status, out: String(r.stdout || '') + String(r.stderr || '') };
 }
@@ -71,7 +155,9 @@ function cli(repo, args, env = {}) {
 // precisely so it cannot land in the middle of one.
 function stdoutOf(repo, args) {
   return String(spawnSync('node', [CLI, ...args], {
-    cwd: repo, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: repo },
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_CONFIG_DIR: repo, ...shimEnv() },
   }).stdout);
 }
 
@@ -81,7 +167,7 @@ function atLevel(repo, level) {
 }
 
 test('check exits non-zero and prints findings for a dirty file', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   const result = cli(repo, ['check', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /SAFE/);
@@ -93,31 +179,33 @@ test('check exits 0 for a clean file', () => {
 });
 
 test('baseline records findings, after which check passes', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   assert.ok(fs.existsSync(path.join(repo, '.procoder-baseline.json')));
   assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
 });
 
 test('a NEW violation still fails after a baseline exists', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink the rewritten fixture that adds one finding on top of the baseline
+  fs.writeFileSync(path.join(repo, 'a.ts'),
+    `const x = 1; // ${NEEDLE}\nconst y = 2; // ${NEEDLE_OTHER}\n`);
   const result = cli(repo, ['check', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
-  assert.match(result.out, /xss|innerHTML|SAFE/i);
+  assert.match(result.out, /SAFE/);
 });
 
 test('verify passes when the baseline has not grown', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
 test('verify fails when new violations appear on top of the baseline', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\ndebugger;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink the fixture whose two extra findings the ratchet must reject
+  fs.writeFileSync(path.join(repo, 'a.ts'),
+    `const x = 1; // ${NEEDLE}\nconst y = 2; // ${NEEDLE_OTHER}\nconst z = 3; // ${NEEDLE_ADVISORY}\n`);
   const result = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(result.code, 0);
   assert.match(result.out, /not in the baseline/i);
@@ -126,26 +214,28 @@ test('verify fails when new violations appear on top of the baseline', () => {
 // Fixing an old finding must not buy room for a new one: the totals are
 // identical at step 3, so only fingerprint identity can catch it.
 test('verify fails when a baselined finding is swapped for a different one', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\nel.innerHTML = y;\n');  // procoder: literal safe/dynamic-eval, safe/xss-sink step 2 of the swap fixture — the sink added beside the baselined eval
+  fs.writeFileSync(path.join(repo, 'a.ts'),
+    `const x = 1; // ${NEEDLE}\nconst y = 2; // ${NEEDLE_OTHER}\n`);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 1);
 
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'el.innerHTML = y;\n');  // procoder: literal safe/xss-sink step 3 of the swap fixture — same total, different finding
+  // Same total, different finding — the ratchet must notice a swap, not a count.
+  fs.writeFileSync(path.join(repo, 'a.ts'), `const y = 2; // ${NEEDLE_OTHER}\n`);
   const swapped = cli(repo, ['verify', 'a.ts']);
   assert.strictEqual(swapped.code, 1);
-  assert.match(swapped.out, /innerHTML|xss/i);
+  assert.match(swapped.out, /detect-non-literal-fs-filename/);
 });
 
 // Copy-paste is how legacy code grows: every identical line shares id, path and
 // normalized content, so without an occurrence ordinal one baselined line
 // accepts an unlimited number of clones.
 test('verify fails when a baselined violation is cloned', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n' });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` });
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(51));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  fs.writeFileSync(path.join(repo, 'a.ts'), `const x = 1; // ${NEEDLE}\n`.repeat(51));
 
   const verified = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(verified.code, 0);
@@ -157,24 +247,30 @@ test('verify fails when a baselined violation is cloned', () => {
 });
 
 test('verify passes when the baselined duplicate count is unchanged', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n`.repeat(3) });
   cli(repo, ['baseline', 'a.ts']);
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
   assert.strictEqual(cli(repo, ['check', 'a.ts']).code, 0);
 });
 
 test('verify passes when a duplicate violation is deleted — shrinking is fine', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n'.repeat(3) });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n`.repeat(3) });
   cli(repo, ['baseline', 'a.ts']);
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'eval(x);\n'.repeat(2));  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  fs.writeFileSync(path.join(repo, 'a.ts'), `const x = 1; // ${NEEDLE}\n`.repeat(2));
   assert.strictEqual(cli(repo, ['verify', 'a.ts']).code, 0);
 });
 
 // Running `prettier --write .` over a freshly baselined legacy repo used to
 // evaporate the baseline: every re-wrapped statement came back as a new
 // finding and CI went red on code the team never touched.
-const FLAT_EVAL = 'const r = eval(userInput + suffix);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-const WRAPPED_EVAL = 'const r = eval(\n  userInput + suffix,\n);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+// The needle is used as an IDENTIFIER here, not in a comment. Identity is the
+// statement's token sequence, and a comment's tokens move when a formatter
+// re-wraps the line — so a commented needle would change the fingerprint for a
+// reason that has nothing to do with the code.
+const FLAT_EVAL = `const r = ${NEEDLE}(a + b);\n`;
+// Same statement, same tokens, only re-wrapped — which is exactly what a
+// formatter does and exactly what the v3 fingerprint exists to survive.
+const WRAPPED_EVAL = `const r = ${NEEDLE}(\n  a + b\n);\n`;
 
 test('verify passes after a formatter re-wraps a baselined statement', () => {
   const repo = repoWith({ 'a.ts': FLAT_EVAL });
@@ -206,7 +302,7 @@ test('a path that does not exist is an error, not a clean run', () => {
 test('a directory holding only excluded files is still a clean run', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
-    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'src/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   assert.strictEqual(cli(repo, ['check', 'src']).code, 0);
 });
@@ -217,7 +313,7 @@ test('a directory holding only excluded files is still a clean run', () => {
 const V1_BASELINE = JSON.stringify({ version: 1, fingerprints: ['deadbeef'] });
 
 test('verify against a stale baseline explains the format change instead of failing on counts', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n`, '.procoder-baseline.json': V1_BASELINE });
   const result = cli(repo, ['verify', 'a.ts']);
   assert.strictEqual(result.code, 2);
   assert.match(result.out, /baseline.*format|re-run `procoder baseline/i);
@@ -225,12 +321,12 @@ test('verify against a stale baseline explains the format change instead of fail
 });
 
 test('check against a stale baseline says to re-baseline', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n`, '.procoder-baseline.json': V1_BASELINE });
   assert.match(cli(repo, ['check', 'a.ts']).out, /fingerprint format changed/i);
 });
 
 test('re-baselining over a stale baseline replaces it with the current format', () => {
-  const repo = repoWith({ 'a.ts': 'eval(x);\n', '.procoder-baseline.json': V1_BASELINE });  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n`, '.procoder-baseline.json': V1_BASELINE });
   assert.strictEqual(cli(repo, ['baseline', 'a.ts']).code, 0);
   const written = JSON.parse(fs.readFileSync(path.join(repo, '.procoder-baseline.json'), 'utf8'));
   assert.strictEqual(written.version, 4);
@@ -251,8 +347,8 @@ test('unknown subcommand prints usage and exits non-zero', () => {
 
 test('a rule exclusion that suppresses a live finding is not reported as unused', () => {
   const repo = repoWith({
-    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n',
+    'a.ts': `const x = 1; // ${NEEDLE}\n`,
+    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/eslint:security/detect-eval-with-expression"]\n',
   });
   const result = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
   assert.strictEqual(result.code, 0);
@@ -262,12 +358,12 @@ test('a rule exclusion that suppresses a live finding is not reported as unused'
 test('a rule exclusion that suppresses nothing is reported, and fails only with the flag', () => {
   const repo = repoWith({
     'a.ts': 'const x = 1;\n',
-    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n',
+    '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/eslint:security/detect-eval-with-expression"]\n',
   });
   const plain = cli(repo, ['verify', 'a.ts']);
   assert.strictEqual(plain.code, 0, 'plain verify does not fail CI over a stale exclusion');
   assert.match(plain.out, /suppressed nothing/i);
-  assert.match(plain.out, /a\.ts:safe\/dynamic-eval/);
+  assert.match(plain.out, /a\.ts:safe\/eslint:security\/detect-eval-with-expression/);
 
   const flagged = cli(repo, ['verify', '--unused-exclusions', 'a.ts']);
   assert.notStrictEqual(flagged.code, 0, 'the dedicated flag opts into enforcement');
@@ -287,7 +383,11 @@ test('a rule exclusion naming a file outside the run scope is not reported eithe
 
 // The README promises OBVIOUS and ALONE are advisory at `pragmatic`. The CLI is
 // what pre-commit hooks and CI run, so a blocking exit there contradicts it.
-const ADVISORY_ONLY = '// TODO: fix this later\n';  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+// An analyzer finding on rung 4 (ALONE) and nothing else. Under the old engine
+// this was procoder's own orphan-TODO rule; it is now eslint's no-unused-vars,
+// which is the same claim — something left behind — made by a tool that
+// maintains the rule for us.
+const ADVISORY_ONLY = `const unusedThing = 1; // ${NEEDLE_ADVISORY}\n`;
 
 test('pragmatic reports judgment findings but does not fail on them alone', () => {
   const repo = atLevel(repoWith({ 'a.ts': ADVISORY_ONLY }), 'pragmatic');
@@ -298,7 +398,7 @@ test('pragmatic reports judgment findings but does not fail on them alone', () =
 });
 
 test('pragmatic still fails on a SAFE finding', () => {
-  const repo = atLevel(repoWith({ 'a.ts': 'eval(x);\n' }), 'pragmatic');  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  const repo = atLevel(repoWith({ 'a.ts': `const x = 1; // ${NEEDLE}\n` }), 'pragmatic');
   const result = cli(repo, ['check', 'a.ts']);
   assert.strictEqual(result.code, 1);
   assert.match(result.out, /SAFE/);
@@ -397,7 +497,7 @@ test('verify and baseline say a file was skipped for size, and verify stops', ()
 test('verify reports an excluded path by count, not by silence', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
-    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'src/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const result = cli(repo, ['verify', 'src']);
   assert.strictEqual(result.code, 0);
@@ -407,7 +507,7 @@ test('verify reports an excluded path by count, not by silence', () => {
 test('check reports an excluded path by count, and still passes', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["src/"]\n',
-    'src/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'src/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const result = cli(repo, ['check', 'src']);
   assert.strictEqual(result.code, 0);
@@ -420,7 +520,7 @@ test('check reports an excluded path by count, and still passes', () => {
 // fails on findings `check` never printed.
 const IGNORED_TREE = {
   'gen/.procoderignore': '*.ts\n',
-  'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  'gen/a.ts': `const x = 1; // ${NEEDLE}\n`,
   'src/b.ts': 'const x = 1;\n',
 };
 
@@ -465,7 +565,7 @@ test('--no-ignore checks a file every .procoderignore covers', () => {
 test('--no-ignore does not re-include a [exclude] paths exclusion', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["gen/"]\n',
-    'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'gen/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   assert.strictEqual(cli(repo, ['check', '--no-ignore', '.']).code, 0);
 });
@@ -477,8 +577,8 @@ test('--no-ignore does not re-include a [exclude] paths exclusion', () => {
 // of coverage and see the same output as a clean run.
 const EXCLUDED_TREE = {
   '.procoder.toml': '[exclude]\npaths = ["gen/"]\n',
-  'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
-  'gen/b.ts': 'eval(y);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+  'gen/a.ts': `const x = 1; // ${NEEDLE}\n`,
+  'gen/b.ts': `const y = 1; // ${NEEDLE}\n`,
   'src/c.ts': 'const x = 1;\n',
 };
 
@@ -558,7 +658,7 @@ test('a glob path exclusion matching nothing is reported', () => {
 test('a glob path exclusion still suppressing a finding is not reported', () => {
   const repo = repoWith({
     '.procoder.toml': '[exclude]\npaths = ["**/*.gen.ts"]\n',
-    'src/c.gen.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'src/c.gen.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const result = cli(repo, ['verify', '--unused-exclusions', '.']);
   assert.strictEqual(result.code, 0);
@@ -607,7 +707,7 @@ test('a .procoderignore covering a tree that has gone clean is reported', () => 
 test('a .procoderignore still suppressing a finding is not reported', () => {
   const repo = gitRepoWith({
     ...CLEAN_IGNORED_TREE,
-    'gen/a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'gen/a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const result = cli(repo, ['verify', '--unused-exclusions', '.']);
   assert.strictEqual(result.code, 0, 'an ignore file doing real work must never be called stale');
@@ -663,7 +763,7 @@ test('a --since run judges no ignore file either', () => {
 test('verify does not claim the ratchet holds over files it never read', () => {
   const repo = repoWith({
     '.procoder.toml': '[limits]\nmax_file_bytes = 4\n',
-    'a.ts': 'eval(x);\n',  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+    'a.ts': `const x = 1; // ${NEEDLE}\n`,
   });
   const result = cli(repo, ['verify', 'a.ts']);
   assert.notStrictEqual(result.code, 0, 'a verify that read nothing must not pass');
@@ -995,7 +1095,7 @@ test('statusline install --append twice is a no-op the second time', POSIX_ONLY,
 // are built from the same per-file results the text path prints, so these tests
 // assert the shape AND that the counts agree with the default rendering.
 
-const DIRTY = 'eval(x);\n';  // procoder: literal safe/dynamic-eval scanner input for that rule, not an instance of it
+const DIRTY = `const x = 1; // ${NEEDLE}\n`;
 
 test('--format json reports the same findings the text run does, with fingerprints', () => {
   const repo = repoWith({ 'a.ts': DIRTY });
@@ -1003,7 +1103,7 @@ test('--format json reports the same findings the text run does, with fingerprin
   assert.strictEqual(result.code, 1, 'a SAFE finding still fails the run');
   const doc = JSON.parse(result.out);
   assert.strictEqual(doc.findings.length, 1);
-  assert.strictEqual(doc.findings[0].id, 'safe/dynamic-eval');  // procoder: literal safe/dynamic-eval the id as data, not a sink
+  assert.strictEqual(doc.findings[0].id, 'safe/eslint:security/detect-eval-with-expression');
   assert.strictEqual(doc.findings[0].rungNumber, 1);
   assert.strictEqual(doc.findings[0].blocking, true);
   assert.match(doc.findings[0].fingerprint, /^[0-9a-f]{8,}$/, 'no ratchet fingerprint on the finding');
@@ -1188,7 +1288,7 @@ test('--since sees a renamed file, at its new path', () => {
 test('--since honours --unused-exclusions over the files it read', () => {
   const repo = repoWithCommit(
     { 'a.ts': 'const x = 2;\n' },
-    { 'a.ts': 'const x = 1;\n', '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/dynamic-eval"]\n' });
+    { 'a.ts': 'const x = 1;\n', '.procoder.toml': '[exclude]\nrules = ["a.ts:safe/eslint:security/detect-eval-with-expression"]\n' });
   const result = cli(repo, ['verify', '--unused-exclusions', '--since', 'HEAD']);
   assert.strictEqual(result.code, 1, 'the flag was accepted and then ignored');
   assert.match(result.out, /suppressed nothing/);

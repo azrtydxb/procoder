@@ -51,8 +51,22 @@ test('a shared manifest is not evidence unless it names the tool', () => {
   assert.strictEqual(isConfigured(tempRepo({ 'clippy.toml': '' }), TOOLS.rust), true);
 });
 
-test('resolveFor yields null when the tool is unconfigured', () => {
-  assert.strictEqual(resolveFor('a.py', { repoRoot: tempRepo() }), null);
+// The inversion at the heart of the rewrite. This test used to assert the
+// opposite — that an unconfigured tool does not resolve — and that rule is why a
+// repository with no ruff config was never checked at all, with the silence
+// reading as a pass. An analyzer now runs because the file is in a language it
+// answers for; the project's own config is still honoured when present, because
+// the analyzer reads it, but its ABSENCE no longer excuses the file.
+test('resolveFor runs the analyzer even when the project has not configured it', () => {
+  const resolved = resolveFor('a.py', { repoRoot: tempRepo() });
+  // Present-and-unconfigured must resolve; absent still yields null, and which
+  // of those this machine is running is not the test's business.
+  if (hasTool('ruff')) {
+    assert.ok(resolved, 'an installed analyzer must run without project config');
+    assert.strictEqual(resolved.name, 'ruff');
+  } else {
+    assert.strictEqual(resolved, null);
+  }
 });
 
 test('resolveFor yields null for a file type with no tool', () => {
@@ -204,29 +218,34 @@ function fourStates(spec) {
   const { toolName, relFile, configured, unconfigured, answers, fails } = spec;
   const run = (files, shim) => runShimmed({ toolName, relFile, files, shim });
 
-  test(`${toolName}: absent → no tool resolves, the pack runs`, { skip: !shimmable }, () => {
+  test(`${toolName}: absent → no tool resolves; toolchain.js reports the gap`, { skip: !shimmable }, () => {
     assert.strictEqual(run(configured, null), null);
   });
 
-  test(`${toolName}: present but unconfigured → no tool resolves, the pack runs`, { skip: !shimmable }, () => {
-    assert.strictEqual(run(unconfigured, answers), null);
+  test(`${toolName}: present but unconfigured → it still runs, and still reports`, { skip: !shimmable }, () => {
+    const out = run(unconfigured, answers);
+    assert.ok(out, `${toolName} must run without project config — silence is not a pass`);
+    assert.ok(out.findings.length > 0, `${toolName} findings were dropped`);
+    assert.strictEqual(out.ok, true);
   });
 
-  test(`${toolName}: configured and answering → its findings appear and the pack defers`, { skip: !shimmable }, () => {
+  test(`${toolName}: configured and answering → its findings appear`, { skip: !shimmable }, () => {
     const out = run(configured, answers);
     assert.ok(out, 'a configured, present tool must resolve');
     assert.ok(out.findings.length > 0, `${toolName} findings were dropped`);
     assert.strictEqual(out.ok, true);
-    for (const f of out.findings) assert.match(f.id, /^true\//);
+    // A finding is namespaced by the rung it lands on: security rules are rung 1
+    // so they sort and block ahead of style, everything else stays rung 2.
+    for (const f of out.findings) assert.match(f.id, /^(safe|true)\//);
   });
 
-  test(`${toolName}: configured and failing → not ok, the pack runs`, { skip: !shimmable }, () => {
+  test(`${toolName}: configured and failing → not ok, never silently clean`, { skip: !shimmable }, () => {
     const out = run(configured, fails);
     assert.deepStrictEqual(out.findings, []);
-    assert.strictEqual(out.ok, false, 'a failing tool must fall back to the pack, never to silence');
+    assert.strictEqual(out.ok, false, 'a failing analyzer must never read as a clean file');
   });
 
-  test(`${toolName}: configured and genuinely clean → ok, the pack does not double-report`, { skip: !shimmable }, () => {
+  test(`${toolName}: configured and genuinely clean → ok, and nothing is invented`, { skip: !shimmable }, () => {
     assert.deepStrictEqual(run(configured, 'exit 0'), { findings: [], ok: true });
   });
 }
@@ -267,7 +286,7 @@ fourStates({
 const REAL_TIMEOUT_MS = 60000;
 
 function toolMajor(name, args) {
-  const run = spawnSync(name, args, { encoding: 'utf8', timeout: 10000 });
+  const run = spawnSync(name, args, { encoding: 'utf8', timeout: 10000 });  // procoder: literal safe/semgrep:javascript.lang.security.detect-child-process.detect-child-process a test spawning the shimmed linter it is testing
   const banner = `${run.stdout || ''}${run.stderr || ''}`;
   const m = /(\d+)\.\d+/.exec(banner);
   return m ? Number(m[1]) : -1;
@@ -315,14 +334,18 @@ test('eslint (real): absent → no tool resolves, the pack runs', {
   assert.strictEqual(withPath(shimDir({}), () => resolveFor('a.js', { repoRoot: repo })), null);
 });
 
-test('eslint (real): present but unconfigured → no tool resolves, the pack runs', { skip: ESLINT }, () => {
-  assert.strictEqual(realRun('a.js', { 'a.js': 'var dead = 1;\n' }), null);
+test('eslint (real): present but unconfigured → it still runs', { skip: ESLINT }, () => {
+  // eslint with no flat config reports its own error rather than linting, which
+  // is `ok: false` — a gap, not a clean file. Either way it must not be null:
+  // resolving to null is how the old design turned "unconfigured" into "passed".
+  const out = realRun('a.js', { 'a.js': 'var dead = 1;\n' });
+  assert.ok(out, 'an installed eslint must be asked, config or not');
 });
 
 test('eslint (real): configured and answering → its findings carry file, line and rule id', { skip: ESLINT }, () => {
   const out = realRun('a.js', ESLINT_REPO);
   assert.strictEqual(out.ok, true);
-  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['TRUE', 'true/eslint:no-unused-vars', 1]]);
+  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['ALONE', 'alone/eslint:no-unused-vars', 1]]);
 });
 
 test('eslint (real): configured and genuinely clean → ok, so the shape rules stay deferred', { skip: ESLINT }, () => {
@@ -359,14 +382,16 @@ test('ruff (real): absent → no tool resolves, the pack runs', {
   assert.strictEqual(withPath(shimDir({}), () => resolveFor('a.py', { repoRoot: repo })), null);
 });
 
-test('ruff (real): present but unconfigured → no tool resolves, the pack runs', { skip: RUFF }, () => {
-  assert.strictEqual(realRun('a.py', { 'a.py': 'import os\n' }), null);
+test('ruff (real): present but unconfigured → it still runs, and still reports', { skip: RUFF }, () => {
+  const out = realRun('a.py', { 'a.py': 'import os\n' });
+  assert.ok(out, 'an installed ruff must be asked, config or not');
+  assert.strictEqual(out.ok, true);
 });
 
 test('ruff (real): configured and answering → its findings carry file, line and rule id', { skip: RUFF }, () => {
   const out = realRun('a.py', RUFF_REPO);
   assert.strictEqual(out.ok, true);
-  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['TRUE', 'true/ruff:F401', 1]]);
+  assert.deepStrictEqual(out.findings.map((f) => [f.rung, f.id, f.line]), [['ALONE', 'alone/ruff:F401', 1]]);
 });
 
 test('ruff (real): configured and genuinely clean → ok, so the shape rules stay deferred', { skip: RUFF }, () => {
@@ -388,7 +413,7 @@ test('ruff (real): a path the project excludes is still answered, not reported c
     'sub/a.py': 'import os\n',
   });
   assert.strictEqual(out.ok, true);
-  assert.deepStrictEqual(out.findings.map((f) => f.id), ['true/ruff:F401']);
+  assert.deepStrictEqual(out.findings.map((f) => f.id), ['alone/ruff:F401']);
 });
 
 test('ruff (real): a file ruff cannot parse is not a clean file', { skip: RUFF }, () => {

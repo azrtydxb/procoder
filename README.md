@@ -33,7 +33,7 @@ Three rungs sit in front of it, in cost order — **SAFE**, **TRUE**,
 for, and only that?). All six are checked while the code is being written, not
 at review time. The doctrine is injected at session start, so the model is
 *following* the rungs before anything is checked, and a `PostToolUse` hook runs
-the deterministic engine over every file the agent writes. A finding lands in
+the project's analyzers over every file the agent writes. A finding lands in
 the same turn that produced it, when the change is still cheap to undo, instead
 of in a pull request comment three days later.
 
@@ -78,30 +78,38 @@ its job. `scripts/sync-rules.js` keeps the generated rule files listed in
 is not one of them, so keep this table in step by hand when the doctrine's
 ladder changes.)*
 
-## Where it does not defer
+## Where the findings come from
 
-procoder runs the project's own linter rather than replacing it: where eslint,
-ruff, golangci-lint or clippy is configured, its findings replace procoder's
-own shape rules, because the project's linter defines the project's shape.
+Every finding about your code comes from an analyzer that read it — semgrep,
+ruff, eslint, gosec, golangci-lint, clippy. procoder decides what reaches you
+and when: the rung a finding lands on, narrowing to the region an edit touched,
+the baseline, the caps, and the report.
 
-Rung 1 is the exception. Security findings are never handed to an external
-linter, because eslint and ruff do not check for SQL injection, shell
-injection or disabled TLS verification by default, and a gate that silently
-delegates its non-negotiable rung to a tool that does not check it is worse
-than no gate at all.
+This is the opposite of the earlier design, and the inversion is the point. An
+analyzer used to run only where the project had configured one, and a repository
+with no eslint config was simply not checked — with the silence reading as a
+pass. An analyzer now runs because the file is in a language it answers for. The
+project's own config is still honoured when it exists, because the analyzer
+reads it; its *absence* no longer excuses the file.
 
-The same reasoning is why procoder has **zero runtime dependencies** and a
-lockfile with nothing in it. A tool whose first rung says a new dependency is a
-new trust boundary does not get to add one for convenience.
+One exception to the narrowing: rung 1 is never narrowed away. Readability and
+leftovers outside an edit are not that change's business, but a weakness is
+worth seeing whenever the file is open.
+
+procoder still has **zero runtime dependencies** and a lockfile with nothing in
+it. A tool whose first rung says a new dependency is a new trust boundary does
+not get to add one for convenience — the analyzers are the project's, invoked as
+subprocesses, never vendored in.
 
 ## It gates itself
 
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **212** tracked files the scan
-reads **194** and skips **18** — 9 by `[exclude] paths` and 9 by two
-`.procoderignore` files. Every skip is printed on every run with the pattern
+arithmetic is published instead of implied: of **194** tracked files the scan
+reads **185** and skips **9**, all of them by two `.procoderignore` files —
+`[exclude] paths` is now empty, because every entry it held was for rules that
+no longer exist. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
 itself so they cannot drift from this paragraph, and every exclusion is
 re-judged on every `verify`: one whose path is gone, that matches no file, or
@@ -265,92 +273,175 @@ files are exported-and-unmentioned by design and will show up: exclude them
 under `[exclude] paths`, or read past them. Nothing is deleted, and a failing
 build on a guess about deletion is how a tool gets switched off.
 
-## Every rule the engine can report
+## What the gate actually proves
 
-Forty-nine rule ids, and this is all of them — the set that line markers and
-`[exclude] rules` entries are checked against. Rungs 5 (FAST) and 6 (MEANT)
-have three between them, and that is the point: most of what those two rungs
-ask cannot be decided from the text of a file, so the engine checks the narrow
-part it can prove and leaves the rest as doctrine the model reads. What was
-built and deliberately dropped — a nested-scan rule that fired 58 times on
-CPython, all of it correct code — is on
-[what it misses](https://azrtydxb.github.io/procoder/limitations.html).
+procoder carries no rules of its own. It used to — about 9,500 lines of regexes,
+a local taint tracker and shape heuristics per language — and they were measured
+against [CWEval](https://github.com/Co1lin/CWEval), whose programs ship with
+working exploits, so a miss is a real exploit rather than a scanner's opinion.
+They named the right weakness in **1 of 30**. That is not a rule set worth
+maintaining, and every language added would have doubled it.
 
-Rung 1, SAFE — untrusted data reaching a sink, and credentials at rest:
+So the gate is real analyzers now, and this section is the honest account of what
+that buys, because the number matters more than the promise:
 
-| Rule id | Reports |
+| what | measured on 115 CWEval programs, 30 exploitable |
 |---|---|
-| safe/sql-injection | SQL built by interpolation, concatenation, `format!` or `Sprintf` reaching a query, cursor or statement. |
-| safe/shell-injection | A shell command built by interpolation or concatenation, or a shell invoked with `-c` and an interpolated string. |
-| safe/xss-sink | A raw HTML sink — `innerHTML`, `outerHTML`, `dangerouslySetInnerHTML` and their kin. |
-| safe/dynamic-eval | Dynamic code evaluation: `eval`, `exec`, `Function(…)`, `new Function`. |
-| safe/unsafe-deserialize | Deserialization of untrusted bytes — `pickle.loads`, `yaml.load`, Java native deserialization. |
-| safe/xxe-risk | An XML parser created without external entities disabled. |
-| safe/hardcoded-secret | A credential literal in source, or a credential-named identifier assigned a literal. |
-| safe/redaction-marker | A redaction marker written **into** a file where a value belongs, meaning a real credential was overwritten with a placeholder. Case-insensitive, and the bracketed, angle-bracketed, suffixed and unterminated spellings all count; prose about redaction does not. |
-| safe/secret-in-log | A credential interpolated into a log call. |
-| safe/pii-in-log | Personal data interpolated into a log call. |
-| safe/tls-disabled | Certificate or hostname verification switched off. |
-| safe/weak-hash | MD5 or SHA-1 used where a secure hash is expected. |
-| safe/weak-random | A non-cryptographic RNG used for a token, key, nonce, salt or session id. |
-| safe/unsafe-block | A Rust `unsafe` block with no `SAFETY:` comment. |
-| safe/missing-lockfile | An ecosystem manifest with no lockfile committed beside it. |
-| safe/manifest-not-locked | A dependency in `package.json`, `go.mod` or `Cargo.toml` that the lockfile has never heard of — hand-edited rather than installed. A manifest the parser cannot read is reported under the same id, since nothing in it was checked against anything. |
-| safe/floating-version | A dependency range that does not resolve to a version you audited. |
+| every analyzer below, latest, security rulesets on, **plus** CodeQL 2.26.3 `security-extended` | **5 of 30** named correctly |
+| the same tools counted as "said *something* about the file" | 20 of 30 — but flagging at random would score 17.7 |
 
-Rung 2, TRUE — errors handled, edges covered:
+The reason is structural, not a tuning problem. Analyzers find a weakness by
+tracing a known framework entry point to a sink. Code that is being written has
+usually not been wired to one yet, so CodeQL — the strongest of them — said
+nothing at all on 25 of the 26 vulnerable files it analysed.
 
-| Rule id | Reports |
+**So the gate is not a vulnerability scanner, and procoder does not claim to be
+one.** What the analyzers prove, they prove exactly, in every language, without
+procoder maintaining a line of it: a weak cipher, a hardcoded credential, a shell
+built from a variable, an unchecked error, a dead binding, a function nobody can
+read. The rung-1 imperative in the prompt is what carries the rest — measured at
++25pp on the same benchmark, which is the largest single effect in any of it.
+
+### Three tiers, decided by tool
+
+Which analyzer runs where is a property of the analyzer, settled once in its
+definition. procoder does not give a tool a slice of a budget and kill it at the
+end of the slice — a truncated analyzer returns an empty result, and an empty
+result is byte for byte what a clean file returns.
+
+| tier | when | analyzers | cost |
+|---|---|---|---|
+| **write** | every `Write`/`Edit`, to completion | ruff, eslint, golangci-lint (+gosec), clippy | ~1s |
+| **commit** | `procoder check`, pre-commit, CI | semgrep | seconds |
+| **deep** | `procoder deep`, CI | CodeQL, `--threat-model=all` | minutes |
+
+The write tier is not a reduced check, it is a *fast* one: gosec's weak-crypto
+findings land on the write that introduced them. What the later tiers add is the
+analysis that genuinely cannot be done in a second — semgrep's cross-language
+rule set, and CodeQL's taint tracing.
+
+### The mandated toolchain
+
+| analyzer | languages | why it is required |
+|---|---|---|
+| semgrep | every language | the only one covering all of them; security rulesets only |
+| ruff (`--select S`) | Python | `S` is flake8-bandit; without it ruff reports no security finding at all |
+| eslint + eslint-plugin-security | JS/TS | eslint's own rule set carries no security rules |
+| gosec, golangci-lint | Go | |
+| cargo clippy | Rust | |
+
+An analyzer's findings arrive under its own id — `safe/eslint:security/…`,
+`true/golangci-lint:errcheck`, `alone/ruff:F401`, `safe/semgrep:…`,
+`safe/gosec:G401`, `safe/codeql:go/path-injection` — so the tool that made a
+claim is always visible in the claim, and a line marker or an `[exclude] rules`
+entry can name exactly one of them. A tool whose id shape procoder does not
+recognise cannot be suppressed narrowly, which is why every analyzer in the
+toolchain is registered in `EXTERNAL_RULE_SHAPES`: without that, the only way to
+silence a wrong finding is the blunt one.
+
+The bare forms — `true/semgrep`, `true/gosec`, `true/codeql`,
+`true/golangci-lint`, `true/eslint`, `true/ruff`, `true/clippy` — are what a
+finding gets when the analyzer reported one without a rule id of its own. They
+are rung 2 by default because an unnamed finding cannot be classified, and they
+are worth noticing: an analyzer that has stopped naming its rules is usually an
+analyzer whose output format changed under a version bump.
+
+Four rules govern it, and they are all in
+[`hooks/checks/toolchain.js`](hooks/checks/toolchain.js):
+
+- **Mandatory.** A missing analyzer is reported as a hole in the gate, never as
+  a clean file. `procoder doctor` lists what is missing and how to install it.
+  So is an analyzer that is present but does not answer — a broken config, a
+  parse error, a crash — because `no findings` and `could not look` are
+  indistinguishable on the wire and only one of them is safe to ship on.
+- **Latest.** `procoder doctor` reports currency and how to update. It is not
+  enforced: procoder cannot know why a version was pinned.
+- **Complete.** Security rulesets are enabled explicitly, because a tool on its
+  defaults is a tool with its security rules off.
+- **No silence.** procoder passes no disable flag and writes no ignore comment.
+  A finding is answered by fixing the code. The only other permitted answer is a
+  rule switched off in the project's own analyzer config *with the research that
+  showed it wrong written beside it* — see this repo's own
+  [`eslint.config.mjs`](eslint.config.mjs), where three rules are off and each
+  one carries the measurement that justifies it.
+
+### The six findings procoder still owns
+
+Every other finding is an analyzer's, reported under that analyzer's own rule id
+(`safe/eslint:security/detect-eval-with-expression`). These are the ones no
+analyzer answers for:
+
+| id | what it says |
 |---|---|
-| true/swallowed-error | An exception caught and silently discarded. |
-| true/bare-except | A bare `except:`, which catches `SystemExit` and `KeyboardInterrupt` too. |
-| true/ignored-error | An error assigned to `_` and dropped. |
-| true/printstacktrace | An exception printed to stderr instead of handled. |
-| true/missing-timeout | An outbound HTTP call or client with no timeout, in five of the six packs — Python `requests` and `urlopen`, Go's empty `http.Client{}`, its package-level helpers and `http.DefaultClient`, `fetch` and `axios.get`, `reqwest`, and Java's `HttpClient.newHttpClient()`. |
-| true/unclosed-resource | A resource opened with no visible close. |
-| true/mutable-default | A mutable default argument, shared across calls. |
-| true/panic-in-library | A `panic` in library code, which crashes the caller. |
-| true/unwrap-in-library | `unwrap`/`expect` in library code, same reason. |
-| true/budget-exhausted | The 2s per-file budget ran out before some stage ran — the file is only partly checked, and says so. |
-| true/manifest-unreadable | The dependency manifest could not be read — empty, truncated, binary, or not the format its name implies — so nothing in it was checked. |
-| true/lockfile-unreadable | The lockfile exists and could not be read, so nothing in the manifest was verified against it. |
-| true/findings-suppressed | More than 20 findings on one line; the overflow is counted rather than dropped. |
-| true/eslint, true/ruff, true/golangci-lint, true/clippy | A finding from the project's own linter that carried no rule id of its own. The tool's own ids arrive as `true/<tool>:<id>` and are checked on shape, since those namespaces are the tool's to define. |
+| `safe/analyzer-missing` | an analyzer this file's language needs is not installed, so the file was not checked — `procoder doctor` lists them |
+| `safe/analyzer-silent` | an analyzer is installed but did not answer: a broken config, a parse error, a crash. Reported because `no findings` and `could not look` are identical on the wire |
+| `safe/ungated-language` | nothing in the toolchain proves anything about this language, and the reason is printed with it |
+| `true/budget-exhausted` | the 2-second per-file budget ran out before every stage finished, and it names the stages it did not reach |
+| `true/findings-suppressed` | one line produced more findings than the per-line cap, so the overflow is counted rather than dropped silently |
+| `alone/dead-export` | `procoder rot` only: an export nothing else in the tree mentions |
 
-Rung 3, OBVIOUS — thresholds from `[thresholds]`:
+Plus five about dependency manifests, which no linter reads for you:
+`safe/floating-version`, `safe/manifest-not-locked`, `safe/missing-lockfile`,
+`true/manifest-unreadable`, `true/lockfile-unreadable`.
 
-| Rule id | Reports |
+### The deep tier: `procoder deep`
+
+Everything above is a pattern matcher. It reads a file, matches a shape, and
+reports — which catches API-level weaknesses exactly, and cannot catch the half
+where the code is idiomatic and only the data's provenance makes it wrong:
+
+```go
+return fmt.Sprintf("[%s] Received: %s", timestamp, msg)
+```
+
+That is a log-injection vulnerability when `msg` is attacker-controlled and
+ordinary Go otherwise. No pattern separates them. Taint analysis does, and
+`procoder deep` runs CodeQL to do it.
+
+**One flag carries this tier.** CodeQL's default threat model treats
+command-line arguments, environment variables and local files as *trusted* —
+reasonable for a long-lived service, precisely wrong for code an agent has just
+written, whose caller usually does not exist yet. Measured on CWEval:
+
+| | caught |
 |---|---|
-| obvious/function-too-long | A function longer than `function_lines` (default 40). |
-| obvious/nesting-depth | Nesting deeper than `nesting_depth` (default 3). |
-| obvious/too-many-params | More parameters than `params` (default 4). |
-| obvious/complexity | Branch count over `complexity` (default 10). |
-| obvious/nested-ternary | A ternary inside a ternary. |
+| `security-extended`, default threat model | 1 of 15 (7%) |
+| `security-extended`, **`--threat-model=all`** | **8 of 15 (53%)** |
 
-Rung 4, ALONE — what a change left behind:
+Eight times the recall, from one flag. It is not configurable — a gate that
+trusted `argv` would be answering a question nobody asked.
 
-| Rule id | Reports |
+It takes minutes and builds a database, so it runs from CI or a pre-commit hook,
+never from the write hook. Compiled languages need `[codeql] build_command`,
+because CodeQL learns them by watching a build; a language it cannot analyse is
+named rather than skipped.
+
+**What the whole stack is worth**, all tiers, correctly configured, on 115
+generated programs of which 30 carry a working exploit:
+
+| | |
 |---|---|
-| alone/dead-export | An exported name nothing else in the scan mentions. Reported by `procoder rot`. |
-| alone/commented-code | Commented-out code kept beside its replacement. |
-| alone/debug-leftover | A debugging statement nobody removed. |
-| alone/orphan-todo | A to-do note with no owner and no ticket id. | <!-- procoder: literal alone/orphan-todo the rule described, not an instance -->
-| alone/deprecated-no-trigger | A deprecation mark with no removal condition. | <!-- procoder: literal alone/deprecated-no-trigger the rule described, not an instance -->
-| alone/blanket-suppression | A suppression naming no rule, or disabling a whole file. |
-| alone/unexplained-suppression | A suppression naming a rule but giving no reason. |
+| flagged | 37 files |
+| caught | **15 of 30 (50%)** |
+| chance at that flag rate | 9.7 |
+| precision | 41%, against a 26% base rate |
 
-Rung 5, FAST — cost that grows with the input rather than with the work:
+Per language: Go 8/11, C 6/10, JS 1/2, Python 0/2, C++ 0/5. C++ is the honest
+disappointment — CodeQL flagged five C++ files and hit neither exploit.
 
-| Rule id | Reports |
-|---|---|
-| fast/query-in-loop | A database, cache or HTTP round trip inside a loop over a named collection — one call per item, where one call for the set would do. |
-| fast/blocking-in-async | A blocking sleep, synchronous HTTP call or subprocess on an async path, which stalls the thread everything else is waiting on. Node's `*Sync` calls are deliberately excluded: they are ordinary in a CLI. |
+### Languages it cannot gate
 
-Rung 6, MEANT — code that does something other than what was asked:
+Named rather than left silent, because a silent gap reads as a pass. C and C++
+have no analyzer here that proves anything: flawfinder greps for dangerous
+function names and named the right weakness in 2 of 10 against 2.1 by chance;
+cppcheck reports correctness, not weaknesses, and named 0 of 5. Files in those
+languages are reported as ungated. Java, Kotlin and C# have no analyzer
+configured yet.
 
-| Rule id | Reports |
-|---|---|
-| meant/unimplemented-stub | A `todo!()` on a path that ships — a stub that compiles and then panics in front of whoever called it. Rust's `unimplemented!()` is excluded: it means "not supported", not "not written yet". |
+Rungs 3 (OBVIOUS) and 4 (ALONE) are judgment calls no analyzer makes in full.
+Analyzer findings are mapped onto the rung they belong to — a complexity warning
+is rung 3, an unused import is rung 4 — so the level still decides what blocks,
+but the doctrine is what carries those rungs, not the engine.
 
 ## Configuration
 

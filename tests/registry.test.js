@@ -4,7 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { packFor, toolFor, PACKS } = require('../hooks/checks/registry');
+const { toolFor } = require('../hooks/checks/registry');
+const { SOURCE_EXT, requiredFor, isUngated } = require('../hooks/checks/toolchain');
 
 const tempDirs = [];
 test.after(() => {
@@ -21,22 +22,24 @@ function tempRepo(files) {
   return dir;
 }
 
-test('maps every supported extension to exactly one pack', () => {
-  const seen = new Map();
-  for (const pack of PACKS) {
-    for (const ext of pack.EXTENSIONS) {
-      assert.ok(!seen.has(ext), `${ext} claimed by two packs`);
-      seen.set(ext, pack);
-    }
+// The packs these two tests covered are gone — procoder no longer carries rules
+// of its own, so there is no per-extension pack to resolve. What replaced them
+// is a claim worth testing in its own right: an extension procoder treats as
+// source must be answerable by SOMETHING, either an analyzer or an explicit
+// entry in UNGATED saying why not. A source extension that is neither is the
+// silent gap the rewrite exists to prevent.
+test('every source extension is either analysed or explicitly declared ungated', () => {
+  for (const ext of SOURCE_EXT) {
+    const file = `a.${ext}`;
+    const covered = requiredFor(file).length > 0 || isUngated(file);
+    assert.ok(covered, `.${ext} is treated as source but nothing gates it and nothing says why`);
   }
-  assert.ok(seen.size >= 12);
 });
 
-test('packFor resolves by extension and is case-insensitive', () => {
-  assert.ok(packFor('src/a.ts'));
-  assert.ok(packFor('src/A.PY'));
-  assert.strictEqual(packFor('README.md'), null);
-  assert.strictEqual(packFor('Makefile'), null);
+test('a non-source file asks for no analyzer at all', () => {
+  assert.deepStrictEqual(requiredFor('README.md'), []);
+  assert.deepStrictEqual(requiredFor('Makefile'), []);
+  assert.deepStrictEqual(requiredFor('package-lock.json'), []);
 });
 
 test('toolFor names the external tool preferred for each language', () => {
@@ -314,7 +317,11 @@ test('ruff is asked about the file, not allowed to decline it', () => {
   // rules to a run that never opened the file.
   const argv = toolFor('a.py').argv('/repo/a.py');
   assert.ok(!argv.includes('--force-exclude'), 'ruff must not be allowed to silently decline a file');
-  assert.deepStrictEqual(argv, ['check', '--output-format', 'json', '/repo/a.py']);
+  assert.deepStrictEqual(argv,
+    ['check', '--select', 'S,B,E,F', '--output-format', 'json', '/repo/a.py']);
+  // S is the security set. Without it ruff runs E4/E7/E9/F and reports no
+  // security finding of any kind — installed, green, and blind.
+  assert.ok(argv.includes('S,B,E,F'), 'ruff must be asked for its security rules');
   // ruff reads pyproject.toml, ruff.toml and .ruff.toml — and nothing else.
   assert.ok(!toolFor('a.py').configFiles.includes('setup.cfg'));
 });
@@ -350,7 +357,7 @@ test('clippy falls back to an unscoped run when no package owns the file', () =>
 const { hasTool } = require('../hooks/checks/resolve');
 
 function realStream(tool, repo, relFile) {
-  const run = spawnSync(tool.name, tool.argv(path.join(repo, relFile)), {
+  const run = spawnSync(tool.name, tool.argv(path.join(repo, relFile)), {  // procoder: literal safe/semgrep:javascript.lang.security.detect-child-process.detect-child-process a test spawning the shimmed linter it is testing
     cwd: repo, encoding: 'utf8', timeout: 120000, shell: false, maxBuffer: 8 * 1024 * 1024,
   });
   assert.ok(!run.error, `${tool.name} did not run: ${run.error && run.error.message}`);
@@ -366,13 +373,13 @@ test('eslint (real): the parser reads what eslint actually prints', { skip: miss
     'a.js': 'var dead = 1;\n',
   });
   const parsed = toolFor('a.ts').parse(realStream(toolFor('a.ts'), repo, 'a.js'));
-  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['true/eslint:no-unused-vars', 1]]);
+  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['alone/eslint:no-unused-vars', 1]]);
 });
 
 test('ruff (real): the parser reads what ruff actually prints', { skip: missing('ruff') }, () => {
   const repo = tempRepo({ 'ruff.toml': '[lint]\nselect = ["F"]\n', 'a.py': 'import os\n' });
   const parsed = toolFor('a.py').parse(realStream(toolFor('a.py'), repo, 'a.py'));
-  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['true/ruff:F401', 1]]);
+  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['alone/ruff:F401', 1]]);
 });
 
 test('golangci-lint (real): the parser reads what golangci-lint actually prints', {
@@ -384,7 +391,7 @@ test('golangci-lint (real): the parser reads what golangci-lint actually prints'
     'a.go': 'package main\n\nfunc main() {}\n\nfunc unusedA() {}\n',
   });
   const parsed = toolFor('a.go').parse(realStream(toolFor('a.go'), repo, 'a.go'));
-  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['true/golangci-lint:unused', 5]]);
+  assert.deepStrictEqual(parsed.map((f) => [f.id, f.line]), [['alone/golangci-lint:unused', 5]]);
 });
 
 test('clippy (real): the parser reads what clippy actually prints, on stderr', {
@@ -432,7 +439,7 @@ test('two different eslint rules firing on the same line get distinct ids — a 
   ]));
   assert.strictEqual(parsed.length, 2);
   const ids = parsed.map((f) => f.id);
-  assert.strictEqual(ids[0], 'true/eslint:no-unused-vars');
+  assert.strictEqual(ids[0], 'alone/eslint:no-unused-vars');
   assert.strictEqual(ids[1], 'true/eslint:no-eval');
   assert.notStrictEqual(ids[0], ids[1]);
 });

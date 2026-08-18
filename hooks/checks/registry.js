@@ -47,14 +47,7 @@ function golangciReport(stdout) {
   }
 }
 
-const ts = require('./lang/ts');
-const py = require('./lang/py');
-const go = require('./lang/go');
-const rust = require('./lang/rust');
-const jvm = require('./lang/jvm');
-const dotnet = require('./lang/dotnet');
 
-const PACKS = [ts, py, go, rust, jvm, dotnet];
 
 // External findings land on rung TRUE: a configured linter's rules are the
 // project's own definition of correct, and procoder defers to them.
@@ -64,10 +57,48 @@ const PACKS = [ts, py, go, rust, jvm, dotnet];
 // collapse into one baseline fingerprint — that would let baselining one
 // rule's hit silently suppress a different rule's hit at the same location
 // later, exactly what procoder's own inline-suppression doctrine forbids.
+// Which rung an analyzer's rule belongs to.
+//
+// This matters for more than sort order. The level (pragmatic/strict/paranoid)
+// decides which rungs BLOCK, and it does that by rung number — so if every
+// analyzer finding arrived as SAFE or TRUE, `pragmatic` and `strict` would be
+// the same gate and the level would be decoration. Linters do report all four
+// kinds; this is the mapping that keeps the distinction real:
+//
+//   1 SAFE     a weakness — flake8-bandit S###, eslint-plugin-security, gosec,
+//              and every semgrep rule (only security rulesets are ever enabled)
+//   2 TRUE     correctness — a swallowed error, an unchecked return, a bug
+//   3 OBVIOUS  readability — complexity, nesting depth, length, parameter count
+//   4 ALONE    something left behind — an unused import, a dead binding
+//
+// Unmatched rules stay at TRUE. That direction is deliberate: a rule wrongly
+// called OBVIOUS stops blocking at pragmatic, while one wrongly called TRUE is
+// still reported and still fixed.
+const RUNG_PATTERNS = [
+  ['SAFE', /^(S\d{3}|G\d{3})$|^security\/|gosec|bandit|injection|hardcoded|crypto|csrf|xss|ssrf|traversal|insecure/i],
+  ['ALONE', /unused|^F401$|^F841$|deadcode|unparam|ineffassign|no-unreachable|redundant/i],
+  ['OBVIOUS', /complexity|cyclo|cognitive|max-lines|max-depth|max-params|too-many|nesting|长/i],
+];
+
+function rungFor(tool, ruleId) {
+  // semgrep runs only security rulesets here, so every finding it has is rung 1
+  // whatever the rule is called.
+  if (tool === 'semgrep') return 'SAFE';
+  const id = String(ruleId || '');
+  if (!id) return 'TRUE';
+  for (const [rung, pattern] of RUNG_PATTERNS) {
+    if (pattern.test(id)) return rung;
+  }
+  return 'TRUE';
+}
+
 function externalFinding(line, message, tool, ruleId) {
-  const id = ruleId ? `true/${tool}:${ruleId}` : `true/${tool}`;
+  const rung = rungFor(tool, ruleId);
+  const id = ruleId
+    ? `${rung.toLowerCase()}/${tool}:${ruleId}`
+    : `${rung.toLowerCase()}/${tool}`;
   return finding({
-    rung: 'TRUE', id, line,
+    rung, id, line,
     message: String(message).slice(0, 120),
     fix: `resolve the ${tool} finding`,
   });
@@ -257,8 +288,62 @@ function sameFile(reported, absPath) {
 }
 
 const TOOLS = {
+  // semgrep runs on EVERY source file, alongside whatever language-specific
+  // analyzer also claims it. It is the only cross-language security analyzer in
+  // the set, and for a long moment it was declared mandatory in toolchain.js,
+  // probed for on every check, reported as a gap when absent — and never
+  // actually executed, because this registry mapped one tool per extension and
+  // the language tool always won. A Go file was checked by golangci-lint, a
+  // Python file by ruff, and the analyzer carrying the CWE rules never ran.
+  //
+  // Only security rulesets are enabled, which is why every semgrep finding is
+  // rung 1 in rungFor.
+  semgrep: {
+    name: 'semgrep',
+    // Measured at 1.76s to answer about ONE file, twice in a row, warm. That is
+    // rule-loading, not analysis, and it is most of a 2s write-hook budget
+    // before it has read a line. So semgrep is a commit-time analyzer here: the
+    // CLI (`procoder check`, the pre-commit hook, CI) gives it the time it
+    // needs, and the write hook skips it and says so in `unchecked` rather than
+    // spawning it to be killed and reporting the corpse as "did not answer".
+    //
+    // So semgrep is a COMMIT-tier analyzer, declared rather than discovered: the
+    // write hook does not run it and does not complain about not running it,
+    // because "this file was only partly checked" on every single write is noise
+    // that teaches people to stop reading the gate. `procoder check` and CI run
+    // it over everything, in one process, with the time it needs.
+    tier: 'commit',
+    argv: (file) => [
+      '--config=p/security-audit', '--config=p/cwe-top-25', '--config=p/secrets',
+      '--json', '--quiet', '--no-git-ignore', '--metrics=off', file,
+    ],
+    argvMany: (files) => [
+      '--config=p/security-audit', '--config=p/cwe-top-25', '--config=p/secrets',
+      '--json', '--quiet', '--no-git-ignore', '--metrics=off', ...files,
+    ],
+    parse: (stdout) => {
+      const doc = JSON.parse(stdout);
+      // A file semgrep could not parse is not a clean file. It names them in
+      // `errors`, so this is the one place we can tell the two apart.
+      if ((doc.errors || []).length && !(doc.results || []).length) {
+        declined('semgrep could not parse it');
+      }
+      return (doc.results || []).map((r) => externalFinding(
+        (r.start && r.start.line) || 0,
+        `${r.check_id}: ${(r.extra && r.extra.message) || ''}`.slice(0, 160),
+        'semgrep', r.check_id));
+    },
+    parseMany: (stdout) => {
+      const doc = JSON.parse(stdout);
+      return groupByFile(doc.results || [], (r) => r.path,
+        (r) => externalFinding((r.start && r.start.line) || 0,
+          `${r.check_id}: ${(r.extra && r.extra.message) || ''}`.slice(0, 160),
+          'semgrep', r.check_id));
+    },
+  },
   py: {
     name: 'ruff',
+    tier: 'write',
     // ruff reads pyproject.toml, ruff.toml and .ruff.toml — and nothing else.
     // Verified against ruff 0.16.3: a setup.cfg carrying `[ruff] line-length =
     // 20` changes nothing about the run. Counting setup.cfg as evidence made
@@ -273,12 +358,15 @@ const TOOLS = {
     // it, an explicitly named path is always linted, so `[]` means clean and
     // nothing else. A path the project excludes from ruff is procoder's to
     // exclude in .procoder.toml, not ruff's to silence procoder with.
-    argv: (file) => ['check', '--output-format', 'json', file],
+    // S is flake8-bandit — the security rule set. Without it ruff runs E4/E7/E9/F
+    // and reports no security finding of any kind, which is how an analyzer can
+    // be installed, configured, green, and blind. See toolchain.js, COMPLETE.
+    argv: (file) => ['check', '--select', 'S,B,E,F', '--output-format', 'json', file],
     // Many files, one process. Every ruff item names its own `filename`, so a
     // batch is attributable without guessing — see parseMany below and
     // runToolBatch in resolve.js for why the CLI wants this and the hook does
     // not.
-    argvMany: (files) => ['check', '--output-format', 'json', ...files],
+    argvMany: (files) => ['check', '--select', 'S,B,E,F', '--output-format', 'json', ...files],
     parseMany: (stdout) => groupByFile(JSON.parse(stdout), (item) => item.filename,
       (item) => externalFinding(item.location && item.location.row,
         `${item.code}: ${item.message}`, 'ruff', item.code),
@@ -299,6 +387,7 @@ const TOOLS = {
   },
   ts: {
     name: 'eslint',
+    tier: 'write',
     // Flat config in every extension eslint loads it from — eslint 10 reads
     // .ts/.mts/.cts config natively, and dropped .eslintrc entirely. The
     // eslintrc names stay: on eslint 8 they are still the config, and on
@@ -342,15 +431,23 @@ const TOOLS = {
   },
   go: {
     name: 'golangci-lint',
+    tier: 'write',
     configFiles: ['.golangci.yml', '.golangci.yaml', '.golangci.toml'],
+    // --enable=gosec, always. gosec is golangci-lint's ONLY security linter and
+    // it is not in the default set — the defaults are errcheck, govet,
+    // ineffassign, staticcheck and unused, none of which reports a weakness. A
+    // Go file checked without this flag is checked by a green, blind gate:
+    // measured on CWEval, `md5.Sum` in a hashing function produced no finding at
+    // all, and gosec reports it as G401/G501 at HIGH confidence. Same failure
+    // ruff has without --select S, and the same fix. See toolchain.js, COMPLETE.
     argv: (file) => golangciMajorVersion() >= 2
-      ? ['run', '--output.json.path', 'stdout', file]
-      : ['run', '--out-format', 'json', file],
+      ? ['run', '--enable=gosec', '--output.json.path', 'stdout', file]
+      : ['run', '--enable=gosec', '--out-format', 'json', file],
     parse: (stdout) => (golangciReport(stdout).Issues || []).map((issue) =>
       externalFinding(issue.Pos && issue.Pos.Line, `${issue.FromLinter}: ${issue.Text}`, 'golangci-lint', issue.FromLinter)),
     argvMany: (files) => (golangciMajorVersion() >= 2
-      ? ['run', '--output.json.path', 'stdout', ...files]
-      : ['run', '--out-format', 'json', ...files]),
+      ? ['run', '--enable=gosec', '--output.json.path', 'stdout', ...files]
+      : ['run', '--enable=gosec', '--out-format', 'json', ...files]),
     parseMany: (stdout) => groupByFile(golangciReport(stdout).Issues || [],
       (issue) => issue.Pos && issue.Pos.Filename,
       (issue) => externalFinding(issue.Pos && issue.Pos.Line,
@@ -378,6 +475,7 @@ const TOOLS = {
     let rustTarget = null;
     return {
       name: 'cargo',
+    tier: 'write',
       // cargo clippy writes its diagnostics to stderr, not stdout, and exits 0
       // even when it found something. Read on stdout it looks like a clean
       // crate, which would silently take the Rust pack's obvious/* rules down
@@ -409,25 +507,47 @@ const TOOLS = {
   })(),
 };
 
+// The extensions each analyzer answers for. These used to be read off the
+// language packs; the packs are gone, so they are stated here, which is where a
+// reader looks for them anyway.
+const TOOL_EXTENSIONS = [
+  [TOOLS.ts, ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']],
+  [TOOLS.py, ['.py', '.pyi']],
+  [TOOLS.go, ['.go']],
+  [TOOLS.rust, ['.rs']],
+];
+
 const EXT_TO_TOOL = new Map();
-for (const ext of ts.EXTENSIONS) EXT_TO_TOOL.set(ext, TOOLS.ts);
-for (const ext of py.EXTENSIONS) EXT_TO_TOOL.set(ext, TOOLS.py);
-for (const ext of go.EXTENSIONS) EXT_TO_TOOL.set(ext, TOOLS.go);
-for (const ext of rust.EXTENSIONS) EXT_TO_TOOL.set(ext, TOOLS.rust);
-// jvm and dotnet have no fast single-file linter worth a 1.5s budget; their
-// built-in packs always run instead.
-
-const EXT_TO_PACK = new Map();
-for (const pack of PACKS) {
-  for (const ext of pack.EXTENSIONS) EXT_TO_PACK.set(ext, pack);
+for (const [tool, exts] of TOOL_EXTENSIONS) {
+  for (const ext of exts) EXT_TO_TOOL.set(ext, tool);
 }
-
-function packFor(relPath) {
-  return EXT_TO_PACK.get(path.extname(String(relPath || '')).toLowerCase()) || null;
-}
+// Java, Kotlin and C# have no single-file analyzer fast enough for the budget,
+// and C/C++ have none that proves anything — toolchain.js UNGATED says so to the
+// user rather than letting the silence read as a pass.
 
 function toolFor(relPath) {
   return EXT_TO_TOOL.get(path.extname(String(relPath || '')).toLowerCase()) || null;
 }
 
-module.exports = { PACKS, TOOLS, packFor, toolFor };
+// Every analyzer that answers for this file, not just the language-specific one.
+// semgrep is appended for any extension procoder treats as source, because its
+// rules are the cross-language security set and no language tool replaces them.
+function toolsFor(relPath) {
+  const out = [];
+  const lang = toolFor(relPath);
+  if (lang) out.push(lang);
+  if (EXT_TO_TOOL.has(path.extname(String(relPath || '')).toLowerCase()) || SEMGREP_EXT.has(path.extname(String(relPath || '')).toLowerCase())) {
+    out.push(TOOLS.semgrep);
+  }
+  return out;
+}
+
+// The extensions semgrep is worth spawning for. Broader than the language tools
+// above, because semgrep covers languages procoder has no other analyzer for.
+const SEMGREP_EXT = new Set([
+  '.py', '.pyi', '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts',
+  '.go', '.rs', '.java', '.kt', '.cs', '.rb', '.php', '.c', '.h', '.cpp', '.cc',
+  '.cxx', '.hpp', '.scala', '.swift',
+]);
+
+module.exports = { TOOLS, toolFor, toolsFor, SEMGREP_EXT };

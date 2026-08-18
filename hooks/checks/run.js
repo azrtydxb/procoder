@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 // procoder — orchestrates one file's checks.
 //
-// Order: exclusion → size guard → read → universal pack (always, on the raw
-// source) → SAFE/TRUE rules → shape rules (unless the project's own linter
-// covers them) → touched-range narrowing → baseline suppression → sort → cap.
+// Order: exclusion → size guard → read → toolchain gaps (never narrowed) →
+// the project's analyzers → touched-range narrowing → baseline suppression →
+// sort → cap.
+//
+// procoder no longer carries rules of its own. Analyzers report; this file
+// decides what reaches the user and says so when nothing could look at all.
 
 const fs = require('fs');
 const path = require('path');
 const { excludeReason, isRuleExcluded, MAX_FILE_BYTES } = require('./config');
-const { packFor } = require('./registry');
-const { resolveFor, runToolResult } = require('./resolve');
-const { checkUniversal, filterMarkedLiterals } = require('./universal');
-const { checkJudgment } = require('./judgment');
+const { resolveFor, resolveAllFor, runToolResult } = require('./resolve');
+const { filterMarkedLiterals } = require('./markers');
 const { loadBaseline, suppress } = require('./baseline');
 const { finding, sortFindings, capFindings } = require('./finding');
 const { MANIFEST_FILES, checkManifest } = require('./deps');
+const { gapsFor, isUngated, isSource } = require('./toolchain');
 
 const MAX_FINDINGS = 5;
 
@@ -39,13 +41,30 @@ const MAX_FINDINGS = 5;
 // all the same sentence.
 const MAX_FINDINGS_PER_LINE = 20;
 
-// The hook runs on every write and the harness kills it at 2s, so the budget is
-// real: past it the user gets a stall and no findings at all.
+// The in-process budget. It no longer schedules analyzers — they are chosen by
+// tier and run to completion (see HUNG_TOOL_MS) — and covers only procoder's own
+// work: reading the file, the marker filter, the manifest stage, the sort. That
+// work is linear and measured in single-digit milliseconds, so this is a stall
+// guard on a pathological input, not a scheduler.
 const BUDGET_MS = 2000;
 
-// The share of what is LEFT of the budget that the project's linter may take,
-// computed at the moment the linter is invoked rather than split off in
-// advance.
+// The only timeout left, and it is a safety valve rather than a schedule.
+//
+// procoder used to give each analyzer a slice of a 2s budget and kill it at the
+// end of the slice. That was wrong twice over: it decided WHICH tools ran by
+// watching a clock, when the answer is a property of the tool and belongs in the
+// tool's definition; and killing an analyzer mid-run yields an empty result,
+// which is indistinguishable from a clean file. A gate whose scheduler can
+// manufacture false clean results is not a gate.
+//
+// So write-tier analyzers run to completion. This number is large enough that
+// reaching it means something is broken — a wedged process, a pathological file
+// — and never that a healthy tool was merely slow. Reaching it is reported, not
+// absorbed.
+const HUNG_TOOL_MS = 30000;
+
+// Retained only for the manifest stage, which is in-process work, not a
+// subprocess. Kept from the old scheduler:
 //
 // This replaces `budgetMs/2 - 200ms/MB`, and the constant it replaces is the
 // whole reason CI was red. 200ms/MB was this laptop's pack throughput; on a
@@ -259,82 +278,107 @@ function readSource(absPath, relPath, config) {
 // least: rung 1 has already run, the pack's SAFE rules have already run, and a
 // timeout loses only the linter's own rung-2 findings. Anything it cannot be
 // given is named in `unchecked` and reported — see checkFile.
-function toolResults(relPath, { repoRoot, absPath, deadline, unchecked, toolAnswer }) {
+function toolResults(relPath, { repoRoot, absPath, tiers, unchecked, toolAnswer }) {
   // An answer the caller already has. `procoder check .` runs each linter once
   // over every file it owns rather than once per file, and hands the result in
   // here — see runToolBatches in resolve.js. The hook never passes one.
-  if (toolAnswer) return { findings: toolAnswer.findings, answered: toolAnswer.ok };
-
   const tool = resolveFor(relPath, { repoRoot });
-  if (!tool) return { findings: [], answered: false };
-  const timeoutMs = Math.floor((deadline - Date.now()) * LINTER_BUDGET_SHARE);
-  if (timeoutMs < LINTER_MIN_MS) {
-    unchecked.push(`${tool.name} (no budget left for it)`);
-    return { findings: [], answered: false };
+  if (toolAnswer) {
+    return {
+      findings: toolAnswer.findings,
+      answered: toolAnswer.ok,
+      present: !!tool,
+      name: tool ? tool.name : null,
+    };
   }
-  const result = runToolResult(tool, { repoRoot, absPath, timeoutMs });
-  return { findings: result.findings, answered: result.ok };
+
+  // Not present is a different answer from present-and-silent, and gapsFor()
+  // already reports the first one with an install line. Only the second is this
+  // function's to report.
+  const tools = resolveAllFor(relPath, { repoRoot });
+  if (!tools.length) return { findings: [], answered: false, present: false, name: null };
+
+  // Each analyzer gets a share of what is LEFT when its turn comes, so the last
+  // one in the list cannot be starved by the first one being slow, and the sum
+  // still cannot exceed the budget.
+  const findings = [];
+  let silent = null;
+  for (const t of tools) {
+    // Tier, not clock. Which analyzers run here was decided once, where each
+    // tool is defined, on what the tool IS — ruff answers in tens of
+    // milliseconds, semgrep needs seconds to load its rules, CodeQL builds a
+    // database. Deciding it at runtime by watching a stopwatch produced exactly
+    // the failure this engine exists to prevent: an analyzer killed halfway
+    // returns an empty result, and an empty result is byte for byte what a clean
+    // file returns.
+    if (!tiers.includes(t.tier || 'write')) continue;
+    const result = runToolResult(t, { repoRoot, absPath, timeoutMs: HUNG_TOOL_MS });
+    if (result.ok) pushAll(findings, result.findings);
+    else if (!silent) silent = t.name;
+  }
+  return {
+    findings,
+    answered: !silent,
+    present: true,
+    name: silent || tools[0].name,
+  };
 }
 
 // The pack's line rules see long lines. Only when the file actually has one is
 // the pack run a second time over the shape copy, and the shape findings taken
 // out of that second pass — which is cheap precisely because the long line is
 // no longer in it.
-function packResults(pack, source, shaped, options) {
-  const findings = pack.check(source, options);
-  if (shaped === source) return findings;
-  return findings.filter((f) => !SHAPE_IDS.has(f.id))
-    .concat(pack.check(shaped, options).filter((f) => SHAPE_IDS.has(f.id)));
+function gapFindings(relPath, repoRoot) {
+  const out = [];
+  if (!isSource(relPath)) return out;
+  const ungated = isUngated(relPath);
+  if (ungated) {
+    out.push(finding({
+      rung: 'SAFE',
+      id: 'safe/ungated-language',
+      line: 1,
+      message: `procoder cannot gate this file: ${ungated}`,
+      fix: 'review it by hand, or add an analyzer for this language to toolchain.js',
+    }));
+    return out;
+  }
+  for (const gap of gapsFor(relPath, repoRoot)) {
+    out.push(finding({
+      rung: 'SAFE',
+      id: 'safe/analyzer-missing',
+      line: 1,
+      message: `${gap.analyzer} is ${gap.why}, so this file was not checked for weaknesses`,
+      fix: `install it — ${gap.install}`,
+    }));
+  }
+  return out;
 }
 
-// The project's linter plus the language pack: everything that answers for this
-// one file's own code, and so everything the touched-range narrowing may reduce.
-// The universal pack is deliberately not here — it is never narrowed.
-//
-// The pack runs BEFORE the linter, which is the other half of the fix. The pack
-// is in-process, deterministic and bounded by MAX_FILE_BYTES; the linter is a
-// subprocess that can hang for as long as it is allowed to. Spending the
-// bounded work first means the linter's slice is computed from the time that is
-// really left on this machine, instead of from a guess at what the pack was
-// about to cost on some other one.
 function narrowableFindings(relPath, source, shaped, opts) {
-  const { repoRoot, absPath, config, deadline, unchecked, toolAnswer } = opts;
-  const local = [];
+  const { repoRoot, absPath, tiers, unchecked, toolAnswer } = opts;
+  void source; void shaped;
 
-  const pack = packFor(relPath);
-  let packFindings = null;
-  if (pack) {
-    if (Date.now() < deadline) {
-      packFindings = packResults(pack, source, shaped, { relPath, config });
-    } else {
-      unchecked.push(`the ${path.extname(relPath).replace('.', '') || 'language'} rules`);
-    }
-  }
+  // Every finding about this file now comes from an analyzer that reads it.
+  // procoder's own rules used to run alongside; they named the right weakness in
+  // 1 of 30 CWEval exploits and cost ~9,500 lines to keep. See toolchain.js.
+  const tool = toolResults(relPath, { repoRoot, absPath, tiers, unchecked, toolAnswer });
 
-  // Rungs 5 and 6, on the shape copy for the same reason the pack's shape rules
-  // use it: every judgment rule here is derived from a BLOCK — a loop body, an
-  // async function's extent — and a block on a minified line spans the whole
-  // file. No linter answers for either rung, so nothing below removes these.
-  //
-  // Measured at 45ms for 400KB and 95ms at the 1MB cap, worst of the six packs'
-  // shapes — linear, and ~20% on top of the pack it follows. It is checked
-  // against the deadline before it starts and named in `unchecked` if there is
-  // none left, which is what keeps that 95ms out of the budget's tail on a host
-  // several times slower.
-  if (Date.now() < deadline) {
-    pushAll(local, checkJudgment(shaped, { relPath, config }));
-  } else {
-    unchecked.push('the cost and intent rules');
+  // An analyzer that was present and did NOT answer — a broken config, a parse
+  // error, a crash, a timeout — is the most dangerous state this file can be in,
+  // because `{ findings: [] }` is byte for byte what a clean file produces.
+  // Under the old design that was survivable: `ok: false` meant the built-in
+  // pack took over. There is no pack, so it has to be said out loud, or a
+  // project with one malformed eslint.config.mjs passes its whole gate.
+  if (tool.present && !tool.answered) {
+    return [finding({
+      rung: 'SAFE',
+      id: 'safe/analyzer-silent',
+      line: 1,
+      message: `${tool.name} is installed but did not answer for this file, so it was not checked`,
+      fix: `run \`${tool.name}\` on this file yourself and fix what stops it — a broken analyzer config gates nothing`,
+    })];
   }
-
-  const tool = toolResults(relPath, { repoRoot, absPath, deadline, unchecked, toolAnswer });
-  pushAll(local, tool.findings);
-  if (packFindings) {
-    pushAll(local, tool.answered
-      ? packFindings.filter((f) => !String(f.id).startsWith('obvious/'))
-      : packFindings);
-  }
-  return local;
+  return tool.findings;
 }
 
 // Narrowed to the touched region when the caller could identify one.
@@ -415,7 +459,7 @@ function manifestFindings(absPath, relPath, source, { deadline, unchecked }) {
 
 function checkFile(absPath, {
   repoRoot, config, maxFindings = MAX_FINDINGS, applyBaseline = true,
-  touched = null, budgetMs = BUDGET_MS, toolAnswer = null,
+  touched = null, budgetMs = BUDGET_MS, toolAnswer = null, tiers = ['write'],
 } = {}) {
   const deadline = Date.now() + budgetMs;
   // Every stage the deadline cut, in the order it would have run. Threaded
@@ -426,22 +470,28 @@ function checkFile(absPath, {
   const { source, skipped } = readSource(absPath, relPath, config);
   if (skipped) return { relPath, findings: [], skipped };
 
-  // Two views for the pack: `shaped` drops every long line for the shape rules
-  // (MAX_LINE_BYTES); the line rules and the universal pack read the source as
-  // written, unguarded, because every path over a long line is linear.
-  const shaped = blankLongLines(source);
+  const shaped = source;
 
-  // The universal pack runs first and on the raw source: no linter checks for
-  // credentials in source or PII in logs, and rung 1 must not lose its budget
-  // to a slow linter subprocess further down. It is also the one pack exempt
-  // from the narrowing below — a credential is a leak wherever it sits.
-  const findings = checkUniversal(source, { relPath, config });
+  // Gaps come first and are never narrowed to the touched range: an analyzer
+  // that is not installed did not check the changed lines either. A gap is
+  // reported at rung 1 because an ungated file is a rung-1 risk, whatever else
+  // is true of it — see toolchain.js, MANDATORY.
+  const findings = gapFindings(relPath, repoRoot);
 
+  // Rung 1 is exempt from narrowing, every other rung is subject to it.
+  //
+  // Narrowing exists so an edit is not blamed for the rest of the file, and for
+  // readability or leftovers that is exactly right — they were there before and
+  // they are not this change's business. A weakness is different: a leaked
+  // credential, an injection sink or a broken cipher is worth seeing whenever
+  // the file is open, whichever line the edit landed on. procoder's own
+  // credential rule carried this exemption before the rules were deleted; it now
+  // follows the rung, so an analyzer's security finding inherits it.
+  const analyzed = narrowableFindings(relPath, source, shaped,
+    { repoRoot, absPath, config, tiers, unchecked, toolAnswer });
+  pushAll(findings, analyzed.filter((f) => f.rung === 'SAFE'));
   pushAll(findings, withinTouched(
-    narrowableFindings(relPath, source, shaped,
-      { repoRoot, absPath, config, deadline, unchecked, toolAnswer }),
-    source, touched,
-  ));
+    analyzed.filter((f) => f.rung !== 'SAFE'), source, touched));
 
   pushAll(findings, manifestFindings(absPath, relPath, source, { deadline, unchecked }));
 
@@ -451,5 +501,5 @@ function checkFile(absPath, {
 }
 
 module.exports = {
-  checkFile, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, BUDGET_MS,
+  checkFile, HUNG_TOOL_MS, MAX_FINDINGS, MAX_FINDINGS_PER_LINE, MAX_FILE_BYTES, BUDGET_MS,
 };

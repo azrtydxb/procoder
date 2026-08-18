@@ -16,8 +16,13 @@ test('has valid skill frontmatter with name and description', () => {
   assert.match(m[1], /^description: .{40,1024}$/m);
 });
 
-test('the six rungs appear in order within the first 2000 chars', () => {
-  const head = doctrine.slice(0, 2000);
+// 2400, not 2000: the doctrine now opens with the "Safe first" imperative,
+// which measured +14pp of functional-and-secure code on CWEval/Haiku when the
+// same instruction sat close to the task rather than buried inside rung 1. The
+// assertion that matters is unchanged — all six rungs, in order, on the first
+// screen — the window just accounts for the block that now precedes them.
+test('the six rungs appear in order within the first 2400 chars', () => {
+  const head = doctrine.slice(0, 2400);
   const order = ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT'].map((r) => head.indexOf(r));
   assert.ok(order.every((i) => i > -1), 'a rung is missing from the first screen');
   assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), 'rungs out of order');
@@ -132,4 +137,35 @@ test('suppression rule requires narrowest scope and a named rule', () => {
     'missing named-rule suppression example');
   assert.match(doctrine, /unnamed.*unexplained.*stale/,
     'missing rule that an unnamed/unexplained/stale suppression is itself a rung-4 violation');
+});
+
+// The generation cut: what a subagent gets while *writing* code. Rungs 3-6
+// judge a change that already exists and measurably competed with rung 1 for
+// attention at generation time, so they come out — but nothing security- or
+// correctness-bearing may, and the ladder must still name all six so a reader
+// knows they exist.
+test('the generation digest keeps rungs 1-2 whole and drops 3-6', () => {
+  const gen = getProcoderInstructions('strict', { digest: true, generation: true });
+  for (const must of [
+    'must be secure and must not contain any vulnerability',
+    'Output escaped for its destination context',
+    'Parameterized queries only',
+    'allowlist not denylist',
+    'Rung 2 — TRUE',
+  ]) assert.ok(gen.includes(must), `generation digest lost: ${must}`);
+
+  for (const gone of ['## Rung 3', '## Rung 4', '## Rung 5', '## Rung 6'])
+    assert.ok(!gen.includes(gone), `generation digest still carries ${gone}`);
+
+  for (const rung of ['SAFE', 'TRUE', 'OBVIOUS', 'ALONE', 'FAST', 'MEANT'])
+    assert.ok(gen.includes(rung), `ladder no longer names ${rung}`);
+});
+
+test('the generation cut does not change the full or standard digest', () => {
+  const full = getProcoderInstructions('paranoid');
+  const digest = getProcoderInstructions('paranoid', { digest: true });
+  assert.ok(full.includes('## Rung 4'), 'full doctrine must keep every rung');
+  assert.ok(digest.includes('## Rung 4'), 'standard digest must keep every rung');
+  assert.ok(getProcoderInstructions('strict', { digest: true, generation: true }).length
+    < digest.length, 'generation cut should be strictly smaller');
 });

@@ -78,7 +78,7 @@ const WORD_RE = /[A-Za-z_$][\w$]*/g;
 // this repository's own markdown, every single candidate came back "needs
 // confirmation" because some sentence elsewhere had used the word between two
 // apostrophes. A string literal that reaches a symbol by name is short.
-const QUOTED = (name) => new RegExp(`["'\`][^"'\`\n]{0,200}\\b${name}\\b[^"'\`\n]{0,200}["'\`]`);
+const QUOTED = (name) => new RegExp(`["'\`][^"'\`\n]{0,200}\\b${name}\\b[^"'\`\n]{0,200}["'\`]`);  // procoder: literal safe/eslint:security/detect-non-literal-regexp name comes from an identifier capture, so it has no metacharacters
 
 function languageOf(relPath) {
   return LANG_BY_EXT.get(path.extname(relPath).toLowerCase()) || null;

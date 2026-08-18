@@ -16,8 +16,17 @@ npm install   # no runtime dependencies to fetch — see "Zero runtime dependenc
 | Command | What it checks | Why it fails |
 |---|---|---|
 | `npm run sync:check` | Generated platform files match the doctrine | You hand-edited a generated file, or edited the doctrine and forgot to regenerate |
-| `npm test` | `node --test tests/*.test.js` — 521+ tests, including the self-scan | A behavior regressed, or procoder trips its own rungs |
+| `npm test` | 642 tests, including the self-scan | A behavior regressed, or procoder trips its own rungs |
+| `procoder doctor` | Every analyzer procoder mandates is installed | A language in the tree has no analyzer, so its files are gated by nothing |
 | `npm run sync` | Regenerates the platform files from the doctrine | Run this, don't run `sync:check` to "fix" things — it only checks |
+
+`npm test` runs **serially** (`--test-concurrency=1`), and that is not a leftover.
+Every check now spawns a real analyzer subprocess, so ten test files in parallel
+oversubscribe the machine badly enough to change what the timing-dependent tests
+measure: the fork heuristic decides by wall clock, and a loaded host makes a
+cheap tree look expensive. Measured on this laptop, the same suite is 642/642
+serially and loses ~20 tests at `--test-concurrency=2` — none of them a real
+defect. It costs a few minutes; a flaky gate costs more.
 
 CI (`.github/workflows/ci.yml`) runs `sync:check` first, then `npm test`, on
 Node 20/22/24 across Ubuntu and macOS, with `fail-fast: false` so a red leg
@@ -77,8 +86,13 @@ separate change: regenerate the baseline and say so in the PR description.
 and CLI command is hand-rolled against Node's standard library. A PR that adds
 a runtime dependency needs to argue for it explicitly: what it buys, why the
 stdlib or a few lines don't cover it, and what auditing it once bought is worth
-across every install of the plugin. Dev-only tooling is a separate
-conversation but still needs a reason.
+across every install of the plugin.
+
+Dev dependencies are a separate question and are now non-empty: `eslint` and
+`eslint-plugin-security`. procoder mandates analyzers rather than carrying rules
+(see `hooks/checks/toolchain.js`), so the analyzers it demands of a JavaScript
+project are the ones it must have installed to gate itself. `tests/manifest.test.js`
+pins that list — anything else appearing there is what the test is watching for.
 
 ## Tests
 

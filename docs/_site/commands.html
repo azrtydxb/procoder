@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commands — procoder</title>
+<meta name="description" content="The twelve /procoder slash commands — what each one does, grouped by whether it controls the gate, hunts for something, or measures progress — and the CLI subcommands for a hook or a CI job.">
+<link rel="stylesheet" href="assets/procoder.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <nav class="nav" aria-label="Documentation">
+  <a class="brand" href="index.html">
+    <span class="brand-name">procoder</span>
+    <span class="brand-meta">v0.2.0</span>
+  </a>
+  
+  <div class="nav-section">
+  <p class="nav-group">The gate</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="index.html">Overview</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="doctrine.html">The six rungs</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Using it</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="start.html">Get started</a></li>
+    
+    
+    
+    <li><a class="nav-link is-current" href="commands.html" aria-current="page">Commands</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="configuration.html">Configuration</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Honesty</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="limitations.html">What it misses</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="design.html">Why it works this way</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Elsewhere</p>
+  <ul class="nav-list">
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder">Source on GitHub</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/install.md">Install guide, all hosts</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known limitations</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md">Changelog</a></li>
+  </ul>
+  </div>
+</nav>
+
+  <main class="content" id="main" tabindex="-1">
+    <!-- Badges, drawn rather than fetched. A shields.io image would be one
+         external request per badge on a site whose whole claim is that it makes
+         none, from a tool whose first rung calls a new dependency a new trust
+         boundary. Every value here is a fact of the release, not a status that
+         can change between builds: a CI badge belongs on the README, where
+         GitHub serves it from the workflow itself. -->
+    <ul class="badges" aria-label="Release facts">
+      <li class="badge"><span class="badge-k">version</span><span class="badge-v">0.2.0</span></li>
+      <li class="badge"><span class="badge-k">licence</span><span class="badge-v">Apache-2.0</span></li>
+      <li class="badge"><span class="badge-k">node</span><span class="badge-v">≥ 18</span></li>
+      <li class="badge"><span class="badge-k">runtime deps</span><span class="badge-v">0</span></li>
+    </ul>
+    <p class="eyebrow">Using it</p>
+
+<h1>Twelve commands</h1>
+
+<p class="lede">
+  Every command is a Claude Code slash command in the <code>procoder</code>
+  namespace, so they all read <code>/procoder:&lt;verb&gt;</code>. opencode and
+  openclaw get the same twelve, ported from the same source files by
+  <code>scripts/sync-rules.js</code>.
+</p>
+
+<h2>Control the gate</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:level</code></td><td>Set the intensity level: <code>pragmatic</code>, <code>strict</code>, <code>paranoid</code> — or <code>off</code>. Persisted across sessions.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:guard</code></td><td>Install procoder as a pre-commit hook and a CI check. It detects any hook manager and CI provider you already have and integrates with it rather than over it.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:statusline</code></td><td>Install, inspect, or remove the statusline badge. It reports a statusline that is not procoder's rather than replacing it.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:update</code></td><td>Update an installed procoder, and name what the update invalidates — a changed baseline format, or a doctrine change that makes a copied rule file stale.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:help</code></td><td>The rungs, the levels and the command list, in one screen.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Hunt for something</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:review</code></td><td>Review the current diff against the six rungs. Takes an optional commit range or path.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:audit</code></td><td>Audit the whole repository, ranked by rung severity. The deterministic engine runs over the scope before any judgment finding is formed.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:rot</code></td><td>Find dead, stale, and deprecated code left behind — rung 4, run deliberately rather than as a side effect of a diff.</td></tr> <!-- procoder: literal alone/deprecated-no-trigger this row names the pattern the command hunts, it is not an instance of it -->
+    <tr><td class="nowrap"><code>/procoder:threat</code></td><td>Map every trust boundary and what validates it: each entry point, what an attacker controls there, and where the validation actually sits.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:deps</code></td><td>Audit dependencies — vulnerable, abandoned, unpinned, unused — by running each ecosystem's own auditor, not a second opinion of its own.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <code>/procoder:rot</code> and <code>/procoder:threat</code> are the two with
+  no equivalent in comparable tools: one hunts what previous changes left behind,
+  the other maps where untrusted data enters and what stops it.
+</p>
+
+<h2>Measure</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>/procoder:debt</code></td><td>A ledger of every <code>procoder:</code> marker in the repository, classified as dated, undated or overdue, flagging any without a removal trigger.</td></tr>
+    <tr><td class="nowrap"><code>/procoder:gain</code></td><td>Measured progress since a reference point: rot removed, boundaries hardened, baseline shrinkage. Every number comes from git or the baseline file, with the command that produced it.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p>
+    The commands that report numbers are held to the same standard as this site:
+    <code>/procoder:gain</code> is instructed to derive every figure from git or
+    the baseline file and to show the command behind it, rather than estimating.
+    A progress report that cannot be re-run is a marketing document.
+  </p>
+</div>
+
+<h2>Where they live</h2>
+
+<p>
+  Each command is one file under
+  <a href="https://github.com/azrtydxb/procoder/tree/main/commands">commands/</a>, and most of them
+  invoke a skill of the same name that carries the actual method. The ports to
+  <code>.opencode/command/</code> and <code>.openclaw/commands/</code> are
+  generated from those files, and <code>npm run sync:check</code> fails the build
+  if any port has drifted — so there is exactly one place to edit a command, and
+  no copy that can quietly disagree with it.
+</p>
+
+<h2>The CLI</h2>
+
+<p>
+  A slash command needs a session; a pre-commit hook and a CI job do not have
+  one. The same engine answers to six subcommands, with no dependencies and no
+  agent behind them.
+</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td class="nowrap"><code>procoder init [--baseline]</code></td><td>Write a starter <code>.procoder.toml</code>. Nothing is overwritten — a config that already exists is left exactly as it is. <code>--baseline</code> also records today's findings as accepted, which is what makes an existing repository green on its first run rather than red by four thousand.</td></tr>
+    <tr><td class="nowrap"><code>procoder check [paths...]</code></td><td>Report findings that are not in the baseline; exit 1 if any of them blocks at the active level.</td></tr>
+    <tr><td class="nowrap"><code>procoder baseline &lt;paths...&gt;</code></td><td>Record every current finding as accepted, so only new code is gated.</td></tr>
+    <tr><td class="nowrap"><code>procoder verify &lt;paths...&gt;</code></td><td>Exit 1 if a finding present today is not in the baseline — the CI ratchet. Exit 2 is <em>cannot verify</em>, never "you added findings".</td></tr>
+    <tr><td class="nowrap"><code>procoder rot &lt;paths...&gt;</code></td><td>Rung 4 over the tree: index every export in the scan and report the ones nothing else mentions, as <code>[4 ALONE] alone/dead-export</code>.</td></tr>
+    <tr><td class="nowrap"><code>procoder statusline &lt;install|uninstall|status&gt;</code></td><td>Wire procoder's level badge into Claude Code's <code>statusLine</code>, or take it out again. <code>--append</code> keeps a statusLine you already have and prints the badge after it; <code>--force</code> replaces one that is not procoder's.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Who reads the output: <code>check --format</code></h3>
+
+<p>
+  <code>text</code> is the default and is for a person. <code>json</code> is
+  procoder's own versioned shape — <code>version</code>, <code>tool</code>,
+  <code>level</code>, <code>summary</code>, <code>findings[]</code>,
+  <code>skipped[]</code> — so a consumer can tell an old document from a new one.
+  <code>sarif</code> is SARIF 2.1.0, for GitHub code scanning and anything else
+  that speaks it, and it carries
+  <code>partialFingerprints.procoderFingerprint</code>: the same fingerprint the
+  ratchet uses, so a finding that moved down the file is not a fresh alert to
+  triage again.
+</p>
+
+<p>
+  Findings go to stdout and every skip notice stays on stderr, so the document
+  stays parseable when you pipe it. Both formats also name the files the run
+  skipped: JSON in a <code>skipped</code> array, SARIF as
+  <code>invocations[0].toolExecutionNotifications</code>, with
+  <code>executionSuccessful</code> false when a file that was in scope could not
+  be read at all. A file nobody opened cannot arrive at a dashboard looking like
+  a file that was scanned and found clean. <code>--format</code> belongs to
+  <code>check</code>; typed at any other subcommand it exits <strong>2</strong>
+  rather than being quietly ignored.
+</p>
+
+<h3>What gets checked: <code>check --since &lt;ref&gt;</code></h3>
+
+<p>
+  Checks what git says changed —
+  <code>git diff --name-only --diff-filter=ACMRT &lt;ref&gt;...HEAD</code>, plus
+  anything uncommitted and anything untracked. Renames, copies and type changes
+  are included at their <em>new</em> path; deletions are not, having no bytes
+  left to scan. Paths given alongside narrow it to the intersection, so
+  <code>--since main src/</code> means "what changed under <code>src/</code>".
+</p>
+
+<p>
+  <code>--since</code> is not "check only": <code>--aging</code> and
+  <code>--unused-exclusions</code> are honoured rather than dropped, judged over
+  what this run read. The baseline is what <code>--aging</code> asks about and no
+  file selection narrows that, so it behaves exactly as it does on a whole-tree
+  run. <code>--unused-exclusions</code> makes only the claims a partial scope can
+  support — "this glob matches nothing" needs to have seen the tree, so under
+  <code>--since</code> it stays unmade.
+</p>
+
+<p>
+  A git failure exits <strong>2</strong> and names the command that failed. The
+  shipped CI template used to do this in shell with <code>|| true</code>, where a
+  first push (whose "before" SHA is all zeros) made git fail, produced no files,
+  and passed the build green having checked nothing. Zero changed files is a real
+  answer and is said out loud — <code>no files changed since &lt;ref&gt;</code>,
+  exit 0 — because silence and a clean scan of a hundred files must not look the
+  same.
+</p>
+
+<h3>Debt with an end: <code>verify --aging &lt;days&gt;</code></h3>
+
+<p>
+  Names every accepted finding that has been in the baseline longer than
+  <code>&lt;days&gt;</code>, with its date, path and rule, and exits
+  <strong>1</strong>. A baseline entry is a suppression, and a suppression with
+  no end is rot; this is the removal trigger the file itself cannot carry.
+  Without the flag, age never fails a run.
+</p>
+
+<h3>How many cores: <code>--jobs &lt;n&gt;</code></h3>
+
+<p>
+  A scan splits its file list into contiguous slices and hands each to a worker
+  process. The default is one per <em>usable</em> core —
+  <code>os.availableParallelism()</code>, which sees a container's CPU quota
+  where <code>os.cpus()</code> reports the host's cores through it — capped at 8,
+  and <strong>1 — this process, no workers — for a run whose measured sequential
+  cost is under 900&nbsp;ms</strong>, where forking costs more than it saves. The
+  cost is measured, not guessed: a strided sample of the run's own files is
+  scanned for real and the rest extrapolated from it, so a subprocess linter, a
+  cold disk or a slow host is seen. The report is
+  identical either way: slices are reassembled in input order, every file runs
+  at the same 2,000&nbsp;ms budget whichever process reads it, and a worker that
+  dies, or hangs past a derived slice bound, has its slice rescanned here rather
+  than dropped. <code>--jobs 1</code> takes the pool out of the picture entirely.
+</p>
+
+<p>
+  The value is clamped. Anything from 1 to 8 is honoured silently; above the
+  ceiling it is refused with a warning naming the value and the ceiling; and
+  zero, a negative, a non-number or an empty value is refused the same way and
+  the default is used. Coercing a typo in a CI invocation into the default in
+  silence made it look exactly like not passing the flag at all.
+</p>
+
+<h3>Why is this not checked: <code>--no-ignore</code></h3>
+
+<p>
+  Checks files a <code>.procoderignore</code> covers anyway. It reaches ignore
+  files and nothing else — <code>[exclude] paths</code> in
+  <code>.procoder.toml</code> is the project-wide contract and carries the
+  built-in <code>node_modules/</code> defaults, so a flag that reached it would
+  be a back door rather than a diagnostic. Every file that key holds back is
+  reported by count per pattern, or by name if you named that file yourself.
+</p>
+
+<h3>Suppressions that stopped earning it: <code>verify --unused-exclusions</code></h3>
+
+<p>
+  Also fails the build when an <code>[exclude] rules</code> entry suppressed
+  nothing this run, or an <code>[exclude] paths</code> entry or a
+  <code>.procoderignore</code> pattern holds nothing back — its path is gone, it
+  matches no file, or every file it covers is clean. All three are reported
+  under plain <code>verify</code> and fail only under the flag, and the
+  tree-wide judgments are made only when the run covered the whole repository.
+</p>
+
+<h3>What nothing calls: <code>rot</code></h3>
+
+<p>
+  Two tiers, and the difference is the whole honesty of the command. A name
+  nothing else in the scan mentions is a deletion. A name mentioned outside its
+  own file only inside a string is <em>needs confirmation</em>: routing tables,
+  DI containers and reflection all look exactly like that, and an index of bare
+  words cannot tell them apart.
+</p>
+
+<p>
+  Files a published package points at — <code>bin</code>, <code>main</code>,
+  <code>module</code>, <code>exports</code> in <code>package.json</code> — and
+  conventional entry points (<code>index.*</code>, <code>lib.rs</code>,
+  <code>mod.rs</code>, <code>__init__.py</code>) are left out, because their
+  callers are outside the scan and reporting one as dead is the failure that
+  would make the whole report untrustworthy. Test fixtures and example files are
+  exported-and-unmentioned by design and will appear: exclude them under
+  <code>[exclude] paths</code>, or read past them.
+</p>
+
+<p>
+  It exits <strong>0</strong> even with findings. These are candidates, not
+  verdicts, and nothing is ever deleted — a build failed on a guess about
+  deletion is how a tool gets switched off, and rightly.
+</p>
+
+    <footer class="foot">
+      <p>No fonts, no analytics, no scripts. This page makes no external request.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

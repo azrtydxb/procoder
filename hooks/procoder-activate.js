@@ -2,11 +2,16 @@
 // procoder — SessionStart activation hook.
 //   1. Resolves the active level (env > persisted)
 //   2. Persists it so the statusline can read it
-//   3. Emits the level-filtered doctrine as session context, with an
-//      "update available" line in front of it when there is one
+//   3. Emits the rung-1 imperative as session context, with an "update
+//      available" line in front of it when there is one
+//
+// It used to emit the whole doctrine, ~6.4 KB of it. Measured on CWEval against
+// the same doctrine reduced to its first sentence, the 6.4 KB was worth nothing
+// the sentence was not already worth (+2.6pp, p=0.58, n=151). Two of those
+// kilobytes per session buy less than the line below.
 
 const { normalizeLevel } = require('./procoder-config');
-const { getProcoderInstructions } = require('./procoder-instructions');
+const { getSafeFirstImperative } = require('./procoder-instructions');
 const { clearLevel, setLevel, readLevel, readHookInput, writeHookOutput } = require('./procoder-runtime');
 const { updateNotice } = require('./procoder-update-check');
 
@@ -51,4 +56,4 @@ setLevel(level);
 // it adds no latency and cannot cost the session its doctrine.
 const notice = updateNotice();
 writeHookOutput('SessionStart', level,
-  (notice ? notice + '\n\n' : '') + getProcoderInstructions(level));
+  (notice ? notice + '\n\n' : '') + getSafeFirstImperative());

@@ -44,7 +44,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-check.js\"",
-            "timeout": 2,
+            "timeout": 5,
             "statusMessage": "procoder check..."
           }
         ]

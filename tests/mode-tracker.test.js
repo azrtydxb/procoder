@@ -88,3 +88,29 @@ test('malformed stdin does not crash the hook', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The per-turn rung-1 reminder: present on an ordinary prompt when procoder is
+// active, absent when it is off, and never a second copy of the doctrine text —
+// it is extracted from SKILL.md so the two cannot drift apart.
+test('an ordinary prompt carries the rung-1 imperative while active', () => {
+  const out = run('add a login handler', 'strict');
+  const ctx = JSON.stringify(out);
+  assert.match(ctx, /must be secure/,
+    'active session should carry the imperative next to the prompt');
+});
+
+test('an off session carries no imperative', () => {
+  const out = run('add a login handler', 'off');
+  assert.doesNotMatch(JSON.stringify(out), /must be secure/,
+    'procoder off must stay silent');
+});
+
+test('the imperative is extracted from the doctrine, not duplicated', () => {
+  const { getSafeFirstImperative } = require('../hooks/procoder-instructions');
+  const doctrine = fs.readFileSync(
+    path.join(__dirname, '..', 'skills', 'procoder', 'SKILL.md'), 'utf8');
+  const imperative = getSafeFirstImperative();
+  assert.ok(imperative.length > 0, 'imperative should not be empty');
+  assert.ok(doctrine.includes(imperative),
+    'the hook text must come from SKILL.md verbatim, or the two will drift');
+});

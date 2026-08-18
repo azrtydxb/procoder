@@ -33,11 +33,22 @@ test('there is one example per rung', () => {
 // anyway, so the detection they document is still proved on every run. The
 // after.* files are checked with no flag at all: they are ordinary source and
 // must be gated as such.
-test('each before file trips its rung and each after file is clean', () => {
-  const expected = { safe: 'SAFE', true: 'TRUE', obvious: 'OBVIOUS', alone: 'ALONE' };
-  for (const [rung, label] of Object.entries(expected)) {
-    const before = check(`examples/${rung}/before.ts`, '--no-ignore');
-    assert.match(before, new RegExp(label), `examples/${rung}/before.ts does not trip ${label}`);
+// This test used to assert that every before.ts tripped its own rung, and that
+// was a fair claim while procoder carried a rule per rung. It no longer is, and
+// pretending otherwise would be the worst kind of green test.
+//
+// The examples document the DOCTRINE — what SAFE, TRUE, OBVIOUS and ALONE mean
+// to a reader. The gate implements a strict subset of that: rungs 3 and 4 are
+// judgment calls no analyzer makes, and even on rung 1 the analyzers only prove
+// what they prove (measured on CWEval: 5 of 30 real exploits named correctly).
+// examples/safe/before.ts is a SQL injection built by template interpolation —
+// genuinely unsafe, genuinely undetected by eslint-plugin-security.
+//
+// So what is asserted is what is true: the after files, which are ordinary
+// source, pass the gate. If a future analyzer starts catching a before file,
+// nothing here breaks — but no test claims a detection procoder does not have.
+test('each after file passes the gate', () => {
+  for (const rung of ['safe', 'true', 'obvious', 'alone']) {
     assert.strictEqual(check(`examples/${rung}/after.ts`), '',
       `examples/${rung}/after.ts is not clean`);
   }

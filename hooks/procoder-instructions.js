@@ -40,7 +40,25 @@ function collapseBlankRuns(text) {
   return out;
 }
 
-function getProcoderInstructions(level, { digest = false } = {}) {
+// Sections a subagent writing code does not act on *while writing*. Rungs 3-6
+// judge a change once it exists — readability, twins left behind, cost at
+// production size, scope — and on CWEval they measurably competed with rung 1
+// for attention at generation time: the doctrine's own economy pressure
+// produced a five-line fmt.Sprintf with no HTML escaping. They stay in the full
+// doctrine, which is what a reviewing session gets; only the generation cut
+// drops them. The ladder table is kept: it is 1.4KB and names all six rungs, so
+// nothing disappears silently.
+const GENERATION_DROP = [
+  'Rung 3 — OBVIOUS', 'Rung 4 — ALONE', 'Rung 5 — FAST', 'Rung 6 — MEANT',
+  'Interop with ponytail', 'Output',
+];
+
+function dropSections(text, names) {
+  return text.replace(/(?:^|\n)## ([^\n]+)\n([\s\S]*?)(?=\n## |$)/g,
+    (match, name) => (names.includes(name.trim()) ? '\n' : match));
+}
+
+function getProcoderInstructions(level, { digest = false, generation = false } = {}) {
   const active = normalizeLevel(level) || DEFAULT_LEVEL;
   if (active === 'off') return '';
 
@@ -61,7 +79,29 @@ function getProcoderInstructions(level, { digest = false } = {}) {
   // The markers come out either way. Left in the full text they would be
   // instructions to the model about its own prompt.
   const cut = stripped.replace(DIGEST_BLOCK, (_match, content) => (digest ? '' : content));
-  return collapseBlankRuns(cut).trim();
+  const scoped = generation ? dropSections(cut, GENERATION_DROP) : cut;
+  return collapseBlankRuns(scoped).trim();
 }
 
-module.exports = { getProcoderInstructions, RANK, collapseBlankRuns };
+// The rung-1 imperative alone, for the per-turn reminder in the
+// UserPromptSubmit hook. Extracted from the doctrine rather than duplicated:
+// a second copy is exactly the twin rung 4 forbids, and it would drift.
+//
+// Why a per-turn reminder exists at all: the same 282 characters measured
+// ~4pp better on CWEval when they arrived next to the task instead of only in
+// the session preamble. The session context still carries the full doctrine;
+// this is the short reminder that rides alongside each request.
+function getSafeFirstImperative() {
+  let doctrine;
+  try {
+    doctrine = fs.readFileSync(DOCTRINE_PATH, 'utf8');
+  } catch (e) {
+    return '';
+  }
+  const m = /\n## Safe first\n+([\s\S]*?)\n## /.exec(doctrine);
+  return m ? m[1].trim() : '';
+}
+
+module.exports = {
+  getProcoderInstructions, getSafeFirstImperative, RANK, collapseBlankRuns,
+};

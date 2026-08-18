@@ -148,21 +148,33 @@ test('every pending hold-out still has the finding that put it there', () => {
 });
 
 // The canary must prove the self-scan actually fails on a planted violation,
-// without ever landing inside the tracked tree — an interrupted run must not
-// be able to leave a stray file for `git add` to pick up. It's written under
-// the OS temp dir instead and passed to `procoder check` as an extra target
-// (checkFile accepts any path, not just ones under the repo), so the scanner
-// genuinely evaluates it — this is not a weakened test, just a relocated file.
+// without ever landing inside the tracked tree — an interrupted run must not be
+// able to leave a stray file for `git add` to pick up. It is written under the
+// OS temp dir instead and passed to `procoder check` as an extra target
+// (checkFile accepts any path, not just ones under the repo).
+//
+// What it plants changed with the engine. It used to be an orphan TODO, caught
+// by a rule procoder owned; procoder owns no rules now, so the canary has to be
+// something a real analyzer catches, and the temp dir has to carry the two
+// things an analyzer needs to answer at all — this repo's eslint config and its
+// node_modules. That is not scaffolding around the test, it IS the test: if
+// either is missing, procoder reports the file as ungated rather than clean, and
+// the assertions below fail exactly as they should.
 test('the self-scan is a real gate: a planted violation is reported', () => {
   const fs = require('fs');
   const os = require('os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'procoder-dogfood-'));
   const planted = path.join(dir, 'dogfood-canary.js');
-  fs.writeFileSync(planted, '// TODO: no owner, no ticket\nmodule.exports = {};\n');  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
   try {
+    fs.copyFileSync(path.join(root, 'eslint.config.mjs'), path.join(dir, 'eslint.config.mjs'));
+    fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+    fs.writeFileSync(planted,
+      'module.exports = (p) => new RegExp(p);\n');
     const { code, out } = selfScan([planted]);
-    assert.strictEqual(code, 1, 'a planted orphan TODO must fail the self-scan');  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
-    assert.match(out, /dogfood-canary\.js:1 TODO with no owner or ticket/);  // procoder: literal alone/orphan-todo scanner input for that rule, not an instance of it
+    assert.strictEqual(code, 1, 'a planted weakness must fail the self-scan');
+    assert.match(out, /dogfood-canary\.js:1/);
+    assert.match(out, /detect-non-literal-regexp/,
+      'the analyzer answered, but not with the finding the canary plants');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -3,19 +3,50 @@
   "version": "0.2.0",
   "description": "Ship gate for AI-written code: security, correctness, readability, and nothing stale left behind.",
   "license": "Apache-2.0",
-  "engines": { "node": ">=20" },
-  "bin": { "procoder": "./bin/procoder.js" },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "procoder": "./bin/procoder.js"
+  },
   "main": "./hooks/procoder-runtime.js",
   "files": [
-    "hooks/", "skills/", "commands/", "scripts/", "bin/", "procoder-mcp/",
-    ".claude-plugin/", ".opencode/", ".openclaw/", ".cursor/", ".windsurf/",
-    ".clinerules/", ".kiro/", ".qoder/", ".agents/", "pi-extension/",
-    "AGENTS.md", "LICENSE", "gemini-extension.json", "opencode.json"
+    "hooks/",
+    "skills/",
+    "commands/",
+    "scripts/",
+    "bin/",
+    "procoder-mcp/",
+    ".claude-plugin/",
+    ".opencode/",
+    ".openclaw/",
+    ".cursor/",
+    ".windsurf/",
+    ".clinerules/",
+    ".kiro/",
+    ".qoder/",
+    ".agents/",
+    "pi-extension/",
+    "AGENTS.md",
+    "LICENSE",
+    "gemini-extension.json",
+    "opencode.json"
   ],
-  "pi": { "skills": ["./skills"], "extensions": ["./pi-extension/index.js"] },
+  "pi": {
+    "skills": [
+      "./skills"
+    ],
+    "extensions": [
+      "./pi-extension/index.js"
+    ]
+  },
   "scripts": {
-    "test": "node --test --test-timeout=120000 tests/*.test.js",
+    "test": "node --test --test-timeout=180000 --test-concurrency=1 tests/*.test.js",
     "sync": "node scripts/sync-rules.js",
     "sync:check": "node scripts/sync-rules.js --check"
+  },
+  "devDependencies": {
+    "eslint": "^10.8.1",
+    "eslint-plugin-security": "^4.0.1"
   }
 }

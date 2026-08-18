@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>procoder — a ship gate for AI-written code</title>
+<meta name="description" content="procoder is a Claude Code plugin and CLI that refuses to call a change done until six rungs hold — SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT.">
+<link rel="stylesheet" href="assets/procoder.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <nav class="nav" aria-label="Documentation">
+  <a class="brand" href="index.html">
+    <span class="brand-name">procoder</span>
+    <span class="brand-meta">v0.2.0</span>
+  </a>
+  
+  <div class="nav-section">
+  <p class="nav-group">The gate</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link is-current" href="index.html" aria-current="page">Overview</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="doctrine.html">The six rungs</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Using it</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="start.html">Get started</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="commands.html">Commands</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="configuration.html">Configuration</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Honesty</p>
+  <ul class="nav-list">
+    
+    
+    <li><a class="nav-link" href="limitations.html">What it misses</a></li>
+    
+    
+    
+    <li><a class="nav-link" href="design.html">Why it works this way</a></li>
+    
+    
+  </ul>
+  </div>
+  
+  <div class="nav-section">
+  <p class="nav-group">Elsewhere</p>
+  <ul class="nav-list">
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder">Source on GitHub</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/install.md">Install guide, all hosts</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/docs/known-limitations.md">Known limitations</a></li>
+    <li><a class="nav-link" href="https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md">Changelog</a></li>
+  </ul>
+  </div>
+</nav>
+
+  <main class="content" id="main" tabindex="-1">
+    <!-- Badges, drawn rather than fetched. A shields.io image would be one
+         external request per badge on a site whose whole claim is that it makes
+         none, from a tool whose first rung calls a new dependency a new trust
+         boundary. Every value here is a fact of the release, not a status that
+         can change between builds: a CI badge belongs on the README, where
+         GitHub serves it from the workflow itself. -->
+    <ul class="badges" aria-label="Release facts">
+      <li class="badge"><span class="badge-k">version</span><span class="badge-v">0.2.0</span></li>
+      <li class="badge"><span class="badge-k">licence</span><span class="badge-v">Apache-2.0</span></li>
+      <li class="badge"><span class="badge-k">node</span><span class="badge-v">≥ 18</span></li>
+      <li class="badge"><span class="badge-k">runtime deps</span><span class="badge-v">0</span></li>
+    </ul>
+    <p class="eyebrow">Claude Code plugin and CLI</p>
+
+<h1>procoder</h1>
+
+<p class="thesis">
+  An AI writes the change in seconds. What it rarely does is delete the thing
+  the change replaced — so the old path survives, still exported, still called,
+  still wrong.
+</p>
+
+<p class="lede">
+  procoder is the gate that refuses to call that done. Six rungs, checked in
+  order, on every response and on every file the session touches.
+</p>
+
+<ul class="findings findings-display">
+  <li class="finding">
+    <span class="rung rung-hard">[1 SAFE]</span>
+    <span class="msg"><span class="loc">api/users.ts:42</span> raw request role into authz check <span class="arrow">→</span> validate + server-side role lookup</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-hard">[2 TRUE]</span>
+    <span class="msg"><span class="loc">api/users.ts:58</span> error swallowed, write may be lost <span class="arrow">→</span> propagate or log with correlation id</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[3 OBVIOUS]</span>
+    <span class="msg"><span class="loc">api/users.ts:71</span> fn 94 lines, depth 5 <span class="arrow">→</span> extract validate/persist/notify</span>
+  </li>
+  <li class="finding">
+    <span class="rung rung-soft">[4 ALONE]</span>
+    <span class="msg"><span class="loc">api/users.ts:6</span> superseded export still there, no caller <span class="arrow">→</span> delete it</span>
+  </li>
+</ul>
+
+<p class="meta-line">
+  That shape — rung, location, what is wrong, arrow, what to do — is every
+  finding procoder emits. It is quoted from
+  <a href="https://github.com/azrtydxb/procoder/blob/main/skills/procoder/SKILL.md">the doctrine</a>,
+  which is the single source the whole tool is generated from.
+</p>
+
+<h2>What it does</h2>
+
+<p>
+  procoder runs in two halves that cover different ground. The <strong>doctrine</strong>
+  is read by the agent and shapes what it writes: trust boundaries, error
+  handling, naming, and whether the replaced path was deleted. The
+  <strong>check engine</strong> is deterministic — regex and counters over six
+  languages — and runs after every file write, plus on demand from the CLI.
+</p>
+
+<p>
+  The engine covers the smaller half, and the site says so wherever that matters.
+  It pairs with the <a href="https://github.com/dietrichgebert/ponytail">ponytail</a>
+  plugin: ponytail decides <strong>what to write</strong>, procoder decides
+  <strong>whether it may ship</strong>.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Read the limits before you rely on it.</strong> The engine is
+    heuristic, not a parser, and the things it is known to miss are written down
+    and kept current rather than left for you to find:
+    <a href="limitations.html">what it misses</a>, which separates a genuine gap
+    from a trade-off taken on purpose. The decisions that cost nothing but shape
+    everything are on <a href="design.html">why it works this way</a>.
+  </p>
+</div>
+
+<h2>The six rungs</h2>
+
+<p>
+  Every rung must hold before a change ships. Rungs 1–4 are checked in that
+  order because the cost of getting one wrong descends; 5 and 6 come last
+  because neither can be answered from the line in front of you. The first two
+  are not yours to trade away.
+</p>
+
+<div class="tier tier-hard">
+  <p class="tier-label">Not negotiable</p>
+  <ul class="findings">
+    <li class="finding">
+      <span class="rung rung-hard">[1 SAFE]</span>
+      <span class="msg">Does untrusted data reach a sink unvalidated?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-hard">[2 TRUE]</span>
+      <span class="msg">Are errors handled and edges covered, with one runnable check left behind?</span>
+    </li>
+  </ul>
+</div>
+
+<div class="tier tier-soft">
+  <p class="tier-label">Judgment</p>
+  <ul class="findings">
+    <li class="finding">
+      <span class="rung rung-soft">[3 OBVIOUS]</span>
+      <span class="msg">Would the next reader get it in one pass?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-soft">[4 ALONE]</span>
+      <span class="msg">Did you leave a twin behind?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-soft">[5 FAST]</span>
+      <span class="msg">Does it stay cheap at the size production arrives at?</span>
+    </li>
+    <li class="finding">
+      <span class="rung rung-soft">[6 MEANT]</span>
+      <span class="msg">Is this what was asked for, and only that?</span>
+    </li>
+  </ul>
+</div>
+
+<p>
+  Rung 4 is the rung nobody ships, and the reason procoder exists:
+  <strong>a change isn't done until the thing it replaced is gone.</strong>
+  <a href="doctrine.html">Read the six rungs in full</a>.
+</p>
+
+<h2>Install it</h2>
+
+<p>In Claude Code, two lines:</p>
+
+<pre><code>claude plugin marketplace add azrtydxb/procoder
+claude plugin install procoder</code></pre>
+
+<p>
+  For a pre-commit hook, a CI job, or a terminal with no agent in it, the same
+  engine ships as a CLI:
+</p>
+
+<pre><code>npm install -g procoder
+procoder check &lt;paths...&gt;</code></pre>
+
+<p>
+  Cursor, Windsurf, Cline, Kiro, Qoder, opencode, openclaw, Codex, Copilot, pi
+  and any MCP host each read a rule file generated from that same doctrine.
+  <a href="start.html">Get started</a> has the path for each of them.
+</p>
+
+    <footer class="foot">
+      <p>No fonts, no analytics, no scripts. This page makes no external request.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

@@ -32,8 +32,21 @@ test('every hook command references a script that ships', () => {
   }
 });
 
-test('package.json declares zero runtime dependencies', () => {
+// The invariant is that INSTALLING procoder installs nothing else: it is a
+// plugin, and a hook that had to npm-install before it could answer would blow
+// its 5s budget on the first write of every session.
+//
+// devDependencies are a different question and are now non-empty on purpose.
+// procoder mandates analyzers (see hooks/checks/toolchain.js) and gates its own
+// source with them, so the analyzers it demands of a JavaScript project are the
+// ones it has to have installed for itself. Anything else appearing here is the
+// thing this test is really watching for.
+test('procoder installs nothing at runtime, and dev-depends only on its own analyzers', () => {
   const pkg = readJson('package.json');
-  assert.strictEqual(pkg.dependencies, undefined);
-  assert.strictEqual(pkg.devDependencies, undefined);
+  assert.strictEqual(pkg.dependencies, undefined,
+    'a runtime dependency would have to be installed before a hook could run');
+  assert.deepStrictEqual(
+    Object.keys(pkg.devDependencies || {}).sort(),
+    ['eslint', 'eslint-plugin-security'],
+    'the only dev dependencies are the analyzers procoder mandates for JavaScript');
 });

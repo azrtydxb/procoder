@@ -4,6 +4,7 @@
 
 const { parseLevelCommand, isDeactivationCommand } = require('./procoder-config');
 const { readHookInput, readLevel, setLevel, writeHookOutput } = require('./procoder-runtime');
+const { getSafeFirstImperative } = require('./procoder-instructions');
 
 // Read first, exit second: PROCODER_NO_HOOK used to exit with the payload still
 // in the pipe, which fails the host's write with EPIPE. See procoder-runtime.js.
@@ -38,7 +39,12 @@ function trackMode() {
 
   // Ordinary prompt: nothing changes, but hosts that render the level from
   // hook output (Codex) must be told the real one, not a hardcoded guess.
-  writeHookOutput('UserPromptSubmit', readLevel(), '');
+  // The rung-1 imperative rides along so it sits next to the request rather
+  // than only in the session preamble — worth ~4pp of secure code on CWEval,
+  // for ~70 tokens a turn.
+  const level = readLevel();
+  writeHookOutput('UserPromptSubmit', level,
+    level === 'off' ? '' : getSafeFirstImperative());
 }
 
 // A hook that throws is a hook that breaks the user's session, whatever the
