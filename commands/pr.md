@@ -1,5 +1,7 @@
-description = "Prepare and open a pull request the senior way: gate, template, scrubbed, everything visible."
-prompt = """
+---
+description: "Prepare and open a pull request the senior way: gate, template, scrubbed, everything visible."
+---
+
 The user invoked /procoder:pr with arguments: $ARGUMENTS
 
 The launcher for every procoder command below is:
@@ -31,4 +33,3 @@ The launcher for every procoder command below is:
    missing, run `launcher.sh init` first.
 7. Hand off to /procoder:merge for the gates-and-reviews phase, or offer to
    run it now.
-"""

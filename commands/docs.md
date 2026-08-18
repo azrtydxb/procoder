@@ -1,5 +1,7 @@
-description = "The documentation report: references, diagrams, drift, API docs, badges, README structure, links, Pages."
-prompt = """
+---
+description: "The documentation report: references, diagrams, drift, API docs, badges, README structure, links, Pages."
+---
+
 The user invoked /procoder:docs with arguments: $ARGUMENTS
 
 The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
@@ -27,4 +29,3 @@ write it (and .procoder/docs/mermaid.json), then continue.
 
 Never mark a doc updated without reading what it actually says (P-CONTROL:
 the tools diagnose, you verify and write).
-"""

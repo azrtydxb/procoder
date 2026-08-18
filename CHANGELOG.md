@@ -2,6 +2,13 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.8.1 — 2026-08-19
+
+- The skills are back: command definitions moved from TOML with multiline
+  strings — which the plugin loader silently drops — to Markdown with YAML
+  frontmatter, the canonical format. Same nine commands, now actually
+  registered.
+
 ## 0.8.0 — 2026-08-19
 
 The code index (D-INDEX): the shared platform layer under the domains.
