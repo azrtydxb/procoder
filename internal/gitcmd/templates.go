@@ -25,6 +25,8 @@ const PRTemplate = `## What
 <!-- Anything that saves the reviewer time: where to start, what to skip. -->
 `
 
+// CommitTemplate is the default commit-message template git opens in the
+// editor; its leading blank lines are the writing surface.
 const CommitTemplate = `
 
 # --- commit message guide (lines starting with # are dropped) ---------------
@@ -34,6 +36,8 @@ const CommitTemplate = `
 # No AI attribution lines - the work is the author's.
 `
 
+// WorkflowTemplate is the default .procoder/github/WORKFLOW.md — the repo
+// rules the pr/merge skills follow (worktrees, merge watching, cleanup).
 const WorkflowTemplate = `# Workflow rules
 
 Repo-level rules the procoder skills read and follow. Edit freely — what is
