@@ -1,5 +1,7 @@
-description = "Run the formatting gate over the changed files, as a commit or CI would."
-prompt = """
+---
+description: Run the formatting gate over the changed files, as a commit or CI would.
+---
+
 The user invoked /procoder:check with arguments: $ARGUMENTS
 
 Run:
@@ -13,4 +15,3 @@ file's formatted result with `launcher.sh format <file>`, review it, and write
 it — then re-run the check to confirm the gate passes. If anything is
 UNCHECKED, the gate fails until the missing formatter is installed; point the
 user at /procoder:doctor.
-"""

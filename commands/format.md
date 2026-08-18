@@ -1,5 +1,7 @@
-description = "Show the formatted result for files, so you can review and write it."
-prompt = """
+---
+description: Show the formatted result for files, so you can review and write it.
+---
+
 The user invoked /procoder:format with arguments: $ARGUMENTS
 
 Run the harness formatter over the requested files:
@@ -16,4 +18,3 @@ you stay in control. For each file:
 - "NOT checked": the formatter is missing or failed — tell the user what the
   output says, and suggest /procoder:doctor. Do not treat the file as clean.
 - "out of scope": no formatter covers this file type; say so and move on.
-"""

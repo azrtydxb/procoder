@@ -1,5 +1,7 @@
-description = "Install the formatters this repository needs, with every command visible before it runs."
-prompt = """
+---
+description: Install the formatters this repository needs, with every command visible before it runs.
+---
+
 The user invoked /procoder:init.
 
 1. Run:
@@ -23,4 +25,3 @@ The user invoked /procoder:init.
 
    and confirm every gap is closed. A tool is installed when doctor says ok —
    an installer exiting 0 is not the proof; doctor is.
-"""

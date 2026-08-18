@@ -1,5 +1,7 @@
-description = "The code index: build it, then find, search, refs, outline, and impact instead of grepping blind."
-prompt = """
+---
+description: "The code index: build it, then find, search, refs, outline, and impact instead of grepping blind."
+---
+
 The user invoked /procoder:index with arguments: $ARGUMENTS
 
 The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
@@ -36,4 +38,3 @@ the output are real — refresh before trusting line numbers.
 
 With arguments, run the matching subcommand directly and act on its output.
 Without arguments, run `stats` and report the index's state.
-"""

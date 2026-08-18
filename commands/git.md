@@ -1,5 +1,7 @@
-description = "The pre-finish status: branch, hygiene findings, message checks, workflow lint, template state."
-prompt = """
+---
+description: "The pre-finish status: branch, hygiene findings, message checks, workflow lint, template state."
+---
+
 The user invoked /procoder:git.
 
 Run:
@@ -19,4 +21,3 @@ Read the whole report and act on it:
   is branch-based, offer to create a branch.
 
 Finish by re-running the command and showing the user the clean report.
-"""

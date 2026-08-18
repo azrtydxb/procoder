@@ -1,5 +1,7 @@
-description = "Finish a PR properly: every check green, every review addressed — human and bot — then merge and clean up."
-prompt = """
+---
+description: "Finish a PR properly: every check green, every review addressed — human and bot — then merge and clean up."
+---
+
 The user invoked /procoder:merge with arguments: $ARGUMENTS
 (The argument is the PR number or branch; with none, use the PR for the
 current branch: `gh pr view --json number`.)
@@ -50,4 +52,3 @@ Loop until done:
 Never merge over a red check. Never merge with an unaddressed review comment.
 If a required gate cannot be satisfied, say exactly which one and why, and
 stop — the user decides.
-"""
