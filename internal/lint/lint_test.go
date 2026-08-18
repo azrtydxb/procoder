@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,28 @@ garbage line
 	}
 	if b := parse(raw, true); !b[0].Blocking {
 		t.Fatal("block mode must block")
+	}
+}
+
+// Copilot suggested the lazy file capture drops Windows drive paths; the
+// lazy quantifier expands until the rest matches, so it does not — pinned.
+func TestParseHandlesWindowsDrivePaths(t *testing.T) {
+	got := parse(`C:\dir\file.go:12: something wrong (lint)`+"\n", false)
+	if len(got) != 1 || got[0].File != `C:\dir\file.go` || got[0].Line != 12 {
+		t.Fatalf("windows path must parse: %+v", got)
+	}
+}
+
+// A linter that fails without findings must never read as clean.
+func TestFailedRunReadsAsNotChecked(t *testing.T) {
+	got := finishParse("", fmt.Errorf("exec format error"), "x.py", "ruff", false)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "NOT checked") {
+		t.Fatalf("failed run must surface: %+v", got)
+	}
+	// a timeout arrives as an error with empty output — same rule
+	got = finishParse("", fmt.Errorf("ruff gave no answer in 2m0s"), "x.py", "ruff", false)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "gave no answer") {
+		t.Fatalf("timeout must surface: %+v", got)
 	}
 }
 

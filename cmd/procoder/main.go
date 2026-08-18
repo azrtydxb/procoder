@@ -166,7 +166,11 @@ func run(args []string) int {
 				mark = "  BLOCK"
 				blocking++
 			}
-			fmt.Printf("%s %s:%d  %s\n", mark, f.File, f.Line, f.Message)
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			fmt.Printf("%s %s  %s\n", mark, loc, f.Message)
 		}
 		fmt.Printf("procoder lint: %d finding(s) (%d blocking)\n", len(findings), blocking)
 		if blocking > 0 {

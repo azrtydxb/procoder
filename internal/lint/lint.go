@@ -8,6 +8,7 @@ package lint
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -140,10 +141,11 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 			wanted[filepath.ToSlash(rel)] = true
 		}
 	}
-	findings := parse(execute(root, bin, args), block)
+	raw, err := execute(root, bin, args)
+	findings := finishParse(raw, err, files[0], "golangci-lint", block)
 	var out []gitx.Finding
 	for _, f := range findings {
-		if wanted[filepath.ToSlash(f.File)] {
+		if wanted[filepath.ToSlash(f.File)] || f.File == files[0] {
 			out = append(out, f)
 		}
 	}
@@ -154,13 +156,14 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 func lintJS(root string, files []string, block bool) []gitx.Finding {
 	if !HasEslintConfig(root) {
 		return []gitx.Finding{{File: files[0],
-			Message: "eslint: no project config found — JS/TS lint is out of scope until the project carries one"}}
+			Message: "eslint: no project config found — JS/TS lint is out of scope until the project carries one (lint)"}}
 	}
 	bin := tools.Resolve(Eslint, root)
 	if bin == "" {
 		return notChecked(files[0], "eslint")
 	}
-	return parse(execute(root, bin, append([]string{"--format", "unix"}, files...)), block)
+	raw, err := execute(root, bin, append([]string{"--format", "unix"}, files...))
+	return finishParse(raw, err, files[0], "eslint", block)
 }
 
 // HasEslintConfig reports whether the project carries an eslint config —
@@ -181,7 +184,8 @@ func run(root string, tool *tools.Tool, args, files []string, block bool) []gitx
 	if bin == "" {
 		return notChecked(files[0], tool.Name)
 	}
-	return parse(execute(root, bin, args), block)
+	raw, err := execute(root, bin, args)
+	return finishParse(raw, err, files[0], tool.Name, block)
 }
 
 // execute runs the linter with the hung-tool guard. Linters exit non-zero on
@@ -189,7 +193,7 @@ func run(root string, tool *tools.Tool, args, files []string, block bool) []gitx
 // findings nor a zero exit is reported as NOT checked by parse's caller
 // contract (the raw output simply yields no finding lines and the tool's
 // stderr is folded in so failures stay visible).
-func execute(root, bin string, args []string) string {
+func execute(root, bin string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), lintTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
@@ -197,11 +201,39 @@ func execute(root, bin string, args []string) string {
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
-	_ = cmd.Run()
+	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("procoder-timeout:0: %s gave no answer in %s — the files were NOT checked", bin, lintTimeout)
+		return "", fmt.Errorf("%s gave no answer in %s", filepath.Base(bin), lintTimeout)
 	}
-	return buf.String()
+	return buf.String(), err
+}
+
+// finishParse applies the honesty rule to a linter run: findings are the
+// answer; a failed run with NO findings must never read as clean.
+func finishParse(raw string, runErr error, file string, tool string, block bool) []gitx.Finding {
+	out := parse(raw, block)
+	if len(out) == 0 && runErr != nil {
+		var exit *exec.ExitError
+		// exit code 1 with no parseable findings can still be a legitimate
+		// "no findings" for some tools, but anything else is a failure
+		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && raw != "") {
+			return []gitx.Finding{{File: file,
+				Message: fmt.Sprintf("NOT checked — %s failed: %s (lint)", tool, firstLine(raw+runErr.Error()))}}
+		}
+	}
+	return out
+}
+
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			if len(t) > 160 {
+				t = t[:160]
+			}
+			return t
+		}
+	}
+	return "no output"
 }
 
 func parse(raw string, block bool) []gitx.Finding {
