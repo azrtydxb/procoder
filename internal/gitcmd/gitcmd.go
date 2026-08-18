@@ -5,6 +5,7 @@
 package gitcmd
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -111,7 +112,30 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	if _, err := os.Stat(filepath.Join(root, workflowPath)); err != nil {
 		out = append(out, gitx.Finding{Message: workflowPath + " is missing — run `procoder templates` and write it"})
 	}
+	out = append(out, mirrorSync(root)...)
 	return out
+}
+
+// GitHub only reads the PR template at its own hardcoded path, so the repo
+// carries a mirror of the .procoder master there. mirrorSync enforces it:
+// drift means someone edited one copy silently, and that BLOCKS — the master
+// under .procoder/github/ is the one to edit, then copy over the mirror.
+const githubPRTemplatePath = ".github/PULL_REQUEST_TEMPLATE.md"
+
+func mirrorSync(root string) []gitx.Finding {
+	master, err := os.ReadFile(filepath.Join(root, prTemplatePath))
+	if err != nil {
+		return nil // absence of the master is already its own finding
+	}
+	mirror, err := os.ReadFile(filepath.Join(root, githubPRTemplatePath))
+	if err != nil {
+		return []gitx.Finding{{Message: githubPRTemplatePath + " is missing — GitHub only auto-fills PRs from that path; copy the .procoder/github/ master there"}}
+	}
+	if !bytes.Equal(master, mirror) {
+		return []gitx.Finding{{File: filepath.Join(root, githubPRTemplatePath), Blocking: true,
+			Message: "out of sync with " + prTemplatePath + " — edit the .procoder/github/ master, then copy it over this mirror"}}
+	}
+	return nil
 }
 
 // Templates prints the default content for each template that is missing, so
