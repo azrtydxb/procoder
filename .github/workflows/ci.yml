@@ -41,7 +41,7 @@ jobs:
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
           pip install mkdocs-material
           curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv lychee /usr/local/bin/
+          sudo mv lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
       - name: doctor
         run: procoder doctor
       - name: gate over the tracked tree
