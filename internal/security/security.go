@@ -190,7 +190,7 @@ func Sast(root string) []gitx.Finding {
 	}
 	if json.Unmarshal(buf.Bytes(), &rep) != nil {
 		return []gitx.Finding{{Blocking: true,
-			Message: "semgrep output unreadable — SAST was NOT run: " + firstLine(errb.String()+err.Error()) + " (security)"}}
+			Message: "semgrep output unreadable — SAST was NOT run: " + firstLine(errb.String()+errStr(err)) + " (security)"}}
 	}
 	var out []gitx.Finding
 	for _, r := range rep.Results {
@@ -271,7 +271,7 @@ func Deps(root string) []gitx.Finding {
 				}
 			}
 			out = append(out, gitx.Finding{Blocking: max >= vulnBlockScore,
-				Message: fmt.Sprintf("%s %s has %d known vulnerabilit(ies), max severity %.1f — upgrade it (security)",
+				Message: fmt.Sprintf("%s %s has %d known vulnerability(s), max severity %.1f — upgrade it (security)",
 					p.Package.Name, p.Package.Version, len(p.Vulnerabilities), max)})
 		}
 	}
