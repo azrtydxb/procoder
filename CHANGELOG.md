@@ -2,6 +2,17 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.12.0 — 2026-08-19
+
+Domain 7, CI/CD/CT: pipeline discipline as deterministic checks.
+
+- `procoder ci` and `/procoder:ci`: mutable action refs (report by
+  default, blocking via `[ci] pin_actions_policy = "block"`), missing
+  per-job timeout-minutes, missing concurrency cancel-in-progress, and no
+  tests anywhere. Rides `procoder git` and the gate too.
+- Our own CI practices it: every action pinned to its commit SHA with the
+  tag as a comment, and a concurrency group cancels stale runs.
+
 ## 0.11.0 — 2026-08-19
 
 Domain 3, maintainability: a thin layer over the index and the linters.
