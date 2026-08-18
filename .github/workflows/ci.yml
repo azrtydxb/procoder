@@ -40,8 +40,10 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
           pip install mkdocs-material
-          curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
+          # extracted OUTSIDE the workspace: the tarball carries its own docs,
+          # and the docs report must only ever see this repository's files
+          curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /tmp
+          sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
       - name: puppeteer config for mmdc on a runner
         run: |
           echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"]}" > /tmp/puppeteer.json
