@@ -359,10 +359,12 @@ func Badges(root string, r Rules) []gitx.Finding {
 		return nil // RequiredDocs already reports a missing README
 	}
 	head := strings.ToLower(firstN(string(data), firstScreenLines))
+	// only what is inside a badge image counts — the keyword appearing in
+	// prose is not a badge
+	badges := strings.Join(badgeRe.FindAllString(head, -1), "\n")
 	var out []gitx.Finding
 	for _, want := range r.RequiredBadges {
-		// a badge is an image link whose URL or alt text carries the keyword
-		if !badgeRe.MatchString(head) || !strings.Contains(head, strings.ToLower(want)) {
+		if !strings.Contains(badges, strings.ToLower(want)) {
 			out = append(out, gitx.Finding{File: readme,
 				Message: fmt.Sprintf("README first screen is missing a %q badge (docs rules)", want)})
 		}

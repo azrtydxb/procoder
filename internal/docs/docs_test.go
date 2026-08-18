@@ -191,6 +191,22 @@ The harness that makes AI coders work like senior developers.
 	}
 }
 
+// The keyword appearing in prose is not a badge: "our ci is great" plus an
+// unrelated badge image must still count as a missing ci badge.
+func TestBadgeKeywordInProseDoesNotCount(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", `# x
+
+our ci is great and the license is Apache
+
+![Coverage](https://img.shields.io/badge/coverage-97%25-green)
+`)
+	got := Badges(root, defaultRules())
+	if len(got) != 2 {
+		t.Fatalf("ci and license badges are both missing, got %+v", got)
+	}
+}
+
 func TestGoExportedSymbolWithoutDocIsReported(t *testing.T) {
 	root := t.TempDir()
 	f := write(t, root, "x.go", `package x
