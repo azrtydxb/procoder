@@ -259,6 +259,9 @@ export class Naked {}
 // repo, only tracked and untracked-but-not-ignored Markdown is listed. The
 // 65-files-in-a-10-doc-repo bug, pinned.
 func TestGitignoredMarkdownIsNotScanned(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH; the walk fallback is covered by the other tests")
+	}
 	root := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
