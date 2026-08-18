@@ -74,6 +74,32 @@ function golangciReport(stdout) {
 // Unmatched rules stay at TRUE. That direction is deliberate: a rule wrongly
 // called OBVIOUS stops blocking at pragmatic, while one wrongly called TRUE is
 // still reported and still fixed.
+// flake8-bandit rules that bandit itself grades LOW severity. They are real
+// checks and they stay reported — but at rung 2, not rung 1, because rung 1 is
+// the rung that blocks and these fire on shapes rather than on weaknesses.
+//
+// Measured over 589 generated Python programs, 72 of them exploitable:
+//
+//     S603  subprocess call            fired 29,  0 on a vulnerable file
+//     S607  partial executable path    fired 29,  0
+//     S110  try/except/pass            fired 12,  2
+//     S112  try/except/continue        fired  4,  0
+//
+// S603 fires on every `subprocess.run(["ls", path])` — argv list, no shell —
+// which is the SAFE way to call a subprocess. Leaving these at rung 1 put
+// procoder's Python gate BELOW chance at identifying a vulnerable file (lift
+// 0.7x, precision 9%); demoting them lifts it to 3.3x and 40%.
+//
+// The severity is bandit's own, not procoder's opinion: `bandit -f json` grades
+// each of these LOW with HIGH confidence. Anything bandit grades MEDIUM or HIGH
+// stays at rung 1 — S202 (tarfile.extractall) fired 27 times here with 1 hit and
+// still stays, because bandit calls it HIGH and it correctly recognises the
+// official `filter="data"` fix; what it cannot see is hand-rolled member
+// validation, which is a limitation worth reporting rather than hiding.
+const BANDIT_LOW = new Set([
+  'S101', 'S110', 'S112', 'S311', 'S404', 'S603', 'S607',
+]);
+
 const RUNG_PATTERNS = [
   ['SAFE', /^(S\d{3}|G\d{3})$|^security\/|gosec|bandit|injection|hardcoded|crypto|csrf|xss|ssrf|traversal|insecure/i],
   ['ALONE', /unused|^F401$|^F841$|deadcode|unparam|ineffassign|no-unreachable|redundant/i],
@@ -86,6 +112,7 @@ function rungFor(tool, ruleId) {
   if (tool === 'semgrep') return 'SAFE';
   const id = String(ruleId || '');
   if (!id) return 'TRUE';
+  if (BANDIT_LOW.has(id)) return 'TRUE';
   for (const [rung, pattern] of RUNG_PATTERNS) {
     if (pattern.test(id)) return rung;
   }
@@ -358,15 +385,27 @@ const TOOLS = {
     // it, an explicitly named path is always linted, so `[]` means clean and
     // nothing else. A path the project excludes from ruff is procoder's to
     // exclude in .procoder.toml, not ruff's to silence procoder with.
-    // S is flake8-bandit — the security rule set. Without it ruff runs E4/E7/E9/F
-    // and reports no security finding of any kind, which is how an analyzer can
-    // be installed, configured, green, and blind. See toolchain.js, COMPLETE.
-    argv: (file) => ['check', '--select', 'S,B,E,F', '--output-format', 'json', file],
+    // S,B,F — and deliberately NOT E.
+    //
+    // S is flake8-bandit, the security set: without it ruff reports no security
+    // finding of any kind, which is how an analyzer ends up installed, green and
+    // blind. B is bugbear and F is pyflakes: real defects — a mutable default
+    // argument, an undefined name, an unused import.
+    //
+    // E is pycodestyle, and it is formatting. It was in this list, and measured
+    // on a scan of 115 generated programs it produced 36 of the 85 findings the
+    // gate reported — 42% of everything the model was asked to act on, almost
+    // all E501 "line too long" inside docstrings. Watching an agent work the
+    // findings, it spent its passes re-wrapping prose while a strcpy sat
+    // untouched three lines down. Line length is not on any rung, a project's
+    // own ruff config already governs it, and every formatting finding here is
+    // attention taken from the ones that matter.
+    argv: (file) => ['check', '--select', 'S,B,F', '--output-format', 'json', file],
     // Many files, one process. Every ruff item names its own `filename`, so a
     // batch is attributable without guessing — see parseMany below and
     // runToolBatch in resolve.js for why the CLI wants this and the hook does
     // not.
-    argvMany: (files) => ['check', '--select', 'S,B,E,F', '--output-format', 'json', ...files],
+    argvMany: (files) => ['check', '--select', 'S,B,F', '--output-format', 'json', ...files],
     parseMany: (stdout) => groupByFile(JSON.parse(stdout), (item) => item.filename,
       (item) => externalFinding(item.location && item.location.row,
         `${item.code}: ${item.message}`, 'ruff', item.code),

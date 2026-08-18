@@ -106,8 +106,8 @@ subprocesses, never vendored in.
 `tests/dogfood.test.js` runs procoder over the whole tracked tree, derived from
 `git ls-files` so a file is inside the gate the day it lands, and the CI run
 that gates a pull request is the same one. There is no hold-out list, and the
-arithmetic is published instead of implied: of **194** tracked files the scan
-reads **185** and skips **9**, all of them by two `.procoderignore` files —
+arithmetic is published instead of implied: of **195** tracked files the scan
+reads **186** and skips **9**, all of them by two `.procoderignore` files —
 `[exclude] paths` is now empty, because every entry it held was for rules that
 no longer exist. Every skip is printed on every run with the pattern
 that caused it, the same test asserts these three numbers against the scan
