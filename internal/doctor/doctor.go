@@ -27,7 +27,7 @@ var skipDirs = map[string]bool{
 
 // Run inspects root and reports. Returns the exit code.
 func Run(root string, stdout io.Writer) int {
-	present := extensionsIn(root)
+	present := ExtensionsIn(root)
 
 	// One row per distinct tool that the present extensions call for.
 	type row struct {
@@ -62,7 +62,7 @@ func Run(root string, stdout io.Writer) int {
 		if bin == "" {
 			missing++
 			fmt.Fprintf(stdout, " GAP  %-14s %-28s %s\n", n, strings.Join(r.exts, " "), "missing")
-			fmt.Fprintf(stdout, "      install: %s\n", r.tool.Install)
+			fmt.Fprintf(stdout, "      run `procoder init` to install it (manual: %s)\n", r.tool.Install)
 			continue
 		}
 		fmt.Fprintf(stdout, "  ok  %-14s %-28s %s\n", n, strings.Join(r.exts, " "), version(bin, r.tool))
@@ -95,7 +95,8 @@ func version(bin string, t *tools.Tool) string {
 	return line
 }
 
-func extensionsIn(root string) map[string]bool {
+// ExtensionsIn surveys which file extensions exist under root.
+func ExtensionsIn(root string) map[string]bool {
 	found := map[string]bool{}
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -113,6 +114,27 @@ func extensionsIn(root string) map[string]bool {
 		return nil
 	})
 	return found
+}
+
+// RequiredTools returns the distinct formatters the extensions under root call
+// for, sorted by tool name — the shared survey doctor and init both start from.
+func RequiredTools(root string) []*tools.Tool {
+	seen := map[string]*tools.Tool{}
+	for ext := range ExtensionsIn(root) {
+		if t := tools.ByExtension[ext]; t != nil {
+			seen[t.Name] = t
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	out := make([]*tools.Tool, 0, len(names))
+	for _, n := range names {
+		out = append(out, seen[n])
+	}
+	return out
 }
 
 // Root returns the repo root for the working directory.

@@ -15,6 +15,14 @@ import (
 	"strings"
 )
 
+// InstallCandidate is one way to install a tool: a package manager and the
+// argv it needs. init picks the first candidate whose manager exists on this
+// machine — order in the list IS the preference order.
+type InstallCandidate struct {
+	Manager string
+	Args    []string
+}
+
 // Tool is one formatter.
 type Tool struct {
 	// Name is the binary looked up on PATH (or node_modules/.bin, see Resolve).
@@ -33,8 +41,11 @@ type Tool struct {
 	// which violates "the project's own config always wins" — so no config
 	// means the file is out of scope, counted and said, never silently clean.
 	NeedsProjectConfig string
-	// Install is the one-line answer doctor gives when the tool is missing.
+	// Install is the human fallback when no known package manager is present —
+	// the one line doctor and init print for a person to act on.
 	Install string
+	// InstallVia lists the machine-executable ways to install, best first.
+	InstallVia []InstallCandidate
 	// VersionArgs asks the tool its version, for doctor.
 	VersionArgs []string
 }
@@ -50,6 +61,14 @@ var (
 		Args:        func(f string) []string { return []string{f} },
 		Install:     "gofmt ships with Go: https://go.dev/dl",
 		VersionArgs: nil, // gofmt has no --version; presence is the check
+		// gofmt is not separately installable — it arrives with the Go
+		// toolchain, so the only candidate is installing Go itself.
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "go"}},
+			{Manager: "apt-get", Args: []string{"install", "-y", "golang"}},
+			{Manager: "dnf", Args: []string{"install", "-y", "golang"}},
+			{Manager: "winget", Args: []string{"install", "--id", "GoLang.Go", "-e"}},
+		},
 	}
 	ruff = &Tool{
 		Name: "ruff",
@@ -59,12 +78,25 @@ var (
 		Stdin:       true,
 		Install:     "brew install ruff   (or: pipx install ruff)",
 		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "ruff"}},
+			{Manager: "pipx", Args: []string{"install", "ruff"}},
+			{Manager: "pip3", Args: []string{"install", "--user", "ruff"}},
+			{Manager: "winget", Args: []string{"install", "--id", "astral-sh.ruff", "-e"}},
+		},
 	}
 	prettier = &Tool{
 		Name:        "prettier",
 		Args:        func(f string) []string { return []string{f} },
 		Install:     "npm i -D prettier   (or: brew install prettier)",
 		VersionArgs: []string{"--version"},
+		// npm -g rather than -D: init installs MACHINE tooling. A project that
+		// wants prettier pinned adds it to its own devDependencies, and Resolve
+		// already prefers node_modules/.bin when it exists.
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "prettier"}},
+			{Manager: "npm", Args: []string{"install", "-g", "prettier"}},
+		},
 	}
 	rustfmt = &Tool{
 		Name:        "rustfmt",
@@ -72,6 +104,10 @@ var (
 		Stdin:       true,
 		Install:     "rustup component add rustfmt",
 		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "rustup", Args: []string{"component", "add", "rustfmt"}},
+			{Manager: "brew", Args: []string{"install", "rustup"}},
+		},
 	}
 	clangFormat = &Tool{
 		Name:               "clang-format",
@@ -79,12 +115,23 @@ var (
 		NeedsProjectConfig: ".clang-format",
 		Install:            "brew install clang-format   (or: apt install clang-format)",
 		VersionArgs:        []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "clang-format"}},
+			{Manager: "apt-get", Args: []string{"install", "-y", "clang-format"}},
+			{Manager: "dnf", Args: []string{"install", "-y", "clang-tools-extra"}},
+			{Manager: "winget", Args: []string{"install", "--id", "LLVM.LLVM", "-e"}},
+		},
 	}
 	shfmt = &Tool{
 		Name:        "shfmt",
 		Args:        func(f string) []string { return []string{f} },
 		Install:     "brew install shfmt",
 		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "shfmt"}},
+			{Manager: "go", Args: []string{"install", "mvdan.cc/sh/v3/cmd/shfmt@latest"}},
+			{Manager: "winget", Args: []string{"install", "--id", "mvdan.shfmt", "-e"}},
+		},
 	}
 )
 

@@ -13,6 +13,7 @@ import (
 	"procoder/internal/format"
 	"procoder/internal/gate"
 	"procoder/internal/hook"
+	"procoder/internal/initcmd"
 )
 
 // version is stamped by the release build via -ldflags.
@@ -30,6 +31,8 @@ const usage = `usage: procoder <command> [args]
                        types are counted out loud
   doctor               which formatters this repository needs, which are
                        installed, and how to install the missing ones
+  init [--yes]         print the install commands for the missing formatters;
+                       --yes runs them and re-checks that every tool answers
   version              print the version
 `
 
@@ -59,6 +62,9 @@ func run(args []string) int {
 		return gate.Run(args[1:], doctor.Root(), os.Stdout)
 	case "doctor":
 		return doctor.Run(doctor.Root(), os.Stdout)
+	case "init":
+		execute := len(args) > 1 && args[1] == "--yes"
+		return initcmd.Run(doctor.Root(), execute, os.Stdout)
 	case "version":
 		fmt.Println(version)
 		return 0
