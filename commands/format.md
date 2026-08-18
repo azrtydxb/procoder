@@ -13,6 +13,7 @@ edited in this session.
 
 The command prints each file's formatted result — it never modifies anything;
 you stay in control. For each file:
+
 - "already formatted": nothing to do.
 - a formatted result: review it, then write it to the file yourself.
 - "NOT checked": the formatter is missing or failed — tell the user what the

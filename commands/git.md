@@ -9,6 +9,7 @@ Run:
     "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh" git
 
 Read the whole report and act on it:
+
 - BLOCK lines are yours to fix before the work is finished: remove conflict
   markers, unstage junk files, deal with oversized files, amend any commit
   message carrying an AI-attribution line (the work is the author's — never

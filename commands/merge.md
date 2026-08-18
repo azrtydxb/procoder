@@ -26,17 +26,17 @@ A PR merges when EVERYTHING answers — never before.
 
 Loop until done:
 
-1. Checks:  `gh pr checks <pr>` — every required check must pass. For a
+1. Checks: `gh pr checks <pr>` — every required check must pass. For a
    failing check, open its run (`gh run view <id> --log-failed`), fix the
    cause in the code, commit, push, and wait for the re-run.
 2. Reviews: `gh pr view <pr> --json reviews,reviewDecision` and the review
    comments via `gh api repos/{owner}/{repo}/pulls/<pr>/comments`. Treat BOT
    reviewers (Copilot included) exactly like humans: read every comment and
    recommendation, and for each one either
-     - fix it (commit, push, then reply to the thread saying what changed), or
-     - reply with a concrete reason why not.
-   No comment is skipped silently. Resolve threads only after fixing or
-   answering (`gh api graphql` resolveReviewThread), never to hide them.
+   - fix it (commit, push, then reply to the thread saying what changed), or
+   - reply with a concrete reason why not.
+     No comment is skipped silently. Resolve threads only after fixing or
+     answering (`gh api graphql` resolveReviewThread), never to hide them.
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments
    remain.
