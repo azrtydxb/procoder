@@ -100,7 +100,9 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	out = append(out, actions.Lint(workflows)...)
 
 	// Domain 7: workflow hygiene — pinned actions, timeouts, concurrency,
-	// the existence of tests
+	// the existence of tests. Scans ALL workflows, not just the changed set:
+	// pipeline discipline is a property of the repo, so findings can appear
+	// even when no workflow changed.
 	out = append(out, ciops.Check(root, cfg.PinActions)...)
 
 	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,

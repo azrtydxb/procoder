@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"procoder/internal/actions"
@@ -178,6 +179,9 @@ func run(args []string) int {
 				blocking++
 			}
 			loc := f.File
+			if rel, err := filepath.Rel(root, loc); err == nil && !strings.HasPrefix(rel, "..") {
+				loc = rel
+			}
 			if f.Line > 0 {
 				loc = fmt.Sprintf("%s:%d", loc, f.Line)
 			}

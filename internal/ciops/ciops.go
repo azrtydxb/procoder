@@ -19,7 +19,7 @@ import (
 // usesRe captures the action ref in a `uses:` line; group 2 is the ref.
 var usesRe = regexp.MustCompile(`^\s*(?:-\s+)?uses:\s*([^@\s]+)@(\S+)`)
 
-var shaRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+var shaRe = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 
 // testWordRe finds "test" as a word start — "ubuntu-latest" must not count
 // as continuous testing.
@@ -33,8 +33,13 @@ var jobRe = regexp.MustCompile(`^  ([A-Za-z0-9_-]+):\s*$`)
 func Check(root string, pinBlock bool) []gitx.Finding {
 	dir := filepath.Join(root, ".github", "workflows")
 	entries, err := os.ReadDir(dir)
-	if err != nil {
+	if os.IsNotExist(err) {
 		return nil // no workflows, nothing to hold to CI discipline
+	}
+	if err != nil {
+		// an unreadable directory is not an empty one — NOT checked, never clean
+		return []gitx.Finding{{File: dir, Blocking: true,
+			Message: "workflows directory unreadable — CI hygiene was NOT checked (ci)"}}
 	}
 	var out []gitx.Finding
 	sawTestWord := false
@@ -47,7 +52,7 @@ func Check(root string, pinBlock bool) []gitx.Finding {
 		path := filepath.Join(dir, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			out = append(out, gitx.Finding{File: path,
+			out = append(out, gitx.Finding{File: path, Blocking: true,
 				Message: "workflow unreadable — NOT checked (ci)"})
 			continue
 		}
