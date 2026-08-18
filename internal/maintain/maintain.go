@@ -7,6 +7,7 @@ package maintain
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,11 +36,15 @@ func Run(root string, out func(string)) int {
 	// dead code: defined, never referenced — exported API marked, the agent
 	// judges (a library's public surface is legitimately unreferenced)
 	unusedLines := 0
-	code := codeindex.Unused(root, func(s string) {
-		out("  unused  " + s)
-		unusedLines++
+	code := codeindex.Unused(root, func(line string) {
+		out("  unused  " + line)
+		// only location-shaped lines are findings; status and summary
+		// lines must not inflate the count
+		if findingLine.MatchString(line) {
+			unusedLines++
+		}
 	})
-	if code != 0 && unusedLines > 0 {
+	if code != 0 && unusedLines == 0 {
 		out("  (build the index with `procoder index build` for dead-code candidates)")
 	}
 	count += unusedLines
@@ -108,7 +113,7 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
-	_ = cmd.Run()
+	runErr := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
 		out(fmt.Sprintf("  %s  NOT checked — %s gave no answer in %s", label, filepath.Base(bin), maintainTimeout))
 		return 1
@@ -133,7 +138,28 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 		out(fmt.Sprintf("  %s  %s:%d  %s", label, file, n, m[3]))
 		count++
 	}
+	// a failed run that produced no findings must never read as clean —
+	// exit 1 with output is the linters' ordinary "findings exist" answer
+	if count == 0 && runErr != nil {
+		var exit *exec.ExitError
+		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && buf.Len() > 0) {
+			out(fmt.Sprintf("  %s  NOT checked — %s failed: %s", label, filepath.Base(bin), firstLine(buf.String()+runErr.Error())))
+			return 1
+		}
+	}
 	return count
+}
+
+func firstLine(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			if len(t) > 160 {
+				t = t[:160]
+			}
+			return t
+		}
+	}
+	return "no output"
 }
 
 func hasFiles(root, ext string) bool {
@@ -151,6 +177,7 @@ func hasFiles(root, ext string) bool {
 		}
 		if strings.EqualFold(filepath.Ext(path), ext) {
 			found = true
+			return filepath.SkipAll
 		}
 		return nil
 	})
