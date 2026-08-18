@@ -13,7 +13,9 @@ The code index (D-INDEX): the shared platform layer under the domains.
   index says so out loud.
 - `index impact`: the blast radius of the working-tree change — which
   symbols it defines and which files reference them.
-- The write hook keeps the broad tier current for each file written.
+- The write hook keeps the broad tier current for each file written; the
+  gate rebuilds a stale index at the finishing moment, covering editor
+  edits and the precise tier the hook cannot reach.
 - Tool resolution got honest: a probe rejects macOS's BSD ctags impostor,
   and `~/go/bin` / `~/.local/bin` count as installed.
 

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"procoder/internal/codeindex"
 	"procoder/internal/config"
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
@@ -30,6 +31,12 @@ func Run(paths []string, root string, stdout io.Writer) int {
 			fmt.Fprintln(stdout, "procoder: no changed files")
 			return 0
 		}
+	}
+
+	// a stale code index refreshes at this lifecycle moment — the per-write
+	// hook cannot see editor edits or reach the precise tier
+	if note := codeindex.RebuildIfStale(root); note != "" {
+		fmt.Fprintln(stdout, note)
 	}
 
 	var unformatted, unchecked []format.Result
