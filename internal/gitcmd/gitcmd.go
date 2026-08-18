@@ -18,6 +18,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/gitx"
+	"procoder/internal/infra"
 	"procoder/internal/security"
 )
 
@@ -104,6 +105,9 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	// pipeline discipline is a property of the repo, so findings can appear
 	// even when no workflow changed.
 	out = append(out, ciops.Check(root, cfg.PinActions)...)
+
+	// Domain 8: infrastructure hygiene, only when infra files exist
+	out = append(out, infra.Check(root)...)
 
 	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
 	// and CI can never disagree about documentation health either.
