@@ -104,7 +104,7 @@ func run(bin string, tool *tools.Tool, file string, src []byte) ([]byte, error) 
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, tool.Args(file)...)
+	cmd := exec.CommandContext(ctx, bin, tool.Args(file)...) // nosemgrep -- resolved from the fixed tool table, never user input
 	if tool.Stdin {
 		cmd.Stdin = bytes.NewReader(src)
 	}

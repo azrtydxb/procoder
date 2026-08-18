@@ -6,7 +6,7 @@ runs itself and hooks it cannot skip. The agent stays in control; nothing ever
 touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.9.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.10.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 ## Quick start
@@ -50,7 +50,7 @@ gives the agent the formatted code, and the agent reviews and writes it.
 The harness is organised into nine domains of senior-developer work, delivered
 level by level:
 
-1. **Security**
+1. **Security** ← shipped (v1)
 2. **Best practices** ← shipped (v1: lint)
 3. Maintainability
 4. Performance

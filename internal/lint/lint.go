@@ -196,7 +196,7 @@ func run(root string, tool *tools.Tool, args, files []string, block bool) []gitx
 func execute(root, bin string, args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), lintTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

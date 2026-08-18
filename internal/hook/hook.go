@@ -21,6 +21,7 @@ import (
 	"procoder/internal/format"
 	"procoder/internal/gitx"
 	"procoder/internal/lint"
+	"procoder/internal/security"
 	"procoder/internal/tools"
 )
 
@@ -114,6 +115,17 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 				msg += "\n\n"
 			}
 			msg += part
+		}
+		// Domain 1: a secret written into a file is caught at the moment it
+		// happens — the cheapest possible time, before it reaches history
+		for _, f := range security.SecretsChangedFiles(root, []string{p.ToolInput.FilePath}) {
+			if f.Line > 0 {
+				part := fmt.Sprintf("procoder [security]: %s:%d: %s", f.File, f.Line, f.Message)
+				if msg != "" {
+					msg += "\n\n"
+				}
+				msg += part
+			}
 		}
 		// Domain 2: the file's canonical linter answers in the same turn —
 		// findings are diagnoses; the agent judges and fixes what is real.

@@ -5,14 +5,36 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+// stubGitleaks puts a fake gitleaks on PATH that reports no leaks, so the
+// formatting-focused gate tests run on machines without the real scanner —
+// the missing-scanner-blocks behavior has its own test in internal/security.
+func stubGitleaks(t *testing.T) {
+	t.Helper()
+	bin := t.TempDir()
+	if runtime.GOOS == "windows" {
+		script := "@echo off\r\necho [] > %6\r\n"
+		if err := os.WriteFile(filepath.Join(bin, "gitleaks.cmd"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		script := "#!/bin/sh\nprintf '[]' > \"$6\"\n"
+		if err := os.WriteFile(filepath.Join(bin, "gitleaks"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
 func TestGateFailsOnUnformattedAndPassesAfter(t *testing.T) {
 	if _, err := exec.LookPath("gofmt"); err != nil {
 		t.Skip("gofmt not installed")
 	}
+	stubGitleaks(t)
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.go")
 	if err := os.WriteFile(p, []byte("package main\nfunc  main( ){}\n"), 0o644); err != nil {
@@ -48,6 +70,7 @@ func TestUncheckedFailsTheGateLikeUnformatted(t *testing.T) {
 }
 
 func TestOutOfScopeIsCountedNotFailed(t *testing.T) {
+	stubGitleaks(t)
 	dir := t.TempDir()
 	p := filepath.Join(dir, "notes.txt")
 	if err := os.WriteFile(p, []byte("hi\n"), 0o644); err != nil {
@@ -67,6 +90,7 @@ func TestOutOfScopeIsCountedNotFailed(t *testing.T) {
 // formatting. A gate whose report and exit code disagree is worse than either
 // alone — CI reads the exit, humans read the report.
 func TestBlockingHygieneFailsTheExitCodeNotJustTheReport(t *testing.T) {
+	stubGitleaks(t)
 	dir := t.TempDir()
 	p := filepath.Join(dir, "conflicted.txt")
 	content := "ok\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> other\n"

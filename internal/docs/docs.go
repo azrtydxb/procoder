@@ -269,7 +269,7 @@ func compileMermaid(root, bin, body string) string {
 	// exceed the ordinary tool budget without anything being wrong
 	ctx, cancel := context.WithTimeout(context.Background(), mermaidTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -519,7 +519,7 @@ func ExternalLinks(root string, files []string) []gitx.Finding {
 	args = append(args, files...)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
