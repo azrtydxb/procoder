@@ -1,0 +1,65 @@
+# Changelog
+
+Every release, in words a user can read. Newest first.
+
+## 0.7.0 — 2026-08-19
+
+Domain 5, documentation: docs treated as a product.
+
+- `procoder docs [--external]` and `/procoder:docs`: broken relative
+  references and non-compiling Mermaid diagrams block; doc drift, missing API
+  doc comments (Go/Python/TypeScript), required docs, badges, and README
+  first-screen structure are reported; `--external` adds `lychee` link
+  checking and GitHub Pages health.
+- The write hook now checks Markdown references and diagrams in-turn, and
+  reports which docs mention a code file the agent just changed.
+- New repo-owned rules: `.procoder/docs/RULES.md` and the shared Mermaid
+  theme `.procoder/docs/mermaid.json` (printed by `procoder templates`).
+- Docs site: MkDocs Material built and deployed to GitHub Pages by CI.
+- `doctor`/`init` learn `lychee`, `mmdc`, and `mkdocs`.
+
+## 0.6.0 — 2026-08-18
+
+Repo-overridable workflow rules (D-OVERRIDE begins here).
+
+- `.procoder/github/WORKFLOW.md`: feature work in git worktrees, PR polling
+  delegated to a watch-only background agent, full local+remote cleanup after
+  a successful merge. The repo's file wins over the skills' defaults.
+- Fixed `RepoRoot` to recognize a worktree's `.git` file — commands run
+  inside a worktree no longer report against the parent checkout.
+
+## 0.5.x — 2026-08-17
+
+Domain 9, GitOps/GitHub, hardened by its own dogfood runs.
+
+- The gate's git slice: conflict markers, junk files, oversized files
+  (5 MB default), AI-attribution lines in commit messages (blocking — the
+  work is the author's), commit subject shape, default-branch policy.
+- `actionlint` on every workflow file written, findings in the same turn.
+- PR and commit templates under `.procoder/github/`, `/procoder:pr` and
+  `/procoder:merge` skills, `procoder scrub`.
+- 0.5.1 fixed the gate exiting 0 over blocking findings; 0.5.2 fixed Windows
+  test stubs and stopped prettier flagging the commit template's functional
+  blank lines.
+
+## 0.4.0 — 2026-08-17
+
+- `procoder init [--yes]`: the binary computes the install plan per machine,
+  the agent (or `--yes`) executes it, and the survey re-runs afterwards —
+  an installer's exit 0 is a claim; the tool resolving is the fact.
+
+## 0.1.0 – 0.3.0 — 2026-08-17
+
+The Go rewrite and the plumbing proof (domain 6, formatting).
+
+- One static binary per platform, committed in `dist/`, installed via the
+  Claude Code marketplace; hooks and skills call a thin launcher.
+- Formatting via each ecosystem's canonical tool (gofmt, ruff, prettier,
+  rustfmt, clang-format, shfmt) with three honest verdicts: clean,
+  unformatted (formatted bytes handed to the agent), unchecked (said out
+  loud, never silent). The write hook hands the agent the formatted code and
+  never touches the file (P-CONTROL).
+
+Before 0.1.0 the project was a TypeScript analyzer engine; that history is in
+git. The design reset that produced the current harness is recorded in the
+design contract.

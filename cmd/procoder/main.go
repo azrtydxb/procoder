@@ -8,13 +8,16 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"procoder/internal/actions"
+	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/format"
 	"procoder/internal/gate"
 	"procoder/internal/gitcmd"
+	"procoder/internal/gitx"
 	"procoder/internal/hook"
 	"procoder/internal/initcmd"
 	"procoder/internal/tools"
@@ -28,8 +31,21 @@ func init() {
 		if entries, err := os.ReadDir(root + "/.github/workflows"); err == nil && len(entries) > 0 {
 			out = append(out, actions.Actionlint)
 		}
-		if raw, err := os.ReadFile(root + "/.git/config"); err == nil && strings.Contains(string(raw), "github.com") {
+		// asked of git itself, so worktrees (where .git is a file) answer too
+		if raw, err := exec.Command("git", "-C", root, "config", "--get", "remote.origin.url").Output(); err == nil && strings.Contains(string(raw), "github.com") {
 			out = append(out, actions.Gh)
+		}
+		if md := docs.MarkdownFiles(root); len(md) > 0 {
+			out = append(out, docs.Lychee)
+			for _, f := range md {
+				if raw, err := os.ReadFile(f); err == nil && strings.Contains(string(raw), "```mermaid") {
+					out = append(out, docs.Mmdc)
+					break
+				}
+			}
+		}
+		if _, err := os.Stat(root + "/mkdocs.yml"); err == nil {
+			out = append(out, docs.Mkdocs)
 		}
 		return out
 	}
@@ -55,6 +71,9 @@ const usage = `usage: procoder <command> [args]
   git                  the pre-finish status: branch vs default, hygiene
                        findings (conflict markers, junk, oversized), message
                        checks, workflow lint, template state
+  docs [--external]    the documentation report: broken references, diagrams,
+                       drift, API doc comments, required docs, badges, README
+                       structure; --external adds link checking and Pages health
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
   scrub <file|->       check text (a commit message, a drafted PR body) for
@@ -93,6 +112,11 @@ func run(args []string) int {
 		return initcmd.Run(doctor.Root(), execute, os.Stdout)
 	case "git":
 		return gitcmd.Status(doctor.Root(), os.Stdout)
+	case "docs":
+		external := len(args) > 1 && args[1] == "--external"
+		root := doctor.Root()
+		changed, _ := gitx.ChangedFiles(root)
+		return docs.Run(root, changed, external, os.Stdout)
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
 	case "scrub":

@@ -1,7 +1,37 @@
 # procoder
 
-A harness that gives AI coders the tools and skills to work like a senior
-developer.
+**Make your AI coder work like a senior developer** — real formatters, git
+discipline, documentation checks and merge gates, delivered as tools the agent
+runs itself and hooks it cannot skip. The agent stays in control; nothing ever
+touches your code behind its back.
+
+![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
+![Version](https://img.shields.io/badge/version-0.7.0-0e5563)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+
+## Quick start
+
+Install from the Claude Code plugin marketplace, then let it set itself up:
+
+```
+/plugin marketplace add azrtydxb/procoder
+/plugin install procoder
+/procoder:init          # installs the tools this repository needs
+```
+
+Every write is now checked in-turn, and the skills (`/procoder:check`,
+`/procoder:git`, `/procoder:pr`, `/procoder:merge`, `/procoder:docs`, …) give
+the agent a senior developer's routine.
+
+```mermaid
+flowchart LR
+    A[agent writes code] --> H[hook fires]
+    H --> B[procoder binary checks]
+    B -->|findings + fixed content| A2[agent reviews and implements]
+    A2 --> A
+```
+
+## How it works
 
 It acts in two modes, and both matter:
 
@@ -97,6 +127,27 @@ two Markdown templates under `.procoder/github/` —
 `COMMIT_TEMPLATE.md` (registered as `git config commit.template`). Plain
 files, made to be edited. `procoder templates` prints defaults for anything
 missing; the agent writes them.
+
+## Documentation (domain 5, v1)
+
+Documentation is treated as a product: correct, presentable, delivered.
+
+- **broken relative references** and **Mermaid diagrams that do not compile**
+  — block, in the gate and in-turn on every Markdown write
+- **external links** — verified by `procoder docs --external` and CI with
+  `lychee` (retries + cache); never skipped, never in the write hook
+- **doc drift** — change a file a doc mentions and the doc-map reports both
+  sides so the agent verifies the prose is still true
+- **API doc comments** — exported Go / public Python / exported TypeScript
+  symbols without docs are reported
+- **README structure and badges** — the first screen must sell the project:
+  USP one-liner, badges, quick start; `CHANGELOG.md` is required
+- **GitHub Pages** — the docs site is built by CI (MkDocs Material) and
+  `procoder docs --external` confirms Pages serves the latest build
+
+Rules live in `.procoder/docs/RULES.md` (with the shared Mermaid theme in
+`.procoder/docs/mermaid.json`) — plain files, repo-owned, they win over every
+built-in default.
 
 ## Implementation
 

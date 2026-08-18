@@ -12,8 +12,12 @@ import (
 	"strings"
 	"time"
 
+	"path/filepath"
+
 	"procoder/internal/actions"
+	"procoder/internal/docs"
 	"procoder/internal/format"
+	"procoder/internal/tools"
 )
 
 type payload struct {
@@ -75,6 +79,35 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 			msg += part
 		}
 	}
+	// Domain 5, same moment: a Markdown write gets its reference and diagram
+	// findings now; a code write gets the doc-map — which docs mention this
+	// file — so the prose is verified before the work is called done.
+	root := tools.RepoRoot(filepath.Dir(p.ToolInput.FilePath))
+	if docs.IsMarkdownFile(p.ToolInput.FilePath) {
+		if df := docs.CheckFile(root, p.ToolInput.FilePath); len(df) > 0 {
+			var b []string
+			for _, f := range df {
+				b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
+			}
+			part := fmt.Sprintf("procoder [docs]: %s has documentation problems — investigate and fix:\n%s",
+				p.ToolInput.FilePath, strings.Join(b, "\n"))
+			if msg != "" {
+				msg += "\n\n"
+			}
+			msg += part
+		}
+	} else if drift := docs.Drift(root, []string{p.ToolInput.FilePath}); len(drift) > 0 {
+		var b []string
+		for _, f := range drift {
+			b = append(b, "  "+f.File+": "+f.Message)
+		}
+		part := "procoder [docs]: documentation mentions the file you just changed — verify it is still true, update it if not:\n" + strings.Join(b, "\n")
+		if msg != "" {
+			msg += "\n\n"
+		}
+		msg += part
+	}
+
 	if msg == "" {
 		return 0
 	}

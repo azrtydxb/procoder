@@ -35,6 +35,15 @@ func TestWorkflowRulesArePrintedWhenMissingAndRespectedWhenPresent(t *testing.T)
 			t.Fatal(err)
 		}
 	}
+	docsDir := filepath.Join(root, ".procoder", "docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"RULES.md", "mermaid.json"} {
+		if err := os.WriteFile(filepath.Join(docsDir, name), []byte("mine\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	out.Reset()
 	Templates(root, &out)
