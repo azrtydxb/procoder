@@ -19,6 +19,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/format"
+	"procoder/internal/gitx"
 	"procoder/internal/lint"
 	"procoder/internal/tools"
 )
@@ -115,8 +116,16 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 			msg += part
 		}
 		// Domain 2: the file's canonical linter answers in the same turn —
-		// findings are diagnoses; the agent judges and fixes what is real
-		if lf := lint.Files(root, []string{p.ToolInput.FilePath}, config.Load(root).LintBlock); len(lf) > 0 {
+		// findings are diagnoses; the agent judges and fixes what is real.
+		// Tool-missing and out-of-scope notes (Line 0) stay OUT of the hook:
+		// nagging every write is noise; the gate and doctor report them once.
+		var lf []gitx.Finding
+		for _, f := range lint.Files(root, []string{p.ToolInput.FilePath}, config.Load(root).LintBlock) {
+			if f.Line > 0 {
+				lf = append(lf, f)
+			}
+		}
+		if len(lf) > 0 {
 			var b []string
 			for _, f := range lf {
 				b = append(b, fmt.Sprintf("  %s:%d: %s", f.File, f.Line, f.Message))
