@@ -20,6 +20,7 @@ func CollectOffline(root string, changed []string) []gitx.Finding {
 	}
 	out = append(out, Drift(root, changed)...)
 	out = append(out, MissingAPIDocs(changed)...)
+	out = append(out, VersionSync(root)...)
 	return out
 }
 
@@ -36,6 +37,7 @@ func Run(root string, changed []string, external bool, stdout io.Writer) int {
 	findings = append(findings, Drift(root, changed)...)
 	findings = append(findings, MissingAPIDocs(changed)...)
 	findings = append(findings, RequiredDocs(root, rules)...)
+	findings = append(findings, VersionSync(root)...)
 	findings = append(findings, Badges(root, rules)...)
 	findings = append(findings, ReadmeStructure(root, rules)...)
 	if external {
