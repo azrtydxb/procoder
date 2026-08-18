@@ -23,6 +23,7 @@ import (
 	"procoder/internal/hook"
 	"procoder/internal/initcmd"
 	"procoder/internal/lint"
+	"procoder/internal/maintain"
 	"procoder/internal/security"
 	"procoder/internal/tools"
 )
@@ -109,6 +110,9 @@ const usage = `usage: procoder <command> [args]
   git                  the pre-finish status: branch vs default, hygiene
                        findings (conflict markers, junk, oversized), message
                        checks, workflow lint, template state
+  maintain             the maintainability report: dead-code candidates from
+                       the index, complexity and function length — judgment
+                       calls, never blocking
   security [--deep]    secrets over the changed files (gitleaks — blocking);
                        --deep adds SAST (semgrep) and dependency vulns
                        (osv-scanner) over the whole repository
@@ -160,6 +164,8 @@ func run(args []string) int {
 		return initcmd.Run(doctor.Root(), execute, os.Stdout)
 	case "git":
 		return gitcmd.Status(doctor.Root(), os.Stdout)
+	case "maintain":
+		return maintain.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "security":
 		root := doctor.Root()
 		changed, _ := gitx.ChangedFiles(root)
