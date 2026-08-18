@@ -3,6 +3,7 @@ package actions
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -41,6 +42,7 @@ func TestMissingActionlintIsNotSilence(t *testing.T) {
 
 // A fake actionlint proves the output parser: file:line:col: message.
 func TestLintParsesFindings(t *testing.T) {
+	skipOnWindows(t)
 	bin := t.TempDir()
 	fake := "#!/bin/sh\n" +
 		"echo 'wf.yml:3:9: property \"runs-onn\" is not defined [syntax-check]'\n" +
@@ -61,6 +63,7 @@ func TestLintParsesFindings(t *testing.T) {
 
 // Exit non-zero with unparseable output is a failure, never a clean run.
 func TestFailureWithoutFindingsIsNotClean(t *testing.T) {
+	skipOnWindows(t)
 	bin := t.TempDir()
 	fake := "#!/bin/sh\necho 'panic: something broke' >&2\nexit 3\n"
 	if err := os.WriteFile(filepath.Join(bin, "actionlint"), []byte(fake), 0o755); err != nil {
@@ -76,5 +79,14 @@ func TestFailureWithoutFindingsIsNotClean(t *testing.T) {
 func TestNoWorkflowFilesNoWork(t *testing.T) {
 	if got := Lint(nil); got != nil {
 		t.Fatalf("no files should produce nothing, got %+v", got)
+	}
+}
+
+// Windows cannot execute the #!/bin/sh stubs these tests build their fake
+// tools from; the POSIX legs of the CI matrix carry this coverage.
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("sh-stub fixtures cannot run on Windows")
 	}
 }

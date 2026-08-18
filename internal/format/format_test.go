@@ -91,3 +91,22 @@ func TestCWithoutProjectConfigIsOutOfScope(t *testing.T) {
 		t.Fatalf("reason %q does not name the missing config", res.Reason)
 	}
 }
+
+// Caught by procoder's own dogfood CI: prettier "fixes" the commit template by
+// stripping its leading blank lines — the exact lines the commit editor opens
+// on for the author to type into. Functional whitespace is not unformatted.
+func TestCommitTemplateWhitespaceIsFunctionalNotUnformatted(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, ".procoder", "github")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := write(t, sub, "COMMIT_TEMPLATE.md", "\n\n# guide\n")
+	res := Check(p)
+	if res.Verdict != OutOfScope {
+		t.Fatalf("verdict = %v, want OutOfScope (reason %q)", res.Verdict, res.Reason)
+	}
+	if !strings.Contains(res.Reason, "functional") {
+		t.Fatalf("reason %q does not explain the whitespace is functional", res.Reason)
+	}
+}

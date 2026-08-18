@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"procoder/internal/tools"
@@ -54,6 +55,15 @@ func Check(file string) Result {
 	if tool == nil {
 		return Result{File: file, Verdict: OutOfScope,
 			Reason: "no formatter covers this file type"}
+	}
+
+	// The commit template's leading blank lines are the writing surface the
+	// commit editor opens on — prettier strips them, which would break the
+	// file's function. procoder's own dogfood CI caught this: the template is
+	// content with meaning in its whitespace, not prose to normalise.
+	if filepath.Base(filepath.Dir(file)) == "github" && filepath.Base(file) == "COMMIT_TEMPLATE.md" {
+		return Result{File: file, Verdict: OutOfScope,
+			Reason: "the commit template's leading blank lines are functional; formatting would remove them"}
 	}
 
 	src, err := os.ReadFile(file)
