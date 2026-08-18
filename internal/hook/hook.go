@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
+	"procoder/internal/actions"
 	"procoder/internal/format"
 )
 
@@ -56,6 +58,23 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 
 	res := format.Check(p.ToolInput.FilePath)
 	msg := message(res)
+
+	// A workflow file gets actionlint's findings as well — the write that
+	// introduced a broken workflow is the cheapest moment to hear about it.
+	if actions.IsWorkflowFile(p.ToolInput.FilePath) {
+		if lint := actions.Lint([]string{p.ToolInput.FilePath}); len(lint) > 0 {
+			var b []string
+			for _, f := range lint {
+				b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
+			}
+			part := fmt.Sprintf("procoder [actions]: %s has workflow problems (actionlint) — investigate and fix:\n%s",
+				p.ToolInput.FilePath, strings.Join(b, "\n"))
+			if msg != "" {
+				msg += "\n\n"
+			}
+			msg += part
+		}
+	}
 	if msg == "" {
 		return 0
 	}

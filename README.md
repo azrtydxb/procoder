@@ -25,10 +25,10 @@ level by level:
 3. Maintainability
 4. Performance
 5. Documentation
-6. **Clean code / readability / pretty** ← built first, as the plumbing proof
+6. **Clean code / readability / pretty** ← shipped (v1: formatting)
 7. CI / CD / CT
 8. DevOps / IaaS / CaaS / infrastructure and deployment
-9. GitOps / GitHub
+9. **GitOps / GitHub / Git Actions** ← shipped (v1)
 
 Domain 6 ships first because its formatter slice is deterministic — one
 canonical tool per ecosystem, zero false positives, the fix is the tool's own
@@ -38,14 +38,14 @@ the proven plumbing.
 
 ## What works today: formatting
 
-| language | formatter | project config honoured |
-|---|---|---|
-| Go | `gofmt` | gofmt is the config |
-| Python | `ruff format` | `pyproject.toml` / `ruff.toml` |
-| JS / TS / JSON / CSS / Markdown / YAML | `prettier` | `.prettierrc*`, `package.json` |
-| Rust | `rustfmt` | `rustfmt.toml` |
-| C / C++ | `clang-format` | `.clang-format` — **required**; without it the file is out of scope, because procoder imposes no style of its own |
-| Shell | `shfmt` | `.editorconfig` |
+| language                               | formatter      | project config honoured                                                                                           |
+| -------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Go                                     | `gofmt`        | gofmt is the config                                                                                               |
+| Python                                 | `ruff format`  | `pyproject.toml` / `ruff.toml`                                                                                    |
+| JS / TS / JSON / CSS / Markdown / YAML | `prettier`     | `.prettierrc*`, `package.json`                                                                                    |
+| Rust                                   | `rustfmt`      | `rustfmt.toml`                                                                                                    |
+| C / C++                                | `clang-format` | `.clang-format` — **required**; without it the file is out of scope, because procoder imposes no style of its own |
+| Shell                                  | `shfmt`        | `.editorconfig`                                                                                                   |
 
 Three honest verdicts, never collapsed into each other:
 
@@ -64,11 +64,39 @@ turn — with a note that the file itself was not touched.
 ### The skills
 
 - `/procoder:format [files]` — print the formatted result for review
-- `/procoder:check [paths]` — the commit gate: changed files must be
-  formatted; unchecked fails like unformatted; out-of-scope files are counted
-  out loud
-- `/procoder:doctor` — which formatters this repository needs, which are
-  installed, and the install command for each gap
+- `/procoder:check [paths]` — the commit gate: formatting plus git hygiene;
+  unchecked fails like unformatted; out-of-scope files are counted out loud
+- `/procoder:doctor` — which tools this repository needs, which are installed,
+  and the install command for each gap
+- `/procoder:init` — install the missing tools, every command visible
+- `/procoder:git` — the pre-finish status: branch vs default, hygiene,
+  message checks, workflow lint, template state
+- `/procoder:pr` — gate, real-diff summary, template filled, attribution
+  scrubbed, then `gh pr create` with everything shown first
+- `/procoder:merge` — every check green and every review thread (Copilot
+  included) fixed or answered before the merge — never over a red check
+
+## GitOps / GitHub (domain 9, v1)
+
+The gate's git slice, all deterministic:
+
+- **conflict markers** left in a changed file — blocks, names file and line
+- **junk files staged** (`.DS_Store`, `*.orig`, `*.rej`, …) — blocks
+- **oversized files** (default 5 MB, `.procoder/config.toml`) — blocks
+- **AI attribution in commit messages** (`Co-Authored-By: Claude`,
+  "generated with", the anthropic noreply) — **blocks**; the work is the
+  author's
+- **commit subject shape** (≤72 chars, blank line before body) — reported
+- **working on the default branch** — reported; a config switch makes it block
+- **GitHub Actions lint** — `actionlint` runs on every workflow file you
+  write, findings return in the same turn
+
+Everything procoder owns lives in **`.procoder/`**: `config.toml`, and the
+two Markdown templates under `.procoder/github/` —
+`PULL_REQUEST_TEMPLATE.md` (filled by `/procoder:pr`) and
+`COMMIT_TEMPLATE.md` (registered as `git config commit.template`). Plain
+files, made to be edited. `procoder templates` prints defaults for anything
+missing; the agent writes them.
 
 ## Implementation
 

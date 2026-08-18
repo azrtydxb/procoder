@@ -1,0 +1,11 @@
+# procoder configuration — every knob the harness reads lives here (D-HOME).
+
+[git]
+# What happens when work lands directly on the default branch:
+#   "report" (default) — the agent is told; branching stays its decision
+#   "block"            — the gate fails until the work moves to a branch
+default_branch_policy = "report"
+
+# Files larger than this (MB) block the gate — large artifacts belong in
+# releases or LFS, not in history.
+max_file_mb = 5

@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"procoder/internal/config"
 	"procoder/internal/format"
+	"procoder/internal/gitcmd"
 )
 
 // Run checks the given paths, or the repository's changed files when none are
@@ -52,8 +54,29 @@ func Run(paths []string, root string, stdout io.Writer) int {
 	for _, r := range unchecked {
 		fmt.Fprintf(stdout, "UNCHECKED    %s — %s\n", r.File, r.Reason)
 	}
-	fmt.Fprintf(stdout, "procoder format gate: %d clean, %d unformatted, %d unchecked, %d out of scope\n",
-		clean, len(unformatted), len(unchecked), skipped)
+
+	// Domain 9: git hygiene, workflow lint, message checks — same rules as
+	// `procoder git`, via the shared Collect, so the two cannot drift apart.
+	hygiene := gitcmd.Collect(root, config.Load(root), paths)
+	blockingHygiene := 0
+	for _, f := range hygiene {
+		mark := "info        "
+		if f.Blocking {
+			mark = "BLOCKING    "
+			blockingHygiene++
+		}
+		loc := ""
+		if f.File != "" {
+			loc = f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			loc = loc + "  "
+		}
+		fmt.Fprintf(stdout, "%s %s%s\n", mark, loc, f.Message)
+	}
+	fmt.Fprintf(stdout, "procoder gate: %d clean, %d unformatted, %d unchecked, %d out of scope, %d hygiene finding(s) (%d blocking)\n",
+		clean, len(unformatted), len(unchecked), skipped, len(hygiene), blockingHygiene)
 
 	// Unchecked fails the gate exactly like unformatted does: a file the gate
 	// could not look at is not a passing file.

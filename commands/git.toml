@@ -1,0 +1,22 @@
+description = "The pre-finish status: branch, hygiene findings, message checks, workflow lint, template state."
+prompt = """
+The user invoked /procoder:git.
+
+Run:
+
+    "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh" git
+
+Read the whole report and act on it:
+- BLOCK lines are yours to fix before the work is finished: remove conflict
+  markers, unstage junk files, deal with oversized files, amend any commit
+  message carrying an AI-attribution line (the work is the author's — never
+  add Co-Authored-By or "generated with" lines, here or anywhere).
+- info lines are judgment calls: address them or explain to the user why not.
+- If a template is missing, run `launcher.sh templates`, review the printed
+  content, write the files under .procoder/github/, and register the commit
+  template with the printed git config command.
+- Working on the default branch is information by default; if the user's flow
+  is branch-based, offer to create a branch.
+
+Finish by re-running the command and showing the user the clean report.
+"""

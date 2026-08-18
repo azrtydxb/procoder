@@ -1,0 +1,184 @@
+// Package gitcmd is `procoder git` — the one status a senior developer reads
+// before calling work finished — and `procoder templates`, which prints the
+// default template contents for the agent to write (P-CONTROL: the binary
+// creates no files).
+package gitcmd
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"procoder/internal/actions"
+	"procoder/internal/config"
+	"procoder/internal/gitx"
+)
+
+// Paths under D-HOME.
+const (
+	prTemplatePath     = ".procoder/github/PULL_REQUEST_TEMPLATE.md"
+	commitTemplatePath = ".procoder/github/COMMIT_TEMPLATE.md"
+)
+
+// Status prints the full picture and returns an exit code: non-zero when
+// anything blocking is present, so the skill can gate on it.
+func Status(root string, stdout io.Writer) int {
+	cfg := config.Load(root)
+
+	branch := gitx.CurrentBranch(root)
+	def := gitx.DefaultBranch(root)
+	fmt.Fprintf(stdout, "branch          %s (default: %s)\n", orDetached(branch), orUnknown(def))
+
+	changed, err := gitx.ChangedFiles(root)
+	if err != nil {
+		fmt.Fprintf(stdout, "changed files   cannot list (%v)\n", err)
+		return 2
+	}
+	fmt.Fprintf(stdout, "changed files   %d\n", len(changed))
+
+	fmt.Fprintf(stdout, "pr template     %s\n", presence(filepath.Join(root, prTemplatePath)))
+	fmt.Fprintf(stdout, "commit template %s, %s\n",
+		presence(filepath.Join(root, commitTemplatePath)), registered(root))
+
+	findings := Collect(root, cfg, changed)
+	blocking := 0
+	for _, f := range findings {
+		mark := "  info "
+		if f.Blocking {
+			mark = "  BLOCK"
+			blocking++
+		}
+		loc := ""
+		if f.File != "" {
+			loc = rel(root, f.File)
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			loc += "  "
+		}
+		fmt.Fprintf(stdout, "%s %s%s\n", mark, loc, f.Message)
+	}
+	if len(findings) == 0 {
+		fmt.Fprintln(stdout, "hygiene         clean")
+	}
+	if blocking > 0 {
+		fmt.Fprintf(stdout, "\n%d blocking finding(s)\n", blocking)
+		return 1
+	}
+	return 0
+}
+
+// Collect runs every domain-9 check over the changed set. Shared by Status and
+// the commit gate so the two can never disagree about what the rules are.
+func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
+	var out []gitx.Finding
+	out = append(out, gitx.ConflictMarkers(changed)...)
+	out = append(out, gitx.JunkFiles(changed)...)
+	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
+	out = append(out, gitx.OnDefaultBranch(root, cfg.BlockDefaultBranch)...)
+
+	msgs := gitx.UnpushedMessages(root)
+	out = append(out, gitx.Attribution(msgs)...)
+	out = append(out, gitx.SubjectShape(msgs)...)
+
+	var workflows []string
+	for _, f := range changed {
+		if actions.IsWorkflowFile(f) {
+			workflows = append(workflows, f)
+		}
+	}
+	out = append(out, actions.Lint(workflows)...)
+
+	// Missing templates are information, not a block: the fix is one
+	// `procoder templates` away and the finding says so.
+	if _, err := os.Stat(filepath.Join(root, prTemplatePath)); err != nil {
+		out = append(out, gitx.Finding{Message: prTemplatePath + " is missing — run `procoder templates` and write it"})
+	}
+	if _, err := os.Stat(filepath.Join(root, commitTemplatePath)); err != nil {
+		out = append(out, gitx.Finding{Message: commitTemplatePath + " is missing — run `procoder templates` and write it"})
+	}
+	return out
+}
+
+// Templates prints the default content for each template that is missing, so
+// the agent can review and write it, then register the commit template.
+func Templates(root string, stdout io.Writer) int {
+	printed := false
+	if _, err := os.Stat(filepath.Join(root, prTemplatePath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", prTemplatePath, PRTemplate)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, commitTemplatePath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", commitTemplatePath, CommitTemplate)
+		printed = true
+	}
+	if !printed {
+		fmt.Fprintln(stdout, "both templates exist")
+	}
+	fmt.Fprintf(stdout, "== then register the commit template (once per clone):\ngit config commit.template %s\n", commitTemplatePath)
+	return 0
+}
+
+// Scrub checks text (a drafted PR body, a commit message) for attribution
+// lines. Reads the named file, or stdin for "-".
+func Scrub(path string, stdin io.Reader, stdout io.Writer) int {
+	var data []byte
+	var err error
+	if path == "-" {
+		data, err = io.ReadAll(stdin)
+	} else {
+		data, err = os.ReadFile(path)
+	}
+	if err != nil {
+		fmt.Fprintf(stdout, "cannot read %s: %v\n", path, err)
+		return 2
+	}
+	findings := gitx.ScrubText(string(data))
+	for _, f := range findings {
+		fmt.Fprintln(stdout, f.Message)
+	}
+	if len(findings) > 0 {
+		return 1
+	}
+	fmt.Fprintln(stdout, "clean — no attribution lines")
+	return 0
+}
+
+func registered(root string) string {
+	out, err := exec.Command("git", "-C", root, "config", "commit.template").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		return "not registered (git config commit.template)"
+	}
+	return "registered: " + strings.TrimSpace(string(out))
+}
+
+func presence(path string) string {
+	if _, err := os.Stat(path); err != nil {
+		return "missing"
+	}
+	return "present"
+}
+
+func rel(root, f string) string {
+	if r, err := filepath.Rel(root, f); err == nil && !strings.HasPrefix(r, "..") {
+		return r
+	}
+	return f
+}
+
+func orDetached(s string) string {
+	if s == "" {
+		return "(detached)"
+	}
+	return s
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}

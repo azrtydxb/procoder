@@ -6,14 +6,14 @@ body:
     id: problem
     attributes:
       label: What's missing, and what does it cost you today?
-      description: The gap, not the solution yet — a rung procoder doesn't cover, a platform it doesn't reach, a workflow it gets in the way of.
+      description: The gap, not the solution yet — a domain procoder doesn't cover, a platform it doesn't reach, a workflow it gets in the way of.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed change
-      description: What you'd want procoder to do instead. If it's a new check, which rung (SAFE/TRUE/OBVIOUS/ALONE) and roughly what pattern.
+      description: What you'd want procoder to do instead. If it's a new check, which domain (security, formatting, git, ...) and roughly what it should catch.
     validations:
       required: true
   - type: textarea

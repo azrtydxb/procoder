@@ -3,52 +3,43 @@ on: [push, pull_request]
 jobs:
   test:
     strategy:
-      # A red leg must not hide the others. With fail-fast on, the first
-      # failure cancelled every other combination in the matrix, so for this
-      # project's whole history exactly one leg's result has ever been visible
-      # and "does this fail everywhere or only on macOS" was unanswerable — the
-      # single most useful thing a matrix is for.
+      # A red leg must not hide the others.
       fail-fast: false
       matrix:
-        # Node 18 went end-of-life in April 2025 and 20 in April 2026; runners
-        # have been dropping both. A leg that cannot be provisioned is not
-        # support, so the set is the two maintained lines plus the current LTS.
-        # `engines.node` in package.json says >=20 to match.
-        node-version: ['20', '22', '24']
-        os: [ubuntu-latest]
-        # One macOS leg, not three. macOS bills at 10x Linux and differs from it
-        # in almost nothing this code touches — but it is slower and noisier per
-        # core, and that is what exposed the budget defect no Ubuntu leg ever
-        # saw: a file at the cap cost 1794ms of a 2000ms budget, because the
-        # timeout formula encoded one fast machine's throughput. It is kept as
-        # the slow-host canary, on the current LTS only.
-        include:
-          - os: macos-latest
-            node-version: '24'
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # A ceiling on the job, on top of the per-test one in `npm test`. Both exist
-    # because of the same incident: a test blocked inside a syscall that never
-    # returns on Linux — mkdirSync under /proc — so every ubuntu leg ran until
-    # somebody noticed, four runs deep and three hours in, while macOS finished
-    # in forty seconds. A hung gate costs money and says nothing; a failed one
-    # says where to look. 15 minutes is ten times the suite's worst leg.
     timeout-minutes: 15
     steps:
-      # v5 of both: v4 runs on the Node 20 action runtime, which GitHub is
-      # force-migrating to Node 24, and a forced migration is a thing to do
-      # deliberately rather than be surprised by mid-week.
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          node-version: ${{ matrix.node-version }}
-      # Drift check runs first: it must judge the committed tree, never a tree
-      # some later step regenerated.
-      - name: Generated rule files must match the doctrine
-        run: npm run sync:check
-      # The gate applies to the gate — tests/dogfood.test.js runs procoder over
-      # the whole tracked tree and is part of this run. There used to be a
-      # separate `procoder check hooks bin scripts` step here; it was a second,
-      # narrower list of what the tool must pass, and two lists drift. Fix the
-      # source when the dogfood test fails; do not baseline procoder's own
-      # findings or widen a hold-out to cover them.
-      - run: npm test
+          go-version-file: go.mod
+      - name: gofmt is clean
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./cmd/... ./internal/...
+      - run: go test ./internal/...
+      - name: the binary builds
+        run: go build ./cmd/procoder
+
+  gate:
+    # procoder's own gate over its own tree: the dogfood job. Formatting
+    # gaps, git hygiene, and workflow lint all fail this leg.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install the tools the gate needs
+        run: |
+          go build -o /usr/local/bin/procoder ./cmd/procoder
+          sudo apt-get update -q && sudo apt-get install -y -q shfmt
+          npm install -g prettier
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+      - name: doctor
+        run: procoder doctor
+      - name: gate over the tracked tree
+        run: git ls-files | xargs procoder check

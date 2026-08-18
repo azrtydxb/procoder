@@ -18,6 +18,12 @@ import (
 	"procoder/internal/tools"
 )
 
+// ExtraTools are domain tools that are not extension-driven: actionlint is
+// needed when the repo has GitHub Actions workflows, gh when it talks to a
+// GitHub remote. Injected as a function so doctor stays free of an import
+// cycle with the packages that define them.
+var ExtraTools func(root string) []*tools.Tool
+
 // Directories never walked: not source, and node_modules alone can make the
 // walk take longer than every check combined.
 var skipDirs = map[string]bool{
@@ -46,6 +52,14 @@ func Run(root string, stdout io.Writer) int {
 			byTool[t.Name] = r
 		}
 		r.exts = append(r.exts, ext)
+	}
+
+	if ExtraTools != nil {
+		for _, t := range ExtraTools(root) {
+			if byTool[t.Name] == nil {
+				byTool[t.Name] = &row{tool: t, exts: []string{"(repo)"}}
+			}
+		}
 	}
 
 	names := make([]string, 0, len(byTool))
@@ -122,6 +136,11 @@ func RequiredTools(root string) []*tools.Tool {
 	seen := map[string]*tools.Tool{}
 	for ext := range ExtensionsIn(root) {
 		if t := tools.ByExtension[ext]; t != nil {
+			seen[t.Name] = t
+		}
+	}
+	if ExtraTools != nil {
+		for _, t := range ExtraTools(root) {
 			seen[t.Name] = t
 		}
 	}
