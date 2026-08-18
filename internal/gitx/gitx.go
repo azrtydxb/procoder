@@ -106,6 +106,7 @@ func UnpushedMessages(root string) []string {
 // the middle is.
 var conflictMarker = regexp.MustCompile(`(?m)^(<{7}( |$)|>{7}( |$))`)
 
+// ConflictMarkers finds merge-conflict markers left in changed files.
 func ConflictMarkers(files []string) []Finding {
 	var out []Finding
 	for _, f := range files {
@@ -122,17 +123,82 @@ func ConflictMarkers(files []string) []Finding {
 	return out
 }
 
-// Junk files that only ever land in a commit by accident.
-var junkNames = map[string]bool{".DS_Store": true, "Thumbs.db": true}
+// Junk: OS droppings, merge leftovers, caches, editor swap — the garbage a
+// senior developer never lets into history. Deliberate build artifacts a repo
+// ships on purpose (this repo's dist/ binaries) are NOT junk and NOT listed.
+var junkNames = map[string]bool{
+	".DS_Store": true, "Thumbs.db": true, "desktop.ini": true,
+	".lycheecache": true, "npm-debug.log": true, "yarn-error.log": true,
+}
 
+var junkExts = map[string]bool{
+	".orig": true, ".rej": true, ".pyc": true, ".pyo": true,
+	".swp": true, ".swo": true, ".tmp": true, ".log": true,
+}
+
+// junkDirs anywhere in the path mean the whole entry is cache, not source.
+var junkDirs = map[string]bool{
+	"__pycache__": true, "node_modules": true, ".venv": true, "venv": true,
+	".cache": true, ".pytest_cache": true, ".mypy_cache": true,
+	".ruff_cache": true, ".tox": true, ".gradle": true,
+}
+
+// JunkFiles flags staged garbage: OS droppings, caches, editor swap, logs.
 func JunkFiles(files []string) []Finding {
 	var out []Finding
 	for _, f := range files {
 		base := filepath.Base(f)
-		ext := filepath.Ext(base)
-		if junkNames[base] || ext == ".orig" || ext == ".rej" {
+		if junkNames[base] || junkExts[filepath.Ext(base)] || inJunkDir(f) {
 			out = append(out, Finding{File: f, Blocking: true,
-				Message: "junk file staged — this never belongs in a commit"})
+				Message: "junk file staged — caches and garbage never belong in a commit"})
+		}
+	}
+	return out
+}
+
+func inJunkDir(path string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if junkDirs[part] {
+			return true
+		}
+	}
+	return false
+}
+
+// gitignoreNeeds maps an ecosystem marker present in the repo to the ignore
+// entry its cache/artifact garbage requires. Reported, not blocked: the fix
+// is one line in .gitignore and the finding says which.
+var gitignoreNeeds = []struct{ marker, entry string }{
+	{"go.mod", "*.test"},
+	{"package.json", "node_modules"},
+	{"pyproject.toml", "__pycache__"},
+	{"requirements.txt", "__pycache__"},
+	{"Cargo.toml", "target"},
+	{"mkdocs.yml", "site"},
+}
+
+// IgnoreCoverage checks the repo has a .gitignore covering the garbage its
+// present ecosystems generate.
+func IgnoreCoverage(root string) []Finding {
+	var present []struct{ marker, entry string }
+	for _, n := range gitignoreNeeds {
+		if _, err := os.Stat(filepath.Join(root, n.marker)); err == nil {
+			present = append(present, n)
+		}
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		return []Finding{{Message: ".gitignore is missing — every repo ignores its garbage; add one covering the ecosystems present"}}
+	}
+	text := string(data)
+	var out []Finding
+	for _, n := range present {
+		if !strings.Contains(text, n.entry) {
+			out = append(out, Finding{File: filepath.Join(root, ".gitignore"),
+				Message: fmt.Sprintf(".gitignore has no %q entry, but %s is present — its garbage will end up staged", n.entry, n.marker)})
 		}
 	}
 	return out
@@ -155,6 +221,7 @@ func Oversized(files []string, maxMB int) []Finding {
 // the tool is noise at best and a policy violation at worst, and it BLOCKS.
 var attribution = regexp.MustCompile(`(?im)^[ \t]*co-authored-by:.*\b(claude|anthropic)\b|generated with.*\bclaude\b|noreply@anthropic\.com|🤖`)
 
+// Attribution finds AI-attribution lines in the given commit messages.
 func Attribution(messages []string) []Finding {
 	var out []Finding
 	for _, m := range messages {

@@ -3,3 +3,7 @@ node_modules/
 
 # Agent worktrees (scratch, never committed)
 .claude/worktrees/
+site/
+docs/changelog.md
+.lycheecache
+*.test

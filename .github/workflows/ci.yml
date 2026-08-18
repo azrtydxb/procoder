@@ -36,10 +36,49 @@ jobs:
         run: |
           go build -o /usr/local/bin/procoder ./cmd/procoder
           sudo apt-get update -q && sudo apt-get install -y -q shfmt
-          npm install -g prettier
+          npm install -g prettier @mermaid-js/mermaid-cli
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          pip install mkdocs-material
+          # extracted OUTSIDE the workspace: the tarball carries its own docs,
+          # and the docs report must only ever see this repository's files
+          curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /tmp
+          sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
+      - name: puppeteer config for mmdc on a runner
+        run: |
+          echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"]}" > /tmp/puppeteer.json
+          echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
       - name: doctor
         run: procoder doctor
       - name: gate over the tracked tree
         run: git ls-files | xargs procoder check
+      - name: documentation report, external links included
+        run: procoder docs --external
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  docs:
+    # Build and publish the documentation site — domain 5's delivery leg.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install mkdocs-material
+      - name: the changelog is one file, served twice
+        run: cp CHANGELOG.md docs/changelog.md
+      - run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment

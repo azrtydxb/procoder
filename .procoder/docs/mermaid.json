@@ -1,0 +1,11 @@
+{
+  "theme": "neutral",
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, system-ui, sans-serif",
+    "primaryColor": "#DCEAED",
+    "primaryBorderColor": "#0E5563",
+    "primaryTextColor": "#14181D",
+    "lineColor": "#4C555F",
+    "clusterBkg": "#F4F6F7"
+  }
+}

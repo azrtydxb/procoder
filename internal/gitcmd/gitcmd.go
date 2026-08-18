@@ -14,6 +14,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/config"
+	"procoder/internal/docs"
 	"procoder/internal/gitx"
 )
 
@@ -81,6 +82,7 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
 	out = append(out, gitx.OnDefaultBranch(root, cfg.BlockDefaultBranch)...)
+	out = append(out, gitx.IgnoreCoverage(root)...)
 
 	msgs := gitx.UnpushedMessages(root)
 	out = append(out, gitx.Attribution(msgs)...)
@@ -93,6 +95,10 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 		}
 	}
 	out = append(out, actions.Lint(workflows)...)
+
+	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
+	// and CI can never disagree about documentation health either.
+	out = append(out, docs.CollectOffline(root, changed)...)
 
 	// Missing templates are information, not a block: the fix is one
 	// `procoder templates` away and the finding says so.
@@ -122,6 +128,14 @@ func Templates(root string, stdout io.Writer) int {
 	}
 	if _, err := os.Stat(filepath.Join(root, workflowPath)); err != nil {
 		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", workflowPath, WorkflowTemplate)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, docs.RulesPath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", docs.RulesPath, docs.DefaultRules)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, docs.MermaidConfigPath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", docs.MermaidConfigPath, docs.DefaultMermaidConfig)
 		printed = true
 	}
 	if !printed {
