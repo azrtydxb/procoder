@@ -2,6 +2,21 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.9.0 — 2026-08-19
+
+Domain 2, best practices: the canonical linter per ecosystem.
+
+- `procoder lint` and `/procoder:lint`: golangci-lint (Go), ruff check
+  (Python), shellcheck (shell), eslint (JS/TS, only where the project
+  carries a config — procoder imposes no rules). The write hook lints the
+  file just written in-turn; the gate lints the changed set.
+- Report by default — lint is judgment, formatting was not; a repo opts
+  into blocking with `[lint] policy = "block"` in .procoder/config.toml.
+- Missing linters read as NOT checked, never clean; configless JS/TS is
+  labeled out of scope.
+- `/procoder:update`: update the plugin from the marketplace and verify
+  the new version by direct invocation.
+
 ## 0.8.2 — 2026-08-19
 
 - The README must carry the current version on its first screen — a

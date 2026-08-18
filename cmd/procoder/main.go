@@ -13,6 +13,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/codeindex"
+	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/format"
@@ -21,6 +22,7 @@ import (
 	"procoder/internal/gitx"
 	"procoder/internal/hook"
 	"procoder/internal/initcmd"
+	"procoder/internal/lint"
 	"procoder/internal/tools"
 )
 
@@ -47,6 +49,18 @@ func init() {
 		}
 		if _, err := os.Stat(root + "/mkdocs.yml"); err == nil {
 			out = append(out, docs.Mkdocs)
+		}
+		// domain 2: the canonical linters, by ecosystem presence; eslint only
+		// where the project carries a config (procoder imposes no rules)
+		exts := doctor.ExtensionsIn(root)
+		if _, err := os.Stat(root + "/go.mod"); err == nil {
+			out = append(out, lint.GolangciLint)
+		}
+		if exts[".sh"] {
+			out = append(out, lint.Shellcheck)
+		}
+		if lint.HasEslintConfig(root) {
+			out = append(out, lint.Eslint)
 		}
 		// the index: universal-ctags always (any code repo), the SCIP tools
 		// where the repository's language has an indexer
@@ -84,6 +98,9 @@ const usage = `usage: procoder <command> [args]
   git                  the pre-finish status: branch vs default, hygiene
                        findings (conflict markers, junk, oversized), message
                        checks, workflow lint, template state
+  lint [paths...]      the canonical linter per ecosystem over the changed
+                       files (or the given paths); report by default,
+                       blocking when [lint] policy = "block"
   docs [--external]    the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
                        structure; --external adds link checking and Pages health
@@ -129,6 +146,37 @@ func run(args []string) int {
 		return initcmd.Run(doctor.Root(), execute, os.Stdout)
 	case "git":
 		return gitcmd.Status(doctor.Root(), os.Stdout)
+	case "lint":
+		root := doctor.Root()
+		paths := args[1:]
+		if len(paths) == 0 {
+			changed, err := gitx.ChangedFiles(root)
+			if err != nil {
+				fmt.Println(err)
+				return 1
+			}
+			paths = changed
+		}
+		cfg := config.Load(root)
+		findings := lint.Files(root, paths, cfg.LintBlock)
+		blocking := 0
+		for _, f := range findings {
+			mark := "  info "
+			if f.Blocking {
+				mark = "  BLOCK"
+				blocking++
+			}
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, f.Line)
+			}
+			fmt.Printf("%s %s  %s\n", mark, loc, f.Message)
+		}
+		fmt.Printf("procoder lint: %d finding(s) (%d blocking)\n", len(findings), blocking)
+		if blocking > 0 {
+			return 1
+		}
+		return 0
 	case "docs":
 		external := len(args) > 1 && args[1] == "--external"
 		root := doctor.Root()

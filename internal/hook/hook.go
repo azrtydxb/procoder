@@ -16,8 +16,11 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/codeindex"
+	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/format"
+	"procoder/internal/gitx"
+	"procoder/internal/lint"
 	"procoder/internal/tools"
 )
 
@@ -100,16 +103,39 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 			}
 			msg += part
 		}
-	} else if drift := docs.Drift(root, []string{p.ToolInput.FilePath}); len(drift) > 0 {
-		var b []string
-		for _, f := range drift {
-			b = append(b, "  "+f.File+": "+f.Message)
+	} else {
+		if drift := docs.Drift(root, []string{p.ToolInput.FilePath}); len(drift) > 0 {
+			var b []string
+			for _, f := range drift {
+				b = append(b, "  "+f.File+": "+f.Message)
+			}
+			part := "procoder [docs]: documentation mentions the file you just changed — verify it is still true, update it if not:\n" + strings.Join(b, "\n")
+			if msg != "" {
+				msg += "\n\n"
+			}
+			msg += part
 		}
-		part := "procoder [docs]: documentation mentions the file you just changed — verify it is still true, update it if not:\n" + strings.Join(b, "\n")
-		if msg != "" {
-			msg += "\n\n"
+		// Domain 2: the file's canonical linter answers in the same turn —
+		// findings are diagnoses; the agent judges and fixes what is real.
+		// Tool-missing and out-of-scope notes (Line 0) stay OUT of the hook:
+		// nagging every write is noise; the gate and doctor report them once.
+		var lf []gitx.Finding
+		for _, f := range lint.Files(root, []string{p.ToolInput.FilePath}, config.Load(root).LintBlock) {
+			if f.Line > 0 {
+				lf = append(lf, f)
+			}
 		}
-		msg += part
+		if len(lf) > 0 {
+			var b []string
+			for _, f := range lf {
+				b = append(b, fmt.Sprintf("  %s:%d: %s", f.File, f.Line, f.Message))
+			}
+			part := "procoder [lint]: findings in the file you just wrote — investigate, judge, and fix what is real:\n" + strings.Join(b, "\n")
+			if msg != "" {
+				msg += "\n\n"
+			}
+			msg += part
+		}
 	}
 
 	if msg == "" {

@@ -21,6 +21,10 @@ type Config struct {
 	BlockDefaultBranch bool
 	// MaxFileMB is the oversized-file threshold for the gate.
 	MaxFileMB int
+	// LintBlock: lint findings block the gate instead of being reported.
+	LintBlock bool
+	// PinActions: unpinned GitHub Action refs block instead of being reported.
+	PinActions bool
 }
 
 // Defaults per the design contract.
@@ -58,6 +62,10 @@ func Load(root string) Config {
 		switch key {
 		case "git.default_branch_policy":
 			cfg.BlockDefaultBranch = value == "block"
+		case "lint.policy":
+			cfg.LintBlock = value == "block"
+		case "ci.pin_actions_policy":
+			cfg.PinActions = value == "block"
 		case "git.max_file_mb":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.MaxFileMB = n

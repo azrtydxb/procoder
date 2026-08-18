@@ -1,0 +1,12 @@
+version: "2"
+# The project's own lint config — procoder's lint domain honours it, exactly
+# as it honours any repo's. Print calls to stdout/stderr conventionally
+# ignore their error returns; checking them everywhere is churn, not safety.
+linters:
+  exclusions:
+    rules:
+      - linters: [errcheck]
+        text: "Fprint|os.WriteFile|\\.Run\\b"
+        path: _test\.go$
+      - linters: [errcheck]
+        text: "Fprint"
