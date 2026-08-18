@@ -1,6 +1,0 @@
-description = "Show procoder's rungs, levels, and commands."
-prompt = """
-Use the procoder:help skill to show: the six rungs and what each one gates,
-the three levels, and the full command list. Keep it to one screen — a table
-for the rungs, a table for the commands. No prose beyond one line per row.
-"""

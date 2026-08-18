@@ -1,0 +1,168 @@
+// Package tools is the formatter registry: which tool answers for which file
+// type, how to ask it for a formatted result, and what its absence means.
+//
+// One shape for every tool, and it is the shape that keeps P-CONTROL honest:
+// the tool is always invoked so that it PRINTS the formatted result instead of
+// touching the file. procoder compares that output with the file's bytes; a
+// difference means "unformatted", and the formatted bytes are already in hand
+// to give to the agent. No temp files, no in-place writes, one code path.
+package tools
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// Tool is one formatter.
+type Tool struct {
+	// Name is the binary looked up on PATH (or node_modules/.bin, see Resolve).
+	Name string
+	// Args builds the argv (after the binary) that makes the tool print the
+	// formatted content of file to stdout without modifying anything.
+	Args func(file string) []string
+	// Stdin is true when the tool reads the source from stdin instead of
+	// opening the file itself.
+	Stdin bool
+	// NeedsProjectConfig names a config file that must exist somewhere above
+	// the target for this tool to run. Empty means the tool's defaults are the
+	// canonical style (gofmt) or the tool falls back to sane defaults the
+	// project can override (prettier, ruff). clang-format is the exception:
+	// without a project .clang-format procoder would be imposing LLVM style,
+	// which violates "the project's own config always wins" — so no config
+	// means the file is out of scope, counted and said, never silently clean.
+	NeedsProjectConfig string
+	// Install is the one-line answer doctor gives when the tool is missing.
+	Install string
+	// VersionArgs asks the tool its version, for doctor.
+	VersionArgs []string
+}
+
+// ByExtension maps a file extension (lowercase, with dot) to its formatter.
+// A file whose extension is absent here is OUT OF SCOPE for the formatting
+// domain — skipped and counted, which is different from checked-and-clean.
+var ByExtension = map[string]*Tool{}
+
+var (
+	gofmt = &Tool{
+		Name:        "gofmt",
+		Args:        func(f string) []string { return []string{f} },
+		Install:     "gofmt ships with Go: https://go.dev/dl",
+		VersionArgs: nil, // gofmt has no --version; presence is the check
+	}
+	ruff = &Tool{
+		Name: "ruff",
+		// stdin keeps ruff from needing write access anywhere; --stdin-filename
+		// lets it resolve the project's own pyproject/ruff config for the file.
+		Args:        func(f string) []string { return []string{"format", "--stdin-filename", f, "-"} },
+		Stdin:       true,
+		Install:     "brew install ruff   (or: pipx install ruff)",
+		VersionArgs: []string{"--version"},
+	}
+	prettier = &Tool{
+		Name:        "prettier",
+		Args:        func(f string) []string { return []string{f} },
+		Install:     "npm i -D prettier   (or: brew install prettier)",
+		VersionArgs: []string{"--version"},
+	}
+	rustfmt = &Tool{
+		Name:        "rustfmt",
+		Args:        func(f string) []string { return nil }, // stdin -> stdout
+		Stdin:       true,
+		Install:     "rustup component add rustfmt",
+		VersionArgs: []string{"--version"},
+	}
+	clangFormat = &Tool{
+		Name:               "clang-format",
+		Args:               func(f string) []string { return []string{"--style=file", f} },
+		NeedsProjectConfig: ".clang-format",
+		Install:            "brew install clang-format   (or: apt install clang-format)",
+		VersionArgs:        []string{"--version"},
+	}
+	shfmt = &Tool{
+		Name:        "shfmt",
+		Args:        func(f string) []string { return []string{f} },
+		Install:     "brew install shfmt",
+		VersionArgs: []string{"--version"},
+	}
+)
+
+func init() {
+	reg := func(t *Tool, exts ...string) {
+		for _, e := range exts {
+			ByExtension[e] = t
+		}
+	}
+	reg(gofmt, ".go")
+	reg(ruff, ".py", ".pyi")
+	reg(prettier, ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
+		".json", ".css", ".scss", ".md", ".yaml", ".yml", ".html")
+	reg(rustfmt, ".rs")
+	reg(clangFormat, ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp")
+	reg(shfmt, ".sh", ".bash")
+}
+
+// ForFile returns the formatter for a path, or nil when the file type is out
+// of the domain's scope.
+func ForFile(path string) *Tool {
+	return ByExtension[strings.ToLower(filepath.Ext(path))]
+}
+
+// Resolve finds the tool's binary: the project's own node_modules/.bin first
+// (the version a JS project pinned is the version its config was written
+// against), then PATH. Empty string means not installed.
+func Resolve(t *Tool, repoRoot string) string {
+	if repoRoot != "" {
+		local := filepath.Join(repoRoot, "node_modules", ".bin", t.Name)
+		if runnable(local) {
+			return local
+		}
+	}
+	p, err := exec.LookPath(t.Name)
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
+func runnable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// HasProjectConfig walks from the file's directory to the filesystem root
+// looking for the config file the tool requires. Tools with no requirement
+// always pass.
+func HasProjectConfig(t *Tool, file string) bool {
+	if t.NeedsProjectConfig == "" {
+		return true
+	}
+	dir := filepath.Dir(file)
+	for {
+		if runnable(filepath.Join(dir, t.NeedsProjectConfig)) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
+}
+
+// RepoRoot walks upward from dir to the directory holding .git, or returns
+// dir unchanged when there is none — every caller degrades gracefully.
+func RepoRoot(dir string) string {
+	d := dir
+	for {
+		if info, err := os.Stat(filepath.Join(d, ".git")); err == nil && info.IsDir() {
+			return d
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return dir
+		}
+		d = parent
+	}
+}

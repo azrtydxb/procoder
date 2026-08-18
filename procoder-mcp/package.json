@@ -1,8 +1,0 @@
-{
-  "name": "procoder-mcp",
-  "version": "0.2.0",
-  "description": "MCP server exposing procoder's six-rung ship gate.",
-  "license": "Apache-2.0",
-  "bin": { "procoder-mcp": "./server.js" },
-  "files": ["server.js"]
-}

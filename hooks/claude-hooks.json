@@ -1,51 +1,14 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-activate.js\"",
-            "timeout": 5,
-            "statusMessage": "Loading procoder doctrine..."
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-subagent.js\"",
-            "timeout": 5,
-            "statusMessage": "Loading procoder doctrine..."
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-mode-tracker.js\"",
-            "timeout": 5,
-            "statusMessage": "Tracking procoder level..."
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/procoder-check.js\"",
-            "timeout": 5,
-            "statusMessage": "procoder check..."
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh\" hook post-tool-use",
+            "timeout": 60,
+            "statusMessage": "procoder format check..."
           }
         ]
       }

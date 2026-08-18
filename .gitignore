@@ -1,7 +1,5 @@
 node_modules/
-.procoder-baseline.json
 *.log
-hooks/checks/dogfood-canary.js
 
 # Agent worktrees (scratch, never committed)
 .claude/worktrees/

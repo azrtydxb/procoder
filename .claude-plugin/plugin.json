@@ -1,7 +1,7 @@
 {
   "name": "procoder",
-  "version": "0.2.0",
-  "description": "Ship gate for AI-written code. Six rungs — SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT — enforced every response: security at trust boundaries, handled errors, readable code, and nothing stale left behind.",
+  "version": "0.3.0",
+  "description": "A harness that gives AI coders the tools and skills to work like a senior developer. Domain 1 of 9: formatting — the write hook hands the agent the cleanly formatted code; the agent reviews and writes it.",
   "author": { "name": "Pascal Watteel" },
   "license": "Apache-2.0",
   "hooks": "./hooks/claude-hooks.json"
