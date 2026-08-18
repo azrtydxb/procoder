@@ -149,6 +149,24 @@ Rules live in `.procoder/docs/RULES.md` (with the shared Mermaid theme in
 `.procoder/docs/mermaid.json`) — plain files, repo-owned, they win over every
 built-in default.
 
+## The code index
+
+The shared layer under the domains, and the agent's fast map of the code:
+
+```
+procoder index build            # both tiers: universal-ctags + SCIP
+procoder index find <symbol>    # where it's defined
+procoder index search <text>    # fuzzy symbol search
+procoder index refs <symbol>    # every reference — precise or textual, labeled
+procoder index outline <file>   # a file's symbols in order
+procoder index impact           # the blast radius of your working-tree change
+procoder index stats            # what's indexed, and staleness said out loud
+```
+
+The index lives in `.procoder/index/` (gitignored — derived, per-machine),
+the write hook keeps it current, and future domains (best practices,
+security) read the same files.
+
 ## Implementation
 
 One Go binary (`cmd/procoder`), no runtime dependencies, cross-compiled per

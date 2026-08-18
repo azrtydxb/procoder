@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"procoder/internal/actions"
+	"procoder/internal/codeindex"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/format"
@@ -47,6 +48,18 @@ func init() {
 		if _, err := os.Stat(root + "/mkdocs.yml"); err == nil {
 			out = append(out, docs.Mkdocs)
 		}
+		// the index: universal-ctags always (any code repo), the SCIP tools
+		// where the repository's language has an indexer
+		out = append(out, codeindex.Ctags)
+		if _, err := os.Stat(root + "/go.mod"); err == nil {
+			out = append(out, codeindex.ScipGo, codeindex.ScipCLI)
+		}
+		if _, err := os.Stat(root + "/tsconfig.json"); err == nil {
+			out = append(out, codeindex.ScipTypescript, codeindex.ScipCLI)
+		}
+		if _, err := os.Stat(root + "/pyproject.toml"); err == nil {
+			out = append(out, codeindex.ScipPython, codeindex.ScipCLI)
+		}
 		return out
 	}
 }
@@ -74,6 +87,9 @@ const usage = `usage: procoder <command> [args]
   docs [--external]    the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
                        structure; --external adds link checking and Pages health
+  index <sub> [arg]    the code index (built from universal-ctags + SCIP):
+                       build | find <symbol> | search <text> | refs <symbol> |
+                       outline <file> | impact | stats
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
   scrub <file|->       check text (a commit message, a drafted PR body) for
@@ -117,6 +133,12 @@ func run(args []string) int {
 		root := doctor.Root()
 		changed, _ := gitx.ChangedFiles(root)
 		return docs.Run(root, changed, external, os.Stdout)
+	case "index":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return indexCmd(args[1:])
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
 	case "scrub":
@@ -128,6 +150,48 @@ func run(args []string) int {
 	case "version":
 		fmt.Println(version)
 		return 0
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// indexCmd dispatches the index subcommands; every query prints through one
+// line-writer so output stays uniform.
+func indexCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	switch args[0] {
+	case "build":
+		if err := codeindex.Build(root, out); err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		return 0
+	case "find", "search", "refs", "outline":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		switch args[0] {
+		case "find":
+			return codeindex.Find(root, args[1], out)
+		case "search":
+			return codeindex.Search(root, args[1], out)
+		case "refs":
+			return codeindex.Refs(root, args[1], out)
+		default:
+			return codeindex.Outline(root, args[1], out)
+		}
+	case "impact":
+		changed, err := gitx.ChangedFiles(root)
+		if err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		return codeindex.Impact(root, changed, out)
+	case "stats":
+		return codeindex.Stats(root, out)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2

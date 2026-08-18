@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 
 	"procoder/internal/actions"
+	"procoder/internal/codeindex"
 	"procoder/internal/docs"
 	"procoder/internal/format"
 	"procoder/internal/tools"
@@ -83,6 +84,9 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 	// findings now; a code write gets the doc-map — which docs mention this
 	// file — so the prose is verified before the work is called done.
 	root := tools.RepoRoot(filepath.Dir(p.ToolInput.FilePath))
+	// keep the code index current for the file just written — maintenance of
+	// procoder-owned derived state, only when an index already exists
+	codeindex.Refresh(root, p.ToolInput.FilePath)
 	if docs.IsMarkdownFile(p.ToolInput.FilePath) {
 		if df := docs.CheckFile(root, p.ToolInput.FilePath); len(df) > 0 {
 			var b []string
