@@ -16,7 +16,9 @@ func TestSecretIsBlockingAndNeverEchoed(t *testing.T) {
 		t.Skip("gitleaks not installed; the not-checked path is tested below")
 	}
 	root := t.TempDir()
-	token := "ghp_x9J2mQ8vLpZ4tR7nW3kY6bC1dF5gH0aSeD"
+	// assembled at runtime so no scanner ever matches this SOURCE file —
+	// the written fixture file is what must be caught
+	token := "ghp_" + "x9J2mQ8v" + "LpZ4tR7n" + "W3kY6bC1" + "dF5gH0aSeD"
 	f := filepath.Join(root, "cfg.py")
 	os.WriteFile(f, []byte("token = \""+token+"\"\n"), 0o644)
 
