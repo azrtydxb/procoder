@@ -68,7 +68,7 @@ func TestGoFailThenPass(t *testing.T) {
 	requireGo(t)
 	root := goFixture(t, true)
 	out, lines := collect()
-	if code := Report(Run(root, nil, false), out); code != 1 {
+	if code := Report(Run(root, nil, false, ""), out); code != 1 {
 		t.Fatalf("a failing package must exit 1, got %d:\n%s", code, strings.Join(*lines, "\n"))
 	}
 	if !strings.Contains(strings.Join(*lines, "\n"), "TestAlwaysRed") {
@@ -78,14 +78,14 @@ func TestGoFailThenPass(t *testing.T) {
 	// fix the failure; the same command must go green
 	write(t, root, "broken/broken_test.go", strings.Replace(failingTest, "t.Fatal(\"deliberately red\")", "_ = t", 1))
 	out2, lines2 := collect()
-	if code := Report(Run(root, nil, false), out2); code != 0 {
+	if code := Report(Run(root, nil, false, ""), out2); code != 0 {
 		t.Fatalf("after the fix the suite must pass, got %d:\n%s", code, strings.Join(*lines2, "\n"))
 	}
 }
 
 func TestNoSetupIsNotRun(t *testing.T) {
 	out, lines := collect()
-	if code := Report(Run(t.TempDir(), nil, false), out); code != 2 {
+	if code := Report(Run(t.TempDir(), nil, false, ""), out); code != 2 {
 		t.Fatalf("no test setup must exit 2, got %d: %v", code, *lines)
 	}
 	if !strings.Contains(strings.Join(*lines, "\n"), "NOT run") {
@@ -96,7 +96,7 @@ func TestNoSetupIsNotRun(t *testing.T) {
 func TestGoCoverageIsReported(t *testing.T) {
 	requireGo(t)
 	root := goFixture(t, false)
-	results := Run(root, nil, true)
+	results := Run(root, nil, true, "")
 	if len(results) != 1 || results[0].Coverage < 0 {
 		t.Fatalf("go coverage must be measured: %+v", results)
 	}
@@ -105,7 +105,7 @@ func TestGoCoverageIsReported(t *testing.T) {
 func TestJSWithoutTestScriptIsNotRunNotFail(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "package.json", `{"name":"x","scripts":{"test":"echo \"Error: no test specified\" && exit 1"}}`)
-	results := Run(root, nil, false)
+	results := Run(root, nil, false, "")
 	if len(results) != 1 || results[0].Verdict != NotRun {
 		t.Fatalf("the npm placeholder is no test script — must be NOT run: %+v", results)
 	}
@@ -119,7 +119,7 @@ func TestDualEcosystemReportsSeparately(t *testing.T) {
 	root := goFixture(t, false)
 	write(t, root, "package.json", `{"name":"x","scripts":{"test":"node -e \"process.exit(0)\""}}`)
 	write(t, root, "package-lock.json", "{}")
-	results := Run(root, nil, false)
+	results := Run(root, nil, false, "")
 	if len(results) != 2 {
 		t.Fatalf("both ecosystems must run: %+v", results)
 	}

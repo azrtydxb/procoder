@@ -19,10 +19,10 @@ import (
 // check reads it.
 var Commands = []string{
 	"adr", "agents", "audit", "backlog", "bench", "check", "ci", "debt",
-	"deps", "docs", "doctor",
+	"deps", "docs", "doctor", "env",
 	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
-	"maintain", "plan", "principles", "release", "scrub", "security", "spec",
-	"sprint", "templates", "test", "todo", "version",
+	"maintain", "plan", "principles", "release", "run", "scrub", "security", "spec",
+	"sprint", "status", "templates", "test", "todo", "version",
 }
 
 // surfaceCoverageCap is how many undocumented symbols are worth listing; past

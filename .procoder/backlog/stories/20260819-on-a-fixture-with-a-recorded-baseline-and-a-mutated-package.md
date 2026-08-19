@@ -1,11 +1,13 @@
 # On a fixture with a recorded baseline and a mutated package-lock.json, `procoder env` names package-lock.json and prints `npm ci`, exiting 0.
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Epic: sync-awareness
-Sprint: -
+Sprint: 004-the-loop-single-test-run-status-handoff-env-and-ci
 
 ## Description
+
+Digest drift names the install command.
 
 <!-- The user story: who needs what, and why. What "done" looks like in
      the reader's terms — a title is not a description. -->
@@ -15,9 +17,11 @@ Sprint: -
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] On a fixture with a recorded baseline and a mutated package-lock.json, `procoder env` names package-lock.json and prints `npm ci`, exiting 0.
+- [x] On a fixture with a recorded baseline and a mutated package-lock.json, `procoder env` names package-lock.json and prints `npm ci`, exiting 0.
 
 ## Evidence
+
+- TestChangedLockfileNamesItAndItsInstallCommand.
 
 <!-- Filled at close time: the commands run and what their output proved,
      one line per criterion. Empty evidence keeps the story open. -->

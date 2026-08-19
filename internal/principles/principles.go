@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"procoder/internal/host"
+	"procoder/internal/status"
 )
 
 // File is the repo override path, under D-HOME.
@@ -150,11 +151,27 @@ func Effective(root string) (string, bool) {
 	return Default, false
 }
 
+// hookText is what a session opens with: how to build here, then where the
+// project actually stands. The state block goes AFTER the principles — the
+// principles are constant, the state is today's, and the last thing read is
+// the thing acted on. status.Report carries its own 3-second budget, so a
+// slow repository costs the session a note, never a wait.
+func hookText(root string) string {
+	text, _ := Effective(root)
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(text, "\n"))
+	b.WriteString("\n\n" + status.Header + "\n")
+	for _, line := range status.Report(root) {
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
 // RunHook prints the principles in the shape the running host's
 // SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
 // and Qoder each want a JSON envelope. One hooks file serves them all.
 func RunHook(root string, out func(string)) int {
-	text, _ := Effective(root)
+	text := hookText(root)
 	switch h := host.Detect(); h {
 	case host.Claude:
 		out(strings.TrimRight(text, "\n"))
