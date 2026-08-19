@@ -236,5 +236,17 @@ func slugify(title string) string {
 			b.WriteByte('-')
 		}
 	}
-	return strings.Trim(b.String(), "-")
+	slug := strings.Trim(b.String(), "-")
+	// Windows caps full paths at 260 characters and CI checkouts sit deep
+	// in D:\a\...; a slug born from a whole sentence (a seeded acceptance
+	// criterion) must not push a file past that. Cut at a word boundary.
+	const maxSlug = 60
+	if len(slug) > maxSlug {
+		cut := slug[:maxSlug]
+		if i := strings.LastIndexByte(cut, '-'); i > 40 {
+			cut = cut[:i]
+		}
+		slug = strings.Trim(cut, "-")
+	}
+	return slug
 }

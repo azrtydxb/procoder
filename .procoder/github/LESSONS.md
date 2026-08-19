@@ -86,3 +86,14 @@ does. `procoder lessons` flags entries with no adaptation.
 - Adaptation: REVIEW.md rubric line "paths in OUTPUT built with
   filepath.Join"; every backlog print site is ToSlash, pinned by the
   package tests running on the Windows CI leg
+
+## 2026-08-19 PR#34 (CI windows leg) — seeded story filenames exceeded Windows' path limit
+
+- Class: mechanical
+- Missed by: test (and by me: the first failure was misdiagnosed as a
+  checkout flake and rerun instead of read — an 11-second failure is a
+  checkout failure, and checkout failures have causes)
+- Adaptation: slugify caps at 60 characters at a word boundary in every
+  domain that names files from titles (backlog, todo, adr), pinned by
+  TestSlugifyCapsLongTitles in each; existing over-long story files
+  renamed with references updated

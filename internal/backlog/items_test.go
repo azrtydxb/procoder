@@ -121,3 +121,19 @@ func TestItemFileGuardsTraversal(t *testing.T) {
 		}
 	}
 }
+
+// Story ids are born from whole acceptance criteria; uncapped they blow
+// past Windows' 260-character path limit on CI checkouts.
+func TestSlugifyCapsLongTitles(t *testing.T) {
+	long := strings.Repeat("very long words about acceptance ", 8)
+	slug := slugify(long)
+	if len(slug) > 60 {
+		t.Fatalf("slug must be capped at 60 chars, got %d: %q", len(slug), slug)
+	}
+	if strings.HasSuffix(slug, "-") || !strings.Contains(slug, "very-long") {
+		t.Fatalf("cap must cut at a word boundary and keep the head: %q", slug)
+	}
+	if slugify("short title") != "short-title" {
+		t.Fatal("short slugs must pass through untouched")
+	}
+}

@@ -199,3 +199,11 @@ func TestCloseWithSuiteVerdict(t *testing.T) {
 		t.Fatalf("a green suite must close: exit %d %v", code, *lines2)
 	}
 }
+
+// The same Windows path-length cap as the backlog's slugs.
+func TestSlugifyCapsLongTitles(t *testing.T) {
+	slug := slugify(strings.Repeat("endless title words ", 10))
+	if len(slug) > 60 || strings.HasSuffix(slug, "-") {
+		t.Fatalf("slug must be capped at a word boundary under 60 chars: %q (%d)", slug, len(slug))
+	}
+}
