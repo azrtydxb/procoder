@@ -35,6 +35,22 @@ func commit(t *testing.T, dir, msg string) {
 	}
 }
 
+// FilesUnder scopes to the directory and honours gitignore — the set a
+// directory argument to `procoder lint` expands into.
+func TestFilesUnderScopesAndHonoursGitignore(t *testing.T) {
+	dir := repo(t)
+	os.MkdirAll(filepath.Join(dir, "web", "node_modules"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules/\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "web", "app.js"), []byte("x\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "web", "node_modules", "dep.js"), []byte("x\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "top.js"), []byte("x\n"), 0o644)
+
+	got := FilesUnder(dir, "web")
+	if len(got) != 1 || got[0] != filepath.Join(dir, "web", "app.js") {
+		t.Fatalf("want only web/app.js (untracked in, gitignored and out-of-dir excluded), got %v", got)
+	}
+}
+
 func TestConflictMarkersAreFoundWithLineNumbers(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.txt")

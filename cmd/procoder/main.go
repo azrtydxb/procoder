@@ -358,6 +358,22 @@ func run(args []string) int {
 				return 1
 			}
 			paths = changed
+		} else {
+			// a directory argument means its files — lint switches on file
+			// extension, so an unexpanded directory would silently lint nothing
+			var expanded []string
+			for _, p := range paths {
+				abs := p
+				if !filepath.IsAbs(abs) {
+					abs = filepath.Join(root, abs)
+				}
+				if info, err := os.Stat(abs); err == nil && info.IsDir() {
+					expanded = append(expanded, gitx.FilesUnder(root, p)...)
+				} else {
+					expanded = append(expanded, p)
+				}
+			}
+			paths = expanded
 		}
 		cfg := config.Load(root)
 		findings := lint.Files(root, paths, cfg.LintBlock)
