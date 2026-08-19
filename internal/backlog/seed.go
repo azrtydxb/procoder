@@ -70,7 +70,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 	}
 	extra += "\nSpec: " + specName + " @ " + fingerprint(raw)
 	epic := fmt.Sprintf(epicTemplate, specName, now, extra) +
-		"\nSeeded from " + filepath.Join(spec.Dir, specName+".md") + " — one story per acceptance criterion.\n"
+		"\nSeeded from " + filepath.ToSlash(filepath.Join(spec.Dir, specName+".md")) + " — one story per acceptance criterion.\n"
 	out("== write this to " + epicRel + ":")
 	out(epic)
 

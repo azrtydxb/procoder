@@ -169,7 +169,7 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 	if !strings.Contains(joined, "Milestone: v1") {
 		t.Fatalf("epic must carry the milestone:\n%s", joined)
 	}
-	if !strings.Contains(joined, "Seeded from "+filepath.Join(spec.Dir, "auth.md")) {
+	if !strings.Contains(joined, "Seeded from "+filepath.ToSlash(filepath.Join(spec.Dir, "auth.md"))) {
 		t.Fatalf("epic description must note its origin:\n%s", joined)
 	}
 
@@ -183,7 +183,7 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 	}
 	date := time.Now().UTC().Format("20060102")
 	for _, want := range []string{
-		filepath.Join(Dir, KindStory, date+"-login-accepts-a-valid-token-and-rejects-an-expired-one.md"),
+		filepath.ToSlash(filepath.Join(Dir, KindStory, date+"-login-accepts-a-valid-token-and-rejects-an-expired-one.md")),
 		"- [ ] logout clears the session cookie on every platform",
 		"- [ ] the audit log records each login with a UTC timestamp",
 	} {
@@ -207,7 +207,7 @@ func TestSeedRefusesExistingEpic(t *testing.T) {
 	if code := Seed(root, "auth", "", out); code != 2 {
 		t.Fatalf("existing epic must refuse with exit 2, got %d: %v", code, *lines)
 	}
-	if !strings.Contains(strings.Join(*lines, "\n"), filepath.Join(Dir, KindEpic, "auth.md")) {
+	if !strings.Contains(strings.Join(*lines, "\n"), filepath.ToSlash(filepath.Join(Dir, KindEpic, "auth.md"))) {
 		t.Fatalf("refusal must name the existing epic file: %v", *lines)
 	}
 }
