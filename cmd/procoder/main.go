@@ -150,79 +150,79 @@ var version = "dev"
 
 const usage = `usage: procoder <command> [args]
 
-  hook post-tool-use   read a PostToolUse payload on stdin; if the written file
-                       is unformatted, hand the agent the formatted result
-                       (the file itself is never modified)
-  format <files...>    print each file's formatted result to stdout, so the
-                       agent can review and write it
+  agents               the universal agent layer: per-host rule files
+                       derived from AGENTS.md (Cursor, Windsurf, Cline,
+                       Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
+                       Codex) — prints content for anything missing or
+                       drifted; the gate blocks on drift
   audit                every domain's checks over the WHOLE tracked tree —
                        the onboarding sweep for a repository procoder has
                        not governed before; exit 1 if it would fail the gate
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
                        types are counted out loud
-  doctor               which formatters this repository needs, which are
-                       installed, and how to install the missing ones
-  init [--yes]         print the install commands for the missing formatters;
-                       --yes runs them and re-checks that every tool answers
-  git                  the pre-finish status: branch vs default, hygiene
-                       findings (conflict markers, junk, oversized), message
-                       checks, workflow lint, template state
   ci                   workflow hygiene: pinned actions, job timeouts,
                        concurrency cancellation, tests exist
-  infra                DevOps hygiene where the files exist: Dockerfiles
-                       (hadolint), Terraform (fmt/validate/tflint),
-                       Kubernetes manifests (kubeconform), Helm charts
-  maintain             the maintainability report: dead-code candidates from
-                       the index, complexity and function length — judgment
-                       calls, never blocking
-  security [--deep]    secrets over the changed files (gitleaks — blocking);
-                       --deep adds SAST (semgrep) and dependency vulns
-                       (osv-scanner) over the whole repository
-  lint [paths...]      the canonical linter per ecosystem over the changed
-                       files (or the given paths); report by default,
-                       blocking when [lint] policy = "block"
+  debt                 harvest deliberate-simplification markers (comment
+                       marker from [debt] in config.toml, default "debt:")
+                       into a ledger; markers with no revisit trigger are
+                       flagged
   docs [--external]    the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
                        structure; --external adds link checking and Pages health
+  doctor               which formatters this repository needs, which are
+                       installed, and how to install the missing ones
+  format <files...>    print each file's formatted result to stdout, so the
+                       agent can review and write it
+  git                  the pre-finish status: branch vs default, hygiene
+                       findings (conflict markers, junk, oversized), message
+                       checks, workflow lint, template state
+  hook post-tool-use   read a PostToolUse payload on stdin; if the written file
+                       is unformatted, hand the agent the formatted result
+                       (the file itself is never modified)
   index <sub> [arg]    the code index (built from universal-ctags + SCIP):
                        build | find <symbol> | search <text> | refs <symbol> |
                        outline <file> | impact | callers <symbol> | unused |
                        entrypoints | graph | stats
-  todo <sub> [arg]     the quality-gated task list under .procoder/todo/:
-                       add <title> | list | show <id> | close <id> — close
-                       REFUSES until every acceptance criterion is checked,
-                       evidence is recorded, and the gate is clean
+  infra                DevOps hygiene where the files exist: Dockerfiles
+                       (hadolint), Terraform (fmt/validate/tflint),
+                       Kubernetes manifests (kubeconform), Helm charts
+  init [--yes]         print the install commands for the missing formatters;
+                       --yes runs them and re-checks that every tool answers
+  lessons              the self-learning ledger (.procoder/github/LESSONS.md):
+                       findings that escaped our gates, each with the
+                       adaptation that closes its class; unlearned lessons
+                       (no adaptation) exit 1
+  lint [paths...]      the canonical linter per ecosystem over the changed
+                       files (or the given paths); report by default,
+                       blocking when [lint] policy = "block"
+  maintain             the maintainability report: dead-code candidates from
+                       the index, complexity and function length — judgment
+                       calls, never blocking
   plan <sub> [arg]     implementation plans under .procoder/plans/, the
                        spec → plan → todo middle link:
                        template <name> | list | check [name|all] — check
                        blocks on placeholders and on tasks without files
                        or steps
-  debt                 harvest deliberate-simplification markers (comment
-                       marker from [debt] in config.toml, default "debt:")
-                       into a ledger; markers with no revisit trigger are
-                       flagged
-  agents               the universal agent layer: per-host rule files
-                       derived from AGENTS.md (Cursor, Windsurf, Cline,
-                       Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
-                       Codex) — prints content for anything missing or
-                       drifted; the gate blocks on drift
-  lessons              the self-learning ledger (.procoder/github/LESSONS.md):
-                       findings that escaped our gates, each with the
-                       adaptation that closes its class; unlearned lessons
-                       (no adaptation) exit 1
   principles [--hook]  print the engineering principles the session starts
                        with — .procoder/PRINCIPLES.md wins over the default;
                        --hook answers in the running host's SessionStart
                        JSON shape (claude/codex/copilot/qoder)
+  scrub <file|->       check text (a commit message, a drafted PR body) for
+                       AI-attribution lines; exits 1 when any are found
+  security [--deep]    secrets over the changed files (gitleaks — blocking);
+                       --deep adds SAST (semgrep) and dependency vulns
+                       (osv-scanner) over the whole repository
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
                        remain, or acceptance criteria are untestable
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
-  scrub <file|->       check text (a commit message, a drafted PR body) for
-                       AI-attribution lines; exits 1 when any are found
+  todo <sub> [arg]     the quality-gated task list under .procoder/todo/:
+                       add <title> | list | show <id> | close <id> — close
+                       REFUSES until every acceptance criterion is checked,
+                       evidence is recorded, and the gate is clean
   version              print the version
 `
 
