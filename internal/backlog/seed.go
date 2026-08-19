@@ -57,7 +57,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 		out("an epic with no stories is not a decomposition — the spec needs acceptance criteria")
 		return 1
 	}
-	epicRel := filepath.Join(Dir, KindEpic, specName+".md")
+	epicRel := filepath.ToSlash(filepath.Join(Dir, KindEpic, specName+".md"))
 	if _, err := os.Stat(filepath.Join(root, epicRel)); err == nil {
 		out(epicRel + " already exists — re-seeding after a spec change is a manual decision: update or remove that epic first")
 		return 2
@@ -82,7 +82,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 			// index keeps its file name unique and non-empty.
 			slug = fmt.Sprintf("criterion-%d", i+1)
 		}
-		rel := filepath.Join(Dir, KindStory, date+"-"+slug+".md")
+		rel := filepath.ToSlash(filepath.Join(Dir, KindStory, date+"-"+slug+".md"))
 		story := fmt.Sprintf(storyTemplate, c, now, specName)
 		// The seeded criterion replaces the template placeholder: the story
 		// starts life with its contract already written, unchecked.

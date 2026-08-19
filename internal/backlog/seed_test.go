@@ -160,7 +160,7 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 	if len(fp) != 12 {
 		t.Fatalf("fingerprint must be 12 hex chars, got %q", fp)
 	}
-	if !strings.Contains(joined, "== write this to "+filepath.Join(Dir, KindEpic, "auth.md")+":") {
+	if !strings.Contains(joined, "== write this to "+Dir+"/epics/auth.md:") {
 		t.Fatalf("epic path header missing:\n%s", joined)
 	}
 	if !strings.Contains(joined, "Spec: auth @ "+fp) {

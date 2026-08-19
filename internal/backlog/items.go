@@ -220,7 +220,7 @@ func printItem(root, kind, slug, title string, fill func(now string) string, out
 		out("a " + strings.TrimSuffix(kind, "s") + " needs a title")
 		return 2
 	}
-	rel := filepath.Join(Dir, kind, slug+".md")
+	rel := filepath.ToSlash(filepath.Join(Dir, kind, slug+".md"))
 	if _, err := os.Stat(filepath.Join(root, rel)); err == nil {
 		out(rel + " already exists — pick a different title or edit the existing file")
 		return 2

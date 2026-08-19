@@ -40,7 +40,7 @@ func activeSprint(root string) (Item, bool, error) {
 			continue
 		}
 		if it.Status == "unreadable" {
-			return Item{}, false, fmt.Errorf("sprint file %s is unreadable — an unreadable sprint might be active; fix it before opening or closing anything", filepath.Join(Dir, KindSprint, it.ID+".md"))
+			return Item{}, false, fmt.Errorf("sprint file %s is unreadable — an unreadable sprint might be active; fix it before opening or closing anything", filepath.ToSlash(filepath.Join(Dir, KindSprint, it.ID+".md")))
 		}
 		if it.Status == "active" {
 			return it, true, nil
@@ -87,7 +87,7 @@ func SprintOpen(root, goal string, out func(string)) int {
 		}
 	}
 	id := fmt.Sprintf("%03d-%s", seq+1, slugify(goal))
-	rel := filepath.Join(Dir, KindSprint, id+".md")
+	rel := filepath.ToSlash(filepath.Join(Dir, KindSprint, id+".md"))
 	out("== write this to " + rel + ":")
 	out(fmt.Sprintf(sprintTemplate, goal, time.Now().UTC().Format("2006-01-02")))
 	out("then pull the stories this goal needs with `procoder sprint pull <story-id>`.")
