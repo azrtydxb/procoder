@@ -76,3 +76,13 @@ does. `procoder lessons` flags entries with no adaptation.
 - Class: judgment
 - Missed by: rubric
 - Adaptation: REVIEW.md rubric line "test fixtures that trip our own scanners"; debt_test assembles the marker at runtime, same as the gitleaks fixture lesson
+
+## 2026-08-19 PR#33 (CI windows leg) — printed paths and test assertions used filepath.Join
+
+- Class: mechanical
+- Missed by: rubric (and twice: the first fix caught the prints, not the
+  seed printout or the assertions — a class is not closed by fixing
+  instances)
+- Adaptation: REVIEW.md rubric line "paths in OUTPUT built with
+  filepath.Join"; every backlog print site is ToSlash, pinned by the
+  package tests running on the Windows CI leg

@@ -2,22 +2,27 @@
 
 This is procoder's **spec-based development** system: the design
 document and architecture creator (`spec`), the implementation planner
-(`plan`), the evidence-gated task tracker (`todo`), and the **quality
-gates** that connect them. The core belief: **the thinking happens
-before the code, and "done" is a verdict a controller gives — not a
-feeling the agent has.** The chain runs spec → plan → todo → gate →
-lessons, and every link has a quality controller in the binary that
-refuses to advance until the work is actually complete. The agent
-writes; the binary judges (P-CONTROL).
+(`plan`), the project layer (`backlog` and `sprint` — milestones, epics,
+user stories), the evidence-gated task tracker (`todo`, standalone for
+work not born from a spec), and the **quality gates** that connect
+them. The core belief: **the thinking happens before the code, and
+"done" is a verdict a controller gives — not a feeling the agent has.**
+The chain runs spec → plan → backlog → gate → lessons, and every link
+has a quality controller in the binary that refuses to advance until
+the work is actually complete. The agent writes; the binary judges
+(P-CONTROL).
 
 ```
-idea ──► SPEC ──► PLAN ──► TODO ──► GATE ──► merged
-         │        │        │        │          │
-     spec check  plan    todo     check    lessons: anything
-     blocks on   check   close    blocks   that escaped becomes
-     gaps and    blocks  refuses  on any   an adaptation that
-     OPEN:       hollow  without  finding  closes its class
+idea ──► SPEC ──► PLAN ──► BACKLOG ──► GATE ──► merged
+         │        │        │           │          │
+     spec check  plan    story/epic/  check    lessons: anything
+     blocks on   check   sprint       blocks   that escaped becomes
+     gaps and    blocks  closes       on any   an adaptation that
+     OPEN:       hollow  refuse sans  finding  closes its class
      questions   tasks   evidence
+
+     (todo runs beside the chain: the standalone list for
+      work not born from a spec, with the same closing rigor)
 ```
 
 ## Spec — the design document, with a gap-closing interview
@@ -65,6 +70,24 @@ implementer sees only their own task), and test-first checkbox steps.
 "handle edge cases", "similar to Task N" (repeat the code — tasks are
 read out of order), empty sections, tasks without files or steps. A plan
 is written, not promised.
+
+## Backlog — the project layer, worked in sprints
+
+On larger projects the chain grows a level: `procoder backlog` holds
+**milestones → epics → user stories** under `.procoder/backlog/`, and
+`procoder backlog seed <spec>` decomposes a COMPLETE spec into an epic
+whose stories come from the spec's acceptance criteria — the epic
+remembers the spec's fingerprint, and the board flags drift when the
+spec changes afterwards. The story is the execution unit and carries
+todo-task rigor; `backlog close story` refuses exactly as todo close
+does (criteria, evidence, clean gate), epic close refuses while a story
+is open, milestone close refuses while an epic is.
+
+`procoder sprint` works the backlog lean and scope-boxed: one active
+sprint at a time, `pull` commits stories to it, and `close` refuses
+while a committed story is neither done nor explicitly carried back
+with a reason — unfinished work is visible, never silent. No story
+points, no burndown: stories are counted, the goal is the commitment.
 
 ## Todo — done means evidence
 

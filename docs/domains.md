@@ -188,5 +188,6 @@ The language matrix, stated honestly:
 ## Above them: the quality chain
 
 The domains judge code that exists; the [quality chain](quality-chain.md)
-governs whether the right thing gets built at all — spec, plan, todo,
-and the lessons loop, each with its own refusing controller.
+governs whether the right thing gets built at all — spec, plan, the
+backlog's milestones/epics/stories worked in sprints, the standalone
+todo list, and the lessons loop, each with its own refusing controller.

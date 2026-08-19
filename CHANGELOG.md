@@ -2,6 +2,38 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.26.0 — 2026-08-19
+
+The project layer: lean/agile backlogs with sprints, on the quality
+chain. Built spec-first with procoder's own spec and plan controllers.
+
+- `procoder backlog` — milestones → epics → user stories under
+  `.procoder/backlog/`, the home of a spec-first project. The story is
+  the execution unit and carries todo-task rigor; the todo list itself
+  stays untouched as the standalone list for work not born from a spec.
+- `procoder backlog seed <spec>` decomposes a COMPLETE spec into an
+  epic plus one story per acceptance criterion — everything printed for
+  the agent to review and write. The epic records the spec and a
+  fingerprint; the board flags `⚠ spec drift` / `⚠ spec missing` when
+  traceability breaks.
+- Refusing controllers all the way up: story close refuses without
+  checked criteria, evidence, and a clean gate; epic close refuses
+  while a story is open (and warns on drift); milestone close refuses
+  while an epic is open. Unreadable files block conservatively —
+  unknown is never done.
+- `procoder sprint` — scope-boxed sprints: one active sprint at a time
+  (the WIP limit), `pull` commits stories, `carry <id> <reason>`
+  returns unfinished work to the backlog with the reason recorded, and
+  `close` refuses while a committed story is neither done nor carried,
+  then writes committed/done/carried counts into the sprint file. No
+  story points, no calendar enforcement — stories are counted, the
+  goal is the commitment.
+- `procoder backlog board` — the tree with statuses, sprint tags,
+  orphans, drift flags, and a one-line summary.
+- The plan checker's placeholder rule is now case-sensitive for TODO:
+  lowercase "todo" legitimately names procoder's own task domain, and a
+  plan touching internal/todo must be writable.
+
 ## 0.25.0 — 2026-08-19
 
 - `procoder index impls <symbol>` — what implements an interface or its

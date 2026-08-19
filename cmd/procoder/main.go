@@ -15,6 +15,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/audit"
+	"procoder/internal/backlog"
 	"procoder/internal/ciops"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -170,6 +171,14 @@ const usage = `usage: procoder <command> [args]
   audit                every domain's checks over the WHOLE tracked tree —
                        the onboarding sweep for a repository procoder has
                        not governed before; exit 1 if it would fail the gate
+  backlog <sub>        the project layer: milestones, epics, and user
+                       stories under .procoder/backlog/ —
+                       milestone <title> | epic <title> [--milestone <id>] |
+                       story <title> --epic <id> | seed <spec> [--milestone
+                       <id>] | list | board | close story|epic|milestone
+                       <id>; stories carry todo-task rigor, closes REFUSE
+                       until the controller is satisfied (todo itself stays
+                       the standalone list for non-spec work)
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
                        types are counted out loud
@@ -232,6 +241,11 @@ const usage = `usage: procoder <command> [args]
   security [--deep]    secrets over the changed files (gitleaks — blocking);
                        --deep adds SAST (semgrep) and dependency vulns
                        (osv-scanner) over the whole repository
+  sprint <sub>         scope-boxed sprints over the backlog: open <goal> |
+                       pull <story-id>... | carry <story-id> <reason> |
+                       status | close — one active sprint at a time, close
+                       refuses while a committed story is neither done nor
+                       explicitly carried back with a reason
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
@@ -269,6 +283,18 @@ func run(args []string) int {
 		return formatCmd(args[1:])
 	case "audit":
 		return audit.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "backlog":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlogCmd(args[1:])
+	case "sprint":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return sprintCmd(args[1:])
 	case "check":
 		return gate.Run(args[1:], doctor.Root(), os.Stdout)
 	case "doctor":
@@ -550,6 +576,114 @@ func indexCmd(args []string) int {
 		return codeindex.Impact(root, changed, out)
 	case "stats":
 		return codeindex.Stats(root, out)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// backlogCmd dispatches the project layer. Creation subcommands parse
+// their flag in the loop style of `index rename --at`; closes route to
+// the refusing controllers.
+func backlogCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	// positional args with one optional flag, per subcommand
+	flagVal := func(name string, rest []string) (string, []string) {
+		val := ""
+		var pos []string
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == name && i+1 < len(rest) {
+				val = rest[i+1]
+				i++
+				continue
+			}
+			pos = append(pos, rest[i])
+		}
+		return val, pos
+	}
+	switch args[0] {
+	case "milestone":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.Milestone(root, strings.Join(args[1:], " "), out)
+	case "epic":
+		ms, pos := flagVal("--milestone", args[1:])
+		if len(pos) == 0 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.Epic(root, strings.Join(pos, " "), ms, out)
+	case "story":
+		epic, pos := flagVal("--epic", args[1:])
+		if len(pos) == 0 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.Story(root, strings.Join(pos, " "), epic, out)
+	case "seed":
+		ms, pos := flagVal("--milestone", args[1:])
+		if len(pos) != 1 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.Seed(root, pos[0], ms, out)
+	case "list":
+		return backlog.List(root, out)
+	case "board":
+		return backlog.Board(root, out)
+	case "close":
+		if len(args) != 3 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		switch args[1] {
+		case "story":
+			return backlog.CloseStory(root, args[2], func() bool {
+				return gate.Run(nil, root, io.Discard) == 0
+			}, out)
+		case "epic":
+			return backlog.CloseEpic(root, args[2], out)
+		case "milestone":
+			return backlog.CloseMilestone(root, args[2], out)
+		}
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// sprintCmd dispatches the sprint lifecycle over the backlog.
+func sprintCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	switch args[0] {
+	case "open":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.SprintOpen(root, strings.Join(args[1:], " "), out)
+	case "pull":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.SprintPull(root, args[1:], out)
+	case "carry":
+		if len(args) < 3 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.SprintCarry(root, args[1], strings.Join(args[2:], " "), out)
+	case "status":
+		return backlog.SprintStatus(root, out)
+	case "close":
+		return backlog.SprintClose(root, out)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2
