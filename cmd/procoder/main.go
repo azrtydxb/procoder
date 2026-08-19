@@ -28,6 +28,7 @@ import (
 	"procoder/internal/hook"
 	"procoder/internal/infra"
 	"procoder/internal/initcmd"
+	"procoder/internal/lessons"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/plan"
@@ -171,6 +172,10 @@ const usage = `usage: procoder <command> [args]
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
                        flagged
+  lessons              the self-learning ledger (.procoder/github/LESSONS.md):
+                       findings that escaped our gates, each with the
+                       adaptation that closes its class; unlearned lessons
+                       (no adaptation) exit 1
   principles           print the engineering principles the session starts
                        with — .procoder/PRINCIPLES.md wins over the default
   spec <sub> [arg]     spec-first design under .procoder/specs/:
@@ -368,6 +373,8 @@ func run(args []string) int {
 		return planCmd(args[1:])
 	case "debt":
 		return debt.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "lessons":
+		return lessons.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "principles":
 		return principles.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "templates":

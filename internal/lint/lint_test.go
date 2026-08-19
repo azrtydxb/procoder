@@ -127,3 +127,29 @@ func TestRuffFindsARealProblem(t *testing.T) {
 		t.Fatalf("ruff must flag the unused import: %+v", got)
 	}
 }
+
+// The repo's own golangci config always beats the procoder baseline.
+func TestHasGolangciConfigDetectsEveryName(t *testing.T) {
+	if hasGolangciConfig(t.TempDir()) {
+		t.Fatal("empty repo must have no golangci config")
+	}
+	for _, name := range []string{".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"} {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !hasGolangciConfig(root) {
+			t.Errorf("%s not detected", name)
+		}
+	}
+}
+
+// The baseline text itself must stay a parseable golangci v2 config shape:
+// version pinned, and every curated linter named.
+func TestGolangciBaselineNamesTheCuratedSet(t *testing.T) {
+	for _, want := range []string{`version: "2"`, "gosec", "gocritic", "errorlint", "unparam", "copyloopvar", "nilerr"} {
+		if !strings.Contains(golangciBaseline, want) {
+			t.Errorf("baseline lost %q", want)
+		}
+	}
+}

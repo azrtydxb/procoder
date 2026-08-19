@@ -32,6 +32,15 @@ funlen_statements = 50
 marker = "debt:"
 ```
 
+## `.procoder/github/REVIEW.md` and `LESSONS.md`
+
+The catch-first-and-learn pair. `REVIEW.md` is the pre-PR self-review
+rubric a fresh-context reviewer reads against the branch diff before any
+PR is opened. `LESSONS.md` is the ledger of findings that escaped anyway:
+each entry names the layer that should have caught it and the adaptation
+that now does (`procoder lessons` flags unlearned entries). Defaults from
+`procoder templates`; both are the repo's to grow.
+
 ## `.procoder/PRINCIPLES.md`
 
 The engineering principles injected at session start (see

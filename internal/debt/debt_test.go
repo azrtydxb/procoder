@@ -8,6 +8,11 @@ import (
 	"testing"
 )
 
+// mk is the default marker assembled at runtime, so our own repo's debt
+// scan never harvests these fixtures (the same lesson as secret fixtures:
+// a literal marker in test source is a self-scan false positive).
+const mk = "de" + "bt:"
+
 // gitRepo makes a temp repo with the given files committed.
 func gitRepo(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -36,9 +41,9 @@ func gitRepo(t *testing.T, files map[string]string) string {
 
 func TestScanFindsMarkersAndFlagsMissingTriggers(t *testing.T) {
 	root := gitRepo(t, map[string]string{
-		"a.go": "package a\n\n// debt: global lock, per-account locks when throughput matters\nvar x int\n",
-		"b.py": "# debt: naive O(n^2) scan\nx = 1\n",
-		"c.md": "prose that mentions debt: conventions without a comment leader\n",
+		"a.go": "package a\n\n// " + mk + " global lock, per-account locks when throughput matters\nvar x int\n",
+		"b.py": "# " + mk + " naive O(n^2) scan\nx = 1\n",
+		"c.md": "prose that mentions " + mk + " conventions without a comment leader\n",
 	})
 	entries, err := Scan(root)
 	if err != nil {
@@ -61,8 +66,8 @@ func TestScanFindsMarkersAndFlagsMissingTriggers(t *testing.T) {
 
 func TestScanTrimsBlockCommentTerminators(t *testing.T) {
 	root := gitRepo(t, map[string]string{
-		"a.c":    "int x; /* debt: fixed buffer, grow when inputs exceed 4k */\n",
-		"b.html": "<!-- debt: inline styles, extract when a second page exists -->\n",
+		"a.c":    "int x; /* " + mk + " fixed buffer, grow when inputs exceed 4k */\n",
+		"b.html": "<!-- " + mk + " inline styles, extract when a second page exists -->\n",
 	})
 	entries, err := Scan(root)
 	if err != nil {
@@ -80,7 +85,7 @@ func TestScanTrimsBlockCommentTerminators(t *testing.T) {
 
 func TestScanSkipsBinaries(t *testing.T) {
 	root := gitRepo(t, map[string]string{
-		"bin.dat": "PK\x00\x03// debt: not really\n",
+		"bin.dat": "PK\x00\x03// " + mk + " not really\n",
 	})
 	entries, err := Scan(root)
 	if err != nil {
@@ -94,7 +99,7 @@ func TestScanSkipsBinaries(t *testing.T) {
 func TestCustomMarkerViaConfig(t *testing.T) {
 	root := gitRepo(t, map[string]string{
 		".procoder/config.toml": "[debt]\nmarker = \"shortcut:\"\n",
-		"a.go":                  "package a\n// shortcut: cached forever, revisit when memory matters\n// debt: this one must NOT match under the custom marker\n",
+		"a.go":                  "package a\n// shortcut: cached forever, revisit when memory matters\n// " + mk + " this one must NOT match under the custom marker\n",
 	})
 	entries, err := Scan(root)
 	if err != nil {

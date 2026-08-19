@@ -30,6 +30,8 @@ func TestWorkflowRulesArePrintedWhenMissingAndRespectedWhenPresent(t *testing.T)
 		{"WORKFLOW.md", "my own rules\n"},
 		{"PULL_REQUEST_TEMPLATE.md", PRTemplate},
 		{"COMMIT_TEMPLATE.md", CommitTemplate},
+		{"REVIEW.md", "my rubric\n"},
+		{"LESSONS.md", "my ledger\n"},
 	} {
 		if err := os.WriteFile(filepath.Join(dir, f.name), []byte(f.body), 0o644); err != nil {
 			t.Fatal(err)

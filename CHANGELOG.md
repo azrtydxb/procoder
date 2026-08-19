@@ -2,6 +2,35 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.19.0 — 2026-08-19
+
+Catch first, learn on escape: downstream reviewers become the fallback,
+not the net.
+
+- The pre-PR self-review: `/procoder:pr` now dispatches a fresh-context
+  reviewer over the branch diff against `.procoder/github/REVIEW.md`
+  BEFORE the PR is opened; Critical/Important findings are fixed first.
+  The default rubric is seeded from every class bot reviewers actually
+  caught on this repo.
+- The reflection loop: `/procoder:merge` treats an escaped finding as a
+  bug in our gates — each one names the layer that should have caught it,
+  that layer is adapted in the same PR, and the lesson lands in
+  `.procoder/github/LESSONS.md`. `procoder lessons` flags entries with no
+  adaptation as UNLEARNED (exit 1) — recorded is not learned. Our own
+  ledger ships seeded with the eight real escapes to date: the PR #17/#18
+  review findings, the CI mirror hang, and our own self-scan's fixture
+  harvest.
+- Go lint baseline: repositories without a golangci config get a curated
+  default (standard set plus gosec, gocritic, errorlint, unparam,
+  copyloopvar, nilerr) — the same pattern as the eslint baseline, and the
+  repo's own config always wins.
+- CI robustness: apt is repointed from the flaky Azure mirror to the
+  canonical archive with fail-fast retries — a gate run once burned its
+  whole timeout waiting on that mirror.
+- Honesty fix from our own scanner: debt-marker test fixtures are now
+  assembled at runtime so `procoder debt` on this repository reports a
+  clean ledger instead of harvesting its own tests.
+
 ## 0.18.0 — 2026-08-19
 
 Absorbed the best of the superpowers and ponytail plugins, so both can be
