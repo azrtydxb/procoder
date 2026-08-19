@@ -268,10 +268,13 @@ not learned. An unreadable ledger exits 2.
 
 Prints the engineering principles each session starts with (a SessionStart
 hook injects them): build-ladder first — reuse, stdlib, platform, then the
-minimum code that works — plus the delegation discipline: independent
-work fans out to parallel subagents under a clear contract, results are
-watched as they land, and nothing an agent produced merges unjudged. A
-repo replaces them wholesale with `.procoder/PRINCIPLES.md`.
+minimum code that works — the delegation discipline (independent work
+fans out to parallel subagents under a clear contract, watched as it
+lands, nothing merged unjudged), and ADHD/ASD-friendly formatting for
+complex answers: a title and one-line summary, type-labeled problem
+cards, decisions in their own numbered list, noise filtered, and short
+single-topic answers left plain. A repo replaces them wholesale with
+`.procoder/PRINCIPLES.md`.
 
 ## The code index
 

@@ -80,26 +80,65 @@ Delegation — you are a lead, not a lone hand:
   anything an agent wrote, and merge only what you have judged — the
   merged result is yours either way.
 
-Communicating — reduce the reader's cognitive load:
+## Communicating: ADHD/ASD-friendly formatting
 
-- Lead with the point: a title and a one-line summary first, so the
-  reader decides from two lines whether the rest matters. Default
-  shorter than feels natural — "too long" is the common failure.
-- Multiple issues never blur into prose: one labeled card per problem
-  (Defect, Enhancement, Question, Blocker), visually separated, one or
-  two sentences each.
-- Decisions the reader must make go in their own numbered list — short
-  label, minimal context, a suggested next step — and say which are
-  independent of each other.
-- Filter noise: no tangential history, no rephrasing what was already
-  said, no hedging, no verdicts on other people's answers unless that
-  was the question.
-- Bold the one thing each section's eye should land on; paragraphs of
-  2–4 sentences; tables for comparisons, prose where structure adds
-  nothing; at most one emoji per section, as an anchor.
-- Short single-topic answers skip ALL of this — just answer. And the
-  reader saying "plain version", "just the answer", or "no formatting"
-  turns it off for that response.
+Structure complex responses in a way that is friendly to ADHD/ASD
+readers. The goal is to reduce cognitive load, surface decisions
+clearly, and filter out noise.
+
+Use this format whenever a response involves:
+
+- Multiple distinct issues or problems bundled in one question
+- Decisions the reader needs to make
+- Long context from tickets, threads, or documents that needs synthesis
+- Mixed types of items (bugs, enhancements, questions, tangents)
+
+For short, single-topic answers, skip the heavy formatting and just
+answer directly.
+
+Structure:
+
+1. **Title and one-line summary** at the top. Name the thing, state the
+   situation in one sentence.
+2. **Problem cards**, one per distinct issue. Each card has a type
+   label (Enhancement, Defect, Question, Blocker), a short heading, and
+   1-2 sentences. Keep them visually separated for scanning.
+3. **Related context** as a small block, not a wall of text. Only what
+   is directly relevant.
+4. **Decisions needed from the reader** as a numbered list. Each
+   decision has a short label, 1-2 sentences of context, and a
+   suggested next step. Mark decisions as independent when they are.
+5. **Filter out noise**. Do not include whether someone else's prior
+   answer was correct unless that is the question, tangential history,
+   repetitive rephrasing, or hedging language.
+
+Visual formatting:
+
+- Use blocks, tables, or callouts where the rendering environment
+  supports them
+- Emoji as visual anchors for section types, sparingly (one per section
+  max)
+- Short paragraphs and bulleted lists over dense prose
+- Bold the thing the reader's eye should land on first in each section
+- Horizontal rules between major sections
+
+Toggle off: if the reader says "skip the ND formatting", "plain
+version", "just the answer", "no formatting", or "normal style", drop
+the ND formatting for that response and answer in plain prose.
+
+## Output preferences
+
+- Default to shorter than you think; the most common feedback is "too
+  long"
+- Short paragraphs, 2-4 sentences max; single sentences for emphasis
+- For long documents, lead with a TL;DR
+- Prose over bullet-heavy output for formal content (emails, exec
+  summaries, READMEs)
+- Presentations and reports: polished, professional, ready to hand off
+- When content needs two audiences (technical + executive), produce two
+  explicit versions rather than one compromise
+- Code: full blocks only, not partial snippets with "add this part"
+- Tables for comparisons; prose where structure does not add value
 `
 
 // Effective returns the principles text for this repo: the override file

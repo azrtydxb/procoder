@@ -4,15 +4,19 @@ Every release, in words a user can read. Newest first.
 
 ## 0.29.0 — 2026-08-19
 
-- The engineering principles gain a communication section — reduce the
-  reader's cognitive load: lead with the point and default shorter than
-  feels natural; one labeled card per problem instead of blurred prose;
-  decisions in their own numbered list with independence stated; noise
-  filtered (no tangents, no rephrasing, no hedging); bold the landing
-  point, tables only for comparisons; and short single-topic answers
-  skip all of it. "Plain version" / "just the answer" turns the
-  structure off for a response. As ever, a repo replaces the principles
-  wholesale via .procoder/PRINCIPLES.md.
+- The engineering principles gain two sections: **ADHD/ASD-friendly
+  formatting** and **output preferences**. Complex responses (multiple
+  issues, decisions to make, long context to synthesize, mixed item
+  types) get a title and one-line summary, type-labeled problem cards
+  (Enhancement, Defect, Question, Blocker), a small related-context
+  block, a numbered "decisions needed" list marking independent ones,
+  and noise filtered out — with short single-topic answers skipping all
+  of it, and "plain version" / "just the answer" turning it off for a
+  response. Output preferences: shorter than you think, 2-4 sentence
+  paragraphs, TL;DR on long documents, prose for formal content, two
+  explicit versions when two audiences need one document, full code
+  blocks, tables for comparisons only. As ever, a repo replaces the
+  principles wholesale via .procoder/PRINCIPLES.md.
 
 ## 0.28.0 — 2026-08-19
 

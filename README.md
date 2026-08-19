@@ -102,7 +102,9 @@ callers, impact, unused, entrypoints.
 **Senior habits, encoded** — engineering **principles** injected at
 session start (build ladder: reuse → stdlib → platform → minimum code;
 delegation: parallel subagents under a contract, watched and judged;
-repo-overridable), deliberate corner-cuts marked and harvested as
+ADHD/ASD-friendly formatting for complex answers — problem cards,
+decisions surfaced, noise filtered; all repo-overridable), deliberate
+corner-cuts marked and harvested as
 **debt** with revisit triggers, and an **audit** command that onboards
 any existing codebase with a triaged scorecard.
 
