@@ -2,6 +2,25 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.21.0 — 2026-08-19
+
+The documentation overhaul, and the gates that keep it from rotting again.
+
+- README rewritten from scratch: the whole product told value-first —
+  the gate, the quality chain (spec → plan → todo), the self-learning
+  loop, the nine domains, the code index, principles and debt, every
+  agent — instead of a release-one story eleven versions stale.
+- The docs site grew three pages (Getting started, The quality chain,
+  Architecture) and a restructured landing; navigation now tells the
+  product's story before its reference.
+- The rot guards, because presence checks let this happen: a repo can
+  declare its feature families (`## README must mention` in the docs
+  rules) and a family the README stops telling blocks the gate;
+  /procoder:pr gains the mandatory docs-impact question ("what does this
+  change alter about what a reader must be told?") answered before any
+  PR opens; and the review rubric carries the product-story line. The
+  escape is recorded in the lessons ledger with all three adaptations.
+
 ## 0.20.0 — 2026-08-19
 
 procoder now works with every AI coding agent, not just Claude Code.

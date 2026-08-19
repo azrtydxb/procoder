@@ -27,6 +27,27 @@ guidance for the agent.
 - README.md
 - docs/index.md
 
+## README must mention
+
+- commit gate
+- code index
+- security
+- lint
+- maintain
+- performance
+- documentation
+- ci
+- infra
+- audit
+- spec
+- plan
+- todo
+- debt
+- lessons
+- principles
+- every agent
+- self-learning
+
 ## Guidance
 
 The README's first screen must sell the project: lead with the one-line value

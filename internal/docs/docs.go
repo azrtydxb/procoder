@@ -84,6 +84,7 @@ type Rules struct {
 	RequiredBadges []string // substrings that must appear in a README badge image URL or alt text
 	ReadmeSections []string // headings/elements required on the README's first screen
 	VersionedDocs  []string // docs whose first screen must carry the current version
+	ReadmeMentions []string // phrases the README's narrative must carry — feature families, not commands
 }
 
 func defaultRules() Rules {
@@ -92,11 +93,12 @@ func defaultRules() Rules {
 		RequiredBadges: []string{"ci", "license"},
 		ReadmeSections: []string{"usp", "badges", "quick start"},
 		VersionedDocs:  []string{"README.md", "docs/index.md"},
+		ReadmeMentions: nil, // opt-in via the rules file: a repo lists its own feature families
 	}
 }
 
 // LoadRules reads the repo's RULES.md. The file is prose for the agent with
-// three machine-readable list sections; a list that is present replaces the
+// machine-readable list sections; a list that is present replaces the
 // default for that section, absent sections keep their defaults.
 func LoadRules(root string) Rules {
 	r := defaultRules()
@@ -105,7 +107,7 @@ func LoadRules(root string) Rules {
 		return r
 	}
 	section := ""
-	var docsL, badgesL, secsL, verL []string
+	var docsL, badgesL, secsL, verL, mentionsL []string
 	for _, line := range strings.Split(string(data), "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "## ") {
@@ -125,6 +127,8 @@ func LoadRules(root string) Rules {
 			secsL = append(secsL, strings.ToLower(item))
 		case "version-tracked docs":
 			verL = append(verL, item)
+		case "readme must mention":
+			mentionsL = append(mentionsL, strings.ToLower(item))
 		}
 	}
 	if docsL != nil {
@@ -138,6 +142,9 @@ func LoadRules(root string) Rules {
 	}
 	if verL != nil {
 		r.VersionedDocs = verL
+	}
+	if mentionsL != nil {
+		r.ReadmeMentions = mentionsL
 	}
 	return r
 }
@@ -444,6 +451,34 @@ func VersionSync(root string) []gitx.Finding {
 		if !strings.Contains(string(data), "## "+version) {
 			out = append(out, gitx.Finding{File: filepath.Join(root, "CHANGELOG.md"), Blocking: true,
 				Message: fmt.Sprintf("CHANGELOG.md has no `## %s` entry — the current version (%s) shipped without release notes", version, source)})
+		}
+	}
+	return out
+}
+
+// ReadmeMentions holds the README's NARRATIVE to the repo's declared
+// feature families — presence checks pass while the story goes stale, so
+// a repo lists what its README must actually talk about (## README must
+// mention in the docs rules) and a missing family blocks. This is the
+// adaptation for the lesson where eleven releases shipped against a
+// README still describing release one.
+func ReadmeMentions(root string, r Rules) []gitx.Finding {
+	if len(r.ReadmeMentions) == 0 {
+		return nil // opt-in: no declared families, nothing to hold the README to
+	}
+	data, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		return nil // a missing README is RequiredDocs' finding
+	}
+	text := strings.ToLower(string(data))
+	var out []gitx.Finding
+	for _, m := range r.ReadmeMentions {
+		// word boundaries, or a short family is vacuous: "ci" must not be
+		// satisfied by the ci.yml badge URL, "spec" not by "specific"
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(m) + `\b`)
+		if !re.MatchString(text) {
+			out = append(out, gitx.Finding{File: filepath.Join(root, "README.md"), Blocking: true,
+				Message: fmt.Sprintf("README never mentions %q — a declared feature family the front page does not tell (docs)", m)})
 		}
 	}
 	return out

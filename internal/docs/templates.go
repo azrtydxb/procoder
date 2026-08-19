@@ -34,6 +34,13 @@ guidance for the agent.
 - README.md
 - docs/index.md
 
+## README must mention
+
+<!-- Optional, blocking when filled: the feature families the README's
+     narrative must carry (lower-cased substrings). List what your
+     product IS — a family the front page stops telling blocks the
+     gate, which is how README rot gets caught at commit time. -->
+
 ## Guidance
 
 The README's first screen must sell the project: lead with the one-line value

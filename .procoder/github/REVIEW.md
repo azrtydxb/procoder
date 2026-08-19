@@ -27,6 +27,10 @@ Check every hunk for:
 - Prose and markdown: code spans unbroken, lists formatted, wording that
   says what the code actually does — names and paths in docs match the
   code exactly (every variant, full paths).
+- The product's story: does this diff change what the README or docs
+  site must tell a reader? Pages updated in this diff, or the absence
+  concretely justified — a feature that ships with only a reference
+  mention is a docs escape.
 
 End with a verdict line: findings counted by severity, or exactly
 "Nothing found — open the PR."

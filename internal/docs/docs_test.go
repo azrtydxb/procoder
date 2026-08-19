@@ -244,6 +244,45 @@ func TestReadmeMustCarryTheCurrentVersion(t *testing.T) {
 	}
 }
 
+// The failure this pins: eleven releases shipped against a README still
+// describing release one — mention-in-corpus checks passed while the
+// front page went stale. Declared families hold the NARRATIVE current.
+func TestReadmeMustMentionDeclaredFamilies(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "# x\n\nWe have a commit gate and a code index.\n")
+
+	r := Rules{ReadmeMentions: []string{"commit gate", "code index", "self-learning"}}
+	got := ReadmeMentions(root, r)
+	if len(got) != 1 || !got[0].Blocking || !strings.Contains(got[0].Message, "self-learning") {
+		t.Fatalf("the one untold family must block by name: %+v", got)
+	}
+
+	// no declared families → the check is opt-in and silent
+	if got := ReadmeMentions(root, Rules{}); len(got) != 0 {
+		t.Fatalf("no declared families must be silent: %+v", got)
+	}
+
+	// case-insensitive: the story can capitalise
+	write(t, root, "README.md", "# x\n\nThe Commit Gate, the Code Index, and the Self-Learning loop.\n")
+	if got := ReadmeMentions(root, r); len(got) != 0 {
+		t.Fatalf("capitalised mentions must count: %+v", got)
+	}
+
+	// word boundaries: a short family inside another word is not a mention —
+	// "ci.yml" satisfies "ci" (dot is a boundary) but "specific" must not
+	// satisfy "spec", or terse family names become vacuous
+	r2 := Rules{ReadmeMentions: []string{"spec", "lint"}}
+	write(t, root, "README.md", "# x\n\nA specific tool with eslint support.\n")
+	got = ReadmeMentions(root, r2)
+	if len(got) != 2 {
+		t.Fatalf("substrings inside words must not count as mentions: %+v", got)
+	}
+	write(t, root, "README.md", "# x\n\nThe spec interview and the lint domain.\n")
+	if got = ReadmeMentions(root, r2); len(got) != 0 {
+		t.Fatalf("whole-word mentions must count: %+v", got)
+	}
+}
+
 // The failure this pins: the changelog existed, so RequiredDocs was happy,
 // but nothing forced an entry for the version being released — a bump
 // without release notes shipped silently.
