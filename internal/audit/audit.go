@@ -8,11 +8,13 @@ package audit
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"procoder/internal/adr"
 	"procoder/internal/config"
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
@@ -120,6 +122,15 @@ func Run(root string, out func(string)) int {
 	// with absolute paths — see SecretsTree
 	report("secrets (gitleaks)", security.SecretsTree(root, files))
 	report("lint", lint.Files(root, files, cfg.LintBlock))
+	// decision records, only where the repo keeps them — a hollow or
+	// dangling ADR is documentation rot like any other
+	if _, err := os.Stat(filepath.Join(root, adr.Dir)); err == nil {
+		var adrFindings []gitx.Finding
+		for _, f := range adr.Check(root, func(string) {}) {
+			adrFindings = append(adrFindings, gitx.Finding{File: f.File, Blocking: true, Message: f.Message + " (adr)"})
+		}
+		report("decision records (adr)", adrFindings)
+	}
 
 	out("## scorecard")
 	out(fmt.Sprintf("  blocking findings total: %d", totalBlocking))

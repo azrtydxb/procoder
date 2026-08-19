@@ -1,0 +1,27 @@
+# Baseline parsing and delta math have unit tests over recorded `go test -bench` output, including the renamed-benchmark case.
+
+Status: done 2026-08-19
+Created: 2026-08-19
+Epic: perf-bench
+Sprint: 002-daily-practices-bugsretro-release-adr-deps-bench-0280
+
+## Description
+
+The math is pinned.
+
+<!-- The user story: who needs what, and why. What "done" looks like in
+     the reader's terms — a title is not a description. -->
+
+## Acceptance criteria
+
+<!-- Each criterion is testable. Check a box ONLY when it is verifiably
+     true — the closer will ask for the evidence. -->
+
+- [x] Baseline parsing and delta math have unit tests over recorded `go test -bench` output, including the renamed-benchmark case.
+
+## Evidence
+
+- TestParseRowsFromRecordedOutput, TestParseBaselineSkipsHeader, TestCompareMarksRegressionBeyondThreshold, TestCompareRenamedBenchmarkIsGonePlusNewNotRegression, TestCompareCrossPlatformWarns, TestCompareCorruptBaselineSkipsWithReason all green.
+
+<!-- Filled at close time: the commands run and what their output proved,
+     one line per criterion. Empty evidence keeps the story open. -->

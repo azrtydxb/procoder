@@ -1,0 +1,27 @@
+# A missing optional tool (cargo-outdated) yields NOT checked naming the tool — verified by test with a stub PATH.
+
+Status: done 2026-08-19
+Created: 2026-08-19
+Epic: deps-freshness
+Sprint: 002-daily-practices-bugsretro-release-adr-deps-bench-0280
+
+## Description
+
+Missing tools are information, not silence.
+
+<!-- The user story: who needs what, and why. What "done" looks like in
+     the reader's terms — a title is not a description. -->
+
+## Acceptance criteria
+
+<!-- Each criterion is testable. Check a box ONLY when it is verifiably
+     true — the closer will ask for the evidence. -->
+
+- [x] A missing optional tool (cargo-outdated) yields NOT checked naming the tool — verified by test with a stub PATH.
+
+## Evidence
+
+- TestRunCargoOutdatedMissing: stub-PATH cargo without the plugin yields 'rust: NOT checked — cargo-outdated is not installed (cargo install cargo-outdated)', exit 0.
+
+<!-- Filled at close time: the commands run and what their output proved,
+     one line per criterion. Empty evidence keeps the story open. -->

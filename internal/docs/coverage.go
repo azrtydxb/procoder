@@ -12,10 +12,11 @@ import (
 // its usage text against this list by test, so the two cannot drift; the
 // coverage check below holds the documentation to the same list.
 var Commands = []string{
-	"agents", "audit", "backlog", "check", "ci", "debt", "docs", "doctor",
+	"adr", "agents", "audit", "backlog", "bench", "check", "ci", "debt",
+	"deps", "docs", "doctor",
 	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
-	"maintain", "plan", "principles", "scrub", "security", "spec",
-	"sprint", "templates", "todo", "version",
+	"maintain", "plan", "principles", "release", "scrub", "security", "spec",
+	"sprint", "templates", "test", "todo", "version",
 }
 
 // CommandCoverage reports commands the documentation never mentions —

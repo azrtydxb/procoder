@@ -14,12 +14,15 @@ import (
 	"strings"
 
 	"procoder/internal/actions"
+	"procoder/internal/adr"
 	"procoder/internal/audit"
 	"procoder/internal/backlog"
+	"procoder/internal/bench"
 	"procoder/internal/ciops"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
 	"procoder/internal/debt"
+	"procoder/internal/deps"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/format"
@@ -35,8 +38,10 @@ import (
 	"procoder/internal/plan"
 	"procoder/internal/portability"
 	"procoder/internal/principles"
+	"procoder/internal/release"
 	"procoder/internal/security"
 	"procoder/internal/spec"
+	"procoder/internal/testrun"
 	"procoder/internal/todo"
 	"procoder/internal/tools"
 )
@@ -179,6 +184,14 @@ const usage = `usage: procoder <command> [args]
                        <id>; stories carry todo-task rigor, closes REFUSE
                        until the controller is satisfied (todo itself stays
                        the standalone list for non-spec work)
+  adr <sub>            architecture decision records under .procoder/adr/:
+                       new <title> | list | check — durable decisions with
+                       their date and context; check refuses hollow records,
+                       bad statuses, and dangling supersede references
+  bench [--save]       run the repository's Go benchmarks and compare against
+                       the saved baseline (.procoder/bench/baseline.txt);
+                       regressions beyond [bench] threshold (default 10%) are
+                       marked and exit 1; --save records a new baseline
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
                        types are counted out loud
@@ -188,6 +201,9 @@ const usage = `usage: procoder <command> [args]
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
                        flagged
+  deps                 the freshness report: outdated dependencies per
+                       ecosystem via each one's native tool, licenses where a
+                       tool exists — report-only, judgment stays yours
   docs [--external]    the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
                        structure; --external adds link checking and Pages health
@@ -236,6 +252,10 @@ const usage = `usage: procoder <command> [args]
                        with — .procoder/PRINCIPLES.md wins over the default;
                        --hook answers in the running host's SessionStart
                        JSON shape (claude/codex/copilot/qoder)
+  release [<version>]  the pre-tag controller: version-sync across [release]
+                       files, the changelog entry, a clean tree, the gate, and
+                       the suite under [test] policy — every failure listed,
+                       and on success the tag command printed, never run
   scrub <file|->       check text (a commit message, a drafted PR body) for
                        AI-attribution lines; exits 1 when any are found
   security [--deep]    secrets over the changed files (gitleaks — blocking);
@@ -252,6 +272,14 @@ const usage = `usage: procoder <command> [args]
                        remain, or acceptance criteria are untestable
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
+  test [--coverage] [paths...]
+                       run the repository's actual test suite: every detected
+                       ecosystem's canonical runner (go test, cargo test, the
+                       package.json test script, pytest, gradle/maven), each
+                       reported honestly — NOT run is never the same as green;
+                       --coverage reports the percentage where the runner
+                       measures it natively; with [test] policy = "block" the
+                       todo and story closes refuse while the suite is red
   todo <sub> [arg]     the quality-gated task list under .procoder/todo/:
                        add <title> | list | show <id> | close <id> — close
                        REFUSES until every acceptance criterion is checked,
@@ -283,6 +311,47 @@ func run(args []string) int {
 		return formatCmd(args[1:])
 	case "audit":
 		return audit.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "adr":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		root := doctor.Root()
+		out := func(s string) { fmt.Println(s) }
+		switch args[1] {
+		case "new":
+			if len(args) < 3 {
+				fmt.Fprint(os.Stderr, usage)
+				return 2
+			}
+			return adr.New(root, strings.Join(args[2:], " "), out)
+		case "list":
+			return adr.List(root, out)
+		case "check":
+			return adr.Run(root, out)
+		default:
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+	case "bench":
+		root := doctor.Root()
+		save := len(args) > 1 && args[1] == "--save"
+		if len(args) > 1 && !save {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return bench.Run(root, save, config.Load(root).BenchThreshold, func(s string) { fmt.Println(s) })
+	case "deps":
+		return deps.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "release":
+		root := doctor.Root()
+		version := ""
+		if len(args) > 1 {
+			version = args[1]
+		}
+		return release.Run(root, version, func() bool {
+			return gate.Run(nil, root, io.Discard) == 0
+		}, suiteCheck(root), func(s string) { fmt.Println(s) })
 	case "backlog":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -493,6 +562,18 @@ func run(args []string) int {
 		return principles.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
+	case "test":
+		root := doctor.Root()
+		coverage := false
+		var paths []string
+		for _, a := range args[1:] {
+			if a == "--coverage" {
+				coverage = true
+				continue
+			}
+			paths = append(paths, a)
+		}
+		return testrun.Report(testrun.Run(root, paths, coverage), func(s string) { fmt.Println(s) })
 	case "scrub":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -623,6 +704,14 @@ func backlogCmd(args []string) int {
 			return 2
 		}
 		return backlog.Story(root, strings.Join(pos, " "), epic, out)
+	case "bug":
+		epic, pos := flagVal("--epic", args[1:])
+		severity, pos := flagVal("--severity", pos)
+		if len(pos) == 0 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return backlog.Bug(root, strings.Join(pos, " "), epic, severity, out)
 	case "seed":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) != 1 {
@@ -641,9 +730,9 @@ func backlogCmd(args []string) int {
 		}
 		switch args[1] {
 		case "story":
-			return backlog.CloseStory(root, args[2], func() bool {
+			return backlog.CloseStoryWith(root, args[2], func() bool {
 				return gate.Run(nil, root, io.Discard) == 0
-			}, out)
+			}, suiteCheck(root), out)
 		case "epic":
 			return backlog.CloseEpic(root, args[2], out)
 		case "milestone":
@@ -688,6 +777,16 @@ func sprintCmd(args []string) int {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
+}
+
+// suiteCheck returns the test-suite verdict closure when the repo opted
+// into `[test] policy = "block"`, nil otherwise — closes then behave
+// exactly as before the policy existed.
+func suiteCheck(root string) func() (bool, string) {
+	if !config.Load(root).TestBlock {
+		return nil
+	}
+	return testrun.Suite(root)
 }
 
 // todoCmd dispatches the quality-gated task list. close runs the real gate
@@ -738,9 +837,9 @@ func todoCmd(args []string) int {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		return todo.Close(root, args[1], func() bool {
+		return todo.CloseWith(root, args[1], func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
-		}, out)
+		}, suiteCheck(root), out)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2

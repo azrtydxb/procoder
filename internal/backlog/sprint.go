@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"procoder/internal/config"
 )
 
 // sprintLineRe matches the whole Sprint header line of a story file — the
@@ -72,18 +74,26 @@ func SprintOpen(root, goal string, out func(string)) int {
 		return 1
 	}
 	// Next sequence number: one past the highest existing sprint's, so
-	// the directory reads as the project's sprint history in order.
+	// the directory reads as the project's sprint history in order. The
+	// same walk finds the most recently closed sprint for the retro gate.
 	seq := 0
+	var last Item
+	lastSeq := -1
 	for _, it := range items {
 		if it.Kind != KindSprint {
 			continue
 		}
-		digits := it.ID
-		if i := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
-			digits = digits[:i]
-		}
-		if n, err := strconv.Atoi(digits); err == nil && n > seq {
+		n := sprintSeq(it.ID)
+		if n > seq {
 			seq = n
+		}
+		if strings.HasPrefix(it.Status, "closed") && (n > lastSeq || (n == lastSeq && it.ID > last.ID)) {
+			last, lastSeq = it, n
+		}
+	}
+	if lastSeq >= 0 && !config.Load(root).SprintRetroOff {
+		if code := retroGate(last, out); code != 0 {
+			return code
 		}
 	}
 	id := fmt.Sprintf("%03d-%s", seq+1, slugify(goal))
@@ -91,6 +101,39 @@ func SprintOpen(root, goal string, out func(string)) int {
 	out("== write this to " + rel + ":")
 	out(fmt.Sprintf(sprintTemplate, goal, time.Now().UTC().Format("2006-01-02")))
 	out("then pull the stories this goal needs with `procoder sprint pull <story-id>`.")
+	return 0
+}
+
+// sprintSeq reads the leading digits of a sprint id as its sequence
+// number; an id with no leading digits has no place in the sequence (-1).
+func sprintSeq(id string) int {
+	digits := id
+	if i := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' }); i >= 0 {
+		digits = digits[:i]
+	}
+	if n, err := strconv.Atoi(digits); err == nil {
+		return n
+	}
+	return -1
+}
+
+// retroGate is the price of the next sprint: the last closed sprint's
+// Retro section must hold real content — guidance comments stripped —
+// before another sprint opens. A closed sprint with no Retro section at
+// all (one that predates the scaffold) counts as empty, and an unreadable
+// one refuses too: an unreadable retro is unknown, and unknown is never
+// done. `[sprint] retro = "off"` in config.toml opts a repo out.
+func retroGate(last Item, out func(string)) int {
+	rel := filepath.ToSlash(filepath.Join(Dir, KindSprint, last.ID+".md"))
+	raw, err := os.ReadFile(last.Path)
+	if err != nil {
+		out("cannot read " + rel + " — an unreadable retro is unknown, and unknown is never done; fix the file before opening a sprint")
+		return 1
+	}
+	if strings.TrimSpace(stripComments(section(string(raw), "Retro"))) == "" {
+		out("the retro is the price of the next sprint — write what sprint " + last.ID + " taught you into the ## Retro section of " + rel + " (or set `[sprint] retro = \"off\"` in .procoder/config.toml)")
+		return 1
+	}
 	return 0
 }
 
@@ -275,7 +318,12 @@ func SprintClose(root string, out func(string)) int {
 	text += "\n## Result\n\n" +
 		fmt.Sprintf("committed: %d\n", len(done)+len(carried)) +
 		"done: " + countWithIDs(done) + "\n" +
-		"carried: " + countWithIDs(carried) + "\n"
+		"carried: " + countWithIDs(carried) + "\n" +
+		// the retro scaffold: filling it is the price of the next sprint
+		"\n## Retro\n\n" +
+		"<!-- What slowed us down this sprint. -->\n\n" +
+		"<!-- What we change next sprint because of it. -->\n\n" +
+		"<!-- One adaptation from this sprint worth keeping. -->\n"
 	if err := os.WriteFile(active.Path, []byte(text), 0o644); err != nil {
 		out("cannot update the sprint file: " + err.Error())
 		return 2

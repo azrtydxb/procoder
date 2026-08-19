@@ -20,6 +20,10 @@ for standalone work not born from a spec.
   `procoder backlog story <title> --epic <id>` — print the file for
   each level; write it, then fill the real content (a story needs a
   real description and testable acceptance criteria before work starts).
+- `procoder backlog bug <title> [--epic <id>] [--severity sN]` —
+  a defect is a story with a severity and a pre-seeded regression-test
+  criterion; close refuses without the severity. Triage honestly:
+  s1/s2 jump the queue, and the regression test is not optional.
 - `procoder backlog board` — the tree: milestones → epics → stories
   with statuses, sprint tags, spec-drift flags, and orphans. Run this
   to orient before pulling work.

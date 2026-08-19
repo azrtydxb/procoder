@@ -21,6 +21,14 @@ import (
 // anything. Mirrors todo.Close in full rigor; the two domains stay
 // independent.
 func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
+	return CloseStoryWith(root, id, gateClean, nil, out)
+}
+
+// CloseStoryWith is CloseStory plus the test-suite verdict: under
+// `[test] policy = "block"` the caller passes testrun.Suite and a red (or
+// unverifiable) suite keeps the story open. suite nil means the policy is
+// off.
+func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
 	path, err := ItemFile(root, KindStory, id)
 	if err != nil {
 		out(err.Error())
@@ -51,12 +59,28 @@ func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
 	if n := len(uncheckedRe.FindAllString(criteria, -1)); n > 0 {
 		missing = append(missing, fmt.Sprintf("%d acceptance criterion(s) unchecked", n))
 	}
+	if m := typeRe.FindStringSubmatch(text); m != nil && m[1] == "bug" {
+		// A defect without a severity was never triaged — the header is
+		// part of a bug's rigor, exactly like evidence.
+		sev := ""
+		if m := severityRe.FindStringSubmatch(text); m != nil {
+			sev = m[1]
+		}
+		if !validSeverity(sev) {
+			missing = append(missing, "a bug closes with a severity — add Severity: s1..s4")
+		}
+	}
 	evidence := section(text, "Evidence")
 	if strings.TrimSpace(stripComments(evidence)) == "" {
 		missing = append(missing, "Evidence is empty — record the commands run and what their output proved")
 	}
 	if !gateClean() {
 		missing = append(missing, "the gate is not clean — `procoder check` must pass before a story closes")
+	}
+	if suite != nil {
+		if ok, summary := suite(); !ok {
+			missing = append(missing, "the test suite is not green — "+summary)
+		}
 	}
 	if len(missing) > 0 {
 		out("story " + id + " stays OPEN — the quality controller found:")

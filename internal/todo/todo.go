@@ -134,6 +134,13 @@ func Add(root, title string, out func(string)) int {
 // `procoder check` on demand — the gate result belongs in the verdict
 // because "done" includes not having broken anything.
 func Close(root, id string, gateClean func() bool, out func(string)) int {
+	return CloseWith(root, id, gateClean, nil, out)
+}
+
+// CloseWith is Close plus the test-suite verdict: under `[test] policy =
+// "block"` the caller passes testrun.Suite and a red (or unverifiable)
+// suite keeps the task open. suite nil means the policy is off.
+func CloseWith(root, id string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
 	path, err := File(root, id)
 	if err != nil {
 		out(err.Error())
@@ -170,6 +177,11 @@ func Close(root, id string, gateClean func() bool, out func(string)) int {
 	}
 	if !gateClean() {
 		missing = append(missing, "the gate is not clean — `procoder check` must pass before a task closes")
+	}
+	if suite != nil {
+		if ok, summary := suite(); !ok {
+			missing = append(missing, "the test suite is not green — "+summary)
+		}
 	}
 	if len(missing) > 0 {
 		out("task " + id + " stays OPEN — the quality controller found:")
@@ -224,5 +236,17 @@ func slugify(title string) string {
 			b.WriteByte('-')
 		}
 	}
-	return strings.Trim(b.String(), "-")
+	slug := strings.Trim(b.String(), "-")
+	// Windows caps full paths at 260 characters and CI checkouts sit deep
+	// in D:\a\...; a slug born from a whole sentence (a seeded acceptance
+	// criterion) must not push a file past that. Cut at a word boundary.
+	const maxSlug = 60
+	if len(slug) > maxSlug {
+		cut := slug[:maxSlug]
+		if i := strings.LastIndexByte(cut, '-'); i > 40 {
+			cut = cut[:i]
+		}
+		slug = strings.Trim(cut, "-")
+	}
+	return slug
 }

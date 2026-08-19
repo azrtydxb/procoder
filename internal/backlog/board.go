@@ -45,7 +45,7 @@ func List(root string, out func(string)) int {
 		return !items[a].Done() && items[b].Done()
 	})
 	for _, it := range items {
-		out(fmt.Sprintf("  [%s]  %s  %s  %s", it.Status, singular[it.Kind], it.ID, it.Title))
+		out(fmt.Sprintf("  [%s]  %s  %s  %s", it.Status, kindWord(it), it.ID, it.Title))
 	}
 	return 0
 }
@@ -130,7 +130,7 @@ func Board(root string, out func(string)) int {
 			out(storyLine(s, note))
 		}
 	}
-	var open, done, unreadable int
+	var open, done, unreadable, openBugs int
 	for _, s := range stories {
 		switch {
 		case s.Status == "unreadable":
@@ -139,19 +139,39 @@ func Board(root string, out func(string)) int {
 			done++
 		default:
 			open++
+			if s.Type == "bug" {
+				openBugs++
+			}
 		}
 	}
 	if active == "" {
 		active = "none"
 	}
 	out("")
-	out(fmt.Sprintf("%d open · %d done · %d unreadable stories — active sprint: %s", open, done, unreadable, active))
+	summary := fmt.Sprintf("%d open · %d done · %d unreadable stories — active sprint: %s", open, done, unreadable, active)
+	if openBugs > 0 {
+		// open defects earn their own count — they are the work that
+		// jumped the queue, and the summary must not average them away
+		summary += fmt.Sprintf(" · %d open bug(s)", openBugs)
+	}
+	out(summary)
 	return 0
+}
+
+// kindWord is the word a human reads for an item: a story typed bug reads
+// as a bug, everything else keeps its kind's singular.
+func kindWord(it Item) string {
+	if it.Kind == KindStory && it.Type == "bug" {
+		return "bug"
+	}
+	return singular[it.Kind]
 }
 
 // storyLine renders one story: [x] done, [ ] open (or anything the
 // controller would treat as open), [!] unreadable, plus the sprint tag
-// when the story is committed and any note the caller appends.
+// when the story is committed and any note the caller appends. A bug
+// carries a B/severity marker so open s1/s2 defects read at a glance —
+// s? when the header is missing, a gap shown rather than smoothed over.
 func storyLine(s Item, note string) string {
 	mark := " "
 	switch {
@@ -160,11 +180,19 @@ func storyLine(s Item, note string) string {
 	case s.Done():
 		mark = "x"
 	}
+	bug := ""
+	if s.Type == "bug" {
+		sev := s.Severity
+		if !validSeverity(sev) {
+			sev = "s?"
+		}
+		bug = "B/" + sev + " "
+	}
 	tag := ""
 	if s.Sprint != "" && s.Sprint != "-" {
 		tag = "  → sprint " + s.Sprint
 	}
-	return fmt.Sprintf("    [%s] %s  %s%s%s", mark, s.ID, s.Title, tag, note)
+	return fmt.Sprintf("    [%s] %s%s  %s%s%s", mark, bug, s.ID, s.Title, tag, note)
 }
 
 // driftFlag compares an epic's recorded spec fingerprint against the spec

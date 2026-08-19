@@ -301,3 +301,25 @@ func TestCloseMilestoneRefusedThenClosed(t *testing.T) {
 		t.Fatalf("missing milestone must exit 2: %d %v", code, *lines4)
 	}
 }
+
+// The story controller consumes the same suite verdict as todo close;
+// suite nil (policy off) is the delegating CloseStory path the other tests
+// cover.
+func TestCloseStoryWithSuiteVerdict(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, KindStory, "s", solidStory)
+	gate := func() bool { return true }
+	red := func() (bool, string) { return false, "go: 1 test(s) failing" }
+	out, lines := collect()
+	if code := CloseStoryWith(root, "s", gate, red, out); code != 1 {
+		t.Fatalf("a red suite must keep the story open: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "test suite is not green") {
+		t.Fatalf("the refusal must say why: %v", *lines)
+	}
+	green := func() (bool, string) { return true, "go: pass" }
+	out2, lines2 := collect()
+	if code := CloseStoryWith(root, "s", gate, green, out2); code != 0 {
+		t.Fatalf("a green suite must close: exit %d %v", code, *lines2)
+	}
+}

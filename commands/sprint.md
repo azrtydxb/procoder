@@ -25,7 +25,11 @@ that is the WIP limit, and the point.
 - `launcher.sh sprint close` — REFUSES while a committed story is
   neither done nor carried. Finish it (`backlog close story <id>`) or
   carry it with a reason, then close; the sprint file gets a Result
-  section with committed/done/carried counts.
+  section with committed/done/carried counts and a Retro scaffold.
+- Fill the Retro before moving on — what slowed us, what we change,
+  one adaptation worth keeping. The retro is the price of the next
+  sprint: `sprint open` refuses while the last one's Retro is empty
+  (`[sprint] retro = "off"` opts a repo out).
 
 With arguments, run the matching subcommand and act on its output.
 Without arguments, run `status` and report where the sprint stands.

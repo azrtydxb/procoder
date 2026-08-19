@@ -90,7 +90,8 @@ func TestSprintOpenBlockedByUnreadableSprintFile(t *testing.T) {
 
 func TestSprintOpenSequenceNumbering(t *testing.T) {
 	root := t.TempDir()
-	writeItem(t, root, KindSprint, "001-done-sprint", "# done sprint\n\nStatus: closed 2026-01-01\n")
+	// the closed sprint carries a filled retro so only sequencing is on trial
+	writeItem(t, root, KindSprint, "001-done-sprint", "# done sprint\n\nStatus: closed 2026-01-01\n\n## Retro\n\nwe learned to slice thinner\n")
 	out, lines := collect()
 	if code := SprintOpen(root, "next goal", out); code != 0 {
 		t.Fatalf("open: exit %d %v", code, *lines)
@@ -266,5 +267,98 @@ func TestSprintCloseZeroStories(t *testing.T) {
 	text := string(raw)
 	if !strings.Contains(text, "committed: 0") || !strings.Contains(text, "done: 0") || !strings.Contains(text, "carried: 0") {
 		t.Fatalf("zero summary missing: %s", text)
+	}
+}
+
+func TestSprintCloseWritesRetroScaffold(t *testing.T) {
+	root := t.TempDir()
+	sp := writeItem(t, root, KindSprint, "001-mvp", "# mvp\n\nStatus: active\n")
+	out, lines := collect()
+	if code := SprintClose(root, out); code != 0 {
+		t.Fatalf("close: exit %d %v", code, *lines)
+	}
+	raw, err := os.ReadFile(sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	ri := strings.Index(text, "## Result")
+	ti := strings.Index(text, "## Retro")
+	if ri < 0 || ti < 0 || ti <= ri {
+		t.Fatalf("Retro must follow Result:\n%s", text)
+	}
+	for _, want := range []string{"What slowed us down", "What we change next sprint", "One adaptation"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Retro scaffold must ask %q:\n%s", want, text)
+		}
+	}
+}
+
+// The retro walk: close a sprint, watch the next open refuse until the
+// retro holds a real sentence — the learning loop enforced end to end.
+func TestSprintOpenRefusesUntilRetroIsFilled(t *testing.T) {
+	root := t.TempDir()
+	sp := writeItem(t, root, KindSprint, "001-mvp", "# mvp\n\nStatus: active\n")
+	out, lines := collect()
+	if code := SprintClose(root, out); code != 0 {
+		t.Fatalf("close: exit %d %v", code, *lines)
+	}
+
+	// the scaffold's guidance comments alone do not count as a retro
+	out2, lines2 := collect()
+	if code := SprintOpen(root, "next goal", out2); code != 1 {
+		t.Fatalf("open must refuse while the retro is empty: exit %d %v", code, *lines2)
+	}
+	j2 := strings.Join(*lines2, "\n")
+	if !strings.Contains(j2, "sprints/001-mvp.md") {
+		t.Fatalf("refusal must name the sprint file: %v", *lines2)
+	}
+	if !strings.Contains(j2, "retro is the price of the next sprint") {
+		t.Fatalf("refusal must say why: %v", *lines2)
+	}
+
+	// one real sentence appended into the Retro section unlocks the open
+	raw, err := os.ReadFile(sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sp, append(raw, "reviews queued too long; smaller stories next time\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out3, lines3 := collect()
+	if code := SprintOpen(root, "next goal", out3); code != 0 {
+		t.Fatalf("open after a real retro: exit %d %v", code, *lines3)
+	}
+	if !strings.Contains(strings.Join(*lines3, "\n"), "sprints/002-next-goal.md") {
+		t.Fatalf("open must print the next sprint: %v", *lines3)
+	}
+}
+
+func TestSprintOpenRetroGateDisabledByConfig(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, KindSprint, "001-mvp", "# mvp\n\nStatus: active\n")
+	out, lines := collect()
+	if code := SprintClose(root, out); code != 0 {
+		t.Fatalf("close: exit %d %v", code, *lines)
+	}
+	if err := os.WriteFile(root+"/.procoder/config.toml", []byte("[sprint]\nretro = \"off\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out2, lines2 := collect()
+	if code := SprintOpen(root, "next goal", out2); code != 0 {
+		t.Fatalf("retro = off must disable the gate: exit %d %v", code, *lines2)
+	}
+}
+
+func TestSprintOpenRetroGateOnSprintPredatingTheScaffold(t *testing.T) {
+	root := t.TempDir()
+	// a sprint closed before the Retro scaffold existed: no section at all
+	writeItem(t, root, KindSprint, "001-legacy", "# legacy\n\nStatus: closed 2026-01-01\n\n## Result\n\ncommitted: 0\ndone: 0\ncarried: 0\n")
+	out, lines := collect()
+	if code := SprintOpen(root, "next goal", out); code != 1 {
+		t.Fatalf("a closed sprint with no Retro section counts as empty: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "sprints/001-legacy.md") {
+		t.Fatalf("refusal must name the sprint file: %v", *lines)
 	}
 }
