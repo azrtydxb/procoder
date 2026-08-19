@@ -295,6 +295,38 @@ func TestReadmeMustMentionDeclaredFamilies(t *testing.T) {
 	}
 }
 
+// The failure this pins: a PR adding a docs page and linking its future
+// site URL could never pass CI — the page 404s until the very deploy the
+// PR triggers. Own-site links with a local source page are pending, not
+// dead; genuinely missing pages still block.
+func TestOwnSiteLinksPendingDeployAreNotDead(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "mkdocs.yml", "site_name: x\nsite_url: https://example.github.io/x/\n")
+	write(t, root, "docs/getting-started.md", "# gs\n")
+
+	if !localPageExists(root, "getting-started/") {
+		t.Error("existing page must be recognised as pending, not dead")
+	}
+	if !localPageExists(root, "getting-started/#anchor") {
+		t.Error("anchors strip before the lookup")
+	}
+	if localPageExists(root, "") {
+		t.Error("no docs/index.md here — the site root is genuinely missing")
+	}
+	if localPageExists(root, "nope/") {
+		t.Error("a missing page is dead, not pending")
+	}
+	if localPageExists(root, "../secret") {
+		t.Error("traversal never resolves")
+	}
+	if got := siteURL(root); got != "https://example.github.io/x/" {
+		t.Errorf("siteURL = %q", got)
+	}
+	if got := extractURL("* [404] <https://example.github.io/x/getting-started/> (at 12:1)"); got != "https://example.github.io/x/getting-started/" {
+		t.Errorf("extractURL = %q", got)
+	}
+}
+
 // The failure this pins: the changelog existed, so RequiredDocs was happy,
 // but nothing forced an entry for the version being released — a bump
 // without release notes shipped silently.

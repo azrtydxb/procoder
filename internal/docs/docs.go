@@ -594,18 +594,76 @@ func ExternalLinks(root string, files []string) []gitx.Finding {
 	if err == nil {
 		return nil
 	}
+	site := siteURL(root)
 	var out []gitx.Finding
 	for _, line := range strings.Split(buf.String(), "\n") {
 		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "* [") || strings.Contains(t, "[ERROR]") {
-			out = append(out, gitx.Finding{Blocking: true, Message: "dead external link: " + t})
+		if !strings.HasPrefix(t, "* [") && !strings.Contains(t, "[ERROR]") {
+			continue
 		}
+		// a dead link to OUR OWN site whose page exists locally is not
+		// dead — it is pending this change's deploy (a PR adding a page
+		// and linking it would otherwise never pass CI)
+		if u := extractURL(t); site != "" && strings.HasPrefix(u, site) && localPageExists(root, strings.TrimPrefix(u, site)) {
+			out = append(out, gitx.Finding{
+				Message: "own-site link not deployed yet (page exists locally, resolves after the docs deploy): " + u})
+			continue
+		}
+		out = append(out, gitx.Finding{Blocking: true, Message: "dead external link: " + t})
 	}
 	if len(out) == 0 {
 		out = append(out, gitx.Finding{File: files[0], Blocking: true,
 			Message: "lychee failed without a parseable report — external links were NOT checked: " + firstLine(buf.String())})
 	}
 	return out
+}
+
+// siteURL reads the docs site's base URL from mkdocs.yml; empty when the
+// repo has no site.
+func siteURL(root string) string {
+	raw, err := os.ReadFile(filepath.Join(root, "mkdocs.yml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "site_url:"); ok {
+			u := strings.TrimSpace(rest)
+			if u != "" && !strings.HasSuffix(u, "/") {
+				u += "/"
+			}
+			return u
+		}
+	}
+	return ""
+}
+
+var urlInLycheeLine = regexp.MustCompile(`<(https?://[^>]+)>`)
+
+func extractURL(line string) string {
+	if m := urlInLycheeLine.FindStringSubmatch(line); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// localPageExists maps a site path to its mkdocs source page.
+func localPageExists(root, rel string) bool {
+	rel = strings.Trim(rel, "/")
+	if i := strings.IndexAny(rel, "#?"); i >= 0 {
+		rel = strings.Trim(rel[:i], "/")
+	}
+	if strings.Contains(rel, "..") {
+		return false
+	}
+	if rel == "" {
+		rel = "index"
+	}
+	for _, candidate := range []string{rel + ".md", rel + "/index.md"} {
+		if _, err := os.Stat(filepath.Join(root, "docs", candidate)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // PagesHealth checks GitHub Pages is enabled and its latest build succeeded.
