@@ -2,6 +2,30 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.23.0 — 2026-08-19
+
+Serena parity: the two capabilities that still needed the serena MCP
+plugin now live in procoder, without giving up P-CONTROL.
+
+- `procoder index rename <symbol> <new> [--at path:line]` — the
+  cross-file rename as a reviewable unified diff, computed by the
+  language's own engine (Go via gopls, which doctor now requires on Go
+  repositories). Nothing is written: the agent reviews and applies the
+  diff, then verifies with `index refs`. Languages without an engine
+  answer honestly with the reference worksheet instead of a half-right
+  rewrite; an ambiguous name lists every definition and asks for `--at`.
+- `procoder lint --types` — the type-checker where the canonical linter
+  does not compile the code: `tsc --noEmit` for TypeScript (grouped
+  under each file's nearest tsconfig; without one the file is declared
+  out of scope, never silently skipped) and pyright for Python. Go and
+  Rust need no flag — golangci-lint and clippy already compile what
+  they lint. Doctor requires tsc under a project tsconfig and pyright
+  where Python is a real project (pyproject/requirements).
+- The index skill now says when to reach past the index: a textual refs
+  answer, same-named symbols, or interface implementations are the
+  language server's job — use the host's native LSP tool and come back
+  to the index for repo-wide sweeps.
+
 ## 0.22.1 — 2026-08-19
 
 - The CLI help (`procoder` with no arguments) now lists every command

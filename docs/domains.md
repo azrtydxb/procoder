@@ -52,6 +52,12 @@ findings block. Lint is judgment where formatting was not — the findings
 arrive in-turn on every write, and the agent is expected to fix what is
 real and say why for what is not.
 
+`lint --types` closes the compile gap: Go and Rust arrive compiled
+(their linters build what they lint), TypeScript and Python do not — so
+the flag adds `tsc --noEmit` (under the project's own tsconfig) and
+pyright. The agent reaches for it after refactors and renames, where
+type fallout is exactly what the linters cannot see.
+
 ## 3. Maintainability
 
 `procoder maintain` — informed judgment, never blocking.
@@ -154,7 +160,7 @@ full cleanup).
 ## Beneath them: the code index
 
 Two tiers — universal-ctags for breadth, SCIP for precision — with
-eleven queries from `find` to the call `graph`, kept current by the hook,
+twelve queries from `find` to the call `graph`, kept current by the hook,
 consumed by the agent and the domains alike (maintainability's dead-code
 sweep and the gate's impact lines both read it).
 
@@ -171,6 +177,11 @@ The language matrix, stated honestly:
   builds (scip-java). One indexer runs per repository (the first layout
   match); everything else answers textually and says so in the output —
   a textual ref is labeled, never passed off as precise.
+- **Rename** (`index rename`): the one write-shaped operation, and it
+  still writes nothing — the language's own engine computes the
+  cross-file rename (Go via gopls) and procoder prints it as a unified
+  diff for the agent to review and apply. A language without an engine
+  gets the reference worksheet, not a half-right rewrite.
 
 ## Above them: the quality chain
 

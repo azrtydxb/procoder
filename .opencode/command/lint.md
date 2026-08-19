@@ -21,4 +21,9 @@ The command below is the `procoder` binary on PATH.
    packages into repos.
 4. Findings are informational by default; the repo can make them block the
    gate with `[lint] policy = "block"` in .procoder/config.toml.
-5. Re-run after fixing and show the user the result.
+5. `procoder lint --types [paths]` adds the type-checker where the
+   linter does not compile the code: `tsc --noEmit` for TypeScript (under
+   the project's own tsconfig) and pyright for Python. Go and Rust need
+   no flag — their linters already compile. Use it after refactors and
+   renames to catch type fallout the linters cannot see.
+6. Re-run after fixing and show the user the result.
