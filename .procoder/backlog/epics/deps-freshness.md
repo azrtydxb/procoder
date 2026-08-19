@@ -1,6 +1,6 @@
 # deps-freshness
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
 Spec: deps-freshness @ df33094616d6

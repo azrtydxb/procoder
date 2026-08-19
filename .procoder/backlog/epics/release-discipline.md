@@ -1,6 +1,6 @@
 # release-discipline
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
 Spec: release-discipline @ 9bde9a84a47e

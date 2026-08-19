@@ -1,6 +1,6 @@
 # adr
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
 Spec: adr @ c033ce0dd507

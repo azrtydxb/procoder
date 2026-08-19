@@ -64,6 +64,11 @@ user stories**, with the story as the execution unit of spec-based work
 - `milestone <title>` / `epic <title> [--milestone <id>]` /
   `story <title> --epic <id>` — print each file for the agent to
   review and write; slug collisions refuse rather than overwrite.
+- `bug <title> [--epic <id>] [--severity s1|s2|s3|s4]` — a defect is a
+  story with `Type: bug` and a severity (default s3): the description
+  prompts for reproduction steps, the criteria are pre-seeded with the
+  non-negotiable regression test, and closing without a severity is
+  refused. The board marks open bugs with their severity.
 - `seed <spec> [--milestone <id>]` — decompose a COMPLETE spec into an
   epic plus one story per acceptance criterion. The epic records the
   spec name and a content fingerprint; an incomplete spec is refused
@@ -93,7 +98,51 @@ into it, no story points, no calendar enforcement.
 - `status` — goal, committed stories, done/total and carried counts.
 - `close` — refuses while a committed story is neither done nor
   carried; on success the sprint file gains a Result section with
-  committed/done/carried counts.
+  committed/done/carried counts, plus a Retro scaffold (what slowed
+  us, what we change, one adaptation worth keeping).
+- The retro is the price of the next sprint: `open` refuses while the
+  last closed sprint's Retro is empty. A repo opts out with
+  `[sprint] retro = "off"` in config.toml.
+
+### `procoder release [<version>]`
+
+The pre-tag controller: verifies in one pass that every file in
+`[release] files` (config.toml) carries the version, CHANGELOG.md has
+the `## <version>` entry, the working tree is clean (untracked
+included), the gate is clean, and the suite is green under
+`[test] policy`. Every failure is listed together; on success the
+`git tag` command is printed for the agent to run — the binary tags
+nothing. Without `[release] files` the version-sync leg honestly says
+it verified nothing. Bare `procoder release` reads the newest changelog
+version and checks that.
+
+### `procoder adr <sub>`
+
+Architecture decision records under `.procoder/adr/`, numbered and
+immutable — a changed mind writes a new record and supersedes the old.
+`new <title>` prints the next-numbered record (Context / Decision /
+Consequences); `list` shows proposed first; `check` refuses hollow
+records, unknown statuses, dangling supersede references, and
+duplicated numbers. The audit sweep includes these findings.
+
+### `procoder deps`
+
+The freshness report: outdated dependencies per ecosystem via each
+one's native tool — `go list -u -m`, `npm outdated`, cargo-outdated and
+pip where available — capped, summarized, report-only. Licenses report
+where a tool exists (go-licenses for Go) and answer NOT checked
+honestly everywhere else. A missing optional tool is information; a
+tool that errored is a failure.
+
+### `procoder bench [--save]`
+
+The Go benchmarks (`go test -bench . -benchmem`), compared against the
+committed baseline in `.procoder/bench/baseline.txt`: per-benchmark
+ns/op and B/op deltas, regressions beyond `[bench] threshold` (default
+10%) marked and exiting 1, new and vanished benchmarks listed. `--save`
+records a new baseline — a decision, taken deliberately. Results are
+single-run and machine-local; a baseline from another GOOS/GOARCH
+compares with a warning. Go only in this version, said out loud.
 
 ### `procoder test [--coverage] [paths...]`
 

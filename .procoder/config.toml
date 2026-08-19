@@ -14,3 +14,11 @@ max_file_mb = 5
 # The suite verdict joins the close controllers: todo close and
 # backlog story close refuse while `procoder test` is red.
 policy = "block"
+
+[release]
+# The version-bearing files `procoder release` verifies stay in sync.
+files = ["plugin.yaml", "package.json", "gemini-extension.json", "README.md", ".claude-plugin/plugin.json", "docs/index.md", ".github/plugin/marketplace.json", ".codex-plugin/plugin.json", ".github/plugin/plugin.json"]
+
+[bench]
+# Benchmark regressions beyond this percentage are marked and exit 1.
+threshold = 10

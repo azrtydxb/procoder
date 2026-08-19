@@ -6,27 +6,19 @@ The user invoked /procoder:perf with arguments: $ARGUMENTS
 
 The command below is the `procoder` binary on PATH.
 
-Performance work has one law: **measure first**. Never optimize from
-intuition; never claim a win without a number from before and after.
+Performance work without numbers is storytelling. The discipline:
 
-1. **Find the instruments this repository already has:**
-   - Go: `go test -bench . -benchmem ./...` where `Benchmark*` functions
-     exist (`procoder index search Benchmark` finds them);
-     `go test -cpuprofile`/`-memprofile` + `go tool pprof -top` for
-     hotspots; `-benchtime` and `-count` for stability.
-   - Python: `python -m cProfile -s cumtime`, `py-spy top --pid` for live
-     processes, `pytest-benchmark` where it is set up.
-   - JS/TS: `node --cpu-prof`, `clinic doctor` where installed.
-2. **Baseline, change, re-measure.** Run the relevant benchmark before the
-   change, keep the output, run it after, and report the delta with the
-   command used. `-count=5` and comparing distributions beats single runs;
-   for Go, `benchstat` when available.
-3. **Hotspots before micro-optimizations:** a profile naming the top
-   functions beats guessing; use `procoder index callers <fn>` to see
-   who drives a hot function before changing its contract.
-4. **If the repository has no benchmarks** and the user's task is
-   performance-shaped, write the smallest benchmark that captures the
-   claim first — a fix without a benchmark is a hope, not a fix.
-5. Report: the numbers before, the numbers after, the command that
-   produced them, and what you did NOT optimize because measurement said
-   it didn't matter.
+1. **Baseline first.** Run `procoder bench` — it runs the Go
+   benchmarks and compares against `.procoder/bench/baseline.txt`. No
+   baseline yet? `procoder bench --save` records one BEFORE you
+   touch anything. No benchmarks yet? Write one for the hot path the
+   change touches — that is the first task, not an afterthought.
+2. **Change, then measure again.** `procoder bench` marks any
+   regression beyond `[bench] threshold` (default 10%) and exits 1.
+   Improvements are numbers too — quote the delta, not adjectives.
+3. **Save deliberately.** A new baseline (`--save`) is a decision that
+   the current numbers are the new normal — take it after a reviewed
+   improvement, never to silence a regression.
+4. Results are single-run and machine-local; treat small deltas as
+   noise and cross-platform comparisons with the warning the tool
+   prints. For deeper hunts, profile (pprof) before optimizing.

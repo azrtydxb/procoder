@@ -1,6 +1,6 @@
 # backlog-extensions
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
 Spec: backlog-extensions @ 909e2954fd24

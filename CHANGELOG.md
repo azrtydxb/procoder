@@ -2,6 +2,40 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.28.0 — 2026-08-19
+
+Daily practices, complete: the six remaining gaps from the
+what-a-real-dev-does review, shipped as sprint 002 of the Daily
+Practices milestone (32 stories, all closed with evidence, milestone
+closed).
+
+- `procoder backlog bug <title> [--epic] [--severity s1..s4]` — a
+  defect is a story with a severity and a pre-seeded regression-test
+  criterion; closing without a severity is refused; the board marks
+  open bugs and counts them.
+- Sprint retrospectives: `sprint close` scaffolds a Retro (what slowed
+  us, what we change, one adaptation), and `sprint open` refuses while
+  the last retro is empty — the retro is the price of the next sprint
+  (`[sprint] retro = "off"` opts out).
+- `procoder release [<version>]` — the pre-tag controller: version
+  sync across `[release] files`, the changelog entry, a clean tree,
+  the gate, and the suite under [test] policy — every failure listed,
+  the tag command printed, never run. This repo lists its nine
+  version files.
+- `procoder adr new|list|check` — architecture decision records under
+  .procoder/adr/: numbered, immutable, superseded rather than edited;
+  check refuses hollow records, bad statuses, and dangling supersede
+  references; the audit sweep includes them. ADR 0001 records the
+  stories-vs-todo decision.
+- `procoder deps` — the freshness report per ecosystem via native
+  tools (go list -u, npm outdated, cargo-outdated and pip where
+  available), licenses where a tool exists — honest NOT-checked lines
+  everywhere else, report-only.
+- `procoder bench [--save]` — Go benchmarks against a committed
+  baseline: ns/op and B/op deltas, regressions beyond [bench]
+  threshold marked and exit 1, cross-platform baselines compared with
+  a warning. The perf skill now drives it.
+
 ## 0.27.0 — 2026-08-19
 
 The test domain: "done" finally runs the tests.

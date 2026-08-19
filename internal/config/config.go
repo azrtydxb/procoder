@@ -34,6 +34,15 @@ type Config struct {
 	FunlenStatements int
 	// DebtMarker is the comment marker `procoder debt` harvests.
 	DebtMarker string
+	// SprintRetroOff disables the retro gate: without it, opening a new
+	// sprint refuses while the last closed sprint's retro is empty.
+	SprintRetroOff bool
+	// ReleaseFiles are the version-bearing files `procoder release`
+	// verifies; unset means the version-sync leg verifies nothing (said).
+	ReleaseFiles []string
+	// BenchThreshold is the regression percentage `procoder bench` marks;
+	// zero means the default of 10.
+	BenchThreshold int
 }
 
 // Defaults per the design contract.
@@ -75,6 +84,12 @@ func Load(root string) Config {
 			cfg.LintBlock = value == "block"
 		case "test.policy":
 			cfg.TestBlock = value == "block"
+		case "sprint.retro":
+			cfg.SprintRetroOff = value == "off"
+		case "release.files":
+			cfg.ReleaseFiles = parseList(value)
+		case "bench.threshold":
+			cfg.BenchThreshold = atoiOr(value, 0)
 		case "ci.pin_actions_policy":
 			cfg.PinActions = value == "block"
 		case "maintain.gocyclo":
@@ -94,6 +109,23 @@ func Load(root string) Config {
 		}
 	}
 	return cfg
+}
+
+// parseList reads the one list shape the config uses: ["a", "b"]. The
+// value arrives with outer quotes already trimmed only when it was a plain
+// string, so lists are detected by their brackets before that trim bites.
+func parseList(value string) []string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(value[1:len(value)-1], ",") {
+		if p := strings.Trim(strings.TrimSpace(part), `"`); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func atoiOr(s string, fallback int) int {

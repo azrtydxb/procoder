@@ -89,6 +89,11 @@ while a committed story is neither done nor explicitly carried back
 with a reason — unfinished work is visible, never silent. No story
 points, no burndown: stories are counted, the goal is the commitment.
 
+Defects are stories too: `backlog bug` gives them a severity and a
+pre-seeded regression-test criterion a close cannot skip. And each
+sprint close scaffolds a **retro** — what slowed us, what we change —
+whose answer is the price of opening the next sprint.
+
 ## Todo — done means evidence
 
 `/procoder:todo` tracks execution in `.procoder/todo/`, one file per

@@ -35,6 +35,8 @@ var (
 	milestoneRe = regexp.MustCompile(`(?m)^Milestone:\s*(\S+)`)
 	epicRe      = regexp.MustCompile(`(?m)^Epic:\s*(\S+)`)
 	sprintRe    = regexp.MustCompile(`(?m)^Sprint:\s*(\S+)`)
+	typeRe      = regexp.MustCompile(`(?m)^Type:\s*(\S+)`)
+	severityRe  = regexp.MustCompile(`(?m)^Severity:\s*(\S+)`)
 	specRe      = regexp.MustCompile(`(?m)^Spec:\s*(\S+)\s*@\s*(\S+)`)
 	uncheckedRe = regexp.MustCompile(`(?m)^\s*- \[ \]`)
 	checkedRe   = regexp.MustCompile(`(?m)^\s*- \[[xX]\]`)
@@ -50,6 +52,8 @@ type Item struct {
 	Milestone string // epics: parent milestone slug, "" when none
 	Epic      string // stories: parent epic slug
 	Sprint    string // stories: sprint id, "-" or "" when in the backlog
+	Type      string // stories: "bug" from a Type: header; "" means feature
+	Severity  string // stories: s1..s4 from a Severity: header, "" when absent
 	SpecName  string // epics: source spec name, "" when none
 	SpecPrint string // epics: spec fingerprint recorded at seed time
 	Path      string
@@ -104,11 +108,19 @@ func LoadAll(root string) ([]Item, error) {
 			if m := milestoneRe.FindStringSubmatch(text); m != nil {
 				it.Milestone = m[1]
 			}
-			if m := epicRe.FindStringSubmatch(text); m != nil {
+			if m := epicRe.FindStringSubmatch(text); m != nil && m[1] != "-" {
+				// Epic: - is a story that predates any epic — the same
+				// as no Epic line at all, never a link to an epic "-".
 				it.Epic = m[1]
 			}
 			if m := sprintRe.FindStringSubmatch(text); m != nil {
 				it.Sprint = m[1]
+			}
+			if m := typeRe.FindStringSubmatch(text); m != nil {
+				it.Type = m[1]
+			}
+			if m := severityRe.FindStringSubmatch(text); m != nil {
+				it.Severity = m[1]
 			}
 			if m := specRe.FindStringSubmatch(text); m != nil {
 				it.SpecName, it.SpecPrint = m[1], m[2]
