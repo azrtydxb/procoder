@@ -51,6 +51,15 @@ var (
 	placeholder = regexp.MustCompile(`(?m)^\s*- \[.\]\s*\.\.\.`)
 )
 
+// File resolves a task id to its path, refusing ids that would escape the
+// todo directory (separators, dot-dot, hidden traversal).
+func File(root, id string) (string, error) {
+	if id == "" || id != filepath.Base(id) || strings.Contains(id, "..") {
+		return "", fmt.Errorf("invalid task id %q — ids are plain file names", id)
+	}
+	return filepath.Join(root, Dir, id+".md"), nil
+}
+
 // Task is one parsed task file.
 type Task struct {
 	ID     string
@@ -75,11 +84,15 @@ func List(root string) ([]Task, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
+		t := Task{ID: strings.TrimSuffix(e.Name(), ".md"), Path: path, Status: "open"}
 		raw, err := os.ReadFile(path)
 		if err != nil {
+			// an unreadable task is a finding, not something to hide
+			t.Status = "unreadable"
+			t.Title = err.Error()
+			tasks = append(tasks, t)
 			continue
 		}
-		t := Task{ID: strings.TrimSuffix(e.Name(), ".md"), Path: path, Status: "open"}
 		if m := statusRe.FindSubmatch(raw); m != nil {
 			t.Status = string(m[1])
 		}
@@ -108,9 +121,10 @@ func Add(root, title string, out func(string)) int {
 		out("a task needs a title")
 		return 2
 	}
-	id := time.Now().UTC().Format("20060102") + "-" + slug
+	now := time.Now().UTC()
+	id := now.Format("20060102") + "-" + slug
 	out("== write this to " + filepath.Join(Dir, id+".md") + ":")
-	out(fmt.Sprintf(Template, title, time.Now().UTC().Format("2006-01-02")))
+	out(fmt.Sprintf(Template, title, now.Format("2006-01-02")))
 	out("then fill Description and real Acceptance criteria before starting work.")
 	return 0
 }
@@ -120,7 +134,11 @@ func Add(root, title string, out func(string)) int {
 // `procoder check` on demand — the gate result belongs in the verdict
 // because "done" includes not having broken anything.
 func Close(root, id string, gateClean func() bool, out func(string)) int {
-	path := filepath.Join(root, Dir, id+".md")
+	path, err := File(root, id)
+	if err != nil {
+		out(err.Error())
+		return 2
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		out("no task " + id + " — `procoder todo list` shows what exists")

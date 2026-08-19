@@ -244,6 +244,26 @@ func TestReadmeMustCarryTheCurrentVersion(t *testing.T) {
 	}
 }
 
+// The failure this pins: the changelog existed, so RequiredDocs was happy,
+// but nothing forced an entry for the version being released — a bump
+// without release notes shipped silently.
+func TestChangelogMustCoverTheCurrentVersion(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".claude-plugin/plugin.json", `{"name":"x","version":"0.8.2"}`)
+	write(t, root, "README.md", "# x\n\nversion-0.8.2\n")
+	write(t, root, "CHANGELOG.md", "# Changelog\n\n## 0.8.1 — old news\n")
+
+	got := VersionSync(root)
+	if len(got) != 1 || !got[0].Blocking || !strings.Contains(got[0].Message, "## 0.8.2") {
+		t.Fatalf("a version with no changelog entry must block: %+v", got)
+	}
+
+	write(t, root, "CHANGELOG.md", "# Changelog\n\n## 0.8.2 — the news\n\n## 0.8.1 — old news\n")
+	if got = VersionSync(root); len(got) != 0 {
+		t.Fatalf("covered version is silent: %+v", got)
+	}
+}
+
 func TestGoExportedSymbolWithoutDocIsReported(t *testing.T) {
 	root := t.TempDir()
 	f := write(t, root, "x.go", `package x

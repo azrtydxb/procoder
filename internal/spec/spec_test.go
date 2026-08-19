@@ -106,6 +106,21 @@ func TestCheckAllTakesWorstVerdict(t *testing.T) {
 	}
 }
 
+func TestCheckRefusesTraversalNames(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, "widget", completeSpec())
+	for _, name := range []string{"../widget", "..", "a/b", "../../etc/passwd"} {
+		out, _ := collect()
+		if code := Check(root, name, out); code != 2 {
+			t.Errorf("name %q: exit %d, want 2 (refused)", name, code)
+		}
+	}
+	out, _ := collect()
+	if code := PrintTemplate("../escape", out); code != 2 {
+		t.Error("template must refuse traversal names")
+	}
+}
+
 func TestCheckUnknownSpec(t *testing.T) {
 	out, _ := collect()
 	if code := Check(t.TempDir(), "nope", out); code != 2 {

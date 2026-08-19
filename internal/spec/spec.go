@@ -116,8 +116,8 @@ func List(root string, out func(string)) int {
 // PrintTemplate hands the agent the spec shape to write (P-CONTROL: the
 // binary creates no files).
 func PrintTemplate(name string, out func(string)) int {
-	if name == "" {
-		out("a spec needs a name")
+	if name == "" || name != filepath.Base(name) || strings.Contains(name, "..") {
+		out("a spec needs a plain file name")
 		return 2
 	}
 	out("== write this to " + filepath.Join(Dir, name+".md") + " and fill it through the interview:")
@@ -136,6 +136,10 @@ func Check(root, name string, out func(string)) int {
 			return 0
 		}
 	} else {
+		if name != filepath.Base(name) || strings.Contains(name, "..") {
+			out(fmt.Sprintf("invalid spec name %q — names are plain file names", name))
+			return 2
+		}
 		f := filepath.Join(root, Dir, name+".md")
 		if _, err := os.Stat(f); err != nil {
 			out("no spec " + name + " — `procoder spec list` shows what exists")

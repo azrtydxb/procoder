@@ -438,6 +438,14 @@ func VersionSync(root string) []gitx.Finding {
 				Message: fmt.Sprintf("%s first screen does not carry the current version %s (%s) — a release without a reviewed page is how docs go stale", doc, version, source)})
 		}
 	}
+	// the changelog must COVER the current version, not merely exist —
+	// a version bump without a written entry is a silent release
+	if data, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md")); err == nil {
+		if !strings.Contains(string(data), "## "+version) {
+			out = append(out, gitx.Finding{File: filepath.Join(root, "CHANGELOG.md"), Blocking: true,
+				Message: fmt.Sprintf("CHANGELOG.md has no `## %s` entry — the current version (%s) shipped without release notes", version, source)})
+		}
+	}
 	return out
 }
 

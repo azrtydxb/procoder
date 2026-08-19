@@ -124,6 +124,23 @@ func TestCloseMissingTask(t *testing.T) {
 	}
 }
 
+func TestCloseRefusesTraversalIDs(t *testing.T) {
+	root := t.TempDir()
+	// a file OUTSIDE the todo dir that a traversal id would reach
+	if err := os.WriteFile(filepath.Join(root, "escape.md"), []byte(completeTask), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"../escape", "..", "a/b", "../../etc/passwd"} {
+		out, _ := collect()
+		if code := Close(root, id, func() bool { return true }, out); code != 2 {
+			t.Errorf("id %q: exit %d, want 2 (refused)", id, code)
+		}
+	}
+	if _, err := File(root, "fine-id"); err != nil {
+		t.Errorf("plain id refused: %v", err)
+	}
+}
+
 func TestListOrdersOpenFirst(t *testing.T) {
 	root := t.TempDir()
 	writeTask(t, root, "a-closed", "# A\n\nStatus: closed\n")
