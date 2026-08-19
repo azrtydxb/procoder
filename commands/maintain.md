@@ -19,5 +19,8 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
      leave (a table-driven function can be long and clear).
 3. Deletion is the best refactor: prefer removing dead code over commenting
    it out or keeping it "for later".
-4. Report to the user what you removed, what you refactored, and what you
+4. The thresholds are the repo's to set: `[maintain] gocyclo`,
+   `funlen_lines`, `funlen_statements` in .procoder/config.toml
+   (defaults 15/80/50).
+5. Report to the user what you removed, what you refactored, and what you
    judged fine as-is.

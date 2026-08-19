@@ -19,7 +19,6 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/docs"
 	"procoder/internal/format"
-	"procoder/internal/gitx"
 	"procoder/internal/lint"
 	"procoder/internal/security"
 	"procoder/internal/tools"
@@ -65,90 +64,29 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		return 0
 	}
 
-	res := format.Check(p.ToolInput.FilePath)
-	msg := message(res)
-
-	// A workflow file gets actionlint's findings as well — the write that
-	// introduced a broken workflow is the cheapest moment to hear about it.
-	if actions.IsWorkflowFile(p.ToolInput.FilePath) {
-		if lint := actions.Lint([]string{p.ToolInput.FilePath}); len(lint) > 0 {
-			var b []string
-			for _, f := range lint {
-				b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
-			}
-			part := fmt.Sprintf("procoder [actions]: %s has workflow problems (actionlint) — investigate and fix:\n%s",
-				p.ToolInput.FilePath, strings.Join(b, "\n"))
-			if msg != "" {
-				msg += "\n\n"
-			}
-			msg += part
+	var parts []string
+	add := func(part string) {
+		if part != "" {
+			parts = append(parts, part)
 		}
 	}
-	// Domain 5, same moment: a Markdown write gets its reference and diagram
-	// findings now; a code write gets the doc-map — which docs mention this
-	// file — so the prose is verified before the work is called done.
+
+	add(message(format.Check(p.ToolInput.FilePath)))
+	add(workflowPart(p.ToolInput.FilePath))
+
 	root := tools.RepoRoot(filepath.Dir(p.ToolInput.FilePath))
 	// keep the code index current for the file just written — maintenance of
 	// procoder-owned derived state, only when an index already exists
 	codeindex.Refresh(root, p.ToolInput.FilePath)
+
 	if docs.IsMarkdownFile(p.ToolInput.FilePath) {
-		if df := docs.CheckFile(root, p.ToolInput.FilePath); len(df) > 0 {
-			var b []string
-			for _, f := range df {
-				b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
-			}
-			part := fmt.Sprintf("procoder [docs]: %s has documentation problems — investigate and fix:\n%s",
-				p.ToolInput.FilePath, strings.Join(b, "\n"))
-			if msg != "" {
-				msg += "\n\n"
-			}
-			msg += part
-		}
+		add(markdownPart(root, p.ToolInput.FilePath))
 	} else {
-		if drift := docs.Drift(root, []string{p.ToolInput.FilePath}); len(drift) > 0 {
-			var b []string
-			for _, f := range drift {
-				b = append(b, "  "+f.File+": "+f.Message)
-			}
-			part := "procoder [docs]: documentation mentions the file you just changed — verify it is still true, update it if not:\n" + strings.Join(b, "\n")
-			if msg != "" {
-				msg += "\n\n"
-			}
-			msg += part
-		}
-		// Domain 1: a secret written into a file is caught at the moment it
-		// happens — the cheapest possible time, before it reaches history
-		for _, f := range security.SecretsChangedFiles(root, []string{p.ToolInput.FilePath}) {
-			if f.Line > 0 {
-				part := fmt.Sprintf("procoder [security]: %s:%d: %s", f.File, f.Line, f.Message)
-				if msg != "" {
-					msg += "\n\n"
-				}
-				msg += part
-			}
-		}
-		// Domain 2: the file's canonical linter answers in the same turn —
-		// findings are diagnoses; the agent judges and fixes what is real.
-		// Tool-missing and out-of-scope notes (Line 0) stay OUT of the hook:
-		// nagging every write is noise; the gate and doctor report them once.
-		var lf []gitx.Finding
-		for _, f := range lint.Files(root, []string{p.ToolInput.FilePath}, config.Load(root).LintBlock) {
-			if f.Line > 0 {
-				lf = append(lf, f)
-			}
-		}
-		if len(lf) > 0 {
-			var b []string
-			for _, f := range lf {
-				b = append(b, fmt.Sprintf("  %s:%d: %s", f.File, f.Line, f.Message))
-			}
-			part := "procoder [lint]: findings in the file you just wrote — investigate, judge, and fix what is real:\n" + strings.Join(b, "\n")
-			if msg != "" {
-				msg += "\n\n"
-			}
-			msg += part
-		}
+		add(driftPart(root, p.ToolInput.FilePath))
+		add(secretsPart(root, p.ToolInput.FilePath))
+		add(lintPart(root, p.ToolInput.FilePath))
 	}
+	msg := strings.Join(parts, "\n\n")
 
 	if msg == "" {
 		return 0
@@ -162,6 +100,81 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 	}
 	fmt.Fprintln(stdout, string(enc))
 	return 0
+}
+
+// workflowPart runs actionlint on a written workflow file — the write that
+// introduced a broken workflow is the cheapest moment to hear about it.
+func workflowPart(file string) string {
+	if !actions.IsWorkflowFile(file) {
+		return ""
+	}
+	findings := actions.Lint([]string{file})
+	if len(findings) == 0 {
+		return ""
+	}
+	var b []string
+	for _, f := range findings {
+		b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
+	}
+	return fmt.Sprintf("procoder [actions]: %s has workflow problems (actionlint) — investigate and fix:\n%s",
+		file, strings.Join(b, "\n"))
+}
+
+// markdownPart checks a written Markdown file's references and diagrams.
+func markdownPart(root, file string) string {
+	findings := docs.CheckFile(root, file)
+	if len(findings) == 0 {
+		return ""
+	}
+	var b []string
+	for _, f := range findings {
+		b = append(b, fmt.Sprintf("  line %d: %s", f.Line, f.Message))
+	}
+	return fmt.Sprintf("procoder [docs]: %s has documentation problems — investigate and fix:\n%s",
+		file, strings.Join(b, "\n"))
+}
+
+// driftPart reports which docs mention the code file just changed, so the
+// prose is verified before the work is called done.
+func driftPart(root, file string) string {
+	drift := docs.Drift(root, []string{file})
+	if len(drift) == 0 {
+		return ""
+	}
+	var b []string
+	for _, f := range drift {
+		b = append(b, "  "+f.File+": "+f.Message)
+	}
+	return "procoder [docs]: documentation mentions the file you just changed — verify it is still true, update it if not:\n" + strings.Join(b, "\n")
+}
+
+// secretsPart catches a secret at the moment it lands in a file — the
+// cheapest possible time, before it reaches history.
+func secretsPart(root, file string) string {
+	var b []string
+	for _, f := range security.SecretsChangedFiles(root, []string{file}) {
+		if f.Line > 0 {
+			b = append(b, fmt.Sprintf("procoder [security]: %s:%d: %s", f.File, f.Line, f.Message))
+		}
+	}
+	// each secret stays its own paragraph, exactly as before the refactor
+	return strings.Join(b, "\n\n")
+}
+
+// lintPart runs the file's canonical linter in the same turn — findings are
+// diagnoses; the agent judges. Tool-missing and out-of-scope notes (Line 0)
+// stay out: nagging every write is noise; gate and doctor say it once.
+func lintPart(root, file string) string {
+	var b []string
+	for _, f := range lint.Files(root, []string{file}, config.Load(root).LintBlock) {
+		if f.Line > 0 {
+			b = append(b, fmt.Sprintf("  %s:%d: %s", f.File, f.Line, f.Message))
+		}
+	}
+	if len(b) == 0 {
+		return ""
+	}
+	return "procoder [lint]: findings in the file you just wrote — investigate, judge, and fix what is real:\n" + strings.Join(b, "\n")
 }
 
 // message turns a Result into what the agent is told. Clean and OutOfScope are

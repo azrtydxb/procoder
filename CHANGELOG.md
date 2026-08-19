@@ -2,6 +2,17 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.14.1 — 2026-08-19
+
+Morning review fixes, both dictated:
+
+- hook.Run (complexity 25) and index Impact (25) refactored into named
+  single-purpose helpers — both now under the threshold; the remaining
+  switchboards (gate.Run 19 and friends) accepted as honest.
+- Maintain thresholds are repo-overridable per D-OVERRIDE:
+  `[maintain] gocyclo / funlen_lines / funlen_statements` in
+  .procoder/config.toml, defaults 15/80/50.
+
 ## 0.14.0 — 2026-08-19
 
 Domain 4, performance — and with it, all nine domains shipped.

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"procoder/internal/codeindex"
+	"procoder/internal/config"
 	"procoder/internal/lint"
 	"procoder/internal/tools"
 )
@@ -49,8 +50,9 @@ func Run(root string, out func(string)) int {
 	}
 	count += unusedLines
 
+	cfg := config.Load(root)
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-		count += complexityGo(root, out)
+		count += complexityGo(root, cfg, out)
 	}
 	if hasFiles(root, ".py") {
 		count += complexityPy(root, out)
@@ -61,27 +63,45 @@ func Run(root string, out func(string)) int {
 
 // complexityGo runs golangci-lint with ONLY the complexity rules, isolated
 // from the repo's config so nothing is required or overridden.
-func complexityGo(root string, out func(string)) int {
+func complexityGo(root string, cfg config.Config, out func(string)) int {
 	bin := tools.Resolve(lint.GolangciLint, root)
 	if bin == "" {
 		out("  complexity  NOT checked — golangci-lint is not installed; run `procoder init`")
 		return 1
 	}
 	// an isolated config carries the thresholds: golangci's CLI cannot set
-	// linter settings, and the defaults (gocyclo 30) report almost nothing
-	cfg := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-maintain-%d.yml", os.Getpid()))
-	if err := os.WriteFile(cfg, []byte(maintainGolangciCfg), 0o644); err != nil {
+	// linter settings, and the defaults (gocyclo 30) report almost nothing.
+	// The repo overrides them in .procoder/config.toml ([maintain] gocyclo,
+	// funlen_lines, funlen_statements) — D-OVERRIDE.
+	cfgPath := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-maintain-%d.yml", os.Getpid()))
+	if err := os.WriteFile(cfgPath, []byte(golangciCfg(cfg)), 0o644); err != nil {
 		out("  complexity  NOT checked — cannot write the isolated config")
 		return 1
 	}
-	defer os.Remove(cfg)
-	return runTool(root, bin, []string{"run", "--config", cfg,
+	defer os.Remove(cfgPath)
+	return runTool(root, bin, []string{"run", "--config", cfgPath,
 		"--output.text.path=stdout", "--show-stats=false", "./..."}, "complexity", out)
 }
 
-// maintainGolangciCfg is the isolated complexity/length ruleset — never the
-// repo's lint config, which domain 2 already honours.
-const maintainGolangciCfg = `version: "2"
+// Default thresholds when the repo sets none.
+const (
+	defaultGocyclo          = 15
+	defaultFunlenLines      = 80
+	defaultFunlenStatements = 50
+)
+
+func golangciCfg(cfg config.Config) string {
+	gocyclo, lines, stmts := cfg.Gocyclo, cfg.FunlenLines, cfg.FunlenStatements
+	if gocyclo == 0 {
+		gocyclo = defaultGocyclo
+	}
+	if lines == 0 {
+		lines = defaultFunlenLines
+	}
+	if stmts == 0 {
+		stmts = defaultFunlenStatements
+	}
+	return fmt.Sprintf(`version: "2"
 linters:
   default: none
   enable:
@@ -89,11 +109,12 @@ linters:
     - funlen
   settings:
     gocyclo:
-      min-complexity: 15
+      min-complexity: %d
     funlen:
-      lines: 80
-      statements: 50
-`
+      lines: %d
+      statements: %d
+`, gocyclo, lines, stmts)
+}
 
 // complexityPy runs ruff with only the McCabe complexity rule.
 func complexityPy(root string, out func(string)) int {

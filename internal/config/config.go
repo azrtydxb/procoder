@@ -25,6 +25,10 @@ type Config struct {
 	LintBlock bool
 	// PinActions: unpinned GitHub Action refs block instead of being reported.
 	PinActions bool
+	// Maintain thresholds for the complexity report; zero means the default.
+	Gocyclo          int
+	FunlenLines      int
+	FunlenStatements int
 }
 
 // Defaults per the design contract.
@@ -66,6 +70,12 @@ func Load(root string) Config {
 			cfg.LintBlock = value == "block"
 		case "ci.pin_actions_policy":
 			cfg.PinActions = value == "block"
+		case "maintain.gocyclo":
+			cfg.Gocyclo = atoiOr(value, 0)
+		case "maintain.funlen_lines":
+			cfg.FunlenLines = atoiOr(value, 0)
+		case "maintain.funlen_statements":
+			cfg.FunlenStatements = atoiOr(value, 0)
 		case "git.max_file_mb":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.MaxFileMB = n
@@ -73,4 +83,12 @@ func Load(root string) Config {
 		}
 	}
 	return cfg
+}
+
+func atoiOr(s string, fallback int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }

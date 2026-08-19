@@ -288,29 +288,48 @@ func Impact(root string, changed []string, out func(string)) int {
 		out(err.Error())
 		return 1
 	}
-	changedSet := map[string]bool{}
-	for _, f := range changed {
-		if rel, err := filepath.Rel(root, f); err == nil {
-			changedSet[filepath.ToSlash(rel)] = true
-		}
-	}
+	changedSet := relSet(root, changed)
 	if len(changedSet) == 0 {
 		out("no changed files — nothing to assess")
 		return 0
 	}
-	// symbols the change defines
-	var symbols []Tag
-	for _, t := range tags {
-		if changedSet[t.Path] && (t.Kind == "func" || t.Kind == "method" || t.Kind == "type" ||
-			t.Kind == "class" || t.Kind == "interface" || t.Kind == "struct") {
-			symbols = append(symbols, t)
-		}
-	}
+	symbols := changedSymbols(tags, changedSet)
 	if len(symbols) == 0 {
 		out("the changed files define no indexed symbols")
 		return 0
 	}
-	affected := map[string]map[string]bool{} // file -> symbols mentioned
+	affected := affectedFiles(root, symbols, changedSet)
+	printImpact(out, len(changedSet), len(symbols), affected)
+	return 0
+}
+
+func relSet(root string, files []string) map[string]bool {
+	set := map[string]bool{}
+	for _, f := range files {
+		if rel, err := filepath.Rel(root, f); err == nil {
+			set[filepath.ToSlash(rel)] = true
+		}
+	}
+	return set
+}
+
+// changedSymbols keeps the definition-shaped tags living in changed files.
+func changedSymbols(tags []Tag, changedSet map[string]bool) []Tag {
+	defKinds := map[string]bool{"func": true, "method": true, "type": true,
+		"class": true, "interface": true, "struct": true}
+	var symbols []Tag
+	for _, t := range tags {
+		if changedSet[t.Path] && defKinds[t.Kind] {
+			symbols = append(symbols, t)
+		}
+	}
+	return symbols
+}
+
+// affectedFiles maps each other file to the changed symbols it mentions —
+// word-boundary git grep, with too-generic names skipped as noise.
+func affectedFiles(root string, symbols []Tag, changedSet map[string]bool) map[string]map[string]bool {
+	affected := map[string]map[string]bool{}
 	for _, s := range symbols {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		cmd := exec.CommandContext(ctx, "git", "-C", root, "grep", "--untracked", "-I", "-lw", "--", s.Name)
@@ -320,10 +339,8 @@ func Impact(root string, changed []string, out func(string)) int {
 			continue
 		}
 		mentions := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
-		// a name matched all over the repo is too generic to be signal —
-		// counting it would bury the real blast radius in noise
 		if len(mentions) > tooCommon {
-			continue
+			continue // a name matched all over the repo is noise, not signal
 		}
 		for _, f := range mentions {
 			if f == "" || changedSet[f] {
@@ -335,10 +352,14 @@ func Impact(root string, changed []string, out func(string)) int {
 			affected[f][s.Name] = true
 		}
 	}
-	out(fmt.Sprintf("%d changed file(s) define %d symbol(s)", len(changedSet), len(symbols)))
+	return affected
+}
+
+func printImpact(out func(string), changedCount, symbolCount int, affected map[string]map[string]bool) {
+	out(fmt.Sprintf("%d changed file(s) define %d symbol(s)", changedCount, symbolCount))
 	if len(affected) == 0 {
 		out("no other file references them (textual) — the blast radius is the change itself")
-		return 0
+		return
 	}
 	files := make([]string, 0, len(affected))
 	for f := range affected {
@@ -354,7 +375,6 @@ func Impact(root string, changed []string, out func(string)) int {
 		out(fmt.Sprintf("  %s  ← %s", f, strings.Join(syms, ", ")))
 	}
 	out(fmt.Sprintf("%d file(s) reference the changed symbols (textual) — verify them before finishing", len(affected)))
-	return 0
 }
 
 // Stats prints what the index knows and how fresh it is.

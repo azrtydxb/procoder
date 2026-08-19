@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"procoder/internal/config"
 	"procoder/internal/lint"
 	"procoder/internal/tools"
 )
@@ -64,5 +65,17 @@ func TestMissingToolsSayNotCheckedAndStillExitZero(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(lines, "\n"), "NOT checked") {
 		t.Fatalf("missing tool must be said: %v", lines)
+	}
+}
+
+// The thresholds are repo-overridable (D-OVERRIDE): the generated isolated
+// config carries the repo's numbers, defaults filling the gaps.
+func TestThresholdsComeFromRepoConfig(t *testing.T) {
+	cfg := config.Config{Gocyclo: 25, FunlenLines: 120}
+	got := golangciCfg(cfg)
+	for _, want := range []string{"min-complexity: 25", "lines: 120", "statements: 50"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in generated config:\n%s", want, got)
+		}
 	}
 }
