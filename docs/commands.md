@@ -144,7 +144,7 @@ records a new baseline — a decision, taken deliberately. Results are
 single-run and machine-local; a baseline from another GOOS/GOARCH
 compares with a warning. Go only in this version, said out loud.
 
-### `procoder test [--coverage] [paths...]`
+### `procoder test [--coverage] [--name <pattern>] [paths...]`
 
 The repository's actual test suite, run by every detected ecosystem's
 canonical runner: `go test ./...`, `cargo test`, the package.json test
@@ -154,9 +154,45 @@ with the failing tests named, and NOT run when a runner or test script
 is absent, which is never reported as green. `--coverage` adds the
 percentage where the runner measures it natively (Go; pytest with
 pytest-cov); a number is reported, never enforced. With
-`[test] policy = "block"` in config.toml, `todo close` and
+`--name <pattern>` narrows the run to matching tests — `-run` for Go,
+`-k` for pytest, `--tests` for gradle, `-Dtest=` for maven, the pattern
+after `--` for a JS test script, and a positional for cargo. A runner
+that cannot express the pattern reports NOT filtered rather than
+silently running everything, and zero matches is an honest pass saying
+so. With `[test] policy = "block"` in config.toml, `todo close` and
 `backlog close story` run the suite and refuse while it is red — or
 while it cannot be verified at all, because unknown is never done.
+
+### `procoder status`
+
+The state of play, computed fresh: current branch against the default,
+dirty file count, the active sprint with its done/total and open
+stories, open todo tasks, unlearned lessons, and index freshness. Every
+line is a computed fact; anything that cannot be read says so with the
+reason rather than defaulting to something comfortable. The same block
+is injected at session start, inside a hard three-second budget that
+never runs the gate, the suite, or any network tool.
+
+### `procoder run [--exec]`
+
+How to run this project: the launch command(s) it declares — package.json
+scripts, Makefile targets, a Go main, a Cargo bin, manage.py, docker
+compose, a Procfile — each with the file and line that declared it,
+most specific first. procoder does not manage processes: a server is
+long-running, and backgrounding and log capture belong to the shell that
+owns it. `--exec` runs a single one-shot candidate (120s, stdin closed)
+and refuses when there is a choice to make or the command looks like a
+server. A repository with nothing to run says so and exits 0.
+
+### `procoder env [--sync]`
+
+What changed in the project's environment since you last synced:
+lockfile digests per ecosystem with the install command to run,
+migrations added or removed, and keys declared in an `.env.example` that
+the local `.env` lacks — key **names** only, never a value from either
+file. `--sync` records the current tree as the new baseline, which is a
+statement that you have installed and migrated. Report-only: drift is
+judgment, never a block. Files git ignores are never surveyed.
 
 ### `procoder security [--deep]`
 
@@ -178,7 +214,7 @@ drift, missing API doc comments, required docs, badges, README structure,
 version-tracked pages, and command coverage report. `--external` adds
 lychee link checking and GitHub Pages health.
 
-### `procoder ci`
+### `procoder ci [--runs]`
 
 Workflow hygiene: actions pinned to mutable refs (report by default,
 `[ci] pin_actions_policy = "block"` to block), missing per-job

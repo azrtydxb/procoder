@@ -1,6 +1,6 @@
 # session-continuity
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
 Spec: session-continuity @ bf9cb0f84ed0

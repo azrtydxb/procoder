@@ -1,6 +1,6 @@
 # sync-awareness
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
 Spec: sync-awareness @ 2e231d8e5b81

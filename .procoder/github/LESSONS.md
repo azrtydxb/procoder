@@ -108,3 +108,11 @@ does. `procoder lessons` flags entries with no adaptation.
   working correctly). TestCleanGateLetsTheCommitThrough now commits its
   fixture first, and the whole hook suite is verified under a stripped
   PATH that mimics the CI test leg
+
+## 2026-08-19 sprint 004 (live verification) — a new walk kept its own ignore list
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "a file-discovery walk that keeps its
+  own skip list instead of asking git what it ignores"; envsync now calls
+  git ls-files --ignored and TestGitIgnoredTreesAreNotSurveyed pins it

@@ -2,6 +2,40 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.31.0 — 2026-08-19
+
+The loop: the daily-workflow gaps the analysis found.
+
+- `procoder test --name <pattern>` narrows the run to matching tests
+  (`-run`, `-k`, `--tests`, `-Dtest=`, cargo's positional, the pattern
+  after `--` for a JS script). A runner that cannot express the pattern
+  reports NOT filtered instead of silently running everything, and zero
+  matches is an honest pass that says so.
+- `procoder run [--exec]` answers "how do I run this project": every
+  launch command the repository declares, with the file and line that
+  declared it, most specific first. procoder does not manage processes
+  — a server belongs to the shell that owns it — so `--exec` runs only
+  a single one-shot candidate and refuses when there is a choice or the
+  command looks like a server.
+- `procoder status` — the state of play, computed fresh: branch, dirty
+  files, the active sprint and its open stories, open tasks, unlearned
+  lessons, index freshness. The same block is injected at session start
+  inside a hard three-second budget (measured: 77ms on this repository),
+  so a resumed session opens knowing where the project stands instead of
+  re-deriving it.
+- Stop and PreCompact hooks write `.procoder/state/handoff.md`: the same
+  facts plus HEAD and a timestamp, with a Notes section the agent owns
+  and the writer never touches. Facts only — the note never guesses at
+  intent.
+- `procoder env [--sync]` — what moved under you since the last sync:
+  lockfile digests per ecosystem with the install command, migrations
+  added or removed, and new keys declared in an `.env.example`. Key
+  names only; no value from either file is ever printed. Files git
+  ignores are never surveyed.
+- `procoder ci --runs` — this branch's newest run per workflow via gh,
+  with the failing job names, and the line that matters most: the newest
+  run predates your latest push, so CI has not judged this commit.
+
 ## 0.30.0 — 2026-08-19
 
 Enforcement: the two promises procoder made and did not keep.

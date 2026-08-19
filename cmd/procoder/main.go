@@ -25,6 +25,7 @@ import (
 	"procoder/internal/deps"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
+	"procoder/internal/envsync"
 	"procoder/internal/format"
 	"procoder/internal/gate"
 	"procoder/internal/gitcmd"
@@ -39,8 +40,10 @@ import (
 	"procoder/internal/portability"
 	"procoder/internal/principles"
 	"procoder/internal/release"
+	"procoder/internal/runcmd"
 	"procoder/internal/security"
 	"procoder/internal/spec"
+	"procoder/internal/status"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
 	"procoder/internal/tools"
@@ -195,8 +198,10 @@ const usage = `usage: procoder <command> [args]
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
                        types are counted out loud
-  ci                   workflow hygiene: pinned actions, job timeouts,
-                       concurrency cancellation, tests exist
+  ci [--runs]          workflow hygiene: pinned actions, job timeouts,
+                       concurrency cancellation, tests exist; --runs asks gh
+                       for this branch's newest run per workflow instead, and
+                       says when the newest run predates your latest push
   debt                 harvest deliberate-simplification markers (comment
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
@@ -204,6 +209,10 @@ const usage = `usage: procoder <command> [args]
   deps                 the freshness report: outdated dependencies per
                        ecosystem via each one's native tool, licenses where a
                        tool exists — report-only, judgment stays yours
+  env [--sync]         what changed in the project's environment since you
+                       last synced: lockfile digests, migrations added, new
+                       .env keys (names only, never values); --sync records
+                       the current tree as the baseline
   docs [--external | --ack <reason>]
                        the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
@@ -262,6 +271,9 @@ const usage = `usage: procoder <command> [args]
                        files, the changelog entry, a clean tree, the gate, and
                        the suite under [test] policy — every failure listed,
                        and on success the tag command printed, never run
+  run [--exec]         how to run this project: the launch command(s) it
+                       declares, with the file that declared each; --exec runs
+                       a single non-server candidate for you
   scrub <file|->       check text (a commit message, a drafted PR body) for
                        AI-attribution lines; exits 1 when any are found
   security [--deep]    secrets over the changed files (gitleaks — blocking);
@@ -272,13 +284,16 @@ const usage = `usage: procoder <command> [args]
                        status | close — one active sprint at a time, close
                        refuses while a committed story is neither done nor
                        explicitly carried back with a reason
+  status               the state of play, computed fresh: branch, dirty
+                       files, the active sprint and its open stories, open
+                       tasks, unlearned lessons, index freshness
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
                        remain, or acceptance criteria are untestable
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
-  test [--coverage] [paths...]
+  test [--coverage] [--name <pattern>] [paths...]
                        run the repository's actual test suite: every detected
                        ecosystem's canonical runner (go test, cargo test, the
                        package.json test script, pytest, gradle/maven), each
@@ -315,6 +330,8 @@ func run(args []string) int {
 			return hook.PreToolUse(os.Stdin, os.Stdout)
 		case "install-git":
 			return hook.InstallGit(doctor.Root(), func(s string) { fmt.Println(s) })
+		case "stop":
+			return hook.Stop(os.Stdin, doctor.Root())
 		default:
 			fmt.Fprint(os.Stderr, usage)
 			return 2
@@ -327,6 +344,22 @@ func run(args []string) int {
 		return formatCmd(args[1:])
 	case "audit":
 		return audit.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "status":
+		return status.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "env":
+		sync := len(args) > 1 && args[1] == "--sync"
+		if len(args) > 1 && !sync {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return envsync.Run(doctor.Root(), sync, func(s string) { fmt.Println(s) })
+	case "run":
+		exec := len(args) > 1 && args[1] == "--exec"
+		if len(args) > 1 && !exec {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return runcmd.Run(doctor.Root(), exec, func(s string) { fmt.Println(s) })
 	case "adr":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -391,6 +424,9 @@ func run(args []string) int {
 		return gitcmd.Status(doctor.Root(), os.Stdout)
 	case "ci":
 		root := doctor.Root()
+		if len(args) > 1 && args[1] == "--runs" {
+			return ciops.Runs(root, func(s string) { fmt.Println(s) })
+		}
 		findings := ciops.Check(root, config.Load(root).PinActions)
 		blocking := 0
 		for _, f := range findings {
@@ -592,15 +628,20 @@ func run(args []string) int {
 	case "test":
 		root := doctor.Root()
 		coverage := false
+		name := ""
 		var paths []string
-		for _, a := range args[1:] {
-			if a == "--coverage" {
+		for i := 1; i < len(args); i++ {
+			switch {
+			case args[i] == "--coverage":
 				coverage = true
-				continue
+			case args[i] == "--name" && i+1 < len(args):
+				name = args[i+1]
+				i++
+			default:
+				paths = append(paths, args[i])
 			}
-			paths = append(paths, a)
 		}
-		return testrun.Report(testrun.Run(root, paths, coverage), func(s string) { fmt.Println(s) })
+		return testrun.Report(testrun.Run(root, paths, coverage, name), func(s string) { fmt.Println(s) })
 	case "scrub":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)

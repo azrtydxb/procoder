@@ -191,6 +191,9 @@ var gitignoreNeeds = []struct{ marker, entry string }{
 	{"requirements.txt", "__pycache__"},
 	{"Cargo.toml", "target"},
 	{"mkdocs.yml", "site"},
+	// procoder's own derived state: per-machine, rebuilt on demand, tracked
+	// no more than .procoder/index/ is.
+	{".procoder", ".procoder/state/"},
 }
 
 // IgnoreCoverage checks the repo has a .gitignore covering the garbage its

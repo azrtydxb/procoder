@@ -38,27 +38,35 @@ type Result struct {
 	Passed    int    // parsed where the runner's output allows, else 0
 	Failed    int
 	Coverage  float64 // percent; <0 means not measured
+	// Filtered records whether a --name pattern actually reached this
+	// runner. False with a non-empty name means the runner ran the WHOLE
+	// suite: the Detail says "NOT filtered" and never wears a filtered
+	// label over an unfiltered run.
+	Filtered bool
 }
 
 // Run executes every detected runner. paths narrow the Go package list and
 // the pytest targets; other runners keep their native whole-project
-// granularity (their Detail says so when paths were given).
-func Run(root string, paths []string, coverage bool) []Result {
+// granularity (their Detail says so when paths were given). name, when
+// non-empty, narrows the run to matching tests in each runner's OWN syntax
+// — untranslated between ecosystems, and reported as NOT filtered wherever
+// the runner cannot express it.
+func Run(root string, paths []string, coverage bool, name string) []Result {
 	var out []Result
 	if exists(root, "go.mod") {
-		out = append(out, runGo(root, paths, coverage))
+		out = append(out, runGo(root, paths, coverage, name))
 	}
 	if exists(root, "Cargo.toml") {
-		out = append(out, runCargo(root))
+		out = append(out, runCargo(root, name))
 	}
 	if exists(root, "package.json") {
-		out = append(out, runJS(root))
+		out = append(out, runJS(root, name))
 	}
 	if pytestDetected(root) {
-		out = append(out, runPytest(root, paths, coverage))
+		out = append(out, runPytest(root, paths, coverage, name))
 	}
 	if exists(root, "build.gradle") || exists(root, "build.gradle.kts") || exists(root, "pom.xml") {
-		out = append(out, runJava(root))
+		out = append(out, runJava(root, name))
 	}
 	return out
 }
@@ -105,7 +113,7 @@ func Report(results []Result, out func(string)) int {
 // not be verified blocks exactly like a failing one.
 func Suite(root string) func() (bool, string) {
 	return func() (bool, string) {
-		results := Run(root, nil, false)
+		results := Run(root, nil, false, "")
 		if len(results) == 0 {
 			return false, "no recognized test setup — the suite could NOT be verified"
 		}
@@ -133,17 +141,48 @@ var (
 	pytestCov  = regexp.MustCompile(`(?m)^TOTAL\s+\d+\s+\d+\s+(\d+)%`)
 )
 
-func runGo(root string, paths []string, coverage bool) Result {
-	r := Result{Ecosystem: "go", Coverage: -1}
-	bin, err := exec.LookPath("go")
-	if err != nil {
-		return notRun(r, "the go toolchain is not installed")
+// dashPattern reports whether a pattern begins with a dash. Runners that
+// take their filter as the NEXT argv element (pytest -k, cargo's positional
+// TESTNAME, gradle --tests) would read such a pattern as one of their own
+// flags: there is no way to express it, so we say NOT filtered instead of
+// mangling the argv or pretending.
+func dashPattern(name string) bool { return strings.HasPrefix(name, "-") }
+
+// filtered appends the honest filter label to a Detail: what the filter was
+// when it reached the runner, or why it did not and that the whole suite
+// ran regardless. why is only consulted when ok is false.
+func filterNote(detail, name string, ok bool, why string) string {
+	switch {
+	case name == "":
+		return detail
+	case ok:
+		return detail + fmt.Sprintf(" — filtered to %q", name)
+	default:
+		return detail + fmt.Sprintf(" — NOT filtered (%s); the whole suite ran", why)
 	}
+}
+
+// goArgs builds `go test`'s argv. -run= uses the joined form on purpose: a
+// pattern starting with a dash must never be read as a flag, so Go can
+// always express the filter.
+func goArgs(root string, paths []string, coverage bool, name string) []string {
 	args := []string{"test"}
 	if coverage {
 		args = append(args, "-cover")
 	}
-	args = append(args, goTargets(root, paths)...)
+	if name != "" {
+		args = append(args, "-run="+name)
+	}
+	return append(args, goTargets(root, paths)...)
+}
+
+func runGo(root string, paths []string, coverage bool, name string) Result {
+	r := Result{Ecosystem: "go", Coverage: -1, Filtered: name != ""}
+	bin, err := exec.LookPath("go")
+	if err != nil {
+		return notRun(r, "the go toolchain is not installed")
+	}
+	args := goArgs(root, paths, coverage, name)
 	raw, err, timedOut := execute(root, bin, args)
 	if timedOut {
 		return notRun(r, "go test gave no answer in "+runTimeout.String())
@@ -160,7 +199,7 @@ func runGo(root string, paths []string, coverage bool) Result {
 		} else {
 			detail = "FAILED — " + firstLine(raw+errStr(err))
 		}
-		r.Verdict, r.Detail, r.Failed = Fail, detail, len(names)
+		r.Verdict, r.Detail, r.Failed = Fail, filterNote(detail, name, true, ""), len(names)
 		return r
 	}
 	pkgs := len(goOkPkgRe.FindAllString(raw, -1))
@@ -168,6 +207,17 @@ func runGo(root string, paths []string, coverage bool) Result {
 	r.Detail = fmt.Sprintf("pass (%d package(s))", pkgs)
 	if strings.Contains(raw, "[no test files]") && pkgs == 0 {
 		r.Detail = "pass — but no test files exist yet"
+	}
+	if name != "" {
+		// go test exits 0 when -run matches nothing, marking each package
+		// "[no tests to run]". A bare green there would imply the suite ran,
+		// so say how many packages the pattern actually reached.
+		matched := pkgs - strings.Count(raw, "[no tests to run]")
+		if matched <= 0 {
+			r.Detail = fmt.Sprintf("pass — 0 test(s) matched %q", name)
+			return r
+		}
+		r.Detail = fmt.Sprintf("pass (%d package(s) matched %q)", matched, name)
 	}
 	if coverage {
 		if covs := goCoverRe.FindAllStringSubmatch(raw, -1); len(covs) > 0 {
@@ -215,13 +265,27 @@ func goTargets(root string, paths []string) []string {
 	return out
 }
 
-func runCargo(root string) Result {
+// cargoArgs builds `cargo test`'s argv. The filter is cargo's positional
+// TESTNAME, so a dash-leading pattern cannot be expressed: ok is false and
+// the whole suite runs, said out loud.
+func cargoArgs(name string) (args []string, ok bool) {
+	args = []string{"test", "--quiet"}
+	if name == "" || dashPattern(name) {
+		return args, false
+	}
+	return append(args, name), true
+}
+
+func runCargo(root string, name string) Result {
 	r := Result{Ecosystem: "rust", Coverage: -1}
 	bin, err := exec.LookPath("cargo")
 	if err != nil {
 		return notRun(r, "cargo is not installed")
 	}
-	raw, err, timedOut := execute(root, bin, []string{"test", "--quiet"})
+	args, ok := cargoArgs(name)
+	r.Filtered = ok
+	why := `cargo takes the filter as a positional TESTNAME, so a pattern beginning with "-" would be read as a flag`
+	raw, err, timedOut := execute(root, bin, args)
 	if timedOut {
 		return notRun(r, "cargo test gave no answer in "+runTimeout.String())
 	}
@@ -231,15 +295,33 @@ func runCargo(root string) Result {
 	}
 	if err != nil {
 		r.Verdict = Fail
-		r.Detail = fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, firstLine(raw+errStr(err)))
+		r.Detail = filterNote(fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, firstLine(raw+errStr(err))), name, ok, why)
 		return r
 	}
 	r.Verdict = Pass
-	r.Detail = fmt.Sprintf("pass (%d test(s))", r.Passed)
+	detail := fmt.Sprintf("pass (%d test(s))", r.Passed)
+	if ok && r.Passed == 0 {
+		detail = fmt.Sprintf("pass — 0 test(s) matched %q", name)
+		r.Detail = detail
+		return r
+	}
+	r.Detail = filterNote(detail, name, ok, why)
 	return r
 }
 
-func runJS(root string) Result {
+// jsArgs builds the package manager's argv. jest and vitest disagree about
+// what -t means, so procoder translates nothing: the pattern goes after the
+// `--` separator, untouched, as one argv element, and the Detail says the
+// filtering is the runner's own.
+func jsArgs(name string) []string {
+	args := []string{"test"}
+	if name == "" {
+		return args
+	}
+	return append(args, "--", name)
+}
+
+func runJS(root string, name string) Result {
 	r := Result{Ecosystem: "js", Coverage: -1}
 	script := testScript(root)
 	if script == "" {
@@ -258,17 +340,22 @@ func runJS(root string) Result {
 	if err != nil {
 		return notRun(r, mgr+" is not installed")
 	}
-	raw, err, timedOut := execute(root, bin, []string{"test"})
+	r.Filtered = name != ""
+	raw, err, timedOut := execute(root, bin, jsArgs(name))
 	if timedOut {
 		return notRun(r, mgr+" test gave no answer in "+runTimeout.String())
 	}
+	delegated := ""
+	if name != "" {
+		delegated = fmt.Sprintf(" — pattern %q passed after `--`; filtering is delegated to the test runner", name)
+	}
 	if err != nil {
 		r.Verdict = Fail
-		r.Detail = "FAILED — " + firstFailingLine(raw, errStr(err))
+		r.Detail = "FAILED — " + firstFailingLine(raw, errStr(err)) + delegated
 		return r
 	}
 	r.Verdict = Pass
-	r.Detail = "pass (" + mgr + " test)"
+	r.Detail = "pass (" + mgr + " test)" + delegated
 	return r
 }
 
@@ -304,17 +391,30 @@ func pytestDetected(root string) bool {
 	return len(matches) > 0
 }
 
-func runPytest(root string, paths []string, coverage bool) Result {
+// pytestArgs builds pytest's argv. -k takes its expression as the NEXT argv
+// element, so a dash-leading pattern cannot be expressed: ok is false and
+// the caller reports NOT filtered rather than quietly running everything.
+func pytestArgs(paths []string, coverage bool, name string) (args []string, ok bool) {
+	args = []string{"-q"}
+	if coverage {
+		args = append(args, "--cov=.")
+	}
+	if name != "" && !dashPattern(name) {
+		args, ok = append(args, "-k", name), true
+	}
+	return append(args, paths...), ok
+}
+
+const pytestFilterWhy = `pytest -k takes its expression as a separate argv element, so a pattern beginning with "-" would be read as a flag`
+
+func runPytest(root string, paths []string, coverage bool, name string) Result {
 	r := Result{Ecosystem: "python", Coverage: -1}
 	bin, err := exec.LookPath("pytest")
 	if err != nil {
 		return notRun(r, "pytest is not installed")
 	}
-	args := []string{"-q"}
-	if coverage {
-		args = append(args, "--cov=.")
-	}
-	args = append(args, paths...)
+	args, ok := pytestArgs(paths, coverage, name)
+	r.Filtered = ok
 	raw, err, timedOut := execute(root, bin, args)
 	if timedOut {
 		return notRun(r, "pytest gave no answer in "+runTimeout.String())
@@ -322,12 +422,21 @@ func runPytest(root string, paths []string, coverage bool) Result {
 	// exit 4 is pytest's usage error — with --cov that means pytest-cov is
 	// missing; rerun without so the tests still count, honestly noted
 	if coverage && err != nil && exitCode(err) == 4 {
-		raw, err, timedOut = execute(root, bin, append([]string{"-q"}, paths...))
+		noCov, _ := pytestArgs(paths, false, name)
+		raw, err, timedOut = execute(root, bin, noCov)
 		if timedOut {
 			return notRun(r, "pytest gave no answer in "+runTimeout.String())
 		}
 		defer func() { r.Detail += " — coverage not measured (pytest-cov not installed)" }()
 		coverage = false
+	}
+	// exit 5 is pytest's "no tests collected": with a filter that means the
+	// pattern matched nothing, which is a pass reported as such — never a
+	// bare green implying the suite ran.
+	if ok && err != nil && exitCode(err) == 5 {
+		r.Verdict = Pass
+		r.Detail = fmt.Sprintf("pass — 0 test(s) matched %q", name)
+		return r
 	}
 	if m := pytestRe.FindStringSubmatch(raw); m != nil {
 		r.Failed, _ = strconv.Atoi(m[1])
@@ -335,11 +444,14 @@ func runPytest(root string, paths []string, coverage bool) Result {
 	}
 	if err != nil {
 		r.Verdict = Fail
-		r.Detail = fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, firstFailingLine(raw, errStr(err)))
+		r.Detail = filterNote(fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, firstFailingLine(raw, errStr(err))), name, ok, pytestFilterWhy)
 		return r
 	}
 	r.Verdict = Pass
-	r.Detail = fmt.Sprintf("pass (%d test(s))", r.Passed)
+	r.Detail = filterNote(fmt.Sprintf("pass (%d test(s))", r.Passed), name, ok, pytestFilterWhy)
+	if ok && r.Passed == 0 {
+		r.Detail = fmt.Sprintf("pass — 0 test(s) matched %q", name)
+	}
 	if coverage {
 		if m := pytestCov.FindStringSubmatch(raw); m != nil {
 			v, _ := strconv.ParseFloat(m[1], 64)
@@ -349,34 +461,60 @@ func runPytest(root string, paths []string, coverage bool) Result {
 	return r
 }
 
-func runJava(root string) Result {
+// gradleArgs builds the wrapper's argv. --tests takes its pattern as the
+// next argv element, so a dash-leading pattern cannot be expressed.
+func gradleArgs(name string) (args []string, ok bool) {
+	args = []string{"test", "-q"}
+	if name == "" || dashPattern(name) {
+		return args, false
+	}
+	return append(args, "--tests", name), true
+}
+
+// mavenArgs builds mvn's argv. -Dtest= is a joined system property, so any
+// pattern — dashes included — reaches surefire intact.
+func mavenArgs(name string) (args []string, ok bool) {
+	args = []string{"-q", "test"}
+	if name == "" {
+		return args, false
+	}
+	return append(args, "-Dtest="+name), true
+}
+
+const gradleFilterWhy = `gradle --tests takes its pattern as a separate argv element, so a pattern beginning with "-" would be read as a flag`
+
+func runJava(root string, name string) Result {
 	r := Result{Ecosystem: "java", Coverage: -1}
 	if exists(root, "gradlew") {
-		raw, err, timedOut := execute(root, filepath.Join(root, "gradlew"), []string{"test", "-q"})
-		return javaVerdict(r, raw, err, timedOut, "gradlew test")
+		args, ok := gradleArgs(name)
+		r.Filtered = ok
+		raw, err, timedOut := execute(root, filepath.Join(root, "gradlew"), args)
+		return javaVerdict(r, raw, err, timedOut, "gradlew test", name, ok, gradleFilterWhy)
 	}
 	if exists(root, "pom.xml") {
 		bin, err := exec.LookPath("mvn")
 		if err != nil {
 			return notRun(r, "mvn is not installed")
 		}
-		raw, rerr, timedOut := execute(root, bin, []string{"-q", "test"})
-		return javaVerdict(r, raw, rerr, timedOut, "mvn test")
+		args, ok := mavenArgs(name)
+		r.Filtered = ok
+		raw, rerr, timedOut := execute(root, bin, args)
+		return javaVerdict(r, raw, rerr, timedOut, "mvn test", name, ok, "")
 	}
 	return notRun(r, "no gradle wrapper and no pom.xml runner available")
 }
 
-func javaVerdict(r Result, raw string, err error, timedOut bool, tool string) Result {
+func javaVerdict(r Result, raw string, err error, timedOut bool, tool, name string, ok bool, why string) Result {
 	if timedOut {
 		return notRun(r, tool+" gave no answer in "+runTimeout.String())
 	}
 	if err != nil {
 		r.Verdict = Fail
-		r.Detail = "FAILED — " + firstFailingLine(raw, errStr(err))
+		r.Detail = filterNote("FAILED — "+firstFailingLine(raw, errStr(err)), name, ok, why)
 		return r
 	}
 	r.Verdict = Pass
-	r.Detail = "pass (" + tool + ")"
+	r.Detail = filterNote("pass ("+tool+")", name, ok, why)
 	return r
 }
 
@@ -394,6 +532,9 @@ func execute(root, bin string, args []string) (string, error, bool) {
 
 func notRun(r Result, why string) Result {
 	r.Verdict = NotRun
+	// NOT run and NOT filtered are different answers: a runner that never
+	// executed filtered nothing, so the flag goes back to false.
+	r.Filtered = false
 	r.Detail = "NOT run — " + why
 	return r
 }
