@@ -163,6 +163,9 @@ func TestForbiddenHooksJSONBlocks(t *testing.T) {
 // pins actual content parity, not just existence: twin = command body with
 // the Claude launcher swapped for the PATH binary.
 func opencodeTwin(body string) string {
+	// CRLF leveled first: a Windows checkout rewrites line endings, and
+	// the multi-line phrase below would otherwise never match there
+	body = strings.ReplaceAll(body, "\r\n", "\n")
 	body = strings.ReplaceAll(body, `"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"`, "procoder")
 	body = strings.ReplaceAll(body, "The launcher is: procoder",
 		"The command below is the `procoder` binary on PATH.")
@@ -204,7 +207,7 @@ func TestOpenCodeCommandParity(t *testing.T) {
 			t.Errorf("command %s has no .opencode/command twin — regenerate", e.Name())
 			continue
 		}
-		if string(raw) != opencodeTwin(string(src)) {
+		if strings.ReplaceAll(string(raw), "\r\n", "\n") != opencodeTwin(string(src)) {
 			t.Errorf("%s does not match the generation rule applied to commands/%s — regenerate", twin, e.Name())
 		}
 	}
