@@ -157,7 +157,8 @@ func secretsPart(root, file string) string {
 			b = append(b, fmt.Sprintf("procoder [security]: %s:%d: %s", f.File, f.Line, f.Message))
 		}
 	}
-	return strings.Join(b, "\n")
+	// each secret stays its own paragraph, exactly as before the refactor
+	return strings.Join(b, "\n\n")
 }
 
 // lintPart runs the file's canonical linter in the same turn — findings are
