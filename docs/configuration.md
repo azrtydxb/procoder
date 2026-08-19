@@ -32,7 +32,7 @@ funlen_statements = 50
 marker = "debt:"
 ```
 
-## `.procoder/github/REVIEW.md` and `LESSONS.md`
+## `.procoder/github/REVIEW.md` and `.procoder/github/LESSONS.md`
 
 The catch-first-and-learn pair. `REVIEW.md` is the pre-PR self-review
 rubric a fresh-context reviewer reads against the branch diff before any

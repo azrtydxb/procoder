@@ -44,7 +44,8 @@ The canonical linter per ecosystem: golangci-lint (Go), ruff check
 gets the built-in-rules procoder baseline; configless TypeScript is out of
 scope). Go repositories without a golangci config get procoder's curated
 baseline (standard set plus gosec, gocritic, errorlint, unparam,
-copyloopvar, nilerr) — the repo's own `.golangci.yml` always wins. Report
+copyloopvar, nilerr) — the repo's own golangci config always wins,
+whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report
 by default; `[lint] policy = "block"` makes findings block.
 
 ### `procoder security [--deep]`

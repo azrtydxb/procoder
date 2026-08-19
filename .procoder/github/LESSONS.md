@@ -47,6 +47,18 @@ does. `procoder lessons` flags entries with no adaptation.
 - Missed by: ci
 - Adaptation: ci.yml repoints apt at archive.ubuntu.com with retries before any apt-get, so a dead Azure mirror flakes fast instead of eating the timeout
 
+## 2026-08-19 PR#19 (Copilot) — temp-config Close error swallowed, baseline claimed applied
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric extended — "a failed Close/flush after a write IS a failed write"; lintGo folds the Close error into the honesty path
+
+## 2026-08-19 PR#19 (Copilot) — docs claimed only .golangci.yml wins; heading dropped the file's directory
+
+- Class: taste
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric prose line sharpened — "names and paths in docs match the code exactly (every variant, full paths)"
+
 ## 2026-08-19 self-scan (procoder debt) — our own test fixtures carried literal debt markers
 
 - Class: judgment

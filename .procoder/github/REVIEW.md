@@ -11,6 +11,7 @@ Check every hunk for:
   the plain value they claim to be (no separators, no dot-dot, quoted)?
 - Error paths: any error swallowed, any unreadable input silently
   skipped, any failure reported as success? Honesty beats convenience.
+  A failed Close/flush after a write IS a failed write.
 - State computed twice that must agree (time.Now called twice across a
   boundary, a value re-derived instead of passed).
 - Loops doing per-iteration work that belongs outside (regex compilation,
@@ -24,7 +25,8 @@ Check every hunk for:
 - Test fixtures that trip our own scanners: assemble marker/secret-like
   content at runtime, never as a literal.
 - Prose and markdown: code spans unbroken, lists formatted, wording that
-  says what the code actually does.
+  says what the code actually does — names and paths in docs match the
+  code exactly (every variant, full paths).
 
 End with a verdict line: findings counted by severity, or exactly
 "Nothing found — open the PR."

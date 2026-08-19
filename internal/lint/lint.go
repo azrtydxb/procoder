@@ -145,7 +145,11 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 		cfgFile, err := os.CreateTemp("", "procoder-golangci-*.yml")
 		if err == nil {
 			_, err = cfgFile.WriteString(golangciBaseline)
-			cfgFile.Close()
+			// a failed Close can mean the write never hit disk — treat it
+			// as a write failure, not a success
+			if cerr := cfgFile.Close(); err == nil {
+				err = cerr
+			}
 			defer os.Remove(cfgFile.Name())
 		}
 		if err == nil {
