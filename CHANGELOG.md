@@ -2,6 +2,12 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.22.1 — 2026-08-19
+
+- The CLI help (`procoder` with no arguments) now lists every command
+  alphabetically instead of grouped by workflow, so a command is found
+  by name at a glance. Descriptions are unchanged.
+
 ## 0.22.0 — 2026-08-19
 
 The language matrix: procoder now covers the popular languages end to end.
