@@ -168,3 +168,25 @@ func TestCheckAllAndEmpty(t *testing.T) {
 		t.Fatal("one incomplete plan must block `check all`")
 	}
 }
+
+// The placeholder rule is case-sensitive for TODO on purpose: lowercase
+// "todo" names procoder's own task domain, and a plan that touches
+// internal/todo must be writable.
+func TestLowercaseTodoIsNotAPlaceholder(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "widget", strings.Replace(completePlan,
+		"A cache layer in front of the fetcher; the renderer reads the cache.",
+		"Mirrors todo.Close from the todo domain; internal/todo stays untouched.", 1))
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 0 {
+		t.Fatalf("lowercase todo must pass: exit %d\n%s", code, strings.Join(*lines, "\n"))
+	}
+
+	writePlan(t, root, "marked", strings.Replace(completePlan,
+		"A cache layer in front of the fetcher; the renderer reads the cache.",
+		"TODO decide the cache shape.", 1))
+	out2, lines2 := collect()
+	if code := Check(root, "marked", out2); code != 1 {
+		t.Fatalf("uppercase TODO must block: exit %d\n%s", code, strings.Join(*lines2, "\n"))
+	}
+}

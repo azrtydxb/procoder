@@ -53,7 +53,10 @@ Interfaces: <!-- exact names and signatures neighbouring tasks consume or
 // code instead.
 var placeholderRes = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bTBD\b`),
-	regexp.MustCompile(`(?i)\bTODO\b`),
+	// case-sensitive on purpose: the placeholder convention is uppercase
+	// TODO, while lowercase "todo" legitimately names procoder's own task
+	// domain — a plan touching internal/todo must be writable
+	regexp.MustCompile(`\bTODO\b`),
 	regexp.MustCompile(`(?i)implement (this |it )?later`),
 	regexp.MustCompile(`(?i)add appropriate `),
 	regexp.MustCompile(`(?i)handle edge cases`),
