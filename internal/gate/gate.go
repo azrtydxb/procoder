@@ -22,6 +22,13 @@ import (
 // Run checks the given paths, or the repository's changed files when none are
 // given. Returns the exit code.
 func Run(paths []string, root string, stdout io.Writer) int {
+	return RunWith(paths, root, "", stdout)
+}
+
+// RunWith is Run plus the commit message being prepared, so the
+// documentation acknowledgment can clear its obligation at the moment of
+// the commit. Everything else is identical.
+func RunWith(paths []string, root string, commitMessage string, stdout io.Writer) int {
 	if len(paths) == 0 {
 		var err error
 		paths, err = changedFiles(root)
@@ -70,7 +77,7 @@ func Run(paths []string, root string, stdout io.Writer) int {
 	cfg := config.Load(root)
 	// Domain 9: git hygiene, workflow lint, message checks — same rules as
 	// `procoder git`, via the shared Collect, so the two cannot drift apart.
-	hygiene := gitcmd.Collect(root, cfg, paths)
+	hygiene := gitcmd.CollectFor(root, cfg, paths, commitMessage)
 	// Domain 2: the canonical linters over the changed set — report by
 	// default, blocking when the repo opted in ([lint] policy = "block").
 	hygiene = append(hygiene, lint.Files(root, paths, cfg.LintBlock)...)

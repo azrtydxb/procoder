@@ -204,7 +204,8 @@ const usage = `usage: procoder <command> [args]
   deps                 the freshness report: outdated dependencies per
                        ecosystem via each one's native tool, licenses where a
                        tool exists — report-only, judgment stays yours
-  docs [--external]    the documentation report: broken references, diagrams,
+  docs [--external | --ack <reason>]
+                       the documentation report: broken references, diagrams,
                        drift, API doc comments, required docs, badges, README
                        structure; --external adds link checking and Pages health
   doctor               which formatters this repository needs, which are
@@ -214,9 +215,14 @@ const usage = `usage: procoder <command> [args]
   git                  the pre-finish status: branch vs default, hygiene
                        findings (conflict markers, junk, oversized), message
                        checks, workflow lint, template state
-  hook post-tool-use   read a PostToolUse payload on stdin; if the written file
-                       is unformatted, hand the agent the formatted result
-                       (the file itself is never modified)
+  hook <sub>           the host hooks: post-tool-use reads a PostToolUse
+                       payload and hands back the formatted result plus lint
+                       and secret findings (the file is never modified);
+                       pre-tool-use intercepts a git commit and stops it
+                       when the gate has blocking findings ([git]
+                       commit_gate = block|report|off, default block);
+                       install-git prints a .git/hooks/pre-commit script so
+                       the gate also holds outside any agent
   index <sub> [arg]    the code index (built from universal-ctags + SCIP):
                        build | find <symbol> | search <text> | refs <symbol> |
                        outline <file> | impact | callers <symbol> | unused |
@@ -298,11 +304,21 @@ func run(args []string) int {
 	}
 	switch args[0] {
 	case "hook":
-		if len(args) < 2 || args[1] != "post-tool-use" {
+		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		return hook.Run(os.Stdin, os.Stdout)
+		switch args[1] {
+		case "post-tool-use":
+			return hook.Run(os.Stdin, os.Stdout)
+		case "pre-tool-use":
+			return hook.PreToolUse(os.Stdin, os.Stdout)
+		case "install-git":
+			return hook.InstallGit(doctor.Root(), func(s string) { fmt.Println(s) })
+		default:
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
 	case "format":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -521,10 +537,21 @@ func run(args []string) int {
 		}
 		return 0
 	case "docs":
-		external := len(args) > 1 && args[1] == "--external"
 		root := doctor.Root()
+		// --ack prints the line that clears the documentation obligation;
+		// the agent places it in the commit message, where a reviewer sees
+		// the decision instead of a silent skip
+		if len(args) > 1 && args[1] == "--ack" {
+			if len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
+				fmt.Fprint(os.Stderr, usage)
+				return 2
+			}
+			fmt.Println(docs.AckLine(strings.Join(args[2:], " ")))
+			return 0
+		}
+		external := len(args) > 1 && args[1] == "--external"
 		changed, _ := gitx.ChangedFiles(root)
-		return docs.Run(root, changed, external, os.Stdout)
+		return docs.RunFor(root, changed, "", external, config.Load(root).DocsBlock, os.Stdout)
 	case "index":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)

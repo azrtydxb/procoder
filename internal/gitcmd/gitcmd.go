@@ -83,6 +83,13 @@ func Status(root string, stdout io.Writer) int {
 // Collect runs every domain-9 check over the changed set. Shared by Status and
 // the commit gate so the two can never disagree about what the rules are.
 func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
+	return CollectFor(root, cfg, changed, "")
+}
+
+// CollectFor is Collect with the commit message the documentation
+// acknowledgment line would live in — the commit hook has it, a bare
+// `procoder check` does not, and the obligation says so either way.
+func CollectFor(root string, cfg config.Config, changed []string, commitMessage string) []gitx.Finding {
 	var out []gitx.Finding
 	out = append(out, gitx.ConflictMarkers(changed)...)
 	out = append(out, gitx.JunkFiles(changed)...)
@@ -113,7 +120,7 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 
 	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
 	// and CI can never disagree about documentation health either.
-	out = append(out, docs.CollectOffline(root, changed)...)
+	out = append(out, docs.CollectOfflineFor(root, changed, commitMessage, cfg.DocsBlock)...)
 
 	// Missing templates are information, not a block: the fix is one
 	// `procoder templates` away and the finding says so.

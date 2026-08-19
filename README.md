@@ -7,7 +7,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.29.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.30.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-0e5563)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-0e5563)
 
@@ -89,11 +89,28 @@ becomes a **lessons** ledger entry whose adaptation (a linter rule, a
 rubric line, a pinning test) must land before the work counts as done.
 Downstream bot reviewers are the fallback net, not the net.
 
-**The nine domains** — security (gitleaks, semgrep, osv-scanner), best
+**The test domain** — `procoder test` runs the repository's real suite
+with each ecosystem's canonical runner (go test, cargo test, the
+package.json test script, pytest, gradle/maven), reported honestly:
+PASS with counts, FAIL with the failing tests named, and **NOT run**,
+which is never the same as green. Coverage is reported where the runner
+measures it natively and never enforced. Set `[test] policy = "block"`
+and a green suite becomes part of "done" — the closes refuse while it is
+red or unverifiable.
+
+**The release controller** — `procoder release` is the last refusal
+before a tag: the version in sync across every file you list, the
+changelog entry present, the tree clean, the gate clean, the suite
+green. Every failure arrives in one list, and on success the `git tag`
+command is printed for you to run. procoder tags nothing itself.
+
+**The ten domains** — security (gitleaks, semgrep, osv-scanner), best
 practices (**lint** with curated baselines), **maintain**ability
-(dead code, complexity), **performance**, **documentation** (broken
-refs, drift, diagrams, badges, this very README's completeness),
-clean code (formatting), **ci** (pinned actions, timeouts), **infra**
+(dead code, complexity, plus **deps** freshness per ecosystem),
+**performance** (**bench** against a saved baseline — Go only, said out
+loud), **documentation** (broken refs, drift, diagrams, badges, **adr**
+decision records, this very README's completeness), clean code
+(formatting), **test**ing, **ci** (pinned actions, timeouts), **infra**
 (Docker, Terraform, Kubernetes, Helm), and GitOps discipline.
 
 **The code index** — ctags + SCIP, the agent's fast map: find, refs,

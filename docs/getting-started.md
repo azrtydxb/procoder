@@ -64,17 +64,26 @@ From here the loop is the senior developer's loop:
 
 1. **Think first** — `/procoder:spec` for anything non-trivial (the
    interview refuses to end while design gaps remain), `/procoder:plan`
-   to turn the spec into executable tasks, `/procoder:todo` to track
-   them. Each link has a controller that blocks until the work is real —
-   see [The quality chain](quality-chain.md).
+   to turn the spec into executable tasks. Track them with
+   `/procoder:todo` for standalone work, or seed `/procoder:backlog`
+   from the spec and work the stories in `/procoder:sprint` when the
+   project has a shape worth planning. Each link has a controller that
+   blocks until the work is real — see
+   [The quality chain](quality-chain.md).
 2. **Write** — every save is format-checked in-turn; the agent gets the
    fixed content, reviews it, writes it. The binary never touches your
    files.
-3. **Finish** — `/procoder:check` is the same gate CI runs. Then
+3. **Prove it** — `/procoder:test` runs the repository's real suite,
+   with NOT run reported as NOT run. Set `[test] policy = "block"` in
+   `.procoder/config.toml` and a green suite becomes part of what "done"
+   means.
+4. **Finish** — `/procoder:check` is the same gate CI runs. Then
    `/procoder:pr` (docs-impact answered, self-review passed, template
    filled, attribution scrubbed) and `/procoder:merge` (every check
    green, every review thread answered, reflection on anything that
-   escaped, then merge and cleanup).
+   escaped, then merge and cleanup). When it is time to ship,
+   `/procoder:release` lists everything standing between the tree and
+   the tag, then prints the tag command for you to run.
 
 ## What you get that you didn't have
 

@@ -1,6 +1,6 @@
-# The nine domains
+# The ten domains
 
-procoder organises senior-developer work into nine domains. Each follows
+procoder organises senior-developer work into ten domains. Each follows
 the same architecture: the binary computes findings, the write hook hands
 them to the agent in the same turn, the gate carries them at commit time,
 a skill packages the workflow, and every rule is repo-overridable
@@ -73,13 +73,44 @@ Deliberate corner-cuts are the sibling discipline: mark them with the
 ceiling and revisit condition; `procoder debt` harvests the ledger and
 flags no-trigger entries as rot.
 
+Complexity is Go and Python only — gocyclo rides golangci and mccabe
+rides ruff, and no other ecosystem has a linter procoder can isolate
+the metric out of. The dead-code sweep is limited to the index's precise
+tier, so it answers for the languages a SCIP indexer covers and stays
+silent elsewhere rather than guessing.
+
+Dependencies age too, and `procoder deps` is the freshness half of the
+same judgment — report-only, never blocking:
+
+| Check                        | Tool                                                                   | Scope                                                       |
+| ---------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Outdated direct dependencies | `go list -u -m`, `npm outdated`, cargo-outdated, pip — where installed | the ecosystems whose manifests exist; capped and summarized |
+| Licenses                     | go-licenses                                                            | **Go only** — every other ecosystem answers NOT checked     |
+| An optional tool missing     | —                                                                      | information, not failure; a tool that errored is a failure  |
+
+Nothing here decides for you: a major version behind is a fact, whether
+to take it is a judgment with context procoder does not have.
+
 ## 4. Performance
 
 `/procoder:perf` encodes measure-first: baseline before touching,
 profile before guessing, re-measure after, report the delta with the
-command that produced it. A fix without a benchmark is a hope. No
-binary checks here yet by design — performance claims without
-measurement infrastructure would violate the honesty contract.
+command that produced it. A fix without a benchmark is a hope.
+
+`procoder bench` is the measurement infrastructure that discipline used
+to lack. It runs the repository's benchmarks (`go test -bench . -benchmem`)
+and compares each against the committed baseline in
+`.procoder/bench/baseline.txt`: ns/op and B/op with a percentage delta,
+regressions beyond `[bench] threshold` (default 10) marked and exiting 1,
+new and vanished benchmarks listed as such. `--save` records a new
+baseline — explicit, because a baseline is a decision, not a side effect.
+
+**Go only in this version**, and the output says so: other ecosystems
+answer NOT run rather than letting the scope look wider than it is.
+Results are single-run and machine-local; a baseline recorded on a
+different GOOS/GOARCH still compares, with a warning attached. That is
+the honesty contract applied to numbers — they arrive with the
+conditions that produced them, or they do not arrive.
 
 ## 5. Documentation
 
@@ -99,6 +130,15 @@ presence checks alone let documentation rot silently.
 Rules live in `.procoder/docs/RULES.md`; this site is built and deployed
 by the harness's own CI job.
 
+Decisions are documentation too, and they rot differently: prose can be
+corrected, but a decision rewritten after the fact loses the reason it
+was taken. `procoder adr` keeps them under `.procoder/adr/` as numbered,
+immutable records — Context, Decision, Consequences, and a date — where
+a changed mind writes a new record that supersedes the old one rather
+than editing it. `adr check` refuses hollow records, unknown statuses,
+duplicated numbers, and supersede references pointing at nothing; the
+audit sweep carries those findings.
+
 ## 6. Clean code (formatting)
 
 Every write is checked against the ecosystem's canonical formatter —
@@ -111,7 +151,39 @@ result in-turn and writes it itself), **unchecked** (tool missing or
 failed — fails the gate). The file is never touched behind the agent's
 back; that is P-CONTROL's original case.
 
-## 7. CI/CD/CT
+## 7. Testing
+
+`procoder test` runs the repository's actual suite — not a proxy for it,
+and not a claim about it. Each detected ecosystem's canonical runner
+runs and reports separately:
+
+| Ecosystem | Runner                                                             | Coverage               |
+| --------- | ------------------------------------------------------------------ | ---------------------- |
+| Go        | `go test ./...`                                                    | native (`-cover`)      |
+| Rust      | `cargo test`                                                       | not measured           |
+| JS/TS     | the package.json `test` script, via the lockfile's package manager | not measured           |
+| Python    | pytest (where a pytest config or a tests directory exists)         | native with pytest-cov |
+| Java      | `./gradlew test` or `mvn -q test`, where the build files exist     | not measured           |
+
+Three verdicts, and the third is the point: **PASS** with counts where
+the output allows, **FAIL** with the failing tests named, and **NOT run**
+when no runner or test script is present. NOT run is never green — a
+repository with no suite is told it has no suite, not congratulated.
+Exit 0 when everything passed, 1 when anything failed, 2 when nothing
+could run at all.
+
+`--coverage` reports the percentage where the runner measures it
+natively. It is reported and never enforced: a threshold turns coverage
+into a number to farm, and procoder has no opinion worth blocking on
+about which lines matter.
+
+The suite reaches the rest of the chain through one knob. With
+`[test] policy = "block"` in config.toml, `todo close` and
+`backlog close story` run `procoder test` and refuse while it is red —
+or while it cannot be verified at all, because unknown is never done.
+Left at the default, the verdict informs and nothing refuses.
+
+## 8. CI/CD/CT
 
 `procoder ci` and the same checks inside the gate:
 
@@ -125,7 +197,7 @@ back; that is P-CONTROL's original case.
 
 actionlint runs on every workflow file the agent writes, in-turn.
 
-## 8. DevOps / IaaS / CaaS
+## 9. DevOps / IaaS / CaaS
 
 `procoder infra` — inventory-driven: each tool runs only where its files
 exist, so a repo without infrastructure pays nothing.
@@ -137,7 +209,7 @@ exist, so a repo without infrastructure pays nothing.
 | Kubernetes manifests | kubeconform                                                                                                                                                                    | reports |
 | Helm charts          | helm lint                                                                                                                                                                      | reports |
 
-## 9. GitOps / GitHub
+## 10. GitOps / GitHub
 
 The finishing discipline — most of it rides the gate:
 
@@ -151,11 +223,22 @@ The finishing discipline — most of it rides the gate:
 | Agent-layer drift (rule copies vs `AGENTS.md`, manifest versions)                 | **blocks**                                        |
 | Commit subject shape (≤72, blank line before body); working on the default branch | reports (`[git] default_branch_policy` can block) |
 
-Around the checks, the skills encode the workflow: worktree per feature,
-`/procoder:pr` (docs-impact question, pre-PR self-review, scrubbed
-template), `/procoder:merge` (watch-only polling, every review thread
-answered, the reflection step for anything that escaped, then merge and
-full cleanup).
+Around the checks, the skills encode the workflow: a worktree per
+feature (a git practice the skills prescribe — procoder creates and
+removes none of them itself), `/procoder:pr` (docs-impact question,
+pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
+polling, every review thread answered, the reflection step for anything
+that escaped, then merge and full cleanup).
+
+Tagging is the last step and has its own controller. `procoder release`
+verifies in one pass that every file in `[release] files` carries the
+version, that CHANGELOG.md has the matching entry, that the tree is
+clean including untracked files, that the gate is clean, and that the
+suite is green under `[test] policy` — every failure listed together
+rather than one per attempt. On success it prints the `git tag` command
+and stops: the tag is the human's to run, as P-CONTROL requires. Without
+`[release] files` the version-sync leg says out loud that it verified
+nothing.
 
 ## Beneath them: the code index
 

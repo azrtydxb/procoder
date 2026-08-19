@@ -42,6 +42,13 @@ guidance for the agent.
 - spec
 - plan
 - todo
+- backlog
+- sprint
+- test
+- release
+- adr
+- bench
+- deps
 - debt
 - lessons
 - principles

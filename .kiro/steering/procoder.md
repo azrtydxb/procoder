@@ -24,6 +24,40 @@ back, and a file it could not check is never reported as clean.
   in `.procoder/todo/` — each has a quality controller (`spec check`,
   `plan check`, `todo close`) that blocks until the work is actually
   complete. Do not game the checkboxes; the controllers ask for evidence.
+- Run `procoder test` before claiming anything works. NOT run is never
+  green. Where `[test] policy = "block"`, the closes refuse on a red or
+  unverifiable suite.
+
+## The work chain
+
+Non-trivial work starts above the code, and each link refuses to advance
+until its own gap is closed.
+
+- `procoder spec <sub>` — `template <name> | list | check` in
+  `.procoder/specs/`. Check blocks while a section is empty, an `OPEN:`
+  question is unresolved, or a criterion is untestable.
+- `procoder plan <sub>` — `template | list | check` in
+  `.procoder/plans/`. Check blocks on placeholders and on tasks without
+  files or steps. Write the plan for a stranger; never say "same as
+  task N".
+- `procoder backlog <sub>` — the project layer in `.procoder/backlog/`:
+  `milestone | epic | story | bug | seed <spec> | list | board | close`.
+  Seed decomposes a COMPLETE spec into an epic and its stories. Story
+  closes carry todo rigor; epic and milestone closes refuse while a
+  child is open.
+- `procoder sprint <sub>` — `open`, `pull`, `carry`, `status`, `close`.
+  One active sprint at a time. Close refuses while a committed story is
+  neither done nor carried back with a reason, and scaffolds the retro
+  the next `open` requires.
+- `procoder todo <sub>` — `add | list | show | close`. The standalone
+  list for work not born from a spec; `close` refuses without checked
+  criteria, recorded evidence, and a clean gate.
+- `procoder adr <sub>` — `new <title> | list | check` in
+  `.procoder/adr/`. Records are immutable: a changed mind supersedes,
+  never rewrites. Check refuses hollow records and dangling supersedes.
+- `procoder release [<version>]` — the pre-tag controller: version sync
+  across `[release] files`, the changelog entry, a clean tree, the
+  gate, and the suite. It prints the `git tag` command; it never tags.
 
 ## Build principles
 
@@ -44,13 +78,27 @@ text).
   how to install the gaps.
 - `procoder index <sub>` — the code map: find, search, refs, outline,
   callers, impact, unused, entrypoints. Reach for it before grepping.
-- `procoder lint` / `security [--deep]` / `ci` / `infra` / `docs` /
-  `maintain` — the domain reports; blocking beats advisory, honesty
-  beats convenience.
+- `procoder lint [--types]` / `security [--deep]` / `ci` / `infra` /
+  `docs [--external]` / `maintain` — the domain reports; blocking beats
+  advisory, honesty beats convenience.
+- `procoder test [--coverage]` — every detected ecosystem's canonical
+  runner. Coverage is reported, never enforced.
+- `procoder bench [--save]` — Go benchmarks against the saved baseline
+  (`.procoder/bench/baseline.txt`); regressions past `[bench] threshold`
+  exit 1. Go only in this version. `--save` is a deliberate decision.
+- `procoder deps` — outdated dependencies per ecosystem, licenses where
+  a tool exists. Report-only: the judgment stays yours.
 - `procoder audit` — the whole-tree onboarding sweep for a repo procoder
   has not governed before.
 - `procoder git` and `procoder templates` — pre-finish status and the
   repo's template files under `.procoder/`.
+- `procoder agents` — the per-host rule files derived from this file.
+  Regenerate after editing it; drift blocks the gate.
+- `procoder lessons` — the ledger of what escaped the gates. A lesson
+  with no adaptation is UNLEARNED and exits 1.
+- `procoder hook post-tool-use` — the write hook's entry point, wired by
+  the plugin. You do not call it by hand.
+- `procoder version` — the version, when a report needs to name it.
 
 Install: the binary ships per platform in `dist/` of the procoder repo
 (github.com/azrtydxb/procoder); put the one for your platform on PATH,
