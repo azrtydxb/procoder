@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"procoder/internal/gitx"
@@ -77,66 +78,135 @@ func Secrets(root string, paths []string) []gitx.Finding {
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
-		report := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-gitleaks-%d.json", time.Now().UnixNano()))
-		common := []string{"--report-format", "json", "--report-path", report,
-			"--no-banner", "--exit-code", "1"}
-		ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
-		cmd := exec.CommandContext(ctx, bin, append([]string{"dir", p}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
-		cmd.Dir = root
-		var errb bytes.Buffer
-		cmd.Stderr = &errb
-		runErr := cmd.Run()
-		cancel()
-		if ctx.Err() == context.DeadlineExceeded {
-			out = append(out, gitx.Finding{File: p, Blocking: true,
-				Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)})
+		out = append(out, scanOne(bin, root, p)...)
+	}
+	return out
+}
+
+// scanOne runs gitleaks over one source path. src is handed to gitleaks
+// verbatim and workdir is where it runs from, so a relative src keeps the
+// report's paths — and therefore .gitleaksignore fingerprints — relative.
+func scanOne(bin, workdir, src string) []gitx.Finding {
+	var out []gitx.Finding
+	report := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-gitleaks-%d.json", time.Now().UnixNano()))
+	common := []string{"--report-format", "json", "--report-path", report,
+		"--no-banner", "--exit-code", "1"}
+	ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
+	cmd := exec.CommandContext(ctx, bin, append([]string{"dir", src}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
+	cmd.Dir = workdir
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	runErr := cmd.Run()
+	cancel()
+	if ctx.Err() == context.DeadlineExceeded {
+		return []gitx.Finding{{File: src, Blocking: true,
+			Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)}}
+	}
+	if bytes.Contains(errb.Bytes(), []byte(`unknown command "dir"`)) {
+		// gitleaks before v8.19 has no `dir`; the same scan is spelled
+		// `detect --no-git --source` there — apt still ships that era
+		ctx2, cancel2 := context.WithTimeout(context.Background(), secretsTimeout)
+		legacy := exec.CommandContext(ctx2, bin, append([]string{"detect", "--no-git", "--source", src}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
+		legacy.Dir = workdir
+		errb.Reset()
+		legacy.Stderr = &errb
+		runErr = legacy.Run()
+		cancel2()
+		if ctx2.Err() == context.DeadlineExceeded {
+			return []gitx.Finding{{File: src, Blocking: true,
+				Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)}}
+		}
+	}
+	raw, readErr := os.ReadFile(report)
+	os.Remove(report)
+	if readErr != nil {
+		return []gitx.Finding{{File: src, Blocking: true,
+			Message: "gitleaks produced no report — the path was NOT checked: " + firstLine(errb.String()) + " (security)"}}
+	}
+	var leaks []struct {
+		File      string `json:"File"`
+		StartLine int    `json:"StartLine"`
+		RuleID    string `json:"RuleID"`
+	}
+	if json.Unmarshal(raw, &leaks) != nil {
+		return []gitx.Finding{{File: src, Blocking: true,
+			Message: "gitleaks report unreadable — the path was NOT checked (security)"}}
+	}
+	for _, l := range leaks {
+		// gitleaks echoes the path as given for file scans and prefixes
+		// it for directory scans — normalise to one shape
+		loc := l.File
+		if !filepath.IsAbs(loc) && loc != src {
+			loc = filepath.Join(src, loc)
+		}
+		// the finding names the rule and location — NEVER the secret
+		out = append(out, gitx.Finding{File: loc, Line: l.StartLine, Blocking: true,
+			Message: fmt.Sprintf("secret detected (%s) — remove it and rotate the credential; committed secrets live in history forever (security)", l.RuleID)})
+	}
+	_ = runErr // exit 1 just means leaks; they are already collected
+	return out
+}
+
+// SecretsTree scans the audit's file set — tracked plus untracked,
+// gitignored excluded — in ONE gitleaks pass. gitleaks's dir mode walks
+// everything under a path with no notion of gitignore, so the files are
+// mirrored (hardlink, copy fallback) into a temp tree and THAT is scanned,
+// relative to its own root. That is what (1) keeps gitignored content out
+// of the scan, which is also what keeps real repos inside the time budget,
+// and (2) makes finding fingerprints repo-relative, so a committed
+// .gitleaksignore (mirrored along with the rest) works on every checkout.
+func SecretsTree(root string, files []string) []gitx.Finding {
+	bin := tools.Resolve(Gitleaks, root)
+	if bin == "" {
+		return []gitx.Finding{{Blocking: true,
+			Message: "NOT checked — gitleaks is not installed; run `procoder init` (security)"}}
+	}
+	tmp, err := os.MkdirTemp("", "procoder-secrets-")
+	if err != nil {
+		return []gitx.Finding{{Blocking: true,
+			Message: "secrets NOT checked — cannot stage the scan tree: " + err.Error() + " (security)"}}
+	}
+	defer os.RemoveAll(tmp)
+	var out []gitx.Finding
+	staged, skipped := 0, 0
+	for _, f := range files {
+		rel, err := filepath.Rel(root, f)
+		if err != nil || strings.HasPrefix(rel, "..") {
 			continue
 		}
-		if bytes.Contains(errb.Bytes(), []byte(`unknown command "dir"`)) {
-			// gitleaks before v8.19 has no `dir`; the same scan is spelled
-			// `detect --no-git --source` there — apt still ships that era
-			ctx2, cancel2 := context.WithTimeout(context.Background(), secretsTimeout)
-			legacy := exec.CommandContext(ctx2, bin, append([]string{"detect", "--no-git", "--source", p}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
-			legacy.Dir = root
-			errb.Reset()
-			legacy.Stderr = &errb
-			runErr = legacy.Run()
-			cancel2()
-			if ctx2.Err() == context.DeadlineExceeded {
-				out = append(out, gitx.Finding{File: p, Blocking: true,
-					Message: fmt.Sprintf("gitleaks gave no answer in %s — the path was NOT checked (security)", secretsTimeout)})
+		info, err := os.Lstat(f)
+		if err != nil || !info.Mode().IsRegular() {
+			continue // symlinks and specials have no content of their own
+		}
+		dst := filepath.Join(tmp, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			skipped++
+			continue
+		}
+		if os.Link(f, dst) != nil { // cross-device temp: fall back to a copy
+			data, err := os.ReadFile(f)
+			if err != nil || os.WriteFile(dst, data, 0o600) != nil {
+				skipped++
 				continue
 			}
 		}
-		raw, readErr := os.ReadFile(report)
-		os.Remove(report)
-		if readErr != nil {
-			out = append(out, gitx.Finding{File: p, Blocking: true,
-				Message: "gitleaks produced no report — the path was NOT checked: " + firstLine(errb.String()) + " (security)"})
-			continue
+		staged++
+	}
+	if skipped > 0 {
+		out = append(out, gitx.Finding{Blocking: true,
+			Message: fmt.Sprintf("%d file(s) could not be staged for the secrets scan — they were NOT checked (security)", skipped)})
+	}
+	if staged == 0 {
+		return out
+	}
+	for _, f := range scanOne(bin, tmp, ".") {
+		// map the mirror's relative paths back into the repository
+		if f.File == "." || f.File == "" {
+			f.File = ""
+		} else if !filepath.IsAbs(f.File) {
+			f.File = filepath.Join(root, f.File)
 		}
-		var leaks []struct {
-			File      string `json:"File"`
-			StartLine int    `json:"StartLine"`
-			RuleID    string `json:"RuleID"`
-		}
-		if json.Unmarshal(raw, &leaks) != nil {
-			out = append(out, gitx.Finding{File: p, Blocking: true,
-				Message: "gitleaks report unreadable — the path was NOT checked (security)"})
-			continue
-		}
-		for _, l := range leaks {
-			// gitleaks echoes the path as given for file scans and prefixes
-			// it for directory scans — normalise to one shape
-			loc := l.File
-			if !filepath.IsAbs(loc) && loc != p {
-				loc = filepath.Join(p, loc)
-			}
-			// the finding names the rule and location — NEVER the secret
-			out = append(out, gitx.Finding{File: loc, Line: l.StartLine, Blocking: true,
-				Message: fmt.Sprintf("secret detected (%s) — remove it and rotate the credential; committed secrets live in history forever (security)", l.RuleID)})
-		}
-		_ = runErr // exit 1 just means leaks; they are already collected
+		out = append(out, f)
 	}
 	return out
 }

@@ -128,6 +128,52 @@ func TestConfiglessTSIsOutOfScopeButJSGetsTheBaseline(t *testing.T) {
 	}
 }
 
+// The nearest config wins, ascending from the linted file — a config in a
+// subdirectory (web/, packages/app/) counts, not just one at the repo root.
+func TestNearestEslintConfigAscendsFromTheFile(t *testing.T) {
+	root := t.TempDir()
+	webDir := filepath.Join(root, "web")
+	os.MkdirAll(filepath.Join(webDir, "src"), 0o755)
+	os.WriteFile(filepath.Join(webDir, "eslint.config.mjs"), []byte("export default []\n"), 0o644)
+
+	if got := nearestEslintConfigDir(root, filepath.Join(webDir, "src", "app.jsx")); got != webDir {
+		t.Fatalf("file under web/ must resolve to web/'s config, got %q", got)
+	}
+	if got := nearestEslintConfigDir(root, filepath.Join(root, "tool.js")); got != "" {
+		t.Fatalf("file outside any config's tree must be uncovered, got %q", got)
+	}
+
+	os.WriteFile(filepath.Join(root, ".eslintrc.json"), []byte("{}\n"), 0o644)
+	if got := nearestEslintConfigDir(root, filepath.Join(webDir, "src", "app.jsx")); got != webDir {
+		t.Fatalf("the NEAREST config must win over the root's, got %q", got)
+	}
+	if got := nearestEslintConfigDir(root, filepath.Join(root, "tool.js")); got != root {
+		t.Fatalf("root config must cover root-level files, got %q", got)
+	}
+}
+
+// A file covered by a subdirectory config is linted under THAT config, not
+// the procoder baseline — the audit path regression from issue #28.
+func TestSubdirConfigWinsOverTheBaseline(t *testing.T) {
+	if tools.Resolve(Eslint, "") == "" {
+		t.Skip("eslint not installed; the resolution logic is tested above")
+	}
+	root := t.TempDir()
+	webDir := filepath.Join(root, "web")
+	os.MkdirAll(webDir, 0o755)
+	// a permissive config: everything the baseline would flag is allowed
+	os.WriteFile(filepath.Join(webDir, "eslint.config.mjs"),
+		[]byte("export default [{ rules: {} }]\n"), 0o644)
+	f := filepath.Join(webDir, "app.js")
+	os.WriteFile(f, []byte("var x = 1\nif (x == 2) { }\n"), 0o644)
+
+	for _, g := range Files(root, []string{f}, false) {
+		if strings.Contains(g.Message, "procoder baseline") {
+			t.Fatalf("the repo's own config must win over the baseline: %+v", g)
+		}
+	}
+}
+
 func TestShellcheckFindsARealProblem(t *testing.T) {
 	if tools.Resolve(Shellcheck, "") == "" {
 		t.Skip("shellcheck not installed; parser tests carry the logic")

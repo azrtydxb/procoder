@@ -115,7 +115,10 @@ func Run(root string, out func(string)) int {
 	// Collect is the gate's shared slice: git hygiene, templates, workflow
 	// lint, CI hygiene, infrastructure, and documentation in one pass
 	report("hygiene (git, workflows, CI, infra, docs)", gitcmd.Collect(root, cfg, files))
-	report("secrets (gitleaks)", security.Secrets(root, []string{root}))
+	// the file set, not the directory: dir mode would read gitignored
+	// trees (node_modules/, target/, local caches) and stamp fingerprints
+	// with absolute paths — see SecretsTree
+	report("secrets (gitleaks)", security.SecretsTree(root, files))
 	report("lint", lint.Files(root, files, cfg.LintBlock))
 
 	out("## scorecard")

@@ -49,6 +49,38 @@ func TestCleanFileIsSilent(t *testing.T) {
 	}
 }
 
+// The audit's tree scan covers ONLY the given file set — a secret in a file
+// outside the set (gitignored in real life) must not surface — reports
+// repo paths, and honours a committed repo-relative .gitleaksignore.
+func TestSecretsTreeScopeAndRelativeFingerprints(t *testing.T) {
+	if tools.Resolve(Gitleaks, "") == "" {
+		t.Skip("gitleaks not installed")
+	}
+	root := t.TempDir()
+	token := "ghp_" + "x9J2mQ8v" + "LpZ4tR7n" + "W3kY6bC1" + "dF5gH0aSeD"
+	inScope := filepath.Join(root, "src", "cfg.py")
+	os.MkdirAll(filepath.Dir(inScope), 0o755)
+	os.WriteFile(inScope, []byte("token = \""+token+"\"\n"), 0o644)
+	ignored := filepath.Join(root, "node_modules", "cache.py")
+	os.MkdirAll(filepath.Dir(ignored), 0o755)
+	os.WriteFile(ignored, []byte("token = \""+token+"\"\n"), 0o644)
+
+	got := SecretsTree(root, []string{inScope})
+	if len(got) != 1 || !got[0].Blocking || got[0].File != inScope {
+		t.Fatalf("want one blocking finding at %s, got %+v", inScope, got)
+	}
+
+	// a repo-relative fingerprint in .gitleaksignore must suppress it —
+	// the whole point of scanning relative; the rule name comes from the
+	// finding itself so the test survives gitleaks ruleset renames
+	ruleID := got[0].Message[strings.Index(got[0].Message, "(")+1 : strings.Index(got[0].Message, ")")]
+	ignoreFile := filepath.Join(root, ".gitleaksignore")
+	os.WriteFile(ignoreFile, []byte("src/cfg.py:"+ruleID+":1\n"), 0o644)
+	if got := SecretsTree(root, []string{inScope, ignoreFile}); len(got) != 0 {
+		t.Fatalf("repo-relative fingerprint must suppress the finding: %+v", got)
+	}
+}
+
 // Missing scanners are blocking NOT-checked, never silence — a security
 // check that quietly didn't run is worse than a red one.
 func TestMissingToolsReadAsBlockingNotChecked(t *testing.T) {

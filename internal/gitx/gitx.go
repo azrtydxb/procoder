@@ -52,6 +52,22 @@ func ChangedFiles(root string) ([]string, error) {
 	return files, nil
 }
 
+// FilesUnder lists the gate's file set beneath dir: tracked plus
+// untracked-but-not-ignored. Paths are absolute.
+func FilesUnder(root, dir string) []string {
+	out, err := git(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", dir)
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line != "" {
+			files = append(files, filepath.Join(root, line))
+		}
+	}
+	return files
+}
+
 // CurrentBranch, or "" when detached.
 func CurrentBranch(root string) string {
 	b, err := git(root, "branch", "--show-current")

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -336,27 +337,57 @@ func hasGolangciConfig(root string) bool {
 	return false
 }
 
-// lintJS runs eslint. The project's config always wins; where none exists,
-// a generated baseline of eslint's BUILT-IN core rules fills the void —
-// procoder still imposes nothing on the repo (the file lives in the temp
-// dir), and baseline findings are labeled as such. eslint v10 dropped the
-// unix formatter from core, so both paths parse JSON.
+// lintJS runs eslint. The project's config always wins and is resolved the
+// way eslint itself resolves flat config — the nearest eslint config
+// ascending from each linted file — so a config in a subdirectory (web/,
+// packages/app/) counts, not just one at the repo root. Files under a
+// config are linted from that config's directory; only files no config
+// covers get the baseline of eslint's BUILT-IN core rules — procoder still
+// imposes nothing on the repo (the file lives in the temp dir), and
+// baseline findings are labeled as such. eslint v10 dropped the unix
+// formatter from core, so both paths parse JSON.
 func lintJS(root string, files []string, block bool) []gitx.Finding {
-	bin := tools.Resolve(Eslint, root)
-	if HasEslintConfig(root) {
-		if bin == "" {
-			return notChecked(files[0], "eslint")
-		}
-		raw, err := execute(root, bin, append([]string{"--format", "json"}, files...))
-		return parseEslintJSON(raw, err, files[0], "lint", block)
-	}
-	// no project config: plain JS gets the built-in-rules baseline;
-	// TypeScript needs a parser eslint core does not carry, and installing
-	// one would be imposing — TS is out of scope until the project carries
-	// a config, whether or not eslint itself is installed.
-	var jsFiles []string
-	var out []gitx.Finding
+	byCfg := map[string][]string{}
+	var uncovered []string
 	for _, f := range files {
+		if dir := nearestEslintConfigDir(root, f); dir != "" {
+			byCfg[dir] = append(byCfg[dir], f)
+		} else {
+			uncovered = append(uncovered, f)
+		}
+	}
+	var out []gitx.Finding
+	cfgDirs := make([]string, 0, len(byCfg))
+	for d := range byCfg {
+		cfgDirs = append(cfgDirs, d)
+	}
+	sort.Strings(cfgDirs)
+	for _, dir := range cfgDirs {
+		fs := byCfg[dir]
+		// a project-local eslint may live beside the config, not the root
+		bin := tools.Resolve(Eslint, dir)
+		if bin == "" {
+			bin = tools.Resolve(Eslint, root)
+		}
+		if bin == "" {
+			out = append(out, notChecked(fs[0], "eslint")...)
+			continue
+		}
+		// run from the config's directory: eslint's own config search starts
+		// there, so the nearest config is the one that gets used
+		raw, err := execute(dir, bin, append([]string{"--format", "json"}, fs...))
+		out = append(out, parseEslintJSON(raw, err, fs[0], "lint", block)...)
+	}
+	if len(uncovered) == 0 {
+		return out
+	}
+	bin := tools.Resolve(Eslint, root)
+	// no config covers these files: plain JS gets the built-in-rules
+	// baseline; TypeScript needs a parser eslint core does not carry, and
+	// installing one would be imposing — TS is out of scope until the
+	// project carries a config, whether or not eslint itself is installed.
+	var jsFiles []string
+	for _, f := range uncovered {
 		switch strings.ToLower(filepath.Ext(f)) {
 		case ".ts", ".tsx":
 			out = append(out, gitx.Finding{File: f,
@@ -467,16 +498,41 @@ func errStr(err error) string {
 	return err.Error()
 }
 
-// HasEslintConfig reports whether the project carries an eslint config —
-// the condition for eslint being in scope at all.
+// eslintConfigNames are the config files eslint recognises, flat first.
+var eslintConfigNames = []string{"eslint.config.js", "eslint.config.mjs", "eslint.config.cjs",
+	"eslint.config.ts", ".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.yml", ".eslintrc.yaml"}
+
+// HasEslintConfig reports whether the project carries an eslint config at
+// its root — the condition for eslint being in scope at all.
 func HasEslintConfig(root string) bool {
-	for _, name := range []string{"eslint.config.js", "eslint.config.mjs", "eslint.config.cjs",
-		"eslint.config.ts", ".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.yml", ".eslintrc.yaml"} {
+	for _, name := range eslintConfigNames {
 		if fileExists(filepath.Join(root, name)) {
 			return true
 		}
 	}
 	return false
+}
+
+// nearestEslintConfigDir ascends from the file's directory to the repo root
+// looking for an eslint config, the way eslint resolves flat config. Empty
+// means no config covers the file.
+func nearestEslintConfigDir(root, file string) string {
+	dir := filepath.Dir(file)
+	for {
+		for _, name := range eslintConfigNames {
+			if fileExists(filepath.Join(dir, name)) {
+				return dir
+			}
+		}
+		if dir == root {
+			return ""
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 // run resolves the tool, executes it, and parses the shared finding shape.
