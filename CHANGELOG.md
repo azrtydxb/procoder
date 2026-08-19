@@ -2,6 +2,19 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.24.0 — 2026-08-19
+
+- The engineering principles gain a delegation section — you are a
+  lead, not a lone hand: independent work fans out to parallel
+  subagents (launched together, not one by one), delegation goes where
+  a fresh context does better under a clear contract (scope, owned
+  files, output shape, definition of done; no shared file ownership),
+  launched agents are watched and redirected early, and nothing an
+  agent produced merges unjudged — verify claims against the code and
+  run the gate over anything an agent wrote. As with the rest of the
+  principles, a repo replaces them wholesale via
+  .procoder/PRINCIPLES.md.
+
 ## 0.23.0 — 2026-08-19
 
 Serena parity: the two capabilities that still needed the serena MCP

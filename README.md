@@ -7,7 +7,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.23.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.24.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-0e5563)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-0e5563)
 
@@ -97,6 +97,7 @@ callers, impact, unused, entrypoints.
 
 **Senior habits, encoded** — engineering **principles** injected at
 session start (build ladder: reuse → stdlib → platform → minimum code;
+delegation: parallel subagents under a contract, watched and judged;
 repo-overridable), deliberate corner-cuts marked and harvested as
 **debt** with revisit triggers, and an **audit** command that onboards
 any existing codebase with a triaged scorecard.

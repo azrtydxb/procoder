@@ -60,6 +60,25 @@ Rules:
   (default ` + "`debt:`" + `), naming the ceiling AND the condition to
   revisit — ` + "`procoder debt`" + ` harvests these into a ledger, and
   markers with no revisit trigger are flagged as rot.
+
+Delegation — you are a lead, not a lone hand:
+
+- Independent work runs in parallel: fan out subagents for searches,
+  reviews, and separable subtasks instead of grinding through them
+  serially in one context — and launch them together, not one by one.
+- Delegate what a fresh context does better (broad sweeps, well-bounded
+  implementations, independent perspectives); keep the conclusion, not
+  the file dumps. Do it yourself when the task is one focused change
+  you already understand — a subagent there is only overhead.
+- Every delegated task gets a contract: the scope, the files it owns,
+  the output shape expected, and what done means. Two agents never own
+  the same file.
+- Watch what you launched: read results as they land and redirect early
+  when an agent drifts — an unwatched agent is an unowned change.
+- Quality-control before integrating: agent output is a diagnosis, not
+  a truth. Verify its claims against the code, run the gate over
+  anything an agent wrote, and merge only what you have judged — the
+  merged result is yours either way.
 `
 
 // Effective returns the principles text for this repo: the override file
