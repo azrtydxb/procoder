@@ -160,17 +160,17 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 // unix formatter from core, so both paths parse JSON.
 func lintJS(root string, files []string, block bool) []gitx.Finding {
 	bin := tools.Resolve(Eslint, root)
-	if bin == "" {
-		return notChecked(files[0], "eslint")
-	}
 	if HasEslintConfig(root) {
+		if bin == "" {
+			return notChecked(files[0], "eslint")
+		}
 		raw, err := execute(root, bin, append([]string{"--format", "json"}, files...))
 		return parseEslintJSON(raw, err, files[0], "lint", block)
 	}
 	// no project config: plain JS gets the built-in-rules baseline;
 	// TypeScript needs a parser eslint core does not carry, and installing
-	// one would be imposing — TS stays out of scope until the project
-	// carries a config.
+	// one would be imposing — TS is out of scope until the project carries
+	// a config, whether or not eslint itself is installed.
 	var jsFiles []string
 	var out []gitx.Finding
 	for _, f := range files {
@@ -184,6 +184,9 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 	}
 	if len(jsFiles) == 0 {
 		return out
+	}
+	if bin == "" {
+		return append(out, notChecked(jsFiles[0], "eslint")...)
 	}
 	cfg := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-eslint-%d.mjs", os.Getpid()))
 	if err := os.WriteFile(cfg, []byte(baselineEslintConfig), 0o644); err != nil {

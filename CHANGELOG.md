@@ -4,7 +4,15 @@ Every release, in words a user can read. Newest first.
 
 ## 0.15.0 — 2026-08-19
 
-Linters for all, without an asterisk.
+Linters for all, without an asterisk — and the version tripwire now
+guards every claims-bearing page.
+
+- VersionSync generalizes from the README to a rules-driven list
+  (## Version-tracked docs in .procoder/docs/RULES.md; default README.md
+  and docs/index.md): the Pages site's index shipped eight releases
+  stale because only the README was held to the version — the same
+  prose-claims blind spot, now closed for every listed page. The site
+  content itself is rewritten to the all-nine reality.
 
 - Configless JavaScript now gets a procoder baseline: eslint's BUILT-IN
   core rules (no-undef, no-unused-vars, eqeqeq, no-var, …) via a
