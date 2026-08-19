@@ -63,6 +63,10 @@ Documentation rules. Machine-read sections (one `- item` per line):
 - `## Version-tracked docs` — pages whose first screen must carry the
   current version; a release that skips one blocks the gate (default:
   README.md, docs/index.md)
+- `## README must mention` — the feature families the README's narrative
+  must carry (empty by default; when filled, a family the front page
+  stops telling blocks the gate — the mechanical floor against README
+  rot)
 
 ### `.procoder/security/RULES.md`
 

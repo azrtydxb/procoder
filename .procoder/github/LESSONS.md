@@ -59,6 +59,12 @@ does. `procoder lessons` flags entries with no adaptation.
 - Missed by: rubric
 - Adaptation: REVIEW.md rubric prose line sharpened — "names and paths in docs match the code exactly (every variant, full paths)"
 
+## 2026-08-19 Pascal — eleven releases shipped against a README still describing release one
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: three layers — `## README must mention` families in the docs rules (blocking, mechanical floor), the mandatory docs-impact question in /procoder:pr (judgment ceiling), and the product-story line in this rubric; plus the full README/site rewrite
+
 ## 2026-08-19 self-scan (procoder debt) — our own test fixtures carried literal debt markers
 
 - Class: judgment

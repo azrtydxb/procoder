@@ -21,6 +21,16 @@ Every procoder command below is the `procoder` binary on PATH.
 2. Read the real diff (`git diff <default-branch>...HEAD`) and the commits.
    Summarise what actually changed, not what you remember intending.
 
+2a. The docs-impact question — MANDATORY, answered in writing before the
+self-review: **"What does this change alter about what a reader must be
+told?"** Features change the story, not just the reference. Answer with
+either the list of pages updated (README narrative, docs site pages, the
+command reference) or the explicit sentence "no reader-visible change
+because <reason>". A PR without this answer does not get opened — docs
+lag was our longest-lived escaped-finding class, and mention-checks alone
+did not catch it (the gate's `README must mention` families are the
+mechanical floor, this question is the judgment ceiling).
+
 2b. The pre-PR self-review — the first fresh pair of eyes is OURS, not the
 downstream reviewer's:
 

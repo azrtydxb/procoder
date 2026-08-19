@@ -1,11 +1,13 @@
 # procoder
 
-**Make your AI coder work like a senior developer** — all nine domains of
-senior work, from security scans to merge discipline, delivered as tools the
-agent runs itself and hooks it cannot skip. The agent stays in control;
-nothing ever touches your code behind its back.
+**Make your AI coder work like a senior developer** — a commit gate it
+cannot talk its way past, quality controllers that refuse to call
+unfinished work done, a self-learning loop that closes each escaped
+bug's whole class, and one contract that works across every AI coding
+agent. The agent stays in control; nothing ever touches your code behind
+its back.
 
-Current version: **0.20.0**
+Current version: **0.21.0**
 
 ```mermaid
 flowchart LR
@@ -15,44 +17,47 @@ flowchart LR
     A2 --> A
 ```
 
-## Quick start
+## Start here
 
-```
-/plugin marketplace add azrtydxb/procoder
-/plugin install procoder
-/procoder:init
-```
+- **[Getting started](getting-started.md)** — install to governed in ten
+  minutes, on Claude Code or any agent.
+- **[The quality chain](quality-chain.md)** — spec → plan → todo → gate →
+  lessons, and why every link refuses instead of advising.
+- **[Every agent](portability.md)** — Cursor, Codex, Copilot, OpenCode,
+  Kilo Code and the rest: one `AGENTS.md`, thin adapters, drift-guarded.
+- **[Architecture](architecture.md)** — the binary, the hooks, and the
+  three contracts (agent in control, unchecked is never clean, the
+  repo's files win).
 
-## The nine domains, all shipped
+## The reference
 
-1. **Security** — gitleaks blocks secrets the moment they land in a file;
-   semgrep SAST and osv-scanner dependency checks behind
-   `procoder security --deep` and CI.
-2. **Best practices** — the canonical linter per ecosystem (golangci-lint,
-   ruff, shellcheck, eslint — with a built-in-rules baseline for configless
-   JavaScript) in the write hook and the gate.
-3. **Maintainability** — dead code from the index, complexity and function
-   length; all judgment calls, repo-tunable thresholds.
-4. **Performance** — `/procoder:perf`, the measure-first discipline.
-5. **Documentation** — broken references and diagrams block; drift, badges,
-   version-tracked pages, and this site's own deployment are checked.
-6. **Clean code** — every write checked against the ecosystem's canonical
-   formatter; the agent receives the formatted result in-turn.
-7. **CI/CD/CT** — pinned actions, job timeouts, concurrency cancellation,
-   tests-exist; run health via `gh`.
-8. **DevOps/IaaS** — hadolint, terraform, kubeconform, helm — each only
-   where its files exist.
-9. **GitOps/GitHub** — hygiene gates, templates, worktree-first branching,
-   watch-only merge polling, post-merge cleanup.
+- **[The nine domains](domains.md)** — security, lint, maintainability,
+  performance, documentation, formatting, CI, infra, GitOps: what each
+  checks and what blocks.
+- **[Command reference](commands.md)** — every command, from the gate
+  to the lessons ledger.
+- **[Configuration](configuration.md)** — every knob and rules file
+  under `.procoder/`, and the override guarantee.
+- **[The workflow](workflow.md)** — worktree-first branching, the PR
+  discipline, watch-only merge polling, post-merge cleanup.
+- **[Changelog](https://github.com/azrtydxb/procoder/blob/main/CHANGELOG.md)** —
+  every release, in words a user can read (also in this site's nav,
+  built from the repo's CHANGELOG at deploy time).
 
-Beneath the domains sits the **code index**: two tiers (universal-ctags +
-SCIP), eleven queries from `find` to the call `graph`, consumed by the
-agent and the domains alike.
+## What makes it different
 
-Dig deeper: [the nine domains](domains.md), the
-[command reference](commands.md), [configuration](configuration.md), and
-[the workflow](workflow.md). Onboarding an existing codebase? Run
-`/procoder:audit`.
+**Refusal, not advice.** `todo close` refuses without evidence;
+`spec check` blocks on open questions; the gate counts a tool that
+could not run as failing. Verdicts mean something because they cannot
+be waved through.
 
-The full story lives in the [README](https://github.com/azrtydxb/procoder#readme);
-the harness's design contract governs everything here.
+**Honesty as a feature.** NOT-checked never reads as clean, claims
+carry their method, and the docs you are reading are themselves held to
+completeness checks that block the gate — this site cannot silently go
+stale, because that has happened and became a
+[lesson](quality-chain.md#lessons-escapes-close-their-class).
+
+**One engine, thin everything else.** A single Go binary computes every
+verdict; skills, hooks, and per-agent adapters are pointers to it. No
+runtime dependencies, no network at hook time, air-gapped installs
+included.

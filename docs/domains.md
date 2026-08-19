@@ -3,76 +3,155 @@
 procoder organises senior-developer work into nine domains. Each follows
 the same architecture: the binary computes findings, the write hook hands
 them to the agent in the same turn, the gate carries them at commit time,
-a skill packages the workflow, and every rule is repo-overridable.
+a skill packages the workflow, and every rule is repo-overridable
+(D-OVERRIDE). This page is the detailed reference: what each domain
+checks, with what, what blocks, and where its knobs live.
 
-## 1. Security — blocking where it must be
+Reading the tables: **blocks** fails the gate and CI; **reports** informs
+the agent's judgment; **NOT-checked** means the tool was missing or
+failed — counted as failing, never as clean.
 
-gitleaks scans every written file the moment it lands and the changed set
-at the gate: a secret always blocks, the finding names rule and location
-(never the value) and orders a rotation. `procoder security --deep` adds
-semgrep with the community rulesets (ERROR blocks) and osv-scanner over
-explicitly named manifests (CVSS ≥ 7.0 blocks). Missing scanners read as
-blocking NOT-checked — a security check that silently didn't run is worse
-than a red one.
+## 1. Security
 
-## 2. Best practices — the canonical linter per ecosystem
+Runs in the write hook (changed file), the gate (changed set), and
+`procoder security --deep` (whole repository).
 
-golangci-lint, ruff check, shellcheck, and eslint, each under the
-project's own configuration. Configless plain JavaScript gets a baseline
-of eslint's built-in rules, labeled as procoder's voice. Report by
-default — lint is judgment where formatting was not.
+| Check                                 | Tool                                                   | Verdict                                                                                |
+| ------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Secrets in any written/changed file   | gitleaks (with a legacy-CLI fallback for old installs) | **blocks** — names rule and location, never the value, and orders removal AND rotation |
+| SAST over the repository (`--deep`)   | semgrep, community rulesets                            | ERROR severity **blocks**; WARNING reports                                             |
+| Dependency vulnerabilities (`--deep`) | osv-scanner over explicitly named lockfiles            | CVSS ≥ 7.0 **blocks**; below reports                                                   |
+| Scanner missing or output unreadable  | —                                                      | **blocks** as NOT-checked                                                              |
 
-## 3. Maintainability — judgment, informed
+Details worth knowing: manifests are enumerated explicitly (osv's own
+walker trusts git metadata and comes back empty in worktrees); a
+`package.json` that declares dependencies with no lockfile is an explicit
+unscannable gap; false positives are handled by `gitleaks:allow` trailing
+comments or `.gitleaksignore`, each a reviewed decision — the flow is in
+`.procoder/security/RULES.md`, which the repo owns.
 
-Dead-code candidates from the index's precise tier (exported API marked —
-a public surface is legitimately unreferenced from inside), complexity
-and function length at repo-tunable thresholds. Nothing blocks; deletion
-is the recommended refactor.
+## 2. Best practices (lint)
 
-## 4. Performance — measure first
+The canonical linter per ecosystem, under the project's own config —
+procoder imposes nothing where the repo has spoken.
 
-`/procoder:perf` encodes the discipline: baseline before touching,
+| Ecosystem | Tool          | Baseline when the repo has no config                                                                                  |
+| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Go        | golangci-lint | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                      |
+| Python    | ruff check    | ruff's defaults                                                                                                       |
+| Shell     | shellcheck    | shellcheck's defaults                                                                                                 |
+| JS/TS     | eslint        | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed) |
+
+Report by default; `[lint] policy = "block"` in config.toml makes
+findings block. Lint is judgment where formatting was not — the findings
+arrive in-turn on every write, and the agent is expected to fix what is
+real and say why for what is not.
+
+## 3. Maintainability
+
+`procoder maintain` — informed judgment, never blocking.
+
+| Check                 | Source                                              | Notes                                                                              |
+| --------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Dead-code candidates  | the index's precise (SCIP) tier                     | exported API is marked — a public surface is legitimately unreferenced from inside |
+| Cyclomatic complexity | golangci (gocyclo) / ruff (mccabe), isolated config | threshold `[maintain] gocyclo`, default 15                                         |
+| Function length       | funlen                                              | `[maintain] funlen_lines` / `funlen_statements`, defaults 80/50                    |
+
+Deliberate corner-cuts are the sibling discipline: mark them with the
+`debt:` comment convention (marker configurable via `[debt]`) naming the
+ceiling and revisit condition; `procoder debt` harvests the ledger and
+flags no-trigger entries as rot.
+
+## 4. Performance
+
+`/procoder:perf` encodes measure-first: baseline before touching,
 profile before guessing, re-measure after, report the delta with the
-command that produced it. A fix without a benchmark is a hope.
+command that produced it. A fix without a benchmark is a hope. No
+binary checks here yet by design — performance claims without
+measurement infrastructure would violate the honesty contract.
 
-## 5. Documentation — correct, presentable, delivered
+## 5. Documentation
 
-Broken relative references and non-compiling Mermaid diagrams block; doc
-drift, API doc comments, badges, README structure, and command coverage
-report. Version-tracked pages must carry the current version — a release
-without a reviewed page blocks. External links verified by lychee in CI;
-this site is built and deployed by the harness's own docs job.
+Documentation is a product: correct, presentable, delivered, and —
+since it has burned us — **complete**.
 
-## 6. Clean code — the formatter's answer, the agent's hands
+| Check                                                                                                                        | Verdict                  |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Broken relative references, non-compiling Mermaid diagrams                                                                   | **blocks** (hook + gate) |
+| Version-tracked pages missing the current version; changelog without an entry for the release                                | **blocks**               |
+| A shipped command the docs never mention                                                                                     | **blocks**               |
+| A declared feature family the README's narrative stops telling (`## README must mention`, whole-word, badges/links stripped) | **blocks**               |
+| Doc drift (a doc mentions a file you changed), missing API doc comments, badges, README first screen                         | reports                  |
+| External links (lychee), Pages serving the latest build                                                                      | `--external` and CI      |
 
-Every write is checked against the ecosystem's canonical formatter; when
-unformatted, the agent receives the formatted result in-turn and writes
-it itself — the file is never touched behind its back. Unchecked is a
-verdict, never silence.
+Rules live in `.procoder/docs/RULES.md`; this site is built and deployed
+by the harness's own CI job.
 
-## 7. CI/CD/CT — pipeline discipline
+## 6. Clean code (formatting)
 
-Actions pinned to commit SHAs (a tag can be silently repointed), per-job
-timeouts, concurrency cancellation, and the existence of tests — plus run
-health via `gh`.
+Every write is checked against the ecosystem's canonical formatter —
+gofmt, ruff format, prettier, rustfmt, clang-format (config required —
+procoder has no style opinion of its own), shfmt. Three verdicts, never
+collapsed: **clean**, **unformatted** (the agent receives the formatted
+result in-turn and writes it itself), **unchecked** (tool missing or
+failed — fails the gate). The file is never touched behind the agent's
+back; that is P-CONTROL's original case.
 
-## 8. DevOps/IaaS/CaaS — each tool where its files exist
+## 7. CI/CD/CT
 
-hadolint, terraform fmt/validate/tflint, kubeconform, helm lint —
-inventory-driven, so a repo without infrastructure pays nothing. A
-failing `terraform validate` blocks; an uninitialised directory says NOT
-validated instead of failing on providers.
+`procoder ci` and the same checks inside the gate:
 
-## 9. GitOps/GitHub — the finishing discipline
+| Check                                                            | Verdict                                                         |
+| ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| Actions pinned to mutable refs (a tag can be silently repointed) | reports; `[ci] pin_actions_policy = "block"` to block           |
+| Missing per-job `timeout-minutes`                                | reports — a hung job otherwise burns the whole runner allowance |
+| Missing concurrency cancellation                                 | reports                                                         |
+| Pipelines with no test step                                      | reports                                                         |
+| Workflow files unreadable                                        | **blocks** as NOT-checked                                       |
 
-Conflict markers, junk and caches, oversized files, and AI-attribution
-lines block; commit subjects and default-branch work report. actionlint
-runs on every workflow write. Templates standardize PRs and commits;
-feature work happens in worktrees; merges wait for every check and every
-review (bots included), then clean up local and remote.
+actionlint runs on every workflow file the agent writes, in-turn.
+
+## 8. DevOps / IaaS / CaaS
+
+`procoder infra` — inventory-driven: each tool runs only where its files
+exist, so a repo without infrastructure pays nothing.
+
+| Files                | Tool                                                                                                                                                                           | Verdict |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| Dockerfiles          | hadolint                                                                                                                                                                       | reports |
+| Terraform            | terraform fmt (reports) · terraform validate (**blocks** when initialised; says NOT-validated when `.terraform` is absent rather than failing on providers) · tflint (reports) |
+| Kubernetes manifests | kubeconform                                                                                                                                                                    | reports |
+| Helm charts          | helm lint                                                                                                                                                                      | reports |
+
+## 9. GitOps / GitHub
+
+The finishing discipline — most of it rides the gate:
+
+| Check                                                                             | Verdict                                           |
+| --------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Conflict markers in changed files                                                 | **blocks**, names file and line                   |
+| Junk/caches staged (.DS_Store, \*.orig, node_modules, …)                          | **blocks**                                        |
+| Oversized files (`[git] max_file_mb`, default 5)                                  | **blocks**                                        |
+| AI-attribution lines in commits (`procoder scrub` for drafts)                     | **blocks** — the work is the author's             |
+| PR-template mirror drift (`.github/` vs the `.procoder/github/` master)           | **blocks**                                        |
+| Agent-layer drift (rule copies vs `AGENTS.md`, manifest versions)                 | **blocks**                                        |
+| Commit subject shape (≤72, blank line before body); working on the default branch | reports (`[git] default_branch_policy` can block) |
+
+Around the checks, the skills encode the workflow: worktree per feature,
+`/procoder:pr` (docs-impact question, pre-PR self-review, scrubbed
+template), `/procoder:merge` (watch-only polling, every review thread
+answered, the reflection step for anything that escaped, then merge and
+full cleanup).
 
 ## Beneath them: the code index
 
-Two tiers — universal-ctags for breadth, SCIP for precision — with eleven
-queries from `find` to the call `graph`, kept current by the hook and the
-gate, consumed by the agent and the domains alike.
+Two tiers — universal-ctags for breadth, SCIP for precision — with
+eleven queries from `find` to the call `graph`, kept current by the hook,
+consumed by the agent and the domains alike (maintainability's dead-code
+sweep and the gate's impact lines both read it).
+
+## Above them: the quality chain
+
+The domains judge code that exists; the [quality chain](quality-chain.md)
+governs whether the right thing gets built at all — spec, plan, todo,
+and the lessons loop, each with its own refusing controller.

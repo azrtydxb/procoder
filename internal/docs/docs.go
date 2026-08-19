@@ -84,6 +84,7 @@ type Rules struct {
 	RequiredBadges []string // substrings that must appear in a README badge image URL or alt text
 	ReadmeSections []string // headings/elements required on the README's first screen
 	VersionedDocs  []string // docs whose first screen must carry the current version
+	ReadmeMentions []string // phrases the README's narrative must carry — feature families, not commands
 }
 
 func defaultRules() Rules {
@@ -92,11 +93,12 @@ func defaultRules() Rules {
 		RequiredBadges: []string{"ci", "license"},
 		ReadmeSections: []string{"usp", "badges", "quick start"},
 		VersionedDocs:  []string{"README.md", "docs/index.md"},
+		ReadmeMentions: nil, // opt-in via the rules file: a repo lists its own feature families
 	}
 }
 
 // LoadRules reads the repo's RULES.md. The file is prose for the agent with
-// three machine-readable list sections; a list that is present replaces the
+// machine-readable list sections; a list that is present replaces the
 // default for that section, absent sections keep their defaults.
 func LoadRules(root string) Rules {
 	r := defaultRules()
@@ -105,7 +107,7 @@ func LoadRules(root string) Rules {
 		return r
 	}
 	section := ""
-	var docsL, badgesL, secsL, verL []string
+	var docsL, badgesL, secsL, verL, mentionsL []string
 	for _, line := range strings.Split(string(data), "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "## ") {
@@ -125,6 +127,8 @@ func LoadRules(root string) Rules {
 			secsL = append(secsL, strings.ToLower(item))
 		case "version-tracked docs":
 			verL = append(verL, item)
+		case "readme must mention":
+			mentionsL = append(mentionsL, strings.ToLower(item))
 		}
 	}
 	if docsL != nil {
@@ -138,6 +142,9 @@ func LoadRules(root string) Rules {
 	}
 	if verL != nil {
 		r.VersionedDocs = verL
+	}
+	if mentionsL != nil {
+		r.ReadmeMentions = mentionsL
 	}
 	return r
 }
@@ -449,6 +456,43 @@ func VersionSync(root string) []gitx.Finding {
 	return out
 }
 
+// ReadmeMentions holds the README's NARRATIVE to the repo's declared
+// feature families — presence checks pass while the story goes stale, so
+// a repo lists what its README must actually talk about (## README must
+// mention in the docs rules) and a missing family blocks. This is the
+// adaptation for the lesson where eleven releases shipped against a
+// README still describing release one.
+func ReadmeMentions(root string, r Rules) []gitx.Finding {
+	if len(r.ReadmeMentions) == 0 {
+		return nil // opt-in: no declared families, nothing to hold the README to
+	}
+	data, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		return nil // a missing README is RequiredDocs' finding
+	}
+	// only the NARRATIVE counts: badge images and link targets are
+	// stripped first (a ci.yml badge URL is not the README telling the
+	// reader about CI), then families match as whole words so "spec" is
+	// not satisfied by "specific"
+	text := readmeImageRe.ReplaceAllString(string(data), " ")
+	text = readmeLinkTargetRe.ReplaceAllString(text, "]")
+	text = strings.ToLower(text)
+	var out []gitx.Finding
+	for _, m := range r.ReadmeMentions {
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(m) + `\b`)
+		if !re.MatchString(text) {
+			out = append(out, gitx.Finding{File: filepath.Join(root, "README.md"), Blocking: true,
+				Message: fmt.Sprintf("README never mentions %q — a declared feature family the front page does not tell (docs)", m)})
+		}
+	}
+	return out
+}
+
+var (
+	readmeImageRe      = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	readmeLinkTargetRe = regexp.MustCompile(`\]\([^)]*\)`)
+)
+
 // Badges checks the required badge set appears in the README's first screen.
 func Badges(root string, r Rules) []gitx.Finding {
 	readme := filepath.Join(root, "README.md")
@@ -550,18 +594,76 @@ func ExternalLinks(root string, files []string) []gitx.Finding {
 	if err == nil {
 		return nil
 	}
+	site := siteURL(root)
 	var out []gitx.Finding
 	for _, line := range strings.Split(buf.String(), "\n") {
 		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "* [") || strings.Contains(t, "[ERROR]") {
-			out = append(out, gitx.Finding{Blocking: true, Message: "dead external link: " + t})
+		if !strings.HasPrefix(t, "* [") && !strings.Contains(t, "[ERROR]") {
+			continue
 		}
+		// a dead link to OUR OWN site whose page exists locally is not
+		// dead — it is pending this change's deploy (a PR adding a page
+		// and linking it would otherwise never pass CI)
+		if u := extractURL(t); site != "" && strings.HasPrefix(u, site) && localPageExists(root, strings.TrimPrefix(u, site)) {
+			out = append(out, gitx.Finding{
+				Message: "own-site link not deployed yet (page exists locally, resolves after the docs deploy): " + u})
+			continue
+		}
+		out = append(out, gitx.Finding{Blocking: true, Message: "dead external link: " + t})
 	}
 	if len(out) == 0 {
 		out = append(out, gitx.Finding{File: files[0], Blocking: true,
 			Message: "lychee failed without a parseable report — external links were NOT checked: " + firstLine(buf.String())})
 	}
 	return out
+}
+
+// siteURL reads the docs site's base URL from mkdocs.yml; empty when the
+// repo has no site.
+func siteURL(root string) string {
+	raw, err := os.ReadFile(filepath.Join(root, "mkdocs.yml"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "site_url:"); ok {
+			u := strings.TrimSpace(rest)
+			if u != "" && !strings.HasSuffix(u, "/") {
+				u += "/"
+			}
+			return u
+		}
+	}
+	return ""
+}
+
+var urlInLycheeLine = regexp.MustCompile(`<(https?://[^>]+)>`)
+
+func extractURL(line string) string {
+	if m := urlInLycheeLine.FindStringSubmatch(line); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// localPageExists maps a site path to its mkdocs source page.
+func localPageExists(root, rel string) bool {
+	rel = strings.Trim(rel, "/")
+	if i := strings.IndexAny(rel, "#?"); i >= 0 {
+		rel = strings.Trim(rel[:i], "/")
+	}
+	if strings.Contains(rel, "..") {
+		return false
+	}
+	if rel == "" {
+		rel = "index"
+	}
+	for _, candidate := range []string{rel + ".md", rel + "/index.md"} {
+		if _, err := os.Stat(filepath.Join(root, "docs", candidate)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // PagesHealth checks GitHub Pages is enabled and its latest build succeeded.

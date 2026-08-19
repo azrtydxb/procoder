@@ -244,6 +244,89 @@ func TestReadmeMustCarryTheCurrentVersion(t *testing.T) {
 	}
 }
 
+// The failure this pins: eleven releases shipped against a README still
+// describing release one — mention-in-corpus checks passed while the
+// front page went stale. Declared families hold the NARRATIVE current.
+func TestReadmeMustMentionDeclaredFamilies(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "README.md", "# x\n\nWe have a commit gate and a code index.\n")
+
+	r := Rules{ReadmeMentions: []string{"commit gate", "code index", "self-learning"}}
+	got := ReadmeMentions(root, r)
+	if len(got) != 1 || !got[0].Blocking || !strings.Contains(got[0].Message, "self-learning") {
+		t.Fatalf("the one untold family must block by name: %+v", got)
+	}
+
+	// no declared families → the check is opt-in and silent
+	if got := ReadmeMentions(root, Rules{}); len(got) != 0 {
+		t.Fatalf("no declared families must be silent: %+v", got)
+	}
+
+	// case-insensitive: the story can capitalise
+	write(t, root, "README.md", "# x\n\nThe Commit Gate, the Code Index, and the Self-Learning loop.\n")
+	if got := ReadmeMentions(root, r); len(got) != 0 {
+		t.Fatalf("capitalised mentions must count: %+v", got)
+	}
+
+	// whole-word matching: a family inside another word is not a mention —
+	// "specific" must not satisfy "spec", "eslint" not "lint" — or terse
+	// family names become vacuous
+	r2 := Rules{ReadmeMentions: []string{"spec", "lint"}}
+	write(t, root, "README.md", "# x\n\nA specific tool with eslint support.\n")
+	got = ReadmeMentions(root, r2)
+	if len(got) != 2 {
+		t.Fatalf("substrings inside words must not count as mentions: %+v", got)
+	}
+	write(t, root, "README.md", "# x\n\nThe spec interview and the lint domain.\n")
+	if got = ReadmeMentions(root, r2); len(got) != 0 {
+		t.Fatalf("whole-word mentions must count: %+v", got)
+	}
+
+	// only narrative counts: a ci.yml badge URL or a link target is not
+	// the README telling the reader about CI
+	r3 := Rules{ReadmeMentions: []string{"ci"}}
+	write(t, root, "README.md", "# x\n\n![CI](https://github.com/o/r/actions/workflows/ci.yml/badge.svg)\n[docs](https://example.com/ci/page)\n")
+	if got = ReadmeMentions(root, r3); len(got) != 1 {
+		t.Fatalf("badge URLs and link targets must not satisfy a family: %+v", got)
+	}
+	write(t, root, "README.md", "# x\n\n![CI](https://x/ci.yml/badge.svg)\n\nOur ci runs the same gate.\n")
+	if got = ReadmeMentions(root, r3); len(got) != 0 {
+		t.Fatalf("prose next to a badge must still count: %+v", got)
+	}
+}
+
+// The failure this pins: a PR adding a docs page and linking its future
+// site URL could never pass CI — the page 404s until the very deploy the
+// PR triggers. Own-site links with a local source page are pending, not
+// dead; genuinely missing pages still block.
+func TestOwnSiteLinksPendingDeployAreNotDead(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "mkdocs.yml", "site_name: x\nsite_url: https://example.github.io/x/\n")
+	write(t, root, "docs/getting-started.md", "# gs\n")
+
+	if !localPageExists(root, "getting-started/") {
+		t.Error("existing page must be recognised as pending, not dead")
+	}
+	if !localPageExists(root, "getting-started/#anchor") {
+		t.Error("anchors strip before the lookup")
+	}
+	if localPageExists(root, "") {
+		t.Error("no docs/index.md here — the site root is genuinely missing")
+	}
+	if localPageExists(root, "nope/") {
+		t.Error("a missing page is dead, not pending")
+	}
+	if localPageExists(root, "../secret") {
+		t.Error("traversal never resolves")
+	}
+	if got := siteURL(root); got != "https://example.github.io/x/" {
+		t.Errorf("siteURL = %q", got)
+	}
+	if got := extractURL("* [404] <https://example.github.io/x/getting-started/> (at 12:1)"); got != "https://example.github.io/x/getting-started/" {
+		t.Errorf("extractURL = %q", got)
+	}
+}
+
 // The failure this pins: the changelog existed, so RequiredDocs was happy,
 // but nothing forced an entry for the version being released — a bump
 // without release notes shipped silently.
