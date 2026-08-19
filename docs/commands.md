@@ -42,7 +42,11 @@ reviewed and written. Never touches the file.
 The canonical linter per ecosystem: golangci-lint (Go), ruff check
 (Python), shellcheck (shell), eslint (JS/TS — configless plain JavaScript
 gets the built-in-rules procoder baseline; configless TypeScript is out of
-scope). Report by default; `[lint] policy = "block"` makes findings block.
+scope). Go repositories without a golangci config get procoder's curated
+baseline (standard set plus gosec, gocritic, errorlint, unparam,
+copyloopvar, nilerr) — the repo's own golangci config always wins,
+whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report
+by default; `[lint] policy = "block"` makes findings block.
 
 ### `procoder security [--deep]`
 
@@ -131,6 +135,16 @@ corner cut on purpose carries a comment with the configured marker
 (default `debt:`, `[debt] marker` in config.toml) naming the ceiling and
 the condition to revisit. Markers with no revisit trigger are flagged —
 those are the ones that silently rot. Read-only, never blocking.
+
+### `procoder lessons`
+
+The self-learning loop's ledger (`.procoder/github/LESSONS.md`): every
+finding that escaped our own gates and was caught downstream becomes a
+lesson, and every lesson must carry the adaptation that closes its class —
+a linter enabled, a line added to the pre-PR review rubric
+(`.procoder/github/REVIEW.md`), a controller tightened, a pinning test.
+Entries with no adaptation are flagged UNLEARNED and exit 1 — recorded is
+not learned. An unreadable ledger exits 2.
 
 ### `procoder principles`
 

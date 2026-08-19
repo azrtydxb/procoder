@@ -13,9 +13,9 @@ import (
 // coverage check below holds the documentation to the same list.
 var Commands = []string{
 	"audit", "check", "ci", "debt", "docs", "doctor", "format", "git",
-	"hook", "index", "infra", "init", "lint", "maintain", "plan",
-	"principles", "scrub", "security", "spec", "templates", "todo",
-	"version",
+	"hook", "index", "infra", "init", "lessons", "lint", "maintain",
+	"plan", "principles", "scrub", "security", "spec", "templates",
+	"todo", "version",
 }
 
 // CommandCoverage reports commands the documentation never mentions —

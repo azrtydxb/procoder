@@ -135,6 +135,32 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 		}
 	}
 	args := []string{"run", "--output.text.path=stdout", "--show-stats=false"}
+	// the project's own config always wins; without one, procoder supplies
+	// a curated baseline strong enough to catch the bug classes reviewers
+	// keep finding (security edges, error handling, loop allocations) —
+	// the file lives in the temp dir, nothing is imposed on the repo
+	// (requires golangci-lint v2, the version doctor installs)
+	var baselineNote []gitx.Finding
+	if !hasGolangciConfig(root) {
+		cfgFile, err := os.CreateTemp("", "procoder-golangci-*.yml")
+		if err == nil {
+			_, err = cfgFile.WriteString(golangciBaseline)
+			// a failed Close can mean the write never hit disk — treat it
+			// as a write failure, not a success
+			if cerr := cfgFile.Close(); err == nil {
+				err = cerr
+			}
+			defer os.Remove(cfgFile.Name())
+		}
+		if err == nil {
+			args = append(args, "--config", cfgFile.Name())
+		} else {
+			// the run still happens on stock defaults, but silently losing
+			// the curated set would be dishonest — say so
+			baselineNote = append(baselineNote, gitx.Finding{File: files[0],
+				Message: "go lint ran WITHOUT the procoder baseline (cannot write temp config: " + err.Error() + ") (lint)"})
+		}
+	}
 	for d := range dirs {
 		args = append(args, d)
 	}
@@ -146,13 +172,41 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 	}
 	raw, err := execute(root, bin, args)
 	findings := finishParse(raw, err, files[0], "golangci-lint", block)
-	var out []gitx.Finding
+	out := baselineNote
 	for _, f := range findings {
 		if wanted[filepath.ToSlash(f.File)] || f.File == files[0] {
 			out = append(out, f)
 		}
 	}
 	return out
+}
+
+// golangciBaseline is the curated default when a repo carries no golangci
+// config: the standard set plus the linters that catch the classes code
+// review keeps finding after the fact — security edges (gosec), API misuse
+// and per-iteration work (gocritic), error-wrapping mistakes (errorlint),
+// dead parameters (unparam), and nil-on-error returns (nilerr).
+const golangciBaseline = `version: "2"
+linters:
+  default: standard
+  enable:
+    - gosec
+    - gocritic
+    - errorlint
+    - unparam
+    - copyloopvar
+    - nilerr
+`
+
+// hasGolangciConfig reports whether the project carries its own golangci
+// config — the repo's file always wins over the baseline (D-OVERRIDE).
+func hasGolangciConfig(root string) bool {
+	for _, name := range []string{".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // lintJS runs eslint. The project's config always wins; where none exists,

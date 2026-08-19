@@ -19,6 +19,7 @@ import (
 	"procoder/internal/docs"
 	"procoder/internal/gitx"
 	"procoder/internal/infra"
+	"procoder/internal/lessons"
 	"procoder/internal/security"
 )
 
@@ -176,6 +177,14 @@ func Templates(root string, stdout io.Writer) int {
 	}
 	if _, err := os.Stat(filepath.Join(root, security.RulesPath)); err != nil {
 		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", security.RulesPath, security.DefaultRules)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, lessons.ReviewPath)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", lessons.ReviewPath, lessons.DefaultReview)
+		printed = true
+	}
+	if _, err := os.Stat(filepath.Join(root, lessons.Path)); err != nil {
+		fmt.Fprintf(stdout, "== write this to %s:\n%s\n", lessons.Path, lessons.DefaultLedger)
 		printed = true
 	}
 	if !printed {

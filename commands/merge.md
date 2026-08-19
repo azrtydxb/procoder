@@ -54,6 +54,22 @@ Loop until done:
    - A reviewer asking for an unused "proper" feature gets the YAGNI
      answer: show it is uncalled and propose removal instead.
 
+2b. The reflection step — MANDATORY whenever step 2 found anything real
+(bot or human). An escaped finding is a bug in our gates; fixing only
+the finding leaves its class open:
+
+- For each real finding, name the layer that should have caught it
+  BEFORE the PR existed: a linter (lint baseline/config), the pre-PR
+  rubric (.procoder/github/REVIEW.md), a quality controller, a pinning
+  test, or CI itself.
+- ADAPT that layer now, in this same PR: enable the linter rule, add
+  the rubric line, tighten the controller, write the pinning test.
+- Record each as an entry in .procoder/github/LESSONS.md (shape:
+  `launcher.sh templates`), with the adaptation named. Then run
+  `launcher.sh lessons` — it flags any entry left unlearned, and an
+  unlearned lesson is not done.
+- False positives get no ledger entry — reflect only on real escapes.
+
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments
    remain.
