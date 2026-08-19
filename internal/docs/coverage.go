@@ -14,7 +14,7 @@ import (
 var Commands = []string{
 	"audit", "check", "ci", "docs", "doctor", "format", "git", "hook",
 	"index", "infra", "init", "lint", "maintain", "scrub", "security",
-	"templates", "version",
+	"spec", "templates", "todo", "version",
 }
 
 // CommandCoverage reports commands the documentation never mentions —

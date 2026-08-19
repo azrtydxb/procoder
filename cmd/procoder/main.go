@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,8 @@ import (
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/security"
+	"procoder/internal/spec"
+	"procoder/internal/todo"
 	"procoder/internal/tools"
 )
 
@@ -152,6 +155,14 @@ const usage = `usage: procoder <command> [args]
                        build | find <symbol> | search <text> | refs <symbol> |
                        outline <file> | impact | callers <symbol> | unused |
                        entrypoints | graph | stats
+  todo <sub> [arg]     the quality-gated task list under .procoder/todo/:
+                       add <title> | list | show <id> | close <id> — close
+                       REFUSES until every acceptance criterion is checked,
+                       evidence is recorded, and the gate is clean
+  spec <sub> [arg]     spec-first design under .procoder/specs/:
+                       template <name> | list | check [name|all] — check
+                       blocks while sections are missing, OPEN: questions
+                       remain, or acceptance criteria are untestable
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
   scrub <file|->       check text (a commit message, a drafted PR body) for
@@ -323,6 +334,18 @@ func run(args []string) int {
 			return 2
 		}
 		return indexCmd(args[1:])
+	case "todo":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return todoCmd(args[1:])
+	case "spec":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return specCmd(args[1:])
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
 	case "scrub":
@@ -388,6 +411,88 @@ func indexCmd(args []string) int {
 		return codeindex.Impact(root, changed, out)
 	case "stats":
 		return codeindex.Stats(root, out)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// todoCmd dispatches the quality-gated task list. close runs the real gate
+// as its final criterion — a task is not done while the tree fails checks.
+func todoCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	switch args[0] {
+	case "list":
+		tasks, err := todo.List(root)
+		if err != nil {
+			out(err.Error())
+			return 1
+		}
+		if len(tasks) == 0 {
+			out("no tasks — `procoder todo add <title>` starts one")
+			return 0
+		}
+		for _, t := range tasks {
+			out(fmt.Sprintf("  [%s]  %s  %s", t.Status, t.ID, t.Title))
+		}
+		return 0
+	case "add":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return todo.Add(root, strings.Join(args[1:], " "), out)
+	case "show":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		path, err := todo.File(root, args[1])
+		if err != nil {
+			out(err.Error())
+			return 2
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			out("no task " + args[1] + " — `procoder todo list` shows what exists")
+			return 2
+		}
+		os.Stdout.Write(raw)
+		return 0
+	case "close":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return todo.Close(root, args[1], func() bool {
+			return gate.Run(nil, root, io.Discard) == 0
+		}, out)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// specCmd dispatches the spec quality controller.
+func specCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	switch args[0] {
+	case "list":
+		return spec.List(root, out)
+	case "template":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return spec.PrintTemplate(args[1], out)
+	case "check":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		return spec.Check(root, name, out)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2

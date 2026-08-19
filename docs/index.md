@@ -5,7 +5,7 @@ senior work, from security scans to merge discipline, delivered as tools the
 agent runs itself and hooks it cannot skip. The agent stays in control;
 nothing ever touches your code behind its back.
 
-Current version: **0.16.0**
+Current version: **0.17.0**
 
 ```mermaid
 flowchart LR

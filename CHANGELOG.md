@@ -2,6 +2,27 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.17.0 — 2026-08-19
+
+Quality controllers for tasks and specs — done means verified.
+
+- `procoder todo` and `/procoder:todo`: tasks live as Markdown files under
+  `.procoder/todo/`, each with a real description, testable acceptance
+  criteria, and an evidence section. `todo close` is the quality
+  controller — it refuses to close a task until every criterion is
+  checked, the evidence records what was run and what it proved, and the
+  commit gate is clean, naming exactly what is missing.
+- `procoder spec` and `/procoder:spec`: spec-first design under
+  `.procoder/specs/`. The skill runs a gap-closing interview (problem,
+  users, scope boundaries, constraints, interfaces, data, edge cases,
+  failure modes, testable acceptance criteria, open questions);
+  `spec check` blocks while sections are missing or empty, while any
+  `OPEN:` question is unresolved, and while criteria are untestable.
+  A complete spec seeds the todo list.
+- The docs domain now requires CHANGELOG.md to carry an entry for the
+  current version (blocking): a changelog that exists but skips the
+  release being shipped is exactly how release notes go stale.
+
 ## 0.16.0 — 2026-08-19
 
 The onboarding sweep, the comprehensive site, and a robustness batch.
