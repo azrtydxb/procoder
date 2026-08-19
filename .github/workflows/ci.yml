@@ -49,7 +49,9 @@ jobs:
           echo "https://archive.ubuntu.com/ubuntu/	priority:1" | sudo tee /etc/apt/apt-mirrors.txt
           echo 'Acquire::Retries "3"; Acquire::http::Timeout "15";' | sudo tee /etc/apt/apt.conf.d/99procoder-fastfail
           sudo apt-get update -q && sudo apt-get install -y -q shfmt shellcheck gitleaks
-          pip install semgrep
+          # ruff: the Hermes adapter (__init__.py) makes this a Python-bearing
+          # repo, so doctor requires the Python formatter too
+          pip install semgrep ruff
           go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
           npm install -g prettier @mermaid-js/mermaid-cli

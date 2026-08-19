@@ -144,6 +144,11 @@ func Agents(root string, out func(string)) int {
 	for _, c := range Copies {
 		raw, rerr := os.ReadFile(filepath.Join(root, c.Path))
 		switch {
+		case rerr != nil && !os.IsNotExist(rerr):
+			// exists but unreadable is an error to surface, not a file to
+			// rewrite — same honesty rule as the gate's check
+			bad++
+			out("== " + c.Host + ": UNREADABLE (" + rerr.Error() + ") — fix access to " + c.Path)
 		case rerr != nil:
 			bad++
 			out("== " + c.Host + ": missing — write this to " + c.Path + ":")
