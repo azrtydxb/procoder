@@ -3,6 +3,7 @@ package adr
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -92,16 +93,20 @@ func TestCheckCatchesEveryRefusalClass(t *testing.T) {
 	write(t, root, "0003-dangling.md", record("0003", "Dangling", "superseded-by-0099"))
 	write(t, root, "0004-twin-a.md", record("0004", "Twin A", "accepted"))
 	write(t, root, "0004-twin-b.md", record("0004", "Twin B", "accepted"))
-	write(t, root, "0005-unreadable.md", record("0005", "Unreadable", "accepted"))
-	locked := filepath.Join(root, Dir, "0005-unreadable.md")
-	if err := os.Chmod(locked, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chmod(locked, 0o644); err != nil {
-			t.Error(err)
+	// chmod 000 does not make a file unreadable on Windows, so that leg of
+	// the sweep only runs where the OS honors it.
+	if runtime.GOOS != "windows" {
+		write(t, root, "0005-unreadable.md", record("0005", "Unreadable", "accepted"))
+		locked := filepath.Join(root, Dir, "0005-unreadable.md")
+		if err := os.Chmod(locked, 0o000); err != nil {
+			t.Fatal(err)
 		}
-	})
+		t.Cleanup(func() {
+			if err := os.Chmod(locked, 0o644); err != nil {
+				t.Error(err)
+			}
+		})
+	}
 
 	out, lines := collect()
 	findings := Check(root, out)
@@ -112,7 +117,9 @@ func TestCheckCatchesEveryRefusalClass(t *testing.T) {
 		"unknown status":         `status "wip"`,
 		"dangling supersede":     "no record carries that number",
 		"duplicated number":      "share number 0004",
-		"unreadable file":        "unreadable:",
+	}
+	if runtime.GOOS != "windows" {
+		wants["unreadable file"] = "unreadable:"
 	}
 	for class, needle := range wants {
 		found := false

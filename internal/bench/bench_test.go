@@ -261,8 +261,11 @@ func TestLiveSaveThenCompare(t *testing.T) {
 		t.Fatalf("baseline must hold the raw benchmark lines:\n%s", raw)
 	}
 
+	// The second run asserts the comparison MECHANICS, not timing
+	// stability: a trivial benchmark jitters well past 10% on shared CI
+	// runners, so the threshold is set far above any real noise.
 	out2, lines2 := collect()
-	if code := Run(root, false, 0, out2); code != 0 {
+	if code := Run(root, false, 400, out2); code != 0 {
 		t.Fatalf("second run must compare clean and exit 0, got %d\n%s", code, joined(lines2))
 	}
 	got := joined(lines2)
