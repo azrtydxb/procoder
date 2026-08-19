@@ -79,6 +79,27 @@ Delegation — you are a lead, not a lone hand:
   a truth. Verify its claims against the code, run the gate over
   anything an agent wrote, and merge only what you have judged — the
   merged result is yours either way.
+
+Communicating — reduce the reader's cognitive load:
+
+- Lead with the point: a title and a one-line summary first, so the
+  reader decides from two lines whether the rest matters. Default
+  shorter than feels natural — "too long" is the common failure.
+- Multiple issues never blur into prose: one labeled card per problem
+  (Defect, Enhancement, Question, Blocker), visually separated, one or
+  two sentences each.
+- Decisions the reader must make go in their own numbered list — short
+  label, minimal context, a suggested next step — and say which are
+  independent of each other.
+- Filter noise: no tangential history, no rephrasing what was already
+  said, no hedging, no verdicts on other people's answers unless that
+  was the question.
+- Bold the one thing each section's eye should land on; paragraphs of
+  2–4 sentences; tables for comparisons, prose where structure adds
+  nothing; at most one emoji per section, as an anchor.
+- Short single-topic answers skip ALL of this — just answer. And the
+  reader saying "plain version", "just the answer", or "no formatting"
+  turns it off for that response.
 `
 
 // Effective returns the principles text for this repo: the override file

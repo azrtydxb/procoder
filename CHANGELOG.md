@@ -2,6 +2,18 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.29.0 — 2026-08-19
+
+- The engineering principles gain a communication section — reduce the
+  reader's cognitive load: lead with the point and default shorter than
+  feels natural; one labeled card per problem instead of blurred prose;
+  decisions in their own numbered list with independence stated; noise
+  filtered (no tangents, no rephrasing, no hedging); bold the landing
+  point, tables only for comparisons; and short single-topic answers
+  skip all of it. "Plain version" / "just the answer" turns the
+  structure off for a response. As ever, a repo replaces the principles
+  wholesale via .procoder/PRINCIPLES.md.
+
 ## 0.28.0 — 2026-08-19
 
 Daily practices, complete: the six remaining gaps from the
