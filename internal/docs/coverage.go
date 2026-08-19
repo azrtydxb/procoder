@@ -20,9 +20,15 @@ var Commands = []string{
 
 // CommandCoverage reports commands the documentation never mentions —
 // correctness checks can't see absence, so completeness gets its own
-// check. Only runs when the repo has a docs/ site directory; a repo
-// without one is not claiming comprehensive docs.
+// check. This is a self-check: Commands is procoder's own list, so it
+// only runs inside the procoder source tree itself (go.mod declares
+// `module procoder`) — any other repo does not ship these commands and
+// must not be gated on documenting them. It also needs a docs/ site
+// directory; a repo without one is not claiming comprehensive docs.
 func CommandCoverage(root string) []gitx.Finding {
+	if !isProcoderRepo(root) {
+		return nil
+	}
 	dir := filepath.Join(root, "docs")
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil
@@ -53,4 +59,20 @@ func CommandCoverage(root string) []gitx.Finding {
 		}
 	}
 	return out
+}
+
+// isProcoderRepo reports whether root is the procoder source tree: the one
+// repository that ships the Commands list and therefore owes each command a
+// documentation mention.
+func isProcoderRepo(root string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.SplitN(string(raw), "\n", 4) {
+		if strings.TrimSpace(line) == "module procoder" {
+			return true
+		}
+	}
+	return false
 }
