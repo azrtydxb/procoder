@@ -2,6 +2,18 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.0 — 2026-08-19
+
+- `procoder backlog close story <id>...` takes several ids and verifies
+  ONCE. The gate and the test suite judge the tree, not a story, so
+  asking them per story re-ran the same answer N times: closing a
+  27-story sprint on this repository cost about 729 seconds of identical
+  re-verification, and now costs 27. Each story is still judged on its
+  own criteria and evidence, and an incomplete one is refused by name
+  without costing the others their close. The single-id form is
+  unchanged, asserted by a test comparing both forms' output;
+  `close epic` and `close milestone` still take exactly one id.
+
 ## 0.31.0 — 2026-08-19
 
 The loop: the daily-workflow gaps the analysis found.

@@ -24,6 +24,53 @@ func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
 	return CloseStoryWith(root, id, gateClean, nil, out)
 }
 
+// CloseStories closes several stories against ONE verification. The gate
+// and the suite judge the tree, not a story, so asking them once per story
+// re-runs the same answer N times — a sprint's worth of closes cost
+// thirteen minutes of identical work. Each story is still judged on its
+// own criteria and evidence, and one incomplete story is refused by name
+// without costing the others their close.
+func CloseStories(root string, ids []string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
+	gateOnce := once(gateClean)
+	var suiteOnce func() (bool, string)
+	if suite != nil {
+		suiteOnce = onceSuite(suite)
+	}
+	worst := 0
+	for _, id := range ids {
+		if code := CloseStoryWith(root, id, gateOnce, suiteOnce, out); code > worst {
+			worst = code
+		}
+	}
+	return worst
+}
+
+// once memoizes the gate verdict for the life of one batch: the tree does
+// not change while the batch runs, so a second run could only waste time.
+func once(f func() bool) func() bool {
+	var done bool
+	var result bool
+	return func() bool {
+		if !done {
+			result, done = f(), true
+		}
+		return result
+	}
+}
+
+// onceSuite is once for the suite verdict, which carries a summary too.
+func onceSuite(f func() (bool, string)) func() (bool, string) {
+	var done, ok bool
+	var summary string
+	return func() (bool, string) {
+		if !done {
+			ok, summary = f()
+			done = true
+		}
+		return ok, summary
+	}
+}
+
 // CloseStoryWith is CloseStory plus the test-suite verdict: under
 // `[test] policy = "block"` the caller passes testrun.Suite and a red (or
 // unverifiable) suite keeps the story open. suite nil means the policy is

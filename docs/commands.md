@@ -76,9 +76,12 @@ user stories**, with the story as the execution unit of spec-based work
 - `list` / `board` — the flat listing, and the tree with statuses,
   sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing`),
   orphans, and a summary line.
-- `close story <id>` — refuses until the description is real, every
+- `close story <id>...` — refuses until the description is real, every
   acceptance criterion is checked, evidence is recorded, and the gate
-  is clean — todo-close rigor, applied to stories.
+  is clean — todo-close rigor, applied to stories. Several ids share
+  ONE gate and suite run: the tree is what they judge, so asking per
+  story only repeats the answer. An incomplete story is refused by name
+  while the rest still close.
 - `close epic <id>` / `close milestone <id>` — refuse while any child
   is open; epic close warns on spec drift (never blocks on it).
 
