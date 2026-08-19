@@ -64,6 +64,8 @@ jobs:
           sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
           sudo apt-get install -y -q universal-ctags
           go install github.com/scip-code/scip-go/cmd/scip-go@latest
+          # gopls: doctor requires it on Go repos since index rename
+          go install golang.org/x/tools/gopls@latest
           curl -sL https://github.com/sourcegraph/scip/releases/download/v0.9.0/scip-linux-amd64.tar.gz | tar xz -C /tmp scip
           sudo mv /tmp/scip /usr/local/bin/
       - name: puppeteer config for mmdc on a runner

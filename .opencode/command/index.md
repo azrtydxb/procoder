@@ -31,10 +31,22 @@ The index is your fast map of the codebase — reach for it before grepping:
 - `procoder index graph` — the full caller→callee edge list as JSON,
   for tools that walk reachability.
 - `procoder index stats` — what's indexed and how fresh.
+- `procoder index rename <symbol> <newname> [--at path:line]` — the
+  cross-file rename as a reviewable unified diff (Go, computed by gopls;
+  other languages get the reference worksheet instead). Nothing is
+  written: review the diff, apply it yourself, then verify with
+  `index refs <newname>` and `lint --types` where it applies.
 
 If a command answers "no index" or names missing tools, run
 `procoder init` and then `procoder index build`. Staleness notes in
 the output are real — refresh before trusting line numbers.
+
+The index is the fast, repo-wide map; a live language server is the
+microscope. When a `refs` answer is textual, when same-named symbols
+collapse together, or when you need implementations of an interface,
+prefer your host's native LSP tool (goToDefinition, findReferences,
+goToImplementation) if one is configured — then come back to the index
+for repo-wide sweeps, callers, unused, and impact.
 
 With arguments, run the matching subcommand directly and act on its output.
 Without arguments, run `stats` and report the index's state.

@@ -37,7 +37,7 @@ Prints each file's formatted result (gofmt, ruff, prettier, rustfmt,
 clang-format, shfmt — the project's config always wins) so it can be
 reviewed and written. Never touches the file.
 
-### `procoder lint [paths...]`
+### `procoder lint [--types] [paths...]`
 
 The canonical linter per ecosystem: golangci-lint (Go), ruff check
 (Python), shellcheck (shell), eslint (JS/TS — configless plain JavaScript
@@ -48,6 +48,12 @@ baseline (standard set plus gosec, gocritic, errorlint, unparam,
 copyloopvar, nilerr) — the repo's own golangci config always wins,
 whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report
 by default; `[lint] policy = "block"` makes findings block.
+
+`--types` adds the type-checker where the canonical linter does not
+compile the code: `tsc --noEmit` for TypeScript (grouped under each
+file's nearest tsconfig — without one the file is declared out of scope,
+never silently skipped) and pyright for Python. Go and Rust need no
+flag: golangci-lint and clippy already compile what they lint.
 
 ### `procoder security [--deep]`
 
@@ -176,6 +182,12 @@ minimum code that works. A repo replaces them wholesale with
 - `entrypoints` — mains and the exported surface.
 - `impact` — the blast radius of the working-tree change.
 - `stats` — what's indexed and staleness, said out loud.
+- `rename <symbol> <new> [--at path:line]` — the cross-file rename as a
+  reviewable unified diff, computed by the language's own engine (Go via
+  gopls). Per P-CONTROL nothing is written: the agent reviews and applies
+  the diff itself. Languages without an engine answer honestly with the
+  reference worksheet (`refs`) instead of a half-right rewrite; `--at`
+  picks one definition when the name is defined more than once.
 
 ## Setup and plumbing
 

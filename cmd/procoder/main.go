@@ -68,7 +68,19 @@ func init() {
 		// where the project carries a config (procoder imposes no rules)
 		exts := doctor.ExtensionsIn(root)
 		if _, err := os.Stat(root + "/go.mod"); err == nil {
-			out = append(out, lint.GolangciLint)
+			// gopls rides along: it computes the `index rename` diffs for Go
+			out = append(out, lint.GolangciLint, codeindex.Gopls)
+		}
+		// the --types checkers, where the canonical linter does not compile:
+		// tsc under a project tsconfig, pyright where Python is a project
+		if _, err := os.Stat(root + "/tsconfig.json"); err == nil {
+			out = append(out, lint.Tsc)
+		}
+		for _, m := range []string{"/pyproject.toml", "/requirements.txt"} {
+			if _, err := os.Stat(root + m); err == nil {
+				out = append(out, lint.Pyright)
+				break
+			}
 		}
 		if exts[".sh"] {
 			out = append(out, lint.Shellcheck)
@@ -183,7 +195,9 @@ const usage = `usage: procoder <command> [args]
   index <sub> [arg]    the code index (built from universal-ctags + SCIP):
                        build | find <symbol> | search <text> | refs <symbol> |
                        outline <file> | impact | callers <symbol> | unused |
-                       entrypoints | graph | stats
+                       entrypoints | graph | stats |
+                       rename <symbol> <new> [--at path:line] — the rename
+                       as a reviewable diff (Go via gopls); nothing is written
   infra                DevOps hygiene where the files exist: Dockerfiles
                        (hadolint), Terraform (fmt/validate/tflint),
                        Kubernetes manifests (kubeconform), Helm charts
@@ -193,9 +207,12 @@ const usage = `usage: procoder <command> [args]
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
                        (no adaptation) exit 1
-  lint [paths...]      the canonical linter per ecosystem over the changed
+  lint [--types] [paths...]
+                       the canonical linter per ecosystem over the changed
                        files (or the given paths); report by default,
-                       blocking when [lint] policy = "block"
+                       blocking when [lint] policy = "block"; --types adds
+                       the type-checker where the linter does not compile
+                       (tsc --noEmit for TypeScript, pyright for Python)
   maintain             the maintainability report: dead-code candidates from
                        the index, complexity and function length — judgment
                        calls, never blocking
@@ -350,7 +367,15 @@ func run(args []string) int {
 		return 0
 	case "lint":
 		root := doctor.Root()
-		paths := args[1:]
+		types := false
+		var paths []string
+		for _, a := range args[1:] {
+			if a == "--types" {
+				types = true
+				continue
+			}
+			paths = append(paths, a)
+		}
 		if len(paths) == 0 {
 			changed, err := gitx.ChangedFiles(root)
 			if err != nil {
@@ -377,6 +402,9 @@ func run(args []string) int {
 		}
 		cfg := config.Load(root)
 		findings := lint.Files(root, paths, cfg.LintBlock)
+		if types {
+			findings = append(findings, lint.Types(root, paths, cfg.LintBlock)...)
+		}
 		blocking := 0
 		for _, f := range findings {
 			mark := "  info "
@@ -491,6 +519,24 @@ func indexCmd(args []string) int {
 		default:
 			return codeindex.Outline(root, args[1], out)
 		}
+	case "rename":
+		// rename <symbol> <new> [--at path:line] — --at picks one
+		// definition when the name is defined more than once
+		at := ""
+		var pos []string
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--at" && i+1 < len(args) {
+				at = args[i+1]
+				i++
+				continue
+			}
+			pos = append(pos, args[i])
+		}
+		if len(pos) != 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return codeindex.Rename(root, pos[0], pos[1], at, out)
 	case "impact":
 		changed, err := gitx.ChangedFiles(root)
 		if err != nil {
