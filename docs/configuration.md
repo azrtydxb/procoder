@@ -26,7 +26,18 @@ pin_actions_policy = "report"
 gocyclo = 15
 funlen_lines = 80
 funlen_statements = 50
+
+[debt]
+# Comment marker `procoder debt` harvests. Default shown.
+marker = "debt:"
 ```
+
+## `.procoder/PRINCIPLES.md`
+
+The engineering principles injected at session start (see
+`procoder principles`). Absent, procoder's default build philosophy
+applies; present, the repo's file replaces it wholesale — the override is
+total, not merged.
 
 ## Rules files (prose + machine-read lists)
 

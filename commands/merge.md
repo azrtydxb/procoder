@@ -37,6 +37,23 @@ Loop until done:
    - reply with a concrete reason why not.
      No comment is skipped silently. Resolve threads only after fixing or
      answering (`gh api graphql` resolveReviewThread), never to hide them.
+
+   How to receive review feedback — bot or human:
+   - VERIFY before implementing: check each claim against the actual code.
+     Reviewers (Copilot especially) lack full context; a finding can be
+     factually wrong for this codebase. Wrong → push back in the thread
+     with the technical reason, not a fix.
+   - If ANY comment in a review is unclear, ask about it before
+     implementing the others — comments are often related, and partial
+     understanding produces the wrong fix.
+   - Fix one finding at a time and re-run the covering tests after each.
+   - Replies state facts: "Fixed in <sha> — <what changed>." No "great
+     point", no thanks, no "you're absolutely right" — gratitude is not a
+     verification, and performative agreement erodes the reviewer's trust
+     in real agreements.
+   - A reviewer asking for an unused "proper" feature gets the YAGNI
+     answer: show it is uncalled and propose removal instead.
+
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments
    remain.

@@ -2,6 +2,37 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.18.0 — 2026-08-19
+
+Absorbed the best of the superpowers and ponytail plugins, so both can be
+uninstalled.
+
+- `procoder plan` and `/procoder:plan`: implementation plans under
+  `.procoder/plans/` complete the spec → plan → todo chain. The quality
+  controller blocks on placeholders ("TBD", "handle edge cases",
+  "similar to task N"), empty sections, and tasks without `Files:` or
+  checkbox steps — a plan is written, not promised.
+- `procoder debt`: deliberate-simplification markers (`debt:` comments
+  naming a ceiling and a revisit condition; marker configurable via
+  `[debt]`) harvested into a ledger, with no-trigger markers flagged as
+  rot.
+- `procoder principles` plus a SessionStart hook: every session starts
+  with the engineering principles (reuse → stdlib → platform → minimum
+  code, root-cause bug fixing, deliberate corners marked as debt);
+  `.procoder/PRINCIPLES.md` replaces them per repo.
+- New skills: `/procoder:debug` (root cause before any fix, one
+  hypothesis at a time, three strikes questions the architecture),
+  `/procoder:tdd` (red before green, name the break each test catches,
+  the mutation check), `/procoder:simplify` (the five-tag
+  over-engineering review with an honest "Lean already. Ship." null
+  result).
+- Skill upgrades: `/procoder:spec` now classifies work as spike, bounded,
+  or architectural with a one-way ratchet before interviewing;
+  `/procoder:todo` defines what counts as evidence (fresh verification
+  only, red-green proof for regression tests); `/procoder:merge` gains
+  the review-receiving rules (verify claims before implementing, ask
+  when unclear, facts instead of gratitude).
+
 ## 0.17.0 — 2026-08-19
 
 Quality controllers for tasks and specs — done means verified.

@@ -29,6 +29,8 @@ type Config struct {
 	Gocyclo          int
 	FunlenLines      int
 	FunlenStatements int
+	// DebtMarker is the comment marker `procoder debt` harvests.
+	DebtMarker string
 }
 
 // Defaults per the design contract.
@@ -38,7 +40,7 @@ const defaultMaxFileMB = 5
 // case and returns defaults; an unreadable line is skipped rather than
 // guessed at.
 func Load(root string) Config {
-	cfg := Config{MaxFileMB: defaultMaxFileMB}
+	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:"}
 	raw, err := os.ReadFile(filepath.Join(root, ".procoder", "config.toml"))
 	if err != nil {
 		return cfg
@@ -76,6 +78,10 @@ func Load(root string) Config {
 			cfg.FunlenLines = atoiOr(value, 0)
 		case "maintain.funlen_statements":
 			cfg.FunlenStatements = atoiOr(value, 0)
+		case "debt.marker":
+			if value != "" {
+				cfg.DebtMarker = value
+			}
 		case "git.max_file_mb":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.MaxFileMB = n

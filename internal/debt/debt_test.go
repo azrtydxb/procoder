@@ -1,0 +1,98 @@
+package debt
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// gitRepo makes a temp repo with the given files committed.
+func gitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, content := range files {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"init", "-q"}, {"add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return root
+}
+
+func TestScanFindsMarkersAndFlagsMissingTriggers(t *testing.T) {
+	root := gitRepo(t, map[string]string{
+		"a.go": "package a\n\n// debt: global lock, per-account locks when throughput matters\nvar x int\n",
+		"b.py": "# debt: naive O(n^2) scan\nx = 1\n",
+		"c.md": "prose that mentions debt: conventions without a comment leader\n",
+	})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("want 2 entries (prose without comment leader excluded), got %+v", entries)
+	}
+	byFile := map[string]Entry{}
+	for _, e := range entries {
+		byFile[e.File] = e
+	}
+	if e := byFile["a.go"]; e.NoTrigger || e.Line != 3 {
+		t.Errorf("a.go: marker with 'when' clause must have a trigger: %+v", e)
+	}
+	if e := byFile["b.py"]; !e.NoTrigger {
+		t.Errorf("b.py: marker naming no revisit condition must be flagged: %+v", e)
+	}
+}
+
+func TestScanSkipsBinaries(t *testing.T) {
+	root := gitRepo(t, map[string]string{
+		"bin.dat": "PK\x00\x03// debt: not really\n",
+	})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("binary content must be skipped, got %+v", entries)
+	}
+}
+
+func TestCustomMarkerViaConfig(t *testing.T) {
+	root := gitRepo(t, map[string]string{
+		".procoder/config.toml": "[debt]\nmarker = \"shortcut:\"\n",
+		"a.go":                  "package a\n// shortcut: cached forever, revisit when memory matters\n// debt: this one must NOT match under the custom marker\n",
+	})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Text, "cached forever") {
+		t.Fatalf("custom marker must win: %+v", entries)
+	}
+}
+
+func TestRunCleanLedger(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a.go": "package a\n"})
+	var lines []string
+	if code := Run(root, func(s string) { lines = append(lines, s) }); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "clean ledger") {
+		t.Errorf("no explicit null result: %v", lines)
+	}
+}

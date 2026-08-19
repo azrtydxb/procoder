@@ -18,6 +18,7 @@ import (
 	"procoder/internal/ciops"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
+	"procoder/internal/debt"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/format"
@@ -29,6 +30,8 @@ import (
 	"procoder/internal/initcmd"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
+	"procoder/internal/plan"
+	"procoder/internal/principles"
 	"procoder/internal/security"
 	"procoder/internal/spec"
 	"procoder/internal/todo"
@@ -159,6 +162,17 @@ const usage = `usage: procoder <command> [args]
                        add <title> | list | show <id> | close <id> — close
                        REFUSES until every acceptance criterion is checked,
                        evidence is recorded, and the gate is clean
+  plan <sub> [arg]     implementation plans under .procoder/plans/, the
+                       spec → plan → todo middle link:
+                       template <name> | list | check [name|all] — check
+                       blocks on placeholders and on tasks without files
+                       or steps
+  debt                 harvest deliberate-simplification markers (comment
+                       marker from [debt] in config.toml, default "debt:")
+                       into a ledger; markers with no revisit trigger are
+                       flagged
+  principles           print the engineering principles the session starts
+                       with — .procoder/PRINCIPLES.md wins over the default
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
@@ -346,6 +360,16 @@ func run(args []string) int {
 			return 2
 		}
 		return specCmd(args[1:])
+	case "plan":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return planCmd(args[1:])
+	case "debt":
+		return debt.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "principles":
+		return principles.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
 	case "scrub":
@@ -468,6 +492,31 @@ func todoCmd(args []string) int {
 		return todo.Close(root, args[1], func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
 		}, out)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+// planCmd dispatches the plan quality controller.
+func planCmd(args []string) int {
+	root := doctor.Root()
+	out := func(s string) { fmt.Println(s) }
+	switch args[0] {
+	case "list":
+		return plan.List(root, out)
+	case "template":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return plan.PrintTemplate(args[1], out)
+	case "check":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		return plan.Check(root, name, out)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2
