@@ -55,6 +55,46 @@ file's nearest tsconfig — without one the file is declared out of scope,
 never silently skipped) and pyright for Python. Go and Rust need no
 flag: golangci-lint and clippy already compile what they lint.
 
+### `procoder backlog <sub>`
+
+The project layer under `.procoder/backlog/`: **milestones → epics →
+user stories**, with the story as the execution unit of spec-based work
+(the todo list stays standalone for everything else).
+
+- `milestone <title>` / `epic <title> [--milestone <id>]` /
+  `story <title> --epic <id>` — print each file for the agent to
+  review and write; slug collisions refuse rather than overwrite.
+- `seed <spec> [--milestone <id>]` — decompose a COMPLETE spec into an
+  epic plus one story per acceptance criterion. The epic records the
+  spec name and a content fingerprint; an incomplete spec is refused
+  with the spec checker's gaps replayed.
+- `list` / `board` — the flat listing, and the tree with statuses,
+  sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing`),
+  orphans, and a summary line.
+- `close story <id>` — refuses until the description is real, every
+  acceptance criterion is checked, evidence is recorded, and the gate
+  is clean — todo-close rigor, applied to stories.
+- `close epic <id>` / `close milestone <id>` — refuse while any child
+  is open; epic close warns on spec drift (never blocks on it).
+
+### `procoder sprint <sub>`
+
+Scope-boxed sprints over the backlog — a goal plus the stories pulled
+into it, no story points, no calendar enforcement.
+
+- `open <goal>` — refuses while another sprint is active (one active
+  sprint is the WIP limit); prints the sprint file.
+- `pull <story-id>...` — commits stories to the active sprint; done,
+  missing, or already-committed stories are refused individually while
+  the rest still pull.
+- `carry <story-id> <reason>` — returns an unfinished story to the
+  backlog with the reason recorded in the story file; no reason, no
+  carry.
+- `status` — goal, committed stories, done/total and carried counts.
+- `close` — refuses while a committed story is neither done nor
+  carried; on success the sprint file gains a Result section with
+  committed/done/carried counts.
+
 ### `procoder security [--deep]`
 
 Secrets over the changed files with gitleaks — always blocking, values

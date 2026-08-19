@@ -7,7 +7,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.25.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.26.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-0e5563)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-0e5563)
 
@@ -75,9 +75,13 @@ CI can never disagree.
 at every link: a **spec** interview closes design gaps before anything is
 built (`spec check` blocks while sections are missing or questions
 open), a **plan** turns the spec into tasks an engineer with zero
-context could execute (`plan check` blocks placeholders), and a **todo**
-list tracks execution (`todo close` refuses until every acceptance
-criterion is checked, evidence is recorded, and the gate is clean).
+context could execute (`plan check` blocks placeholders), a **backlog**
+holds larger projects as milestones → epics → user stories seeded from
+specs and worked in scope-boxed **sprints** (one active sprint, explicit
+carry-over, closes that refuse), and a **todo** list tracks standalone
+work (`todo close` refuses until every acceptance criterion is checked,
+evidence is recorded, and the gate is clean — story closes carry the
+same rigor).
 
 **The self-learning loop** — a pre-PR self-review catches
 reviewer-class findings before a PR exists; anything that still escapes
