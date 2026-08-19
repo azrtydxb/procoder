@@ -45,7 +45,7 @@ does. `procoder lessons` flags entries with no adaptation.
 
 - Class: mechanical
 - Missed by: ci
-- Adaptation: ci.yml repoints apt at archive.ubuntu.com with retries before any apt-get, so a dead Azure mirror flakes fast instead of eating the timeout
+- Adaptation: ci.yml replaces /etc/apt/apt-mirrors.txt (the runner's real mirror source — rewriting sources files did nothing, proven by a second identical hang) with the canonical archive plus fail-fast retries
 
 ## 2026-08-19 PR#19 (Copilot) — temp-config Close error swallowed, baseline claimed applied
 

@@ -41,10 +41,12 @@ jobs:
       - name: install the tools the gate needs
         run: |
           go build -o /usr/local/bin/procoder ./cmd/procoder
-          # the runner's azure apt mirror dies for minutes at a time (a gate
-          # run once burned its whole timeout waiting on it) — repoint at the
-          # canonical archive and fail fast with retries instead
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+          # the runner's azure apt mirrors die for minutes at a time (two gate
+          # runs burned their whole timeout on them). apt reads its mirrors
+          # from /etc/apt/apt-mirrors.txt on these runners — rewriting the
+          # sources files does nothing — so replace the mirror list itself
+          # with the canonical archive, and fail fast if that also stalls
+          echo "https://archive.ubuntu.com/ubuntu/	priority:1" | sudo tee /etc/apt/apt-mirrors.txt
           echo 'Acquire::Retries "3"; Acquire::http::Timeout "15";' | sudo tee /etc/apt/apt.conf.d/99procoder-fastfail
           sudo apt-get update -q && sudo apt-get install -y -q shfmt shellcheck gitleaks
           pip install semgrep
