@@ -188,11 +188,17 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 	if bin == "" {
 		return append(out, notChecked(jsFiles[0], "eslint")...)
 	}
-	cfg := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-eslint-%d.mjs", os.Getpid()))
-	if err := os.WriteFile(cfg, []byte(baselineEslintConfig), 0o644); err != nil {
+	cfgFile, err := os.CreateTemp("", "procoder-eslint-*.mjs")
+	if err != nil {
 		return append(out, notChecked(jsFiles[0], "eslint (baseline config unwritable)")...)
 	}
+	cfg := cfgFile.Name()
 	defer os.Remove(cfg)
+	if _, err := cfgFile.WriteString(baselineEslintConfig); err != nil {
+		cfgFile.Close()
+		return append(out, notChecked(jsFiles[0], "eslint (baseline config unwritable)")...)
+	}
+	cfgFile.Close()
 	// paths go relative to the repo root: node resolves the cwd through
 	// symlinks (macOS /var vs /private/var) and absolute args would read
 	// as outside the base path
