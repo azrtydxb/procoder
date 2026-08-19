@@ -270,18 +270,23 @@ func normalizeTags(raw []byte) ([]byte, int) {
 // buildPrecise runs the language's SCIP indexer and converts to JSON while
 // the scip CLI is at hand, so queries never need it again.
 func buildPrecise(root, dir string, stdout func(string)) bool {
+	// ordered by signal strength: language-specific manifests first, the
+	// generic package.json LAST — nearly every repo carries one (tooling,
+	// agent adapters), and it must not shadow a Rust or Java layout
 	indexer := ""
 	switch {
 	case exists(root, "go.mod"):
 		indexer = "scip-go"
-	case exists(root, "tsconfig.json") || exists(root, "package.json"):
-		indexer = "scip-typescript"
-	case exists(root, "pyproject.toml") || exists(root, "requirements.txt"):
-		indexer = "scip-python"
 	case exists(root, "Cargo.toml"):
 		indexer = "rust-analyzer"
 	case exists(root, "pom.xml") || exists(root, "build.gradle") || exists(root, "build.gradle.kts"):
 		indexer = "scip-java"
+	case exists(root, "tsconfig.json"):
+		indexer = "scip-typescript"
+	case exists(root, "pyproject.toml") || exists(root, "requirements.txt"):
+		indexer = "scip-python"
+	case exists(root, "package.json"):
+		indexer = "scip-typescript"
 	default:
 		stdout("precise tier: no SCIP indexer covers this repository's layout — refs stay textual")
 		return false
