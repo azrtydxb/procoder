@@ -40,12 +40,15 @@ Loop until done:
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments
    remain.
-4. Only then merge: `gh pr merge <pr> --squash --delete-branch` (or the
+4. Only then merge: `gh pr merge <pr> --squash` (or the
    repo's configured strategy). The merge commit message follows the commit
    template and carries no AI-attribution line — run `launcher.sh scrub` on
    it if you wrote one.
-5. Clean up after the confirmed merge (--delete-branch removed the remote):
-   delete the local branch, remove the worktree if the work lived in one
+5. Clean up after the confirmed merge: delete the remote branch with
+   `git push origin --delete <branch>` (the merge flag's local step fails
+   when the default branch is checked out in a worktree, silently skipping
+   the remote delete — do it explicitly), delete the local branch, remove
+   the worktree if the work lived in one
    (`git worktree remove <path>`), run `git fetch --prune`, and return to an
    updated default branch (`git checkout <default> && git pull`).
 

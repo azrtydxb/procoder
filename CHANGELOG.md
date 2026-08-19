@@ -2,6 +2,27 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.16.0 — 2026-08-19
+
+The onboarding sweep, the comprehensive site, and a robustness batch.
+
+- `procoder audit` and `/procoder:audit`: every domain's checks over the
+  WHOLE tracked tree of a repository procoder has not governed before,
+  aggregated into a triage-ordered scorecard. Its first run flagged our
+  own pinned action SHAs as secrets — the false-positive flow
+  (`gitleaks:allow` / `.gitleaksignore`, every allow a reviewed decision)
+  is now part of the security rules.
+- The docs site grew from one page to a real reference: the nine domains,
+  every command, every configuration knob, and the workflow — and a new
+  completeness check blocks a shipped command the documentation never
+  mentions (usage text and the coverage list are pinned to each other by
+  test).
+- Robustness: CI runs once per change (push runs only on main), golangci
+  caches are isolated per repository root (no more stale cross-worktree
+  paths), the pr skill enforces ≤72-char titles, the merge skill deletes
+  remote branches explicitly instead of trusting the flag's silent local
+  failure, and the accepted Stdout.Write info line is excluded by config.
+
 ## 0.15.0 — 2026-08-19
 
 Linters for all, without an asterisk — and the version tripwire now

@@ -8,6 +8,8 @@ package lint
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -371,6 +373,12 @@ func parse(raw string, block bool) []gitx.Finding {
 			Message: m[3] + " (lint)"})
 	}
 	return out
+}
+
+// CacheDir gives each repository root its own tool-cache directory.
+func CacheDir(root string) string {
+	sum := sha1.Sum([]byte(root))
+	return filepath.Join(os.TempDir(), "procoder-cache-"+hex.EncodeToString(sum[:6]))
 }
 
 func notChecked(file, tool string) []gitx.Finding {

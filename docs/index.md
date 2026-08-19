@@ -5,7 +5,7 @@ senior work, from security scans to merge discipline, delivered as tools the
 agent runs itself and hooks it cannot skip. The agent stays in control;
 nothing ever touches your code behind its back.
 
-Current version: **0.15.0**
+Current version: **0.16.0**
 
 ```mermaid
 flowchart LR
@@ -48,6 +48,11 @@ flowchart LR
 Beneath the domains sits the **code index**: two tiers (universal-ctags +
 SCIP), eleven queries from `find` to the call `graph`, consumed by the
 agent and the domains alike.
+
+Dig deeper: [the nine domains](domains.md), the
+[command reference](commands.md), [configuration](configuration.md), and
+[the workflow](workflow.md). Onboarding an existing codebase? Run
+`/procoder:audit`.
 
 The full story lives in the [README](https://github.com/azrtydxb/procoder#readme);
 the harness's design contract governs everything here.
