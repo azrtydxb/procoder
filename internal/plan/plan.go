@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is where plans live, under D-HOME.
@@ -135,14 +137,14 @@ func checkOne(path string, out func(string)) int {
 	}
 	text := string(raw)
 	name := strings.TrimSuffix(filepath.Base(path), ".md")
-	stripped := stripComments(text)
+	stripped := textutil.StripComments(text)
 	var gaps []string
 
 	for _, s := range sectionRes {
-		body := section(text, s)
+		body := textutil.Section(text, s)
 		if body == "" && !strings.Contains(text, "## "+s) {
 			gaps = append(gaps, "section missing: "+s)
-		} else if strings.TrimSpace(stripComments(body)) == "" {
+		} else if strings.TrimSpace(textutil.StripComments(body)) == "" {
 			gaps = append(gaps, "section empty: "+s+" — a heading is not an answer")
 		}
 	}
@@ -166,7 +168,7 @@ func checkOne(path string, out func(string)) int {
 		if i+1 < len(tasks) {
 			end = tasks[i+1][0]
 		}
-		body := stripComments(text[start:end])
+		body := textutil.StripComments(text[start:end])
 		num := text[loc[2]:loc[3]]
 		if !filesRe.MatchString(body) {
 			gaps = append(gaps, "Task "+num+" names no Files: — the implementer cannot know what to touch")
@@ -201,31 +203,4 @@ func planFiles(root string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// section returns the body between "## name" and the next "## ".
-func section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
-		return ""
-	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
-	}
-	return body
-}
-
-func stripComments(s string) string {
-	for {
-		i := strings.Index(s, "<!--")
-		if i < 0 {
-			return s
-		}
-		j := strings.Index(s[i:], "-->")
-		if j < 0 {
-			return s[:i]
-		}
-		s = s[:i] + s[i+j+3:]
-	}
 }

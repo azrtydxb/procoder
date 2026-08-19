@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -108,7 +109,7 @@ func goplsRename(root string, def Tag, symbol, newName string, out func(string))
 			out(fmt.Sprintf("rename NOT computed — gopls gave no answer in %s", hungToolTimeout))
 			return 1
 		}
-		out("rename FAILED — nothing was changed: " + firstLine(stderr.String()+err.Error()))
+		out("rename FAILED — nothing was changed: " + textutil.FirstLine(stderr.String()+err.Error()))
 		return 1
 	}
 	diff := strings.TrimRight(stdout.String(), "\n")

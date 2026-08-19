@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // CloseStory is the quality controller for the execution unit: it verifies
@@ -92,11 +94,11 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		return 0
 	}
 	var missing []string
-	desc := section(text, "Description")
-	if strings.TrimSpace(stripComments(desc)) == "" {
+	desc := textutil.Section(text, "Description")
+	if strings.TrimSpace(textutil.StripComments(desc)) == "" {
 		missing = append(missing, "Description is empty — a title is not a description")
 	}
-	criteria := section(text, "Acceptance criteria")
+	criteria := textutil.Section(text, "Acceptance criteria")
 	if placeholder.MatchString(criteria) {
 		missing = append(missing, "Acceptance criteria still contain the placeholder — write real, testable criteria")
 	}
@@ -117,8 +119,8 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 			missing = append(missing, "a bug closes with a severity — add Severity: s1..s4")
 		}
 	}
-	evidence := section(text, "Evidence")
-	if strings.TrimSpace(stripComments(evidence)) == "" {
+	evidence := textutil.Section(text, "Evidence")
+	if strings.TrimSpace(textutil.StripComments(evidence)) == "" {
 		missing = append(missing, "Evidence is empty — record the commands run and what their output proved")
 	}
 	if !gateClean() {

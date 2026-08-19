@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is where specs live, under D-HOME.
@@ -166,19 +168,19 @@ func checkOne(path string, out func(string)) int {
 	name := strings.TrimSuffix(filepath.Base(path), ".md")
 	var gaps []string
 	for _, s := range Sections {
-		body := section(text, s)
+		body := textutil.Section(text, s)
 		if body == "" && !strings.Contains(text, "## "+s) {
 			gaps = append(gaps, "section missing: "+s)
 			continue
 		}
-		if strings.TrimSpace(stripComments(body)) == "" && s != "Open questions" {
+		if strings.TrimSpace(textutil.StripComments(body)) == "" && s != "Open questions" {
 			gaps = append(gaps, "section empty: "+s+" — a heading is not an answer")
 		}
 	}
 	if n := len(openRe.FindAllString(text, -1)); n > 0 {
 		gaps = append(gaps, fmt.Sprintf("%d unresolved OPEN: question(s) — resolve each with the user and rewrite it as a decision", n))
 	}
-	criteria := section(text, "Acceptance criteria")
+	criteria := textutil.Section(text, "Acceptance criteria")
 	boxes := checkboxRe.FindAllStringSubmatch(criteria, -1)
 	if strings.Contains(text, "## Acceptance criteria") && len(boxes) == 0 {
 		gaps = append(gaps, "Acceptance criteria carry no checkboxes — each criterion must be a testable `- [ ]` line")
@@ -218,33 +220,6 @@ func specFiles(root string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// section returns the body between "## name" and the next "## ".
-func section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
-		return ""
-	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
-	}
-	return body
-}
-
-func stripComments(s string) string {
-	for {
-		i := strings.Index(s, "<!--")
-		if i < 0 {
-			return s
-		}
-		j := strings.Index(s[i:], "-->")
-		if j < 0 {
-			return s[:i]
-		}
-		s = s[:i] + s[i+j+3:]
-	}
 }
 
 func trim(s string) string {

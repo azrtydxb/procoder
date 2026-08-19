@@ -20,6 +20,7 @@ import (
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
 	"procoder/internal/lint"
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -172,23 +173,11 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 	if count == 0 && runErr != nil {
 		var exit *exec.ExitError
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && buf.Len() > 0) {
-			out(fmt.Sprintf("  %s  NOT checked — %s failed: %s", label, filepath.Base(bin), firstLine(buf.String()+runErr.Error())))
+			out(fmt.Sprintf("  %s  NOT checked — %s failed: %s", label, filepath.Base(bin), textutil.FirstLine(buf.String()+runErr.Error())))
 			return 1
 		}
 	}
 	return count
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			if len(t) > 160 {
-				t = t[:160]
-			}
-			return t
-		}
-	}
-	return "no output"
 }
 
 func hasFiles(root, ext string) bool {

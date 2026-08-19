@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -264,7 +265,7 @@ func textualRefs(root, symbol string, out func(string)) int {
 			out(fmt.Sprintf("no references to %q found (textual search)", symbol))
 			return 1
 		}
-		out(fmt.Sprintf("textual search FAILED — references were NOT checked: %s", firstLine(errb.String()+err.Error())))
+		out(fmt.Sprintf("textual search FAILED — references were NOT checked: %s", textutil.FirstLine(errb.String()+err.Error())))
 		return 2
 	}
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")

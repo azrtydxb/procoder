@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 const runTimeout = 10 * time.Minute
@@ -197,7 +199,7 @@ func runGo(root string, paths []string, coverage bool, name string) Result {
 		if len(names) > 0 {
 			detail = fmt.Sprintf("%d test(s) failing: %s", len(names), strings.Join(cap3(names), ", "))
 		} else {
-			detail = "FAILED — " + firstLine(raw+errStr(err))
+			detail = "FAILED — " + textutil.FirstLine(raw+errStr(err))
 		}
 		r.Verdict, r.Detail, r.Failed = Fail, filterNote(detail, name, true, ""), len(names)
 		return r
@@ -295,7 +297,7 @@ func runCargo(root string, name string) Result {
 	}
 	if err != nil {
 		r.Verdict = Fail
-		r.Detail = filterNote(fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, firstLine(raw+errStr(err))), name, ok, why)
+		r.Detail = filterNote(fmt.Sprintf("FAILED (%d passed, %d failed) — %s", r.Passed, r.Failed, textutil.FirstLine(raw+errStr(err))), name, ok, why)
 		return r
 	}
 	r.Verdict = Pass
@@ -546,10 +548,10 @@ func firstFailingLine(raw, errText string) string {
 		t := strings.TrimSpace(l)
 		low := strings.ToLower(t)
 		if t != "" && (strings.Contains(low, "fail") || strings.Contains(low, "error")) {
-			return trim160(t)
+			return textutil.Trim(t)
 		}
 	}
-	if l := firstLine(raw); l != "no output" {
+	if l := textutil.FirstLine(raw); l != "no output" {
 		return l
 	}
 	return "no output, exit status: " + errText
@@ -574,22 +576,6 @@ func errStr(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			return trim160(t)
-		}
-	}
-	return "no output"
-}
-
-func trim160(s string) string {
-	if len(s) > 160 {
-		return s[:160]
-	}
-	return s
 }
 
 func exists(root, name string) bool {

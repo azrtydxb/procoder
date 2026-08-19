@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"procoder/internal/gitx"
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -216,7 +217,7 @@ func terraformDir(root, dir string) []gitx.Finding {
 		if code != 0 {
 			// objectively broken infrastructure code — the one blocking line
 			out = append(out, gitx.Finding{File: dir, Blocking: true,
-				Message: "terraform validate FAILED: " + firstLine(raw) + " (infra)"})
+				Message: "terraform validate FAILED: " + textutil.FirstLine(raw) + " (infra)"})
 		}
 	}
 
@@ -286,7 +287,7 @@ func helmChart(root, dir string) []gitx.Finding {
 	}
 	if code != 0 && len(out) == 0 {
 		out = append(out, gitx.Finding{File: dir,
-			Message: "helm lint failed without findings — NOT checked: " + firstLine(raw) + " (infra)"})
+			Message: "helm lint failed without findings — NOT checked: " + textutil.FirstLine(raw) + " (infra)"})
 	}
 	return out
 }
@@ -333,7 +334,7 @@ func failedClean(parsed int, code int, okCodes []int, raw, file, tool string) []
 		}
 	}
 	return []gitx.Finding{{File: file, Blocking: true,
-		Message: fmt.Sprintf("NOT checked — %s failed (exit %d): %s (infra)", tool, code, firstLine(raw))}}
+		Message: fmt.Sprintf("NOT checked — %s failed (exit %d): %s (infra)", tool, code, textutil.FirstLine(raw))}}
 }
 
 func notChecked(file, tool string) []gitx.Finding {
@@ -344,16 +345,4 @@ func notChecked(file, tool string) []gitx.Finding {
 func timeout(file, tool string) []gitx.Finding {
 	return []gitx.Finding{{File: file, Blocking: true,
 		Message: fmt.Sprintf("%s gave no answer in %s — NOT checked (infra)", tool, infraTimeout)}}
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			if len(t) > 160 {
-				t = t[:160]
-			}
-			return t
-		}
-	}
-	return "no output"
 }

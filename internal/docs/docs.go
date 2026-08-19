@@ -6,7 +6,6 @@
 package docs
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -20,6 +19,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/gitx"
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -292,7 +292,7 @@ func compileMermaid(root, bin, body string) string {
 		return fmt.Sprintf("mmdc gave no answer in %s — the diagram was NOT checked", mermaidTimeout)
 	}
 	if err != nil {
-		return firstLine(buf.String())
+		return textutil.FirstLine(buf.String())
 	}
 	return ""
 }
@@ -616,7 +616,7 @@ func ExternalLinks(root string, files []string) []gitx.Finding {
 	}
 	if len(out) == 0 {
 		out = append(out, gitx.Finding{File: files[0], Blocking: true,
-			Message: "lychee failed without a parseable report — external links were NOT checked: " + firstLine(buf.String())})
+			Message: "lychee failed without a parseable report — external links were NOT checked: " + textutil.FirstLine(buf.String())})
 	}
 	return out
 }
@@ -686,7 +686,7 @@ func PagesHealth(root string) []gitx.Finding {
 		if strings.Contains(errb.String(), "Not Found") {
 			return []gitx.Finding{{Message: "GitHub Pages is not enabled for this repository — the docs site is not being served"}}
 		}
-		return []gitx.Finding{{Message: "GitHub Pages NOT checked: " + firstLine(errb.String())}}
+		return []gitx.Finding{{Message: "GitHub Pages NOT checked: " + textutil.FirstLine(errb.String())}}
 	}
 	status := strings.TrimSpace(buf.String())
 	if status != "built" {
@@ -701,17 +701,4 @@ func firstN(s string, n int) string {
 		lines = lines[:n]
 	}
 	return strings.Join(lines, "\n")
-}
-
-func firstLine(s string) string {
-	sc := bufio.NewScanner(strings.NewReader(s))
-	for sc.Scan() {
-		if t := strings.TrimSpace(sc.Text()); t != "" {
-			if len(t) > 160 {
-				t = t[:160]
-			}
-			return t
-		}
-	}
-	return "no output"
 }

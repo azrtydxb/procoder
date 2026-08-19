@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"procoder/internal/spec"
+	"procoder/internal/textutil"
 )
 
 // criterionRe captures the text of one acceptance-criteria checkbox, checked
@@ -52,7 +53,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 		out("spec " + specName + " unreadable: " + err.Error())
 		return 2
 	}
-	crits := criteria(section(string(raw), "Acceptance criteria"))
+	crits := criteria(textutil.Section(string(raw), "Acceptance criteria"))
 	if len(crits) == 0 {
 		out("an epic with no stories is not a decomposition — the spec needs acceptance criteria")
 		return 1
@@ -76,7 +77,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 
 	date := time.Now().UTC().Format("20060102")
 	for i, c := range crits {
-		slug := slugify(c)
+		slug := textutil.Slug(c)
 		if slug == "" {
 			// A criterion of pure punctuation still deserves a story; the
 			// index keeps its file name unique and non-empty.
@@ -100,7 +101,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 func criteria(body string) []string {
 	var list []string
 	continuing := false
-	for _, line := range strings.Split(stripComments(body), "\n") {
+	for _, line := range strings.Split(textutil.StripComments(body), "\n") {
 		if m := criterionRe.FindStringSubmatch(line); m != nil {
 			text := strings.TrimSpace(m[1])
 			if text == "..." {

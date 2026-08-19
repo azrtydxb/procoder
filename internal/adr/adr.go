@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is where decision records live, under D-HOME.
@@ -68,7 +70,7 @@ type Finding struct {
 // New prints (never writes) the next-numbered record for the agent to
 // write: max existing leading number + 1, 0001 for an empty directory.
 func New(root, title string, out func(string)) int {
-	slug := slugify(title)
+	slug := textutil.Slug(title)
 	if slug == "" {
 		out("a decision record needs a title")
 		return 2
@@ -172,7 +174,7 @@ func Check(root string, out func(string)) []Finding {
 				Message: "status " + strconv.Quote(r.Status) + " — proposed, accepted, or superseded-by-NNNN"})
 		}
 		for _, name := range []string{"Context", "Decision", "Consequences"} {
-			if strings.TrimSpace(stripComments(section(r.text, name))) == "" {
+			if strings.TrimSpace(textutil.StripComments(textutil.Section(r.text, name))) == "" {
 				findings = append(findings, Finding{File: r.File,
 					Message: name + " is empty — a record without it decides nothing"})
 			}
@@ -261,33 +263,6 @@ func load(root string) ([]parsed, error) {
 	return records, nil
 }
 
-// section returns the body between "## name" and the next "## ".
-func section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
-		return ""
-	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
-	}
-	return body
-}
-
-func stripComments(s string) string {
-	for {
-		i := strings.Index(s, "<!--")
-		if i < 0 {
-			return s
-		}
-		j := strings.Index(s[i:], "-->")
-		if j < 0 {
-			return s[:i]
-		}
-		s = s[:i] + s[i+j+3:]
-	}
-}
-
 func sortedKeys(m map[string][]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -295,29 +270,4 @@ func sortedKeys(m map[string][]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func slugify(title string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(title) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == ' ' || r == '-' || r == '_':
-			b.WriteByte('-')
-		}
-	}
-	slug := strings.Trim(b.String(), "-")
-	// Windows caps full paths at 260 characters and CI checkouts sit deep
-	// in D:\a\...; a slug born from a whole sentence (a seeded acceptance
-	// criterion) must not push a file past that. Cut at a word boundary.
-	const maxSlug = 60
-	if len(slug) > maxSlug {
-		cut := slug[:maxSlug]
-		if i := strings.LastIndexByte(cut, '-'); i > 40 {
-			cut = cut[:i]
-		}
-		slug = strings.Trim(cut, "-")
-	}
-	return slug
 }
