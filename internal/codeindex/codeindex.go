@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -365,7 +366,7 @@ func runIndexer(root, dir, indexer, scipBin string, stdout func(string)) ([]json
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		stdout("precise tier: " + indexer + " failed — " + firstLine(errb.String()) + " (its ecosystem stays textual)")
+		stdout("precise tier: " + indexer + " failed — " + textutil.FirstLine(errb.String()) + " (its ecosystem stays textual)")
 		return nil, false
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), hungToolTimeout)
@@ -375,7 +376,7 @@ func runIndexer(root, dir, indexer, scipBin string, stdout func(string)) ([]json
 	conv.Stderr = &convErr
 	out, err := conv.Output()
 	if err != nil {
-		stdout("precise tier: scip print failed for " + indexer + " — " + firstLine(convErr.String()+err.Error()) + " (its ecosystem stays textual)")
+		stdout("precise tier: scip print failed for " + indexer + " — " + textutil.FirstLine(convErr.String()+err.Error()) + " (its ecosystem stays textual)")
 		return nil, false
 	}
 	var idx struct {
@@ -399,16 +400,4 @@ func head(root string) string {
 		return "unknown"
 	}
 	return strings.TrimSpace(string(out))
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			if len(t) > 160 {
-				t = t[:160]
-			}
-			return t
-		}
-	}
-	return "no output"
 }

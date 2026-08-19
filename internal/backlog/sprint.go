@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"procoder/internal/config"
+	"procoder/internal/textutil"
 )
 
 // sprintLineRe matches the whole Sprint header line of a story file — the
@@ -55,7 +56,7 @@ func activeSprint(root string) (Item, bool, error) {
 // (P-CONTROL). One sprint at a time is the WIP limit that makes a sprint
 // mean something — a second open is refused, never queued.
 func SprintOpen(root, goal string, out func(string)) int {
-	if strings.TrimSpace(goal) == "" || slugify(goal) == "" {
+	if strings.TrimSpace(goal) == "" || textutil.Slug(goal) == "" {
 		out("a sprint needs a goal — `procoder sprint open <goal words...>`")
 		return 2
 	}
@@ -96,7 +97,7 @@ func SprintOpen(root, goal string, out func(string)) int {
 			return code
 		}
 	}
-	id := fmt.Sprintf("%03d-%s", seq+1, slugify(goal))
+	id := fmt.Sprintf("%03d-%s", seq+1, textutil.Slug(goal))
 	rel := filepath.ToSlash(filepath.Join(Dir, KindSprint, id+".md"))
 	out("== write this to " + rel + ":")
 	out(fmt.Sprintf(sprintTemplate, goal, time.Now().UTC().Format("2006-01-02")))
@@ -130,7 +131,7 @@ func retroGate(last Item, out func(string)) int {
 		out("cannot read " + rel + " — an unreadable retro is unknown, and unknown is never done; fix the file before opening a sprint")
 		return 1
 	}
-	if strings.TrimSpace(stripComments(section(string(raw), "Retro"))) == "" {
+	if strings.TrimSpace(textutil.StripComments(textutil.Section(string(raw), "Retro"))) == "" {
 		out("the retro is the price of the next sprint — write what sprint " + last.ID + " taught you into the ## Retro section of " + rel + " (or set `[sprint] retro = \"off\"` in .procoder/config.toml)")
 		return 1
 	}

@@ -2,6 +2,21 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.1 — 2026-08-20
+
+- Internal cleanup, no behaviour change: four text helpers that had been
+  copied across packages now have one definition each in
+  `internal/textutil` — `slugify` (three byte-identical copies),
+  `section` and `stripComments` (five each), and the seven `firstLine`
+  copies whose semantics matched. The five `firstLine` variants that
+  differ on purpose keep their own, because moving those would change
+  output under the cover of a cleanup. Net: 371 lines deleted, 81 added,
+  and the shared helpers have tests the copies never had.
+- `docs.CollectOffline` and `docs.Run` are gone: both had zero callers
+  after the gate moved to the config-aware variants.
+- This repository now sets `[docs] policy = "block"`, which the 0.30.0
+  notes claimed but the config never carried.
+
 ## 0.32.0 — 2026-08-19
 
 - `procoder backlog close story <id>...` takes several ids and verifies

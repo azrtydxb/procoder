@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is where tasks live, under D-HOME.
@@ -116,7 +118,7 @@ func List(root string) ([]Task, error) {
 // Add prints the task file content and the path to write it — the binary
 // creates no files (P-CONTROL); the agent reviews and writes.
 func Add(root, title string, out func(string)) int {
-	slug := slugify(title)
+	slug := textutil.Slug(title)
 	if slug == "" {
 		out("a task needs a title")
 		return 2
@@ -157,11 +159,11 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 		out("task " + id + " is already " + m[1])
 		return 0
 	}
-	desc := section(text, "Description")
-	if strings.TrimSpace(stripComments(desc)) == "" {
+	desc := textutil.Section(text, "Description")
+	if strings.TrimSpace(textutil.StripComments(desc)) == "" {
 		missing = append(missing, "Description is empty — a title is not a description")
 	}
-	criteria := section(text, "Acceptance criteria")
+	criteria := textutil.Section(text, "Acceptance criteria")
 	if placeholder.MatchString(criteria) {
 		missing = append(missing, "Acceptance criteria still contain the placeholder — write real, testable criteria")
 	}
@@ -171,8 +173,8 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 	if n := len(uncheckedRe.FindAllString(criteria, -1)); n > 0 {
 		missing = append(missing, fmt.Sprintf("%d acceptance criterion(s) unchecked", n))
 	}
-	evidence := section(text, "Evidence")
-	if strings.TrimSpace(stripComments(evidence)) == "" {
+	evidence := textutil.Section(text, "Evidence")
+	if strings.TrimSpace(textutil.StripComments(evidence)) == "" {
 		missing = append(missing, "Evidence is empty — record the commands run and what their output proved")
 	}
 	if !gateClean() {
@@ -197,56 +199,4 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 	}
 	out("task " + id + " closed — criteria checked, evidence recorded, gate clean")
 	return 0
-}
-
-// section returns the body between "## name" and the next "## ".
-func section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
-		return ""
-	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
-	}
-	return body
-}
-
-func stripComments(s string) string {
-	for {
-		i := strings.Index(s, "<!--")
-		if i < 0 {
-			return s
-		}
-		j := strings.Index(s[i:], "-->")
-		if j < 0 {
-			return s[:i]
-		}
-		s = s[:i] + s[i+j+3:]
-	}
-}
-
-func slugify(title string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(title) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == ' ' || r == '-' || r == '_':
-			b.WriteByte('-')
-		}
-	}
-	slug := strings.Trim(b.String(), "-")
-	// Windows caps full paths at 260 characters and CI checkouts sit deep
-	// in D:\a\...; a slug born from a whole sentence (a seeded acceptance
-	// criterion) must not push a file past that. Cut at a word boundary.
-	const maxSlug = 60
-	if len(slug) > maxSlug {
-		cut := slug[:maxSlug]
-		if i := strings.LastIndexByte(cut, '-'); i > 40 {
-			cut = cut[:i]
-		}
-		slug = strings.Trim(cut, "-")
-	}
-	return slug
 }

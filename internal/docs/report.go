@@ -8,14 +8,6 @@ import (
 	"procoder/internal/gitx"
 )
 
-// CollectOffline is the docs slice shared by the gate and `procoder git`:
-// per-file checks on the changed Markdown files, drift and API-doc reports
-// for the changed code. Offline by construction. Callers that hold the commit
-// message and the docs policy use CollectOfflineFor instead.
-func CollectOffline(root string, changed []string) []gitx.Finding {
-	return CollectOfflineFor(root, changed, "", false)
-}
-
 // CollectOfflineFor is CollectOffline with the two things only the caller
 // knows: the commit message the acknowledgment line would live in (empty when
 // there is none at this moment, reported as unavailable) and whether the
@@ -38,12 +30,6 @@ func CollectOfflineFor(root string, changed []string, commitMessage string, bloc
 	// gate run would train the reader to skim the gate. It lives in
 	// `procoder docs`, where the reader asked the question.
 	return out
-}
-
-// Run is `procoder docs [--external]`: the full documentation report. The
-// agent reads it, fixes what is real, and explains what is not.
-func Run(root string, changed []string, external bool, stdout io.Writer) int {
-	return RunFor(root, changed, "", external, false, stdout)
 }
 
 // RunFor is Run with the commit message the acknowledgment line would live in

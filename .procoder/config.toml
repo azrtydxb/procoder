@@ -22,3 +22,8 @@ files = ["plugin.yaml", "package.json", "gemini-extension.json", "README.md", ".
 [bench]
 # Benchmark regressions beyond this percentage are marked and exit 1.
 threshold = 10
+
+[docs]
+# The documentation obligation blocks the gate: a public-surface change
+# with no documentation change must be answered, not skipped.
+policy = "block"

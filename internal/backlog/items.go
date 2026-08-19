@@ -17,6 +17,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is where the backlog lives, under D-HOME.
@@ -192,7 +194,7 @@ Sprint: -
 
 // Milestone prints a milestone file for the agent to write.
 func Milestone(root, title string, out func(string)) int {
-	return printItem(root, KindMilestone, slugify(title), title, func(now string) string {
+	return printItem(root, KindMilestone, textutil.Slug(title), title, func(now string) string {
 		return fmt.Sprintf(milestoneTemplate, title, now)
 	}, out)
 }
@@ -203,7 +205,7 @@ func Epic(root, title, milestone string, out func(string)) int {
 	if milestone != "" {
 		extra = "\nMilestone: " + milestone
 	}
-	return printItem(root, KindEpic, slugify(title), title, func(now string) string {
+	return printItem(root, KindEpic, textutil.Slug(title), title, func(now string) string {
 		return fmt.Sprintf(epicTemplate, title, now, extra)
 	}, out)
 }
@@ -215,7 +217,7 @@ func Story(root, title, epic string, out func(string)) int {
 		out("a story belongs to an epic — pass --epic <id> (or use `procoder todo add` for standalone work)")
 		return 2
 	}
-	slug := slugify(title)
+	slug := textutil.Slug(title)
 	if slug != "" {
 		slug = time.Now().UTC().Format("20060102") + "-" + slug
 	}
@@ -240,56 +242,4 @@ func printItem(root, kind, slug, title string, fill func(now string) string, out
 	out("== write this to " + rel + ":")
 	out(fill(time.Now().UTC().Format("2006-01-02")))
 	return 0
-}
-
-// section returns the body between "## name" and the next section.
-func section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
-		return ""
-	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
-	}
-	return body
-}
-
-func stripComments(s string) string {
-	for {
-		i := strings.Index(s, "<!--")
-		if i < 0 {
-			return s
-		}
-		j := strings.Index(s[i:], "-->")
-		if j < 0 {
-			return s[:i]
-		}
-		s = s[:i] + s[i+j+3:]
-	}
-}
-
-func slugify(title string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(title) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == ' ' || r == '-' || r == '_':
-			b.WriteByte('-')
-		}
-	}
-	slug := strings.Trim(b.String(), "-")
-	// Windows caps full paths at 260 characters and CI checkouts sit deep
-	// in D:\a\...; a slug born from a whole sentence (a seeded acceptance
-	// criterion) must not push a file past that. Cut at a word boundary.
-	const maxSlug = 60
-	if len(slug) > maxSlug {
-		cut := slug[:maxSlug]
-		if i := strings.LastIndexByte(cut, '-'); i > 40 {
-			cut = cut[:i]
-		}
-		slug = strings.Trim(cut, "-")
-	}
-	return slug
 }

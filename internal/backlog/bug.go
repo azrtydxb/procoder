@@ -9,6 +9,8 @@ package backlog
 import (
 	"fmt"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // bugTemplate is the story template with the defect headers after
@@ -69,7 +71,7 @@ func Bug(root, title, epic, severity string, out func(string)) int {
 	if epic == "" {
 		epic = "-"
 	}
-	slug := slugify(title)
+	slug := textutil.Slug(title)
 	if slug != "" {
 		slug = time.Now().UTC().Format("20060102") + "-" + slug
 	}

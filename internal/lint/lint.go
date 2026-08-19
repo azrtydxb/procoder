@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"procoder/internal/gitx"
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -468,7 +469,7 @@ func parseEslintJSON(raw string, runErr error, file, label string, block bool) [
 	}
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		return []gitx.Finding{{File: file,
-			Message: fmt.Sprintf("NOT checked — eslint output unreadable: %s (lint)", firstLine(raw+errStr(runErr)))}}
+			Message: fmt.Sprintf("NOT checked — eslint output unreadable: %s (lint)", textutil.FirstLine(raw+errStr(runErr)))}}
 	}
 	var out []gitx.Finding
 	for _, f := range report {
@@ -485,7 +486,7 @@ func parseEslintJSON(raw string, runErr error, file, label string, block bool) [
 		var exit *exec.ExitError
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1) {
 			return []gitx.Finding{{File: file,
-				Message: fmt.Sprintf("NOT checked — eslint failed: %s (lint)", firstLine(errStr(runErr)))}}
+				Message: fmt.Sprintf("NOT checked — eslint failed: %s (lint)", textutil.FirstLine(errStr(runErr)))}}
 		}
 	}
 	return out
@@ -575,22 +576,10 @@ func finishParse(raw string, runErr error, file string, tool string, block bool)
 		// "no findings" for some tools, but anything else is a failure
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && raw != "") {
 			return []gitx.Finding{{File: file,
-				Message: fmt.Sprintf("NOT checked — %s failed: %s (lint)", tool, firstLine(raw+runErr.Error()))}}
+				Message: fmt.Sprintf("NOT checked — %s failed: %s (lint)", tool, textutil.FirstLine(raw+runErr.Error()))}}
 		}
 	}
 	return out
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			if len(t) > 160 {
-				t = t[:160]
-			}
-			return t
-		}
-	}
-	return "no output"
 }
 
 func parse(raw string, block bool) []gitx.Finding {

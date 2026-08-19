@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"procoder/internal/gitx"
+	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
 
@@ -104,7 +105,7 @@ func typeCheckTS(root string, files []string, block bool) []gitx.Finding {
 		findings := parseTsc(raw, dir, root, block)
 		if len(findings) == 0 && err != nil {
 			out = append(out, gitx.Finding{File: fs[0],
-				Message: fmt.Sprintf("NOT checked — tsc failed: %s (lint --types)", firstLine(raw+err.Error()))})
+				Message: fmt.Sprintf("NOT checked — tsc failed: %s (lint --types)", textutil.FirstLine(raw+err.Error()))})
 			continue
 		}
 		// debt: tsc checks the whole project but only findings in the asked
@@ -166,7 +167,7 @@ func typeCheckPy(root string, files []string, block bool) []gitx.Finding {
 		// parsed diagnostics is a failed run
 		if !errors.As(err, &exit) || exit.ExitCode() != 1 || raw == "" {
 			return []gitx.Finding{{File: files[0],
-				Message: fmt.Sprintf("NOT checked — pyright failed: %s (lint --types)", firstLine(raw+err.Error()))}}
+				Message: fmt.Sprintf("NOT checked — pyright failed: %s (lint --types)", textutil.FirstLine(raw+err.Error()))}}
 		}
 	}
 	return findings

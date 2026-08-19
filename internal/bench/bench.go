@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // Dir is the procoder-owned state directory; the baseline lives at
@@ -87,7 +89,7 @@ func Run(root string, save bool, threshold int, out func(string)) int {
 	lines := benchLines(raw)
 	current := parseRows(lines)
 	if len(current) == 0 {
-		out("NOT run — go test -bench produced no benchmark rows: " + firstLine(raw))
+		out("NOT run — go test -bench produced no benchmark rows: " + textutil.FirstLine(raw))
 		return 1
 	}
 	for _, l := range lines {
@@ -341,29 +343,13 @@ func firstFailingLine(raw, errText string) string {
 		t := strings.TrimSpace(l)
 		low := strings.ToLower(t)
 		if t != "" && (strings.Contains(low, "fail") || strings.Contains(low, "error") || strings.Contains(low, "panic")) {
-			return trim160(t)
+			return textutil.Trim(t)
 		}
 	}
-	if l := firstLine(raw); l != "no output" {
+	if l := textutil.FirstLine(raw); l != "no output" {
 		return l
 	}
 	return "no output, exit status: " + errText
-}
-
-func firstLine(s string) string {
-	for _, l := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(l); t != "" {
-			return trim160(t)
-		}
-	}
-	return "no output"
-}
-
-func trim160(s string) string {
-	if len(s) > 160 {
-		return s[:160]
-	}
-	return s
 }
 
 func exists(root, name string) bool {
