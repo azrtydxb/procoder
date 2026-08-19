@@ -46,7 +46,7 @@ func Run(root string, out func(string)) int {
 		}
 		totalBlocking += blocking
 		out(fmt.Sprintf("## %s — %d finding(s), %d blocking", name, len(findings), blocking))
-		shown := findings
+		shown := orderForDisplay(findings)
 		if len(shown) > maxPerSection {
 			shown = shown[:maxPerSection]
 		}
@@ -128,6 +128,24 @@ func Run(root string, out func(string)) int {
 	}
 	out("  this repository would pass the procoder gate")
 	return 0
+}
+
+// orderForDisplay partitions blocking findings ahead of info ones (stable
+// within each group) so the section cap can never hide a BLOCK behind
+// info lines.
+func orderForDisplay(findings []gitx.Finding) []gitx.Finding {
+	ordered := make([]gitx.Finding, 0, len(findings))
+	for _, f := range findings {
+		if f.Blocking {
+			ordered = append(ordered, f)
+		}
+	}
+	for _, f := range findings {
+		if !f.Blocking {
+			ordered = append(ordered, f)
+		}
+	}
+	return ordered
 }
 
 // scopedFiles lists what the gate itself would consider: tracked plus
