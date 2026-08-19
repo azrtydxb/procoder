@@ -59,6 +59,25 @@ func TestScanFindsMarkersAndFlagsMissingTriggers(t *testing.T) {
 	}
 }
 
+func TestScanTrimsBlockCommentTerminators(t *testing.T) {
+	root := gitRepo(t, map[string]string{
+		"a.c":    "int x; /* debt: fixed buffer, grow when inputs exceed 4k */\n",
+		"b.html": "<!-- debt: inline styles, extract when a second page exists -->\n",
+	})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("want 2 entries, got %+v", entries)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Text, "*/") || strings.HasSuffix(e.Text, "-->") {
+			t.Errorf("comment terminator not trimmed: %q", e.Text)
+		}
+	}
+}
+
 func TestScanSkipsBinaries(t *testing.T) {
 	root := gitRepo(t, map[string]string{
 		"bin.dat": "PK\x00\x03// debt: not really\n",

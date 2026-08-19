@@ -84,7 +84,9 @@ func scanFile(root, rel string, re *regexp.Regexp) []Entry {
 		if m == nil {
 			continue
 		}
-		text := strings.TrimSpace(strings.TrimSuffix(m[1], "-->"))
+		text := strings.TrimSpace(m[1])
+		text = strings.TrimSpace(strings.TrimSuffix(text, "-->"))
+		text = strings.TrimSpace(strings.TrimSuffix(text, "*/"))
 		entries = append(entries, Entry{File: rel, Line: line,
 			Text: text, NoTrigger: !triggerRe.MatchString(text)})
 	}

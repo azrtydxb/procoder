@@ -64,6 +64,7 @@ var placeholderRes = []*regexp.Regexp{
 var (
 	taskRe     = regexp.MustCompile(`(?m)^## Task (\d+)[:\s]`)
 	checkboxRe = regexp.MustCompile(`(?m)^\s*- \[[ xX]\]\s*\S`)
+	filesRe    = regexp.MustCompile(`(?m)^Files:\s*\S`)
 	sectionRes = []string{"Goal", "Architecture", "Constraints"}
 )
 
@@ -164,7 +165,7 @@ func checkOne(path string, out func(string)) int {
 		}
 		body := stripComments(text[start:end])
 		num := text[loc[2]:loc[3]]
-		if !regexp.MustCompile(`(?m)^Files:\s*\S`).MatchString(body) {
+		if !filesRe.MatchString(body) {
 			gaps = append(gaps, "Task "+num+" names no Files: — the implementer cannot know what to touch")
 		}
 		if !checkboxRe.MatchString(body) {
