@@ -77,7 +77,10 @@ Where the files exist: hadolint over Dockerfiles, `terraform fmt` /
 `validate` / tflint over Terraform (a failing validate blocks),
 kubeconform over Kubernetes manifests, `helm lint` over charts.
 
-## Tasks and specs
+## Specs, plans, and tasks
+
+The chain: a spec says what and why, a plan says how exactly, todos track
+gated execution — and each link has its own quality controller.
 
 ### `procoder todo <sub>`
 
@@ -106,6 +109,35 @@ interviews the gaps closed; the binary judges completeness.
   section is missing or empty, while any `OPEN:` question is unresolved,
   and while acceptance criteria are not testable checkboxes. A complete
   spec seeds the todo list — one task per criterion group.
+
+### `procoder plan <sub>`
+
+Implementation plans under `.procoder/plans/`, written from an approved
+spec for an engineer with zero context.
+
+- `template <name>` — prints the plan shape (Goal, Architecture,
+  Constraints, `## Task N:` blocks with Files, Interfaces, checkbox
+  steps).
+- `list` — every plan in the repo.
+- `check [name|all]` — the quality controller: blocks on placeholders
+  ("TBD", "handle edge cases", "similar to task N" — a plan is written,
+  not promised), on empty sections, and on tasks without `Files:` or
+  checkbox steps.
+
+### `procoder debt`
+
+Harvests deliberate-simplification markers into a ledger. Convention: a
+corner cut on purpose carries a comment with the configured marker
+(default `debt:`, `[debt] marker` in config.toml) naming the ceiling and
+the condition to revisit. Markers with no revisit trigger are flagged —
+those are the ones that silently rot. Read-only, never blocking.
+
+### `procoder principles`
+
+Prints the engineering principles each session starts with (a SessionStart
+hook injects them): build-ladder first — reuse, stdlib, platform, then the
+minimum code that works. A repo replaces them wholesale with
+`.procoder/PRINCIPLES.md`.
 
 ## The code index
 

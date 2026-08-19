@@ -18,6 +18,27 @@ With a feature name in the arguments, start (or resume) that spec. With
 `check` or `list`, run the matching subcommand. With no arguments, run
 `launcher.sh spec list` and report.
 
+Classify the work FIRST — and say the classification out loud so the user
+can override it before the first question:
+
+- **Spike** — a feasibility question ("can X talk to Y?"). Output is an
+  answer, not kept code. State the question and the cheapest probe, get a
+  nod, investigate, report. Anything built is labelled throwaway; keeping
+  it is a new request that gets its own classification.
+- **Bounded** — a well-scoped change to a flow that ALREADY EXISTS in
+  this repo (bounded measures the repo, not your familiarity with the
+  problem). No spec file: ask the questions that matter, put a short
+  design in chat (approach, files touched, testing), STOP for an explicit
+  yes, then implement.
+- **Architectural** — new subsystems, new projects, interface changes:
+  the full interview below.
+
+In doubt between two paths, take the heavier one — and the ratchet is
+one-way: hidden complexity discovered mid-task upgrades the path (stop,
+say so, step up); nothing ever downgrades. The ceremony scales with the
+task; the approval gate never does — no implementation before the user's
+explicit yes, on any path.
+
 The interview — this is the core of the skill:
 
 1. `launcher.sh spec template <name>` prints the spec shape; write it to
@@ -47,7 +68,9 @@ The interview — this is the core of the skill:
 4. Run `launcher.sh spec check <name>` after each pass. It names the
    remaining gaps — keep interviewing until it says COMPLETE. Do not start
    implementing while the spec is blocked.
-5. When it is COMPLETE: seed the task list from the acceptance criteria
-   (`launcher.sh todo add`, one task per coherent group — see
-   /procoder:todo), then build against the spec. If reality contradicts
+5. When it is COMPLETE: for architectural work, write the implementation
+   plan next (/procoder:plan — its own quality controller gates it);
+   for smaller work, seed the task list directly from the acceptance
+   criteria (`launcher.sh todo add`, one task per coherent group — see
+   /procoder:todo). Then build against the spec. If reality contradicts
    the spec mid-build, update the spec first and re-check.
