@@ -27,6 +27,11 @@ The language matrix: procoder now covers the popular languages end to end.
   parser for either, so procoder supplies regex-based definitions
   (top-level symbols, verified live) — every matrix language can now be
   found, searched, and outlined.
+- Docs: an Influences page maps every idea absorbed from the superpowers
+  and ponytail plugins to exactly where it lives in procoder; the
+  quality-chain page now speaks its own name (spec-based development,
+  design documents, quality gates) and carries a real verbatim
+  spec-check refusal.
 - Honesty note: Go/Python/JS/shell remain the continuously-tested paths
   (they gate this repo's own CI); Swift was verified against the live
   tool; the rest follow each tool's documented interface and fail

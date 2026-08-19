@@ -21,13 +21,18 @@ flowchart LR
 
 - **[Getting started](getting-started.md)** — install to governed in ten
   minutes, on Claude Code or any agent.
-- **[The quality chain](quality-chain.md)** — spec → plan → todo → gate →
-  lessons, and why every link refuses instead of advising.
+- **[The quality chain](quality-chain.md)** — spec-based development:
+  the design-document interview, the implementation planner, the
+  evidence-gated todo list, and the quality gates that connect them
+  (spec → plan → todo → gate → lessons).
 - **[Every agent](portability.md)** — Cursor, Codex, Copilot, OpenCode,
   Kilo Code and the rest: one `AGENTS.md`, thin adapters, drift-guarded.
 - **[Architecture](architecture.md)** — the binary, the hooks, and the
   three contracts (agent in control, unchecked is never clean, the
   repo's files win).
+- **[Influences](influences.md)** — what we learned from the superpowers
+  and ponytail plugins, and exactly where each idea lives in procoder
+  now.
 
 ## The reference
 
