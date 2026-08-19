@@ -97,3 +97,14 @@ does. `procoder lessons` flags entries with no adaptation.
   domain that names files from titles (backlog, todo, adr), pinned by
   TestSlugifyCapsLongTitles in each; existing over-long story files
   renamed with references updated
+
+## 2026-08-19 PR#36 (CI, all three platforms) — a test assumed the machine's toolchain
+
+- Class: mechanical
+- Missed by: test
+- Adaptation: a "clean gate" fixture can only be honestly clean with
+  NOTHING changed — with changed files present, a missing formatter or
+  scanner is UNCHECKED, and unchecked is never clean (the product
+  working correctly). TestCleanGateLetsTheCommitThrough now commits its
+  fixture first, and the whole hook suite is verified under a stripped
+  PATH that mimics the CI test leg

@@ -87,6 +87,20 @@ func gitRepo(t *testing.T) string {
 	return root
 }
 
+// commitAll leaves the tree with nothing changed, so the gate has nothing
+// to judge and cannot depend on which tools the machine happens to carry.
+func commitAll(t *testing.T, root string) {
+	t.Helper()
+	run := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("add", "-A")
+	run("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "fixture")
+}
+
 func writeAt(t *testing.T, root, name, body string) {
 	t.Helper()
 	p := filepath.Join(root, name)
@@ -150,12 +164,18 @@ func TestNonCommitCommandIsUntouched(t *testing.T) {
 	}
 }
 
+// A tree with nothing changed is the only "clean" a machine without the
+// toolchain can honestly produce: with changed files present, a missing
+// formatter or scanner is UNCHECKED, and unchecked is never clean. That is
+// the product working, so the test uses the committed-and-untouched tree
+// the spec names instead of assuming an installed toolchain.
 func TestCleanGateLetsTheCommitThrough(t *testing.T) {
 	requireGit(t)
 	root := gitRepo(t)
 	writeAt(t, root, "README.md", "# demo\n\nA line of prose.\n")
+	commitAll(t, root)
 	if v, r := decisionOf(t, commitPayload(t, root, "git commit -m x")); v == "deny" {
-		t.Fatalf("a clean tree must not be stopped: %s", r)
+		t.Fatalf("a tree with nothing changed must not be stopped: %s", r)
 	}
 }
 
