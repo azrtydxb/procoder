@@ -66,11 +66,30 @@ func TestMissingLinterReadsAsNotCheckedNeverClean(t *testing.T) {
 	}
 }
 
-func TestNoEslintConfigIsOutOfScopeNotSilent(t *testing.T) {
+func TestConfiglessTSIsOutOfScopeButJSGetsTheBaseline(t *testing.T) {
 	root := t.TempDir()
 	got := Files(root, []string{filepath.Join(root, "a.ts")}, false)
 	if len(got) != 1 || !strings.Contains(got[0].Message, "out of scope") {
-		t.Fatalf("configless JS/TS must be labeled out of scope: %+v", got)
+		t.Fatalf("configless TS must be labeled out of scope: %+v", got)
+	}
+
+	if tools.Resolve(Eslint, "") == "" {
+		t.Skip("eslint not installed; baseline leg runs where it is")
+	}
+	bad := filepath.Join(root, "bad.js")
+	os.WriteFile(bad, []byte("var x = 1\nif (y == 2) { console.log(x) }\n"), 0o644)
+	got = Files(root, []string{bad}, false)
+	joined := ""
+	for _, f := range got {
+		joined += f.Message + "\n"
+	}
+	for _, want := range []string{"no-var", "eqeqeq", "no-undef", "procoder baseline"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("baseline must flag %q:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "console") {
+		t.Fatalf("runtime globals must not be no-undef noise:\n%s", joined)
 	}
 }
 

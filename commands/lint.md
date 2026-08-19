@@ -14,8 +14,11 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    you leave (a false positive, a deliberate choice). Never silence a finding
    by deleting the code's intent.
 3. Lines saying NOT checked mean a linter is missing — run `launcher.sh init`.
-   "out of scope" for JS/TS means the project has no eslint config; procoder
-   never imposes rules, so add a config only if the user wants one.
+   Configless plain JavaScript gets the procoder baseline (eslint's
+   built-in core rules, labeled "procoder baseline") — the project's own
+   config always wins when present. Configless TypeScript stays out of
+   scope: its parser is not built into eslint, and procoder installs no
+   packages into repos.
 4. Findings are informational by default; the repo can make them block the
    gate with `[lint] policy = "block"` in .procoder/config.toml.
 5. Re-run after fixing and show the user the result.
