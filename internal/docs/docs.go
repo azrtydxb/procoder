@@ -83,6 +83,7 @@ type Rules struct {
 	RequiredDocs   []string // files that must exist at the repo root
 	RequiredBadges []string // substrings that must appear in a README badge image URL or alt text
 	ReadmeSections []string // headings/elements required on the README's first screen
+	VersionedDocs  []string // docs whose first screen must carry the current version
 }
 
 func defaultRules() Rules {
@@ -90,6 +91,7 @@ func defaultRules() Rules {
 		RequiredDocs:   []string{"README.md", "CHANGELOG.md"},
 		RequiredBadges: []string{"ci", "license"},
 		ReadmeSections: []string{"usp", "badges", "quick start"},
+		VersionedDocs:  []string{"README.md", "docs/index.md"},
 	}
 }
 
@@ -103,7 +105,7 @@ func LoadRules(root string) Rules {
 		return r
 	}
 	section := ""
-	var docsL, badgesL, secsL []string
+	var docsL, badgesL, secsL, verL []string
 	for _, line := range strings.Split(string(data), "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "## ") {
@@ -121,6 +123,8 @@ func LoadRules(root string) Rules {
 			badgesL = append(badgesL, strings.ToLower(item))
 		case "readme first screen":
 			secsL = append(secsL, strings.ToLower(item))
+		case "version-tracked docs":
+			verL = append(verL, item)
 		}
 	}
 	if docsL != nil {
@@ -131,6 +135,9 @@ func LoadRules(root string) Rules {
 	}
 	if secsL != nil {
 		r.ReadmeSections = secsL
+	}
+	if verL != nil {
+		r.VersionedDocs = verL
 	}
 	return r
 }
@@ -394,7 +401,7 @@ var versionSources = []struct{ path, key string }{
 	{"package.json", "version"},
 }
 
-// VersionSync checks the README's first screen carries the project's current
+// VersionSync checks every version-tracked doc's first screen carries the
 // version. Drift here shipped three releases in a row unnoticed: prose claims
 // aren't file paths, so the drift check never fires on them — this is the
 // mechanical tripwire that forces the README to be touched, and therefore
@@ -419,16 +426,19 @@ func VersionSync(root string) []gitx.Finding {
 	if version == "" {
 		return nil // no declared version, nothing to hold the README to
 	}
-	readme := filepath.Join(root, "README.md")
-	data, err := os.ReadFile(readme)
-	if err != nil {
-		return nil // RequiredDocs already reports a missing README
+	var out []gitx.Finding
+	for _, doc := range LoadRules(root).VersionedDocs {
+		path := filepath.Join(root, doc)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue // absent docs are RequiredDocs' business, not this check's
+		}
+		if !strings.Contains(firstN(string(data), firstScreenLines), version) {
+			out = append(out, gitx.Finding{File: path, Blocking: true,
+				Message: fmt.Sprintf("%s first screen does not carry the current version %s (%s) — a release without a reviewed page is how docs go stale", doc, version, source)})
+		}
 	}
-	if !strings.Contains(firstN(string(data), firstScreenLines), version) {
-		return []gitx.Finding{{File: readme, Blocking: true,
-			Message: fmt.Sprintf("README first screen does not carry the current version %s (%s) — a release without a reviewed README is how docs go stale", version, source)}}
-	}
-	return nil
+	return out
 }
 
 // Badges checks the required badge set appears in the README's first screen.

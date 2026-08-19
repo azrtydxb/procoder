@@ -6,7 +6,7 @@ linters:
   exclusions:
     rules:
       - linters: [errcheck]
-        text: "Fprint|os.WriteFile|\\.Run\\b"
+        text: "Fprint|os.WriteFile|os.MkdirAll|\\.Run\\b"
         path: _test\.go$
       - linters: [errcheck]
         text: "Fprint"

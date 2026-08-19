@@ -29,6 +29,11 @@ guidance for the agent.
 - badges
 - quick start
 
+## Version-tracked docs
+
+- README.md
+- docs/index.md
+
 ## Guidance
 
 The README's first screen must sell the project: lead with the one-line value

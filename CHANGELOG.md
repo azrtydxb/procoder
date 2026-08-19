@@ -2,6 +2,29 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.15.0 — 2026-08-19
+
+Linters for all, without an asterisk — and the version tripwire now
+guards every claims-bearing page.
+
+- VersionSync generalizes from the README to a rules-driven list
+  (## Version-tracked docs in .procoder/docs/RULES.md; default README.md
+  and docs/index.md): the Pages site's index shipped eight releases
+  stale because only the README was held to the version — the same
+  prose-claims blind spot, now closed for every listed page. The site
+  content itself is rewritten to the all-nine reality.
+
+- Configless JavaScript now gets a procoder baseline: eslint's BUILT-IN
+  core rules (no-undef, no-unused-vars, eqeqeq, no-var, …) via a
+  generated temp flat config with common runtime globals — no npm
+  packages installed, nothing written into the repo, and the project's
+  own eslint config still always wins. Findings are labeled
+  "(lint, procoder baseline)".
+- TypeScript without a project config stays honestly out of scope: a TS
+  parser is not built into eslint and installing one would be imposing.
+- eslint v10 removed the unix formatter from core — both eslint paths now
+  parse --format json, fixing config-carrying projects on v10 too.
+
 ## 0.14.1 — 2026-08-19
 
 Morning review fixes, both dictated:

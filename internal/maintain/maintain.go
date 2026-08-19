@@ -73,12 +73,19 @@ func complexityGo(root string, cfg config.Config, out func(string)) int {
 	// linter settings, and the defaults (gocyclo 30) report almost nothing.
 	// The repo overrides them in .procoder/config.toml ([maintain] gocyclo,
 	// funlen_lines, funlen_statements) — D-OVERRIDE.
-	cfgPath := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-maintain-%d.yml", os.Getpid()))
-	if err := os.WriteFile(cfgPath, []byte(golangciCfg(cfg)), 0o644); err != nil {
+	cfgFile, err := os.CreateTemp("", "procoder-maintain-*.yml")
+	if err != nil {
 		out("  complexity  NOT checked — cannot write the isolated config")
 		return 1
 	}
+	cfgPath := cfgFile.Name()
 	defer os.Remove(cfgPath)
+	if _, err := cfgFile.WriteString(golangciCfg(cfg)); err != nil {
+		cfgFile.Close()
+		out("  complexity  NOT checked — cannot write the isolated config")
+		return 1
+	}
+	cfgFile.Close()
 	return runTool(root, bin, []string{"run", "--config", cfgPath,
 		"--output.text.path=stdout", "--show-stats=false", "./..."}, "complexity", out)
 }

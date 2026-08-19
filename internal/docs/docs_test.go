@@ -230,6 +230,18 @@ func TestReadmeMustCarryTheCurrentVersion(t *testing.T) {
 	if got = VersionSync(t.TempDir()); len(got) != 0 {
 		t.Fatalf("no version source must be silent: %+v", got)
 	}
+
+	// the tripwire covers every version-tracked doc, not just the README —
+	// the Pages index shipped eight releases stale before this
+	write(t, root, "docs/index.md", "# site\n\nCurrent version: 0.7.0\n")
+	got = VersionSync(root)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "docs/index.md") {
+		t.Fatalf("stale versioned doc must block by name: %+v", got)
+	}
+	write(t, root, "docs/index.md", "# site\n\nCurrent version: 0.8.2\n")
+	if got = VersionSync(root); len(got) != 0 {
+		t.Fatalf("current versioned doc is silent: %+v", got)
+	}
 }
 
 func TestGoExportedSymbolWithoutDocIsReported(t *testing.T) {

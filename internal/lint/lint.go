@@ -8,6 +8,7 @@ package lint
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -152,18 +153,135 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 	return out
 }
 
-// lintJS honours the eslint out-of-scope rule: no project config, no lint.
+// lintJS runs eslint. The project's config always wins; where none exists,
+// a generated baseline of eslint's BUILT-IN core rules fills the void —
+// procoder still imposes nothing on the repo (the file lives in the temp
+// dir), and baseline findings are labeled as such. eslint v10 dropped the
+// unix formatter from core, so both paths parse JSON.
 func lintJS(root string, files []string, block bool) []gitx.Finding {
-	if !HasEslintConfig(root) {
-		return []gitx.Finding{{File: files[0],
-			Message: "eslint: no project config found — JS/TS lint is out of scope until the project carries one (lint)"}}
-	}
 	bin := tools.Resolve(Eslint, root)
-	if bin == "" {
-		return notChecked(files[0], "eslint")
+	if HasEslintConfig(root) {
+		if bin == "" {
+			return notChecked(files[0], "eslint")
+		}
+		raw, err := execute(root, bin, append([]string{"--format", "json"}, files...))
+		return parseEslintJSON(raw, err, files[0], "lint", block)
 	}
-	raw, err := execute(root, bin, append([]string{"--format", "unix"}, files...))
-	return finishParse(raw, err, files[0], "eslint", block)
+	// no project config: plain JS gets the built-in-rules baseline;
+	// TypeScript needs a parser eslint core does not carry, and installing
+	// one would be imposing — TS is out of scope until the project carries
+	// a config, whether or not eslint itself is installed.
+	var jsFiles []string
+	var out []gitx.Finding
+	for _, f := range files {
+		switch strings.ToLower(filepath.Ext(f)) {
+		case ".ts", ".tsx":
+			out = append(out, gitx.Finding{File: f,
+				Message: "eslint: TypeScript needs a project eslint config (a TS parser is not built in) — out of scope until the project carries one (lint)"})
+		default:
+			jsFiles = append(jsFiles, f)
+		}
+	}
+	if len(jsFiles) == 0 {
+		return out
+	}
+	if bin == "" {
+		return append(out, notChecked(jsFiles[0], "eslint")...)
+	}
+	cfgFile, err := os.CreateTemp("", "procoder-eslint-*.mjs")
+	if err != nil {
+		return append(out, notChecked(jsFiles[0], "eslint (baseline config unwritable)")...)
+	}
+	cfg := cfgFile.Name()
+	defer os.Remove(cfg)
+	if _, err := cfgFile.WriteString(baselineEslintConfig); err != nil {
+		cfgFile.Close()
+		return append(out, notChecked(jsFiles[0], "eslint (baseline config unwritable)")...)
+	}
+	cfgFile.Close()
+	// paths go relative to the repo root: node resolves the cwd through
+	// symlinks (macOS /var vs /private/var) and absolute args would read
+	// as outside the base path
+	relFiles := make([]string, 0, len(jsFiles))
+	for _, f := range jsFiles {
+		if rel, err := filepath.Rel(root, f); err == nil && !strings.HasPrefix(rel, "..") {
+			relFiles = append(relFiles, rel)
+		} else {
+			relFiles = append(relFiles, f)
+		}
+	}
+	raw, err := execute(root, bin, append([]string{"--format", "json", "--no-config-lookup", "--config", cfg}, relFiles...))
+	return append(out, parseEslintJSON(raw, err, jsFiles[0], "lint, procoder baseline", block)...)
+}
+
+// baselineEslintConfig uses only rules built into eslint core — no imports,
+// no npm packages — with common runtime globals so no-undef is signal.
+const baselineEslintConfig = `export default [{
+  basePath: process.cwd(),
+  rules: {
+    "no-unused-vars": "warn",
+    "no-undef": "error",
+    "eqeqeq": "warn",
+    "no-var": "warn",
+    "no-debugger": "error",
+    "no-dupe-keys": "error",
+    "no-unreachable": "error",
+    "no-constant-condition": "warn",
+    "no-self-assign": "warn",
+    "no-fallthrough": "warn"
+  },
+  languageOptions: { globals: {
+    console: "readonly", process: "readonly", require: "readonly",
+    module: "writable", exports: "writable", window: "readonly",
+    document: "readonly", setTimeout: "readonly", setInterval: "readonly",
+    clearTimeout: "readonly", clearInterval: "readonly", fetch: "readonly",
+    Buffer: "readonly", __dirname: "readonly", __filename: "readonly",
+    globalThis: "readonly", URL: "readonly", Promise: "readonly"
+  } }
+}]
+`
+
+// parseEslintJSON reads eslint's --format json output; the honesty rule
+// applies — a failed run with nothing parsed never reads clean.
+func parseEslintJSON(raw string, runErr error, file, label string, block bool) []gitx.Finding {
+	var report []struct {
+		FilePath string `json:"filePath"`
+		Messages []struct {
+			Line    int    `json:"line"`
+			Message string `json:"message"`
+			RuleID  string `json:"ruleId"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		return []gitx.Finding{{File: file,
+			Message: fmt.Sprintf("NOT checked — eslint output unreadable: %s (lint)", firstLine(raw+errStr(runErr)))}}
+	}
+	var out []gitx.Finding
+	for _, f := range report {
+		for _, m := range f.Messages {
+			rule := m.RuleID
+			if rule == "" {
+				rule = "parse"
+			}
+			out = append(out, gitx.Finding{File: f.FilePath, Line: m.Line, Blocking: block,
+				Message: fmt.Sprintf("%s [%s] (%s)", m.Message, rule, label)})
+		}
+	}
+	if len(out) == 0 && runErr != nil {
+		var exit *exec.ExitError
+		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1) {
+			return []gitx.Finding{{File: file,
+				Message: fmt.Sprintf("NOT checked — eslint failed: %s (lint)", firstLine(errStr(runErr)))}}
+		}
+	}
+	return out
+}
+
+func errStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // HasEslintConfig reports whether the project carries an eslint config —
