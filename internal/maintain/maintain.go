@@ -138,6 +138,7 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOLANGCI_LINT_CACHE="+lint.CacheDir(root))
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf

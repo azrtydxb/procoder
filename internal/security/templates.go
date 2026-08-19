@@ -22,6 +22,14 @@ the exported surface; ` + "`procoder index callers`" + ` and ` + "`procoder inde
 trace how input reaches a finding. A finding on a path reachable from an
 entry point outranks one that is not.
 
+## False positives
+
+A finding that is genuinely not a secret (a pinned action SHA, a test
+fixture) is silenced the tool's own way, never by weakening the scan:
+append ` + "`gitleaks:allow`" + ` as a comment on the exact line, or add its
+fingerprint to a ` + "`.gitleaksignore`" + ` file. Every allow is a reviewed
+decision — say why in the commit.
+
 ## Never
 
 - Never echo a secret value into a report, a commit message, or a chat.

@@ -9,4 +9,4 @@ linters:
         text: "Fprint|os.WriteFile|os.MkdirAll|\\.Run\\b"
         path: _test\.go$
       - linters: [errcheck]
-        text: "Fprint"
+        text: "Fprint|Stdout.Write"

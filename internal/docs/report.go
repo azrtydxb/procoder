@@ -21,6 +21,7 @@ func CollectOffline(root string, changed []string) []gitx.Finding {
 	out = append(out, Drift(root, changed)...)
 	out = append(out, MissingAPIDocs(changed)...)
 	out = append(out, VersionSync(root)...)
+	out = append(out, CommandCoverage(root)...)
 	return out
 }
 

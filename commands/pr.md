@@ -28,8 +28,10 @@ The launcher for every procoder command below is:
    `launcher.sh scrub <file>`. It must say clean — no Co-Authored-By, no
    "generated with", nothing presenting the work as an AI's. Fix and re-scrub
    until clean.
-5. Show the user the final title and body BEFORE creating anything.
-6. Create the PR with `gh pr create --title ... --body-file ...`. If gh is
+5. Keep the title at 72 characters or fewer — it becomes the squash
+   commit's subject and our own gate flags longer ones.
+6. Show the user the final title and body BEFORE creating anything.
+7. Create the PR with `gh pr create --title ... --body-file ...`. If gh is
    missing, run `launcher.sh init` first.
-7. Hand off to /procoder:merge for the gates-and-reviews phase, or offer to
+8. Hand off to /procoder:merge for the gates-and-reviews phase, or offer to
    run it now.

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"procoder/internal/actions"
+	"procoder/internal/audit"
 	"procoder/internal/ciops"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -117,6 +118,9 @@ const usage = `usage: procoder <command> [args]
                        (the file itself is never modified)
   format <files...>    print each file's formatted result to stdout, so the
                        agent can review and write it
+  audit                every domain's checks over the WHOLE tracked tree —
+                       the onboarding sweep for a repository procoder has
+                       not governed before; exit 1 if it would fail the gate
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
                        types are counted out loud
@@ -177,6 +181,8 @@ func run(args []string) int {
 			return 2
 		}
 		return formatCmd(args[1:])
+	case "audit":
+		return audit.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "check":
 		return gate.Run(args[1:], doctor.Root(), os.Stdout)
 	case "doctor":
