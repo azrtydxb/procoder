@@ -2,6 +2,30 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.20.0 — 2026-08-19
+
+procoder now works with every AI coding agent, not just Claude Code.
+
+- One canonical `AGENTS.md` carries the always-on contract; ten rule-file
+  hosts (Cursor, Windsurf, Cline, Kilo Code, Roo Code, Kiro, Antigravity,
+  Qoder, Copilot editors, Codex) get byte-pinned copies, and drift blocks
+  the gate exactly like the PR-template mirror. `procoder agents` (and
+  `/procoder:agents`) prints the content for anything missing or drifted.
+- Plugin-tier adapters for Codex CLI (shares Claude's hooks file — the
+  binary detects the host and answers in its JSON shape), GitHub Copilot
+  CLI (own hook schema, bash+powershell), Gemini CLI/Antigravity
+  (`contextFileName: AGENTS.md`), OpenCode (a thin JS shim plus generated
+  command twins, parity pinned by test), Grok Build, Devin CLI, Qoder,
+  pi, and Hermes. Adapter rule: adapters stay thin — logic lives in the
+  binary, content in `AGENTS.md` and `commands/`.
+- Host detection in the binary (`COPILOT_PLUGIN_DATA` → `PLUGIN_DATA` →
+  `QODER_SESSION_ID` → Claude, with the VS Code Copilot path heuristic);
+  `procoder principles --hook` emits each host's session-start shape.
+- Manifest versions are pinned to the plugin version by the gate, and a
+  root `hooks/hooks.json` is forbidden outright (Gemini would auto-load
+  it with incompatible event names). Claude Code remains the tested
+  reference host; the docs say so plainly.
+
 ## 0.19.0 — 2026-08-19
 
 Catch first, learn on escape: downstream reviewers become the fallback,

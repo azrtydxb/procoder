@@ -20,6 +20,7 @@ import (
 	"procoder/internal/gitx"
 	"procoder/internal/infra"
 	"procoder/internal/lessons"
+	"procoder/internal/portability"
 	"procoder/internal/security"
 )
 
@@ -126,6 +127,9 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 		out = append(out, gitx.Finding{Message: workflowPath + " is missing — run `procoder templates` and write it"})
 	}
 	out = append(out, mirrorSync(root)...)
+	// the agent-portability layer: rule-file copies and manifest versions
+	// pinned to AGENTS.md and plugin.json — drift blocks here too
+	out = append(out, portability.Check(root)...)
 	return out
 }
 

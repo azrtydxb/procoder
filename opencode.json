@@ -1,0 +1,3 @@
+{
+  "plugin": ["./.opencode/plugins/procoder.mjs"]
+}

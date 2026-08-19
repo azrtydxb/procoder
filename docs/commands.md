@@ -136,6 +136,14 @@ corner cut on purpose carries a comment with the configured marker
 the condition to revisit. Markers with no revisit trigger are flagged —
 those are the ones that silently rot. Read-only, never blocking.
 
+### `procoder agents`
+
+The universal agent layer: per-host rule files (Cursor, Windsurf, Cline,
+Kilo Code, Roo Code, Kiro, Antigravity, Qoder, Copilot editors, Codex)
+derived from the canonical `AGENTS.md`. Prints the content for anything
+missing or drifted so the agent can write it; drift blocks the gate.
+See [Every agent](portability.md) for the full host matrix.
+
 ### `procoder lessons`
 
 The self-learning loop's ledger (`.procoder/github/LESSONS.md`): every
