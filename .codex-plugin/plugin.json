@@ -1,6 +1,6 @@
 {
   "name": "procoder",
-  "version": "0.32.1",
+  "version": "0.32.2",
   "description": "A harness that gives AI coders the tools and skills to work like a senior developer",
   "commands": "./commands/",
   "skills": "./commands/",

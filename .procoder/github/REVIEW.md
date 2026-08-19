@@ -20,6 +20,11 @@ Check every hunk for:
 - A file-discovery walk that keeps its own skip list instead of asking
   git what it ignores — gitignored trees (agent worktrees, vendored
   copies) are not this repository's content.
+- A rule that can RAISE an obligation but not CLEAR it (or the reverse):
+  exclusions must be symmetric, or the tool asks for something no action
+  can satisfy.
+- A benchmark that does not assert its work happened — an early return
+  times at nanoseconds and reads as fast.
 - Loops doing per-iteration work that belongs outside (regex compilation,
   allocations, file opens).
 - Temp files and permissions: CreateTemp over predictable names; modes no

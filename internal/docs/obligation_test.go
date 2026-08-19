@@ -237,3 +237,23 @@ func TestUnreadableDocumentDoesNotCountAsADocumentationChange(t *testing.T) {
 		t.Fatalf("a doc that is not there cannot clear the obligation: %s", msgs)
 	}
 }
+
+// procoder's own store is state, not documentation: it cannot clear an
+// obligation, so it must not raise one either. A bug story that names the
+// file it fixes would otherwise demand documentation no edit to that story
+// could satisfy — the asymmetry that wedged a real close.
+func TestStateMarkdownRaisesNoObligationItCannotClear(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "go.mod", "module example.com/thing\n\ngo 1.22\n")
+	write(t, root, "internal/bench/bench.go", "package bench\n")
+	write(t, root, ".procoder/backlog/stories/a-bug.md",
+		"# a bug\n\nCause traced to internal/bench/bench.go and fixed.\n")
+
+	changed := []string{filepath.Join(root, "internal/bench/bench.go")}
+	got := Obligation(root, changed, "", false)
+	for _, f := range got {
+		if strings.Contains(f.Message, "names changed file") {
+			t.Fatalf("state markdown must not raise a mention obligation: %s", f.Message)
+		}
+	}
+}
