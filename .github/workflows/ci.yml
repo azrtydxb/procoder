@@ -27,6 +27,22 @@ jobs:
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder
+      - name: dist binary matches the manifest version
+        # the committed release binaries are hand-built; a version bump
+        # that forgot the rebuild must fail here, not ship stale
+        shell: bash
+        run: |
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64)   bin=dist/linux-amd64/procoder;;
+            Linux-ARM64) bin=dist/linux-arm64/procoder;;
+            macOS-ARM64) bin=dist/darwin-arm64/procoder;;
+            macOS-X64)   bin=dist/darwin-amd64/procoder;;
+            Windows-X64) bin=dist/windows-amd64/procoder.exe;;
+            *) echo "no dist binary for $RUNNER_OS-$RUNNER_ARCH"; exit 0;;
+          esac
+          want=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          got=$(./$bin version)
+          test "$got" = "$want" || { echo "dist $bin says $got, manifest says $want — rebuild dist"; exit 1; }
 
   gate:
     # procoder's own gate over its own tree: the dogfood job. Formatting

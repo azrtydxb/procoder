@@ -160,7 +160,7 @@ full cleanup).
 ## Beneath them: the code index
 
 Two tiers — universal-ctags for breadth, SCIP for precision — with
-twelve queries from `find` to the call `graph`, kept current by the hook,
+thirteen queries from `find` to the call `graph`, kept current by the hook,
 consumed by the agent and the domains alike (maintainability's dead-code
 sweep and the gate's impact lines both read it).
 
@@ -171,12 +171,14 @@ The language matrix, stated honestly:
   Kotlin, Ruby, Rust, PHP — plus procoder-supplied regex parsers for the
   two it lacks, Swift and Dart (top-level symbols, approximate by
   nature).
-- **Precise tier** (exact refs/callers/graph): where a SCIP indexer
-  exists and is wired — Go (scip-go), TypeScript (scip-typescript),
-  Python (scip-python), Rust (rust-analyzer), and Java/Kotlin/Scala
-  builds (scip-java). One indexer runs per repository (the first layout
-  match); everything else answers textually and says so in the output —
-  a textual ref is labeled, never passed off as precise.
+- **Precise tier** (exact refs/impls/callers/graph): where a SCIP
+  indexer exists and is wired — Go (scip-go), TypeScript
+  (scip-typescript), Python (scip-python), Rust (rust-analyzer), and
+  Java/Kotlin/Scala builds (scip-java). A polyglot repository runs
+  every indexer its layout calls for and the results merge into one
+  index; an ecosystem whose indexer is missing or failing stays
+  textual and the build says so per indexer — a textual ref is
+  labeled, never passed off as precise.
 - **Rename** (`index rename`): the one write-shaped operation, and it
   still writes nothing — the language's own engine computes the
   cross-file rename (Go via gopls) and procoder prints it as a unified

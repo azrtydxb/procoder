@@ -26,7 +26,6 @@ const Dir = ".procoder/index"
 
 const (
 	tagsFile = "tags.jsonl"
-	scipFile = "index.scip"
 	refsFile = "refs.json"
 	metaFile = "meta.json"
 )
@@ -267,40 +266,87 @@ func normalizeTags(raw []byte) ([]byte, int) {
 	return buf.Bytes(), count
 }
 
-// buildPrecise runs the language's SCIP indexer and converts to JSON while
-// the scip CLI is at hand, so queries never need it again.
+// detectIndexers lists every SCIP indexer the repository's layout calls
+// for, in manifest order — a polyglot monorepo gets them all, not just the
+// first match. The generic package.json only counts when no tsconfig
+// already claimed TypeScript, so the indexer never runs twice.
+func detectIndexers(root string) []string {
+	var out []string
+	if exists(root, "go.mod") {
+		out = append(out, "scip-go")
+	}
+	if exists(root, "Cargo.toml") {
+		out = append(out, "rust-analyzer")
+	}
+	if exists(root, "pom.xml") || exists(root, "build.gradle") || exists(root, "build.gradle.kts") {
+		out = append(out, "scip-java")
+	}
+	if exists(root, "tsconfig.json") || exists(root, "package.json") {
+		out = append(out, "scip-typescript")
+	}
+	if exists(root, "pyproject.toml") || exists(root, "requirements.txt") {
+		out = append(out, "scip-python")
+	}
+	return out
+}
+
+// buildPrecise runs every SCIP indexer the layout calls for and merges the
+// results into one refs.json, converted while the scip CLI is at hand so
+// queries never need it again. Partial success is said per indexer.
 func buildPrecise(root, dir string, stdout func(string)) bool {
-	// ordered by signal strength: language-specific manifests first, the
-	// generic package.json LAST — nearly every repo carries one (tooling,
-	// agent adapters), and it must not shadow a Rust or Java layout
-	indexer := ""
-	switch {
-	case exists(root, "go.mod"):
-		indexer = "scip-go"
-	case exists(root, "Cargo.toml"):
-		indexer = "rust-analyzer"
-	case exists(root, "pom.xml") || exists(root, "build.gradle") || exists(root, "build.gradle.kts"):
-		indexer = "scip-java"
-	case exists(root, "tsconfig.json"):
-		indexer = "scip-typescript"
-	case exists(root, "pyproject.toml") || exists(root, "requirements.txt"):
-		indexer = "scip-python"
-	case exists(root, "package.json"):
-		indexer = "scip-typescript"
-	default:
+	indexers := detectIndexers(root)
+	if len(indexers) == 0 {
 		stdout("precise tier: no SCIP indexer covers this repository's layout — refs stay textual")
 		return false
 	}
+	scipBin := tools.Resolve(ScipCLI, root)
+	if scipBin == "" {
+		stdout("precise tier: the scip CLI is missing to convert indexer output — run `procoder init` (refs stay textual)")
+		return false
+	}
+	var docs []json.RawMessage
+	var built []string
+	for _, indexer := range indexers {
+		out, ok := runIndexer(root, dir, indexer, scipBin, stdout)
+		if !ok {
+			continue
+		}
+		docs = append(docs, out...)
+		built = append(built, indexer)
+	}
+	if len(built) == 0 {
+		return false
+	}
+	merged, err := json.Marshal(map[string]any{"documents": docs})
+	if err != nil {
+		return false
+	}
+	if err := os.WriteFile(filepath.Join(dir, refsFile), merged, 0o644); err != nil {
+		return false
+	}
+	if len(built) < len(indexers) {
+		stdout(fmt.Sprintf("precise tier: built with %s — %d of %d indexers answered (the rest stay textual)",
+			strings.Join(built, ", "), len(built), len(indexers)))
+	} else {
+		stdout("precise tier: built with " + strings.Join(built, ", ") + " (refs are precise)")
+	}
+	return true
+}
+
+// runIndexer runs one SCIP indexer and returns its converted documents.
+// Failures are reported and skipped — one broken ecosystem must not cost
+// the others their precise tier.
+func runIndexer(root, dir, indexer, scipBin string, stdout func(string)) ([]json.RawMessage, bool) {
 	tool := map[string]*tools.Tool{"scip-go": ScipGo, "scip-typescript": ScipTypescript,
 		"scip-python": ScipPython, "rust-analyzer": RustAnalyzer, "scip-java": ScipJava}[indexer]
 	bin := tools.Resolve(tool, root)
 	if bin == "" {
-		stdout("precise tier: NOT built — " + indexer + " is not installed; run `procoder init` (refs stay textual)")
-		return false
+		stdout("precise tier: " + indexer + " is not installed; run `procoder init` (its ecosystem stays textual)")
+		return nil, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
-	scipPath := filepath.Join(dir, scipFile)
+	scipPath := filepath.Join(dir, "index-"+indexer+".scip")
 	var cmd *exec.Cmd
 	switch indexer {
 	case "scip-go":
@@ -319,14 +365,8 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		stdout("precise tier: " + indexer + " failed — " + firstLine(errb.String()) + " (refs stay textual)")
-		return false
-	}
-
-	scipBin := tools.Resolve(ScipCLI, root)
-	if scipBin == "" {
-		stdout("precise tier: index.scip built, but the scip CLI is missing to convert it — run `procoder init` (refs stay textual)")
-		return false
+		stdout("precise tier: " + indexer + " failed — " + firstLine(errb.String()) + " (its ecosystem stays textual)")
+		return nil, false
 	}
 	ctx2, cancel2 := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel2()
@@ -335,14 +375,17 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	conv.Stderr = &convErr
 	out, err := conv.Output()
 	if err != nil {
-		stdout("precise tier: scip print failed — " + firstLine(convErr.String()+err.Error()) + " (refs stay textual)")
-		return false
+		stdout("precise tier: scip print failed for " + indexer + " — " + firstLine(convErr.String()+err.Error()) + " (its ecosystem stays textual)")
+		return nil, false
 	}
-	if err := os.WriteFile(filepath.Join(dir, refsFile), out, 0o644); err != nil {
-		return false
+	var idx struct {
+		Documents []json.RawMessage `json:"documents"`
 	}
-	stdout("precise tier: built with " + indexer + " (refs are precise)")
-	return true
+	if json.Unmarshal(out, &idx) != nil {
+		stdout("precise tier: " + indexer + " output unreadable (its ecosystem stays textual)")
+		return nil, false
+	}
+	return idx.Documents, true
 }
 
 func exists(root, name string) bool {

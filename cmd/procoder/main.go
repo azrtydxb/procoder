@@ -196,6 +196,8 @@ const usage = `usage: procoder <command> [args]
                        build | find <symbol> | search <text> | refs <symbol> |
                        outline <file> | impact | callers <symbol> | unused |
                        entrypoints | graph | stats |
+                       impls <symbol> — what implements an interface or its
+                       methods (precise tier only) |
                        rename <symbol> <new> [--at path:line] — the rename
                        as a reviewable diff (Go via gopls); nothing is written
   infra                DevOps hygiene where the files exist: Dockerfiles
@@ -504,7 +506,7 @@ func indexCmd(args []string) int {
 		return codeindex.Entrypoints(root, out)
 	case "graph":
 		return codeindex.Graph(root, out)
-	case "find", "search", "refs", "outline":
+	case "find", "search", "refs", "outline", "impls":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
@@ -516,6 +518,8 @@ func indexCmd(args []string) int {
 			return codeindex.Search(root, args[1], out)
 		case "refs":
 			return codeindex.Refs(root, args[1], out)
+		case "impls":
+			return codeindex.Impls(root, args[1], out)
 		default:
 			return codeindex.Outline(root, args[1], out)
 		}
