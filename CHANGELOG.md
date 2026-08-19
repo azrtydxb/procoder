@@ -2,6 +2,23 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.25.0 — 2026-08-19
+
+- `procoder index impls <symbol>` — what implements an interface or its
+  methods, from SCIP implementation relationships. Precise tier only:
+  the relationship exists nowhere else, so without SCIP the answer is
+  "not built", never a textual guess.
+- The precise tier goes polyglot: every SCIP indexer the repository's
+  layout calls for runs (not just the first manifest match) and the
+  results merge into one index. A missing or failing indexer costs only
+  its own ecosystem, reported per indexer.
+- CI now verifies the committed dist binaries match the manifest
+  version on every platform leg — a version bump that forgot the
+  rebuild fails the build instead of shipping stale binaries.
+- `.procoderignore` deleted: the file was read by nothing; dead config
+  that looks live is the rot the docs domain polices, applied to
+  ourselves.
+
 ## 0.24.0 — 2026-08-19
 
 - The engineering principles gain a delegation section — you are a

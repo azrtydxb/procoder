@@ -2,7 +2,7 @@
   "name": "procoder",
   "metadata": {
     "description": "A harness that gives AI coders the tools and skills to work like a senior developer",
-    "version": "0.24.0"
+    "version": "0.25.0"
   },
   "plugins": [
     {

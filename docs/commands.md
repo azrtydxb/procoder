@@ -179,6 +179,9 @@ repo replaces them wholesale with `.procoder/PRINCIPLES.md`.
 - `find <symbol>` / `search <text>` / `outline <file>` — definitions,
   fuzzy lookup, a file's symbols in order.
 - `refs <symbol>` — every reference, labeled precise (SCIP) or textual.
+- `impls <symbol>` — what implements an interface or its methods.
+  Precise tier only: implementation relationships exist nowhere else,
+  so without SCIP the answer is "not built", never a textual guess.
 - `callers <symbol>` / `graph` — the call graph and its JSON edge list.
 - `unused` — dead-code candidates, exported API marked.
 - `entrypoints` — mains and the exported surface.
