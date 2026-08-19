@@ -14,6 +14,9 @@ Check every hunk for:
   A failed Close/flush after a write IS a failed write.
 - State computed twice that must agree (time.Now called twice across a
   boundary, a value re-derived instead of passed).
+- Paths in OUTPUT (printed lines, error messages, test assertions on
+  either) built with filepath.Join — output uses forward slashes on
+  every platform (ToSlash); only real filesystem calls stay native.
 - Loops doing per-iteration work that belongs outside (regex compilation,
   allocations, file opens).
 - Temp files and permissions: CreateTemp over predictable names; modes no
