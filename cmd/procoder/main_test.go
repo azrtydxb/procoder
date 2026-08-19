@@ -16,4 +16,21 @@ func TestUsageAndCoverageListAgree(t *testing.T) {
 			t.Errorf("usage text does not list %q", cmd)
 		}
 	}
+	// and the reverse: a command added to usage must join the coverage list
+	listed := map[string]bool{}
+	for _, cmd := range docs.Commands {
+		listed[cmd] = true
+	}
+	for _, line := range strings.Split(usage, "\n") {
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if !listed[fields[0]] {
+			t.Errorf("usage lists %q but docs.Commands does not — CommandCoverage would miss it", fields[0])
+		}
+	}
 }

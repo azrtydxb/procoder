@@ -41,6 +41,7 @@ func Run(root string, changed []string, external bool, stdout io.Writer) int {
 	findings = append(findings, VersionSync(root)...)
 	findings = append(findings, Badges(root, rules)...)
 	findings = append(findings, ReadmeStructure(root, rules)...)
+	findings = append(findings, CommandCoverage(root)...)
 	if external {
 		findings = append(findings, ExternalLinks(root, md)...)
 		findings = append(findings, PagesHealth(root)...)

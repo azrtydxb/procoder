@@ -22,7 +22,7 @@ entry point outranks one that is not.
 
 A finding that is genuinely not a secret (a pinned action SHA, a test
 fixture) is silenced the tool's own way, never by weakening the scan:
-append ` gitleaks:allow` as a comment on the exact line, or add its
+append `gitleaks:allow` as a comment on the exact line, or add its
 fingerprint to a `.gitleaksignore` file. Every allow is a reviewed
 decision — say why in the commit.
 

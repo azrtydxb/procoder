@@ -12,8 +12,9 @@ import (
 // its usage text against this list by test, so the two cannot drift; the
 // coverage check below holds the documentation to the same list.
 var Commands = []string{
-	"audit", "check", "ci", "docs", "doctor", "format", "git", "index",
-	"infra", "init", "lint", "maintain", "scrub", "security", "templates",
+	"audit", "check", "ci", "docs", "doctor", "format", "git", "hook",
+	"index", "infra", "init", "lint", "maintain", "scrub", "security",
+	"templates", "version",
 }
 
 // CommandCoverage reports commands the documentation never mentions —
@@ -25,8 +26,18 @@ func CommandCoverage(root string) []gitx.Finding {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil
 	}
+	// only the site and the README count as documentation — a mention in
+	// a rules file or template must not mask a missing reference page
 	var corpus strings.Builder
 	for _, md := range MarkdownFiles(root) {
+		rel, err := filepath.Rel(root, md)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if rel != "README.md" && !strings.HasPrefix(rel, "docs/") {
+			continue
+		}
 		if raw, err := os.ReadFile(md); err == nil {
 			corpus.Write(raw)
 			corpus.WriteByte('\n')
@@ -36,7 +47,7 @@ func CommandCoverage(root string) []gitx.Finding {
 	var out []gitx.Finding
 	for _, cmd := range Commands {
 		if !strings.Contains(text, "procoder "+cmd) {
-			out = append(out, gitx.Finding{
+			out = append(out, gitx.Finding{Blocking: true,
 				Message: "documentation never mentions `procoder " + cmd + "` — a shipped command a reader cannot discover (docs)"})
 		}
 	}

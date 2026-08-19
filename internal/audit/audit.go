@@ -28,12 +28,12 @@ const maxPerSection = 15
 // blocking exists — an audited repo is not "in line" until it would pass
 // the gate.
 func Run(root string, out func(string)) int {
-	files := trackedFiles(root)
+	files := scopedFiles(root)
 	if files == nil {
 		out("procoder audit: not a git repository — nothing to audit")
 		return 2
 	}
-	out(fmt.Sprintf("procoder audit over %d tracked file(s)", len(files)))
+	out(fmt.Sprintf("procoder audit over %d file(s) in scope (tracked plus untracked, gitignored excluded)", len(files)))
 	out("")
 
 	totalBlocking := 0
@@ -130,7 +130,9 @@ func Run(root string, out func(string)) int {
 	return 0
 }
 
-func trackedFiles(root string) []string {
+// scopedFiles lists what the gate itself would consider: tracked plus
+// untracked-but-not-ignored.
+func scopedFiles(root string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	raw, err := exec.CommandContext(ctx, "git", "-C", root,
