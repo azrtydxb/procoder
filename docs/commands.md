@@ -77,6 +77,36 @@ Where the files exist: hadolint over Dockerfiles, `terraform fmt` /
 `validate` / tflint over Terraform (a failing validate blocks),
 kubeconform over Kubernetes manifests, `helm lint` over charts.
 
+## Tasks and specs
+
+### `procoder todo <sub>`
+
+The quality-gated task list under `.procoder/todo/` — one Markdown file
+per task, with a real description, testable acceptance criteria, and an
+evidence section.
+
+- `add <title>` — prints the task file and its path; the agent writes it
+  and replaces the placeholders before starting work.
+- `list` / `show <id>` — every task (open first) / one task in full.
+- `close <id>` — the quality controller. It refuses to close until every
+  acceptance criterion is checked, the evidence section records what was
+  run and what it proved, and the commit gate is clean — and it names
+  exactly what is missing. Only a passing close moves `Status:` to closed.
+
+### `procoder spec <sub>`
+
+Spec-first design under `.procoder/specs/` — the `/procoder:spec` skill
+interviews the gaps closed; the binary judges completeness.
+
+- `template <name>` — prints the spec shape (Problem, Users, In/Out of
+  scope, Constraints, Interfaces, Data, Edge cases, Failure modes,
+  Acceptance criteria, Open questions) for the agent to write.
+- `list` — every spec in the repo.
+- `check [name|all]` — the quality controller: blocks while any required
+  section is missing or empty, while any `OPEN:` question is unresolved,
+  and while acceptance criteria are not testable checkboxes. A complete
+  spec seeds the todo list — one task per criterion group.
+
 ## The code index
 
 ### `procoder index <sub>`
