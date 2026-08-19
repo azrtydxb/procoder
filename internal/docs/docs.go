@@ -470,11 +470,15 @@ func ReadmeMentions(root string, r Rules) []gitx.Finding {
 	if err != nil {
 		return nil // a missing README is RequiredDocs' finding
 	}
-	text := strings.ToLower(string(data))
+	// only the NARRATIVE counts: badge images and link targets are
+	// stripped first (a ci.yml badge URL is not the README telling the
+	// reader about CI), then families match as whole words so "spec" is
+	// not satisfied by "specific"
+	text := readmeImageRe.ReplaceAllString(string(data), " ")
+	text = readmeLinkTargetRe.ReplaceAllString(text, "]")
+	text = strings.ToLower(text)
 	var out []gitx.Finding
 	for _, m := range r.ReadmeMentions {
-		// word boundaries, or a short family is vacuous: "ci" must not be
-		// satisfied by the ci.yml badge URL, "spec" not by "specific"
 		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(m) + `\b`)
 		if !re.MatchString(text) {
 			out = append(out, gitx.Finding{File: filepath.Join(root, "README.md"), Blocking: true,
@@ -483,6 +487,11 @@ func ReadmeMentions(root string, r Rules) []gitx.Finding {
 	}
 	return out
 }
+
+var (
+	readmeImageRe      = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	readmeLinkTargetRe = regexp.MustCompile(`\]\([^)]*\)`)
+)
 
 // Badges checks the required badge set appears in the README's first screen.
 func Badges(root string, r Rules) []gitx.Finding {

@@ -268,9 +268,9 @@ func TestReadmeMustMentionDeclaredFamilies(t *testing.T) {
 		t.Fatalf("capitalised mentions must count: %+v", got)
 	}
 
-	// word boundaries: a short family inside another word is not a mention —
-	// "ci.yml" satisfies "ci" (dot is a boundary) but "specific" must not
-	// satisfy "spec", or terse family names become vacuous
+	// whole-word matching: a family inside another word is not a mention —
+	// "specific" must not satisfy "spec", "eslint" not "lint" — or terse
+	// family names become vacuous
 	r2 := Rules{ReadmeMentions: []string{"spec", "lint"}}
 	write(t, root, "README.md", "# x\n\nA specific tool with eslint support.\n")
 	got = ReadmeMentions(root, r2)
@@ -280,6 +280,18 @@ func TestReadmeMustMentionDeclaredFamilies(t *testing.T) {
 	write(t, root, "README.md", "# x\n\nThe spec interview and the lint domain.\n")
 	if got = ReadmeMentions(root, r2); len(got) != 0 {
 		t.Fatalf("whole-word mentions must count: %+v", got)
+	}
+
+	// only narrative counts: a ci.yml badge URL or a link target is not
+	// the README telling the reader about CI
+	r3 := Rules{ReadmeMentions: []string{"ci"}}
+	write(t, root, "README.md", "# x\n\n![CI](https://github.com/o/r/actions/workflows/ci.yml/badge.svg)\n[docs](https://example.com/ci/page)\n")
+	if got = ReadmeMentions(root, r3); len(got) != 1 {
+		t.Fatalf("badge URLs and link targets must not satisfy a family: %+v", got)
+	}
+	write(t, root, "README.md", "# x\n\n![CI](https://x/ci.yml/badge.svg)\n\nOur ci runs the same gate.\n")
+	if got = ReadmeMentions(root, r3); len(got) != 0 {
+		t.Fatalf("prose next to a badge must still count: %+v", got)
 	}
 }
 

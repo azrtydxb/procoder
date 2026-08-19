@@ -37,9 +37,11 @@ guidance for the agent.
 ## README must mention
 
 <!-- Optional, blocking when filled: the feature families the README's
-     narrative must carry (lower-cased substrings). List what your
-     product IS — a family the front page stops telling blocks the
-     gate, which is how README rot gets caught at commit time. -->
+     narrative must carry. Matching is case-insensitive and whole-word
+     (multi-word phrases allowed); badge images and link targets are
+     stripped first, so only prose counts. List what your product IS —
+     a family the front page stops telling blocks the gate, which is
+     how README rot gets caught at commit time. -->
 
 ## Guidance
 
