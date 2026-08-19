@@ -52,6 +52,7 @@ var Copies = []Copy{
 // is stale TOGETHER passes mutual-agreement checks, so all pin to one.
 var versionedManifests = []string{
 	".codex-plugin/plugin.json",
+	".github/plugin/marketplace.json", // version under metadata.version
 	".github/plugin/plugin.json",
 	"gemini-extension.json",
 	"package.json",
@@ -67,16 +68,40 @@ var forbiddenPaths = []string{"hooks/hooks.json"}
 // Collect so gate, git, and CI can never disagree.
 func Check(root string) []gitx.Finding {
 	master, err := os.ReadFile(filepath.Join(root, Master))
-	if err != nil {
+	if os.IsNotExist(err) {
 		return nil // repos procoder governs need not ship an agent layer
 	}
-	want := normalize(string(master))
+	if err != nil {
+		return []gitx.Finding{{File: filepath.Join(root, Master), Blocking: true,
+			Message: Master + " exists but cannot be read (" + err.Error() + ") — the agent layer is NOT checked"}}
+	}
+	// the same derivation Agents uses — frontmatter stripped — so the gate
+	// and the command can never disagree about what canonical means
+	want := normalize(stripFrontmatter(string(master)))
+	// missing copies are only worth reporting once the repo has adopted
+	// the layer (at least one copy present) — an AGENTS.md alone is a file
+	// many repos carry for unrelated reasons, and ten nag lines per gate
+	// run would be noise; drifted or unreadable copies always report
+	adopted := false
+	for _, c := range Copies {
+		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil {
+			adopted = true
+			break
+		}
+	}
 	var out []gitx.Finding
 	for _, c := range Copies {
 		raw, err := os.ReadFile(filepath.Join(root, c.Path))
+		if os.IsNotExist(err) {
+			if adopted {
+				out = append(out, gitx.Finding{File: filepath.Join(root, c.Path),
+					Message: c.Path + " is missing — " + c.Host + " gets no rules; run `procoder agents` and write it"})
+			}
+			continue
+		}
 		if err != nil {
-			out = append(out, gitx.Finding{
-				Message: c.Path + " is missing — " + c.Host + " gets no rules; run `procoder agents` and write it"})
+			out = append(out, gitx.Finding{File: filepath.Join(root, c.Path), Blocking: true,
+				Message: c.Path + " exists but cannot be read (" + err.Error() + ") — NOT checked (" + c.Host + ")"})
 			continue
 		}
 		if normalize(stripFrontmatter(string(raw))) != want {
@@ -114,6 +139,7 @@ func Agents(root string, out func(string)) int {
 		return 0
 	}
 	body := stripFrontmatter(string(master))
+	want := normalize(body)
 	bad := 0
 	for _, c := range Copies {
 		raw, rerr := os.ReadFile(filepath.Join(root, c.Path))
@@ -122,7 +148,7 @@ func Agents(root string, out func(string)) int {
 			bad++
 			out("== " + c.Host + ": missing — write this to " + c.Path + ":")
 			out(c.Frontmatter + body)
-		case normalize(stripFrontmatter(string(raw))) != normalize(body):
+		case normalize(stripFrontmatter(string(raw))) != want:
 			bad++
 			out("== " + c.Host + ": DRIFTED — rewrite " + c.Path + " with:")
 			out(c.Frontmatter + body)
@@ -195,6 +221,11 @@ func manifestVersion(path string) (string, error) {
 	}
 	if v, ok := m["version"].(string); ok {
 		return v, nil
+	}
+	if meta, ok := m["metadata"].(map[string]any); ok {
+		if v, ok := meta["version"].(string); ok {
+			return v, nil
+		}
 	}
 	return "", nil
 }

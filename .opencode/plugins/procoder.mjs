@@ -15,9 +15,8 @@ const ROOT = path.resolve(
 
 export const ProcoderPlugin = async () => ({
   config: async (config) => {
-    // expose the command files; OpenCode reads .opencode/command/*.md
-    config.command ??= {};
-    // and the skills path, for hosts that support skill discovery
+    // OpenCode discovers .opencode/command/*.md itself; this hook only
+    // adds the commands dir to the skills path for skill-aware hosts
     config.skills ??= {};
     config.skills.paths ??= [];
     const commands = path.join(ROOT, ".opencode", "command");

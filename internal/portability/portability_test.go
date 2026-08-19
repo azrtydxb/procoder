@@ -47,20 +47,16 @@ func TestEveryDeclaredCopyShips(t *testing.T) {
 	}
 }
 
-// Drift in a copy must block; a missing copy is information.
-func TestDriftBlocksAndMissingInforms(t *testing.T) {
+// A repo with AGENTS.md but no copies has not adopted the layer — silence.
+// Once one copy exists (adoption), drift blocks and the other copies are
+// reported missing as information.
+func TestDriftBlocksAndMissingInformsOnceAdopted(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, Master), []byte("# rules\n\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	findings := Check(root)
-	for _, f := range findings {
-		if f.Blocking {
-			t.Errorf("missing copies must not block: %s", f.Message)
-		}
-	}
-	if len(findings) != len(Copies) {
-		t.Fatalf("want one info finding per missing copy, got %d", len(findings))
+	if findings := Check(root); len(findings) != 0 {
+		t.Fatalf("un-adopted layer (AGENTS.md alone) must be silent, got %+v", findings)
 	}
 
 	c := Copies[0]
@@ -71,14 +67,19 @@ func TestDriftBlocksAndMissingInforms(t *testing.T) {
 	if err := os.WriteFile(p, []byte(c.Frontmatter+"# rules\n\nDIFFERENT body\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	blocking := 0
+	blocking, info := 0, 0
 	for _, f := range Check(root) {
 		if f.Blocking {
 			blocking++
+		} else {
+			info++
 		}
 	}
 	if blocking != 1 {
 		t.Fatalf("a drifted copy must block exactly once, got %d", blocking)
+	}
+	if info != len(Copies)-1 {
+		t.Fatalf("adopted layer must report the %d other copies missing, got %d", len(Copies)-1, info)
 	}
 }
 
@@ -158,27 +159,62 @@ func TestForbiddenHooksJSONBlocks(t *testing.T) {
 	}
 }
 
-// Every Claude command skill has its OpenCode twin, and no twin is stale:
-// the twin is the same body with the launcher path swapped for the PATH
-// binary — so it must never mention the Claude launcher.
+// opencodeTwin reproduces the generator's substitution rule, so the test
+// pins actual content parity, not just existence: twin = command body with
+// the Claude launcher swapped for the PATH binary.
+func opencodeTwin(body string) string {
+	body = strings.ReplaceAll(body, `"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"`, "procoder")
+	body = strings.ReplaceAll(body, "The launcher is: procoder",
+		"The command below is the `procoder` binary on PATH.")
+	body = strings.ReplaceAll(body, "The launcher for every procoder command below is:\nprocoder",
+		"Every procoder command below is the `procoder` binary on PATH.")
+	body = strings.ReplaceAll(body, "launcher.sh ", "procoder ")
+	body = strings.ReplaceAll(body, "launcher.sh", "procoder")
+	return body
+}
+
+// Commands whose content is Claude-specific and deliberately ships no
+// OpenCode twin.
+var opencodeSkip = map[string]bool{
+	"update.md": true, // the Claude plugin self-update flow
+}
+
+// Every Claude command skill has a content-identical OpenCode twin (via
+// the generation rule), and no orphan twin lingers after a command is
+// removed or renamed.
 func TestOpenCodeCommandParity(t *testing.T) {
 	root := repoRoot(t)
 	entries, err := os.ReadDir(filepath.Join(root, "commands"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	sources := map[string]bool{}
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".md") {
+		if !strings.HasSuffix(e.Name(), ".md") || opencodeSkip[e.Name()] {
 			continue
+		}
+		sources[e.Name()] = true
+		src, err := os.ReadFile(filepath.Join(root, "commands", e.Name()))
+		if err != nil {
+			t.Fatal(err)
 		}
 		twin := filepath.Join(root, ".opencode/command", e.Name())
 		raw, err := os.ReadFile(twin)
 		if err != nil {
-			t.Errorf("command %s has no .opencode/command twin", e.Name())
+			t.Errorf("command %s has no .opencode/command twin — regenerate", e.Name())
 			continue
 		}
-		if strings.Contains(string(raw), "CLAUDE_PLUGIN_ROOT") || strings.Contains(string(raw), "launcher.sh") {
-			t.Errorf("%s still references the Claude launcher — regenerate it", twin)
+		if string(raw) != opencodeTwin(string(src)) {
+			t.Errorf("%s does not match the generation rule applied to commands/%s — regenerate", twin, e.Name())
+		}
+	}
+	twins, err := os.ReadDir(filepath.Join(root, ".opencode/command"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range twins {
+		if strings.HasSuffix(e.Name(), ".md") && !sources[e.Name()] {
+			t.Errorf(".opencode/command/%s has no commands/ source — stale twin", e.Name())
 		}
 	}
 }

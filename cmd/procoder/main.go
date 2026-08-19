@@ -182,8 +182,10 @@ const usage = `usage: procoder <command> [args]
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
                        (no adaptation) exit 1
-  principles           print the engineering principles the session starts
-                       with — .procoder/PRINCIPLES.md wins over the default
+  principles [--hook]  print the engineering principles the session starts
+                       with — .procoder/PRINCIPLES.md wins over the default;
+                       --hook answers in the running host's SessionStart
+                       JSON shape (claude/codex/copilot/qoder)
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
