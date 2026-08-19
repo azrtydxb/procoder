@@ -177,3 +177,25 @@ func TestAddEmitsTemplate(t *testing.T) {
 		t.Error("an unsluggable title must be refused")
 	}
 }
+
+// Under [test] policy = "block" the suite verdict joins the controller;
+// suite nil (the policy off) is the delegating Close path every other test
+// already covers.
+func TestCloseWithSuiteVerdict(t *testing.T) {
+	root := t.TempDir()
+	writeTask(t, root, "t", completeTask)
+	gate := func() bool { return true }
+	red := func() (bool, string) { return false, "go: 2 test(s) failing" }
+	out, lines := collect()
+	if code := CloseWith(root, "t", gate, red, out); code != 1 {
+		t.Fatalf("a red suite must keep the task open: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "test suite is not green — go: 2 test(s) failing") {
+		t.Fatalf("the refusal must carry the suite summary: %v", *lines)
+	}
+	green := func() (bool, string) { return true, "go: pass" }
+	out2, lines2 := collect()
+	if code := CloseWith(root, "t", gate, green, out2); code != 0 {
+		t.Fatalf("a green suite must close: exit %d %v", code, *lines2)
+	}
+}

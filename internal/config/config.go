@@ -23,6 +23,9 @@ type Config struct {
 	MaxFileMB int
 	// LintBlock: lint findings block the gate instead of being reported.
 	LintBlock bool
+	// TestBlock: todo and story closes run the test suite and refuse
+	// while it fails (or cannot be verified).
+	TestBlock bool
 	// PinActions: unpinned GitHub Action refs block instead of being reported.
 	PinActions bool
 	// Maintain thresholds for the complexity report; zero means the default.
@@ -70,6 +73,8 @@ func Load(root string) Config {
 			cfg.BlockDefaultBranch = value == "block"
 		case "lint.policy":
 			cfg.LintBlock = value == "block"
+		case "test.policy":
+			cfg.TestBlock = value == "block"
 		case "ci.pin_actions_policy":
 			cfg.PinActions = value == "block"
 		case "maintain.gocyclo":

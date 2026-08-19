@@ -9,3 +9,8 @@ default_branch_policy = "report"
 # Files larger than this (MB) block the gate — large artifacts belong in
 # releases or LFS, not in history.
 max_file_mb = 5
+
+[test]
+# The suite verdict joins the close controllers: todo close and
+# backlog story close refuse while `procoder test` is red.
+policy = "block"

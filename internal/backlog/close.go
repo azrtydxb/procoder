@@ -21,6 +21,14 @@ import (
 // anything. Mirrors todo.Close in full rigor; the two domains stay
 // independent.
 func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
+	return CloseStoryWith(root, id, gateClean, nil, out)
+}
+
+// CloseStoryWith is CloseStory plus the test-suite verdict: under
+// `[test] policy = "block"` the caller passes testrun.Suite and a red (or
+// unverifiable) suite keeps the story open. suite nil means the policy is
+// off.
+func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
 	path, err := ItemFile(root, KindStory, id)
 	if err != nil {
 		out(err.Error())
@@ -57,6 +65,11 @@ func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
 	}
 	if !gateClean() {
 		missing = append(missing, "the gate is not clean — `procoder check` must pass before a story closes")
+	}
+	if suite != nil {
+		if ok, summary := suite(); !ok {
+			missing = append(missing, "the test suite is not green — "+summary)
+		}
 	}
 	if len(missing) > 0 {
 		out("story " + id + " stays OPEN — the quality controller found:")

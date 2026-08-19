@@ -95,6 +95,20 @@ into it, no story points, no calendar enforcement.
   carried; on success the sprint file gains a Result section with
   committed/done/carried counts.
 
+### `procoder test [--coverage] [paths...]`
+
+The repository's actual test suite, run by every detected ecosystem's
+canonical runner: `go test ./...`, `cargo test`, the package.json test
+script (via the lockfile's package manager), pytest, and gradle/maven.
+Verdicts are honest — PASS with counts where the output allows, FAIL
+with the failing tests named, and NOT run when a runner or test script
+is absent, which is never reported as green. `--coverage` adds the
+percentage where the runner measures it natively (Go; pytest with
+pytest-cov); a number is reported, never enforced. With
+`[test] policy = "block"` in config.toml, `todo close` and
+`backlog close story` run the suite and refuse while it is red — or
+while it cannot be verified at all, because unknown is never done.
+
 ### `procoder security [--deep]`
 
 Secrets over the changed files with gitleaks — always blocking, values

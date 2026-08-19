@@ -101,6 +101,9 @@ is a claim until verified in the diff.
 every criterion is checked, the evidence records what was run and what
 it proved, and **the commit gate itself is clean**. The binary runs the
 real gate as the final criterion: a task cannot close on a broken tree.
+Under `[test] policy = "block"`, `procoder test` joins that verdict for
+todo and story closes alike: the suite being green is part of done, and
+a suite that cannot be verified blocks exactly like a failing one.
 
 ## Gate — one code path, no disagreement
 

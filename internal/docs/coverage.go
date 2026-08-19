@@ -15,7 +15,7 @@ var Commands = []string{
 	"agents", "audit", "backlog", "check", "ci", "debt", "docs", "doctor",
 	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
 	"maintain", "plan", "principles", "scrub", "security", "spec",
-	"sprint", "templates", "todo", "version",
+	"sprint", "templates", "test", "todo", "version",
 }
 
 // CommandCoverage reports commands the documentation never mentions —

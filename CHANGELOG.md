@@ -2,6 +2,25 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.27.0 — 2026-08-19
+
+The test domain: "done" finally runs the tests.
+
+- `procoder test [--coverage] [paths...]` — every detected ecosystem's
+  canonical runner (go test, cargo test, the package.json test script
+  via the lockfile's manager, pytest, gradle/maven), each reported
+  honestly: PASS with counts, FAIL with the failing tests named, and
+  NOT run when a runner is absent — which is never the same as green.
+- `--coverage` reports the percentage where the runner measures it
+  natively (Go; pytest with pytest-cov). A number, never a threshold.
+- `[test] policy = "block"` wires the suite into the close controllers:
+  `todo close` and `backlog close story` refuse while the suite is red
+  — or unverifiable, because unknown is never done. Without the policy,
+  closes behave exactly as before. procoder's own repository adopts the
+  policy.
+- Built and tracked through procoder's own backlog: sprint 001 of the
+  Daily Practices milestone, seeded from the test-domain spec.
+
 ## 0.26.0 — 2026-08-19
 
 The project layer: lean/agile backlogs with sprints, on the quality
