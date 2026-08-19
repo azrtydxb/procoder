@@ -6,9 +6,12 @@
 package principles
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"procoder/internal/host"
 )
 
 // File is the repo override path, under D-HOME.
@@ -66,6 +69,29 @@ func Effective(root string) (string, bool) {
 		return string(raw), true
 	}
 	return Default, false
+}
+
+// RunHook prints the principles in the shape the running host's
+// SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
+// and Qoder each want a JSON envelope. One hooks file serves them all.
+func RunHook(root string, out func(string)) int {
+	text, _ := Effective(root)
+	switch h := host.Detect(); h {
+	case host.Claude:
+		out(strings.TrimRight(text, "\n"))
+	case host.Copilot:
+		enc, _ := json.Marshal(map[string]string{"additionalContext": text})
+		out(string(enc))
+	default: // codex, qoder: hookSpecificOutput envelope; codex adds systemMessage
+		payload := map[string]any{"hookSpecificOutput": map[string]string{
+			"hookEventName": "SessionStart", "additionalContext": text}}
+		if h == host.Codex {
+			payload["systemMessage"] = "procoder principles active"
+		}
+		enc, _ := json.Marshal(payload)
+		out(string(enc))
+	}
+	return 0
 }
 
 // Run prints the effective principles and where they came from.

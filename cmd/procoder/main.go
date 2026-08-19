@@ -32,6 +32,7 @@ import (
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/plan"
+	"procoder/internal/portability"
 	"procoder/internal/principles"
 	"procoder/internal/security"
 	"procoder/internal/spec"
@@ -172,12 +173,19 @@ const usage = `usage: procoder <command> [args]
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
                        flagged
+  agents               the universal agent layer: per-host rule files
+                       derived from AGENTS.md (Cursor, Windsurf, Cline,
+                       Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
+                       Codex) — prints content for anything missing or
+                       drifted; the gate blocks on drift
   lessons              the self-learning ledger (.procoder/github/LESSONS.md):
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
                        (no adaptation) exit 1
-  principles           print the engineering principles the session starts
-                       with — .procoder/PRINCIPLES.md wins over the default
+  principles [--hook]  print the engineering principles the session starts
+                       with — .procoder/PRINCIPLES.md wins over the default;
+                       --hook answers in the running host's SessionStart
+                       JSON shape (claude/codex/copilot/qoder)
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
                        blocks while sections are missing, OPEN: questions
@@ -375,7 +383,12 @@ func run(args []string) int {
 		return debt.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "lessons":
 		return lessons.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+	case "agents":
+		return portability.Agents(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "principles":
+		if len(args) > 1 && args[1] == "--hook" {
+			return principles.RunHook(doctor.Root(), func(s string) { fmt.Println(s) })
+		}
 		return principles.Run(doctor.Root(), func(s string) { fmt.Println(s) })
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)

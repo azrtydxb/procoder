@@ -64,3 +64,28 @@ func TestMissingToolsReadAsBlockingNotChecked(t *testing.T) {
 		t.Fatalf("missing osv-scanner: %+v", got)
 	}
 }
+
+// A dependency-free package.json (the agent-layer manifest) must not
+// break or block the deep scan; one declaring deps without a lockfile is
+// an honest NOT-checked.
+func TestNpmManifestWithoutLockfile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasNpmDepsWithoutLockfile(root) {
+		t.Error("no dependencies -> nothing to check, no finding")
+	}
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"dependencies":{"left-pad":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasNpmDepsWithoutLockfile(root) {
+		t.Error("deps without lockfile -> must surface as unscannable")
+	}
+	if err := os.WriteFile(filepath.Join(root, "package-lock.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasNpmDepsWithoutLockfile(root) {
+		t.Error("a lockfile exists -> osv scans it, no gap")
+	}
+}

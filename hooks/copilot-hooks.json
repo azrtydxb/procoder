@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "\"${PLUGIN_ROOT}/hooks/launcher.sh\" principles --hook",
+        "powershell": "& \"$env:PLUGIN_ROOT\\dist\\windows-amd64\\procoder.exe\" principles --hook",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}

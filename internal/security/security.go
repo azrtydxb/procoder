@@ -217,13 +217,25 @@ func Deps(root string) []gitx.Finding {
 	// git metadata and comes back empty inside git worktrees
 	var margs []string
 	for _, m := range []string{"go.mod", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-		"package.json", "requirements.txt", "poetry.lock", "Pipfile.lock", "pyproject.toml",
+		"requirements.txt", "poetry.lock", "Pipfile.lock", "pyproject.toml",
 		"Cargo.lock", "composer.lock", "Gemfile.lock"} {
 		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
 			margs = append(margs, "-L", m)
 		}
 	}
+	// a bare package.json is not scannable by osv (it needs a lockfile's
+	// pinned versions); one that DECLARES dependencies without any
+	// lockfile is an honest gap, one without dependencies has nothing to
+	// check and stays silent
+	var out []gitx.Finding
+	if hasNpmDepsWithoutLockfile(root) {
+		out = append(out, gitx.Finding{Blocking: true,
+			Message: "npm dependencies NOT checked — package.json declares dependencies but no lockfile exists for osv-scanner; generate package-lock.json (security)"})
+	}
 	if len(margs) == 0 {
+		if len(out) > 0 {
+			return out
+		}
 		return []gitx.Finding{{Message: "no dependency manifests found — nothing for osv-scanner to check (security)"}}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), deepTimeout)
@@ -255,10 +267,9 @@ func Deps(root string) []gitx.Finding {
 		} `json:"results"`
 	}
 	if json.Unmarshal(buf.Bytes(), &rep) != nil {
-		return []gitx.Finding{{Blocking: true,
-			Message: "osv-scanner output unreadable — dependencies were NOT checked: " + firstLine(errb.String()+errStr(err)) + " (security)"}}
+		return append(out, gitx.Finding{Blocking: true,
+			Message: "osv-scanner output unreadable — dependencies were NOT checked: " + firstLine(errb.String()+errStr(err)) + " (security)"})
 	}
-	var out []gitx.Finding
 	for _, r := range rep.Results {
 		for _, p := range r.Packages {
 			if len(p.Vulnerabilities) == 0 {
@@ -276,6 +287,28 @@ func Deps(root string) []gitx.Finding {
 		}
 	}
 	return out
+}
+
+// hasNpmDepsWithoutLockfile: package.json declares dependencies but no
+// npm lockfile exists — osv cannot pin versions, so scanning is impossible.
+func hasNpmDepsWithoutLockfile(root string) bool {
+	for _, lock := range []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
+		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
+			return false
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		return false
+	}
+	var m struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if json.Unmarshal(raw, &m) != nil {
+		return true // unparseable manifest: assume deps, stay honest
+	}
+	return len(m.Dependencies)+len(m.DevDependencies) > 0
 }
 
 func shortCheck(id string) string {
