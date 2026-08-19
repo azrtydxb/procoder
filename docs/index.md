@@ -30,9 +30,8 @@ flowchart LR
 - **[Architecture](architecture.md)** — the binary, the hooks, and the
   three contracts (agent in control, unchecked is never clean, the
   repo's files win).
-- **[Influences](influences.md)** — what we learned from the superpowers
-  and ponytail plugins, and exactly where each idea lives in procoder
-  now.
+- **[Influences](influences.md)** — the ideas adopted from the
+  superpowers and ponytail plugins, and where each lives in procoder.
 
 ## The reference
 
@@ -59,8 +58,8 @@ be waved through.
 **Honesty as a feature.** NOT-checked never reads as clean, claims
 carry their method, and the docs you are reading are themselves held to
 completeness checks that block the gate — this site cannot silently go
-stale, because that has happened and became a
-[lesson](quality-chain.md#lessons-escapes-close-their-class).
+stale ([how the lessons loop enforces
+that](quality-chain.md#lessons-escapes-close-their-class)).
 
 **One engine, thin everything else.** A single Go binary computes every
 verdict; skills, hooks, and per-agent adapters are pointers to it. No

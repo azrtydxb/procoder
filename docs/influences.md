@@ -1,15 +1,15 @@
 # Influences
 
-procoder absorbed the best ideas of two plugins Pascal previously ran —
+procoder's design draws on ideas proven by two earlier plugins:
 [superpowers](https://github.com/anthropics/claude-plugins-official) and
-[ponytail](https://github.com/DietrichGebert/ponytail) — then retired
-both. This page is the provenance map: what each idea was, and exactly
-where it lives in procoder now. Credit where it is due, and a finding
-aid for anyone who used the originals.
+[ponytail](https://github.com/DietrichGebert/ponytail). This page is the
+provenance map — each adopted concept and exactly where it lives in
+procoder — both as credit and as a migration reference for users of the
+originals, which procoder fully replaces.
 
 ## From superpowers
 
-| What we learned                                                                                                                                                                          | Where it lives now                                                                                                                                             |
+| Concept                                                                                                                                                                                  | Where it lives in procoder                                                                                                                                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plans written for an engineer with zero context: Files, exact Interfaces, test-first steps, no placeholders (from its writing-plans skill)                                               | `procoder plan` + `/procoder:plan` — the [quality chain](quality-chain.md)'s middle link, with a controller that blocks what the original only advised against |
 | Classify before designing: spike / bounded / architectural, with a one-way ratchet and an approval gate that never scales down (from brainstorming)                                      | `/procoder:spec`'s opening classification                                                                                                                      |
@@ -21,7 +21,7 @@ aid for anyone who used the originals.
 
 ## From ponytail
 
-| What we learned                                                                                                                                                                           | Where it lives now                                                                                                                                                                 |
+| Concept                                                                                                                                                                                   | Where it lives in procoder                                                                                                                                                         |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The build ladder — does it need to exist → reuse → stdlib → platform → dependency → one line → minimum code — and "the ladder runs after you understand the problem, never instead of it" | `procoder principles`, the default `AGENTS.md` contract, and `.procoder/PRINCIPLES.md` (repo-overridable, [configuration](configuration.md))                                       |
 | Deliberate corner-cuts carry a marker naming the ceiling and the revisit trigger; a command harvests the ledger and flags trigger-less rot                                                | `procoder debt` and the `debt:` convention (`[debt]` in config.toml) — the [maintainability domain](domains.md)'s sibling discipline                                               |
@@ -30,14 +30,12 @@ aid for anyone who used the originals.
 | Version-sync must also check the release tag (their v4.8.0 shipped every manifest stale together); content canaries pin load-bearing phrases                                              | the docs domain's version and manifest pinning ([domains](domains.md), documentation section)                                                                                      |
 | Never print a number you cannot derive; every claim carries its method in the same visual block; publish retractions                                                                      | the README's "Honesty, by design" section, the perf domain's refusal to ship checks without measurement infrastructure, and this site's habit of stating tested-status per feature |
 
-## What we deliberately did not take
+## Deliberately not adopted
 
-Superpowers' subagent-orchestration machinery and worktree/branch
-finishing (procoder's own workflow predates and supersedes them), its
-visual-companion server; ponytail's marketing scoreboard, its lite/full/
-ultra level system (a repo-editable principles file replaces modes), and
-its community-file gaps (a distributed binary ships SECURITY.md and
-templates — see the repo).
+Superpowers' subagent-orchestration machinery and branch-finishing flow
+(procoder's own workflow supersedes them) and its visual-companion
+server; ponytail's benchmark scoreboard and its lite/full/ultra level
+system (a repo-editable principles file replaces modes).
 
 Escaped-finding lessons are a different ledger: those live in
 `.procoder/github/LESSONS.md` and are enforced by `procoder lessons` —

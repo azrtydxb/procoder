@@ -31,6 +31,9 @@ Check every hunk for:
   site must tell a reader? Pages updated in this diff, or the absence
   concretely justified — a feature that ships with only a reference
   mention is a docs escape.
+- Docs voice: professional product documentation — no personal names,
+  no project-history anecdotes, no first-person diary; history belongs
+  in the changelog and lessons ledger, not the docs.
 
 End with a verdict line: findings counted by severity, or exactly
 "Nothing found — open the PR."

@@ -77,8 +77,9 @@ measurement infrastructure would violate the honesty contract.
 
 ## 5. Documentation
 
-Documentation is a product: correct, presentable, delivered, and —
-since it has burned us — **complete**.
+Documentation is a product: correct, presentable, delivered, and
+**complete** — completeness has its own blocking checks, because
+presence checks alone let documentation rot silently.
 
 | Check                                                                                                                        | Verdict                  |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |

@@ -148,7 +148,7 @@ See [Every agent](portability.md) for the full host matrix.
 ### `procoder lessons`
 
 The self-learning loop's ledger (`.procoder/github/LESSONS.md`): every
-finding that escaped our own gates and was caught downstream becomes a
+finding that escaped the repository's gates and was caught downstream becomes a
 lesson, and every lesson must carry the adaptation that closes its class —
 a linter enabled, a line added to the pre-PR review rubric
 (`.procoder/github/REVIEW.md`), a controller tightened, a pinning test.

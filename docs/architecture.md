@@ -83,8 +83,8 @@ master changes and the copies are regenerated.
 `procoder check`, `procoder git`, and CI all call the same `Collect`.
 There is deliberately no way for the local gate and CI to disagree about
 what the rules are — a green local gate that fails CI is defined as a
-bug, and each time it has happened (a Windows CRLF checkout, a missing
-CI tool for a newly polyglot repo) the fix landed in the shared path.
+bug; when environment differences surface one (line-ending rewrites,
+platform tool gaps), the fix lands in the shared path.
 
 ## The write hook, end to end
 
@@ -100,6 +100,6 @@ Every controller is pinned by refusal-path tests (the thing must say
 no, and name why), every canonical list by a both-directions pin
 (usage ↔ commands ↔ docs), every mirror by a drift test, and the
 instruments themselves carry known-good/known-bad fixtures — a checker
-that cannot catch its planted bad fixture is not trusted. Fixtures that
-would trip our own scanners (secrets, debt markers) are assembled at
-runtime, a lesson learned the honest way.
+that cannot catch its planted bad fixture is not trusted. Fixtures
+resembling scanner targets (secrets, debt markers) are assembled at
+runtime so the repository's own scans stay clean.

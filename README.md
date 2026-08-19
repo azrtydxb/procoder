@@ -124,8 +124,8 @@ procoder's reports never overclaim: a file that could not be checked is
 never called clean, a task without fresh verification evidence cannot
 close, and this README is itself held to a completeness check — a
 feature family it stops mentioning blocks the gate. No benchmark
-numbers appear here because we have not run benchmarks; when we do, the
-method will be attached to the number.
+numbers appear here because none have been run; any future number will
+carry its method alongside it.
 
 ## Implementation
 
