@@ -42,7 +42,8 @@ reviewed and written. Never touches the file.
 The canonical linter per ecosystem: golangci-lint (Go), ruff check
 (Python), shellcheck (shell), eslint (JS/TS — configless plain JavaScript
 gets the built-in-rules procoder baseline; configless TypeScript is out of
-scope). Go repositories without a golangci config get procoder's curated
+scope), cargo clippy (Rust), ktlint (Kotlin), swiftlint (Swift), rubocop
+(Ruby), and checkstyle (Java, google_checks baseline). Go repositories without a golangci config get procoder's curated
 baseline (standard set plus gosec, gocritic, errorlint, unparam,
 copyloopvar, nilerr) — the repo's own golangci config always wins,
 whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report

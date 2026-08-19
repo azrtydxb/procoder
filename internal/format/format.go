@@ -12,6 +12,7 @@ package format
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -115,6 +116,12 @@ func run(bin string, tool *tools.Tool, file string, src []byte) ([]byte, error) 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("no answer after %s — the process was killed", hungToolTimeout)
+		}
+		// some tools (rubocop) exit 1 on success whenever they DETECTED
+		// something; with a printed result on stdout that is the answer
+		var exit *exec.ExitError
+		if tool.ExitOneIsAnswer && errors.As(err, &exit) && exit.ExitCode() == 1 && out.Len() > 0 {
+			return out.Bytes(), nil
 		}
 		return nil, fmt.Errorf("%v: %s", err, firstLine(errb.Bytes()))
 	}

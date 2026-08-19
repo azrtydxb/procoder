@@ -2,6 +2,36 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.22.0 — 2026-08-19
+
+The language matrix: procoder now covers the popular languages end to end.
+
+- Formatting adds Java (google-java-format), Kotlin (ktfmt), Swift
+  (swiftformat, verified live), Ruby (rubocop autocorrect), Dart
+  (dart format), and C# (csharpier) — joining Go, Python, the prettier
+  family (JS/TS/JSON/CSS/HTML/Markdown/YAML), Rust, C/C++, and shell.
+  Same contract everywhere: the project's config wins, the result is
+  printed for the agent, unchecked is never clean.
+- Lint adds cargo clippy (Rust, workspace-scoped, filtered to changed
+  files), ktlint, swiftlint, rubocop, and checkstyle (google_checks
+  baseline; a repo checkstyle.xml wins).
+- The dependency scan enumerates the wider lockfile matrix: Maven and
+  Gradle, .NET packages.lock.json, Swift Package.resolved, Elixir
+  mix.lock, Dart pubspec.lock — one list shared with doctor, so the
+  scanner requirement and the scan can never disagree. (Podfile.lock is
+  deliberately excluded: osv-scanner has no extractor for it, verified.)
+- The precise index tier adds rust-analyzer (Rust) and scip-java
+  (Java/Kotlin/Scala builds); doctor recommends each only where the
+  repository's files call for it.
+- The broad index tier gains Swift and Dart: universal-ctags ships no
+  parser for either, so procoder supplies regex-based definitions
+  (top-level symbols, verified live) — every matrix language can now be
+  found, searched, and outlined.
+- Honesty note: Go/Python/JS/shell remain the continuously-tested paths
+  (they gate this repo's own CI); Swift was verified against the live
+  tool; the rest follow each tool's documented interface and fail
+  honest — a wrong flag surfaces as NOT-checked, never as clean.
+
 ## 0.21.0 — 2026-08-19
 
 The documentation overhaul, and the gates that keep it from rotting again.

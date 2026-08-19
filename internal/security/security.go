@@ -205,6 +205,18 @@ func Sast(root string) []gitx.Finding {
 	return out
 }
 
+// DepManifests are the dependency files osv-scanner accepts via -L — the
+// ONE list Deps scans and doctor's osv-scanner requirement triggers on, so
+// the two can never disagree about which repos need the scanner.
+// Podfile.lock is deliberately absent: osv has no extractor for it and one
+// bad -L fails the whole invocation (verified against 2.5.1).
+var DepManifests = []string{"go.mod", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+	"requirements.txt", "poetry.lock", "Pipfile.lock", "pyproject.toml",
+	"Cargo.lock", "composer.lock", "Gemfile.lock",
+	"pom.xml", "gradle.lockfile", "buildscript-gradle.lockfile",
+	"packages.lock.json", "Package.resolved",
+	"mix.lock", "pubspec.lock"}
+
 // Deps runs osv-scanner over the repository's manifests. Vulnerabilities at
 // or above the high/critical CVSS line block; the rest report.
 func Deps(root string) []gitx.Finding {
@@ -216,9 +228,7 @@ func Deps(root string) []gitx.Finding {
 	// manifests are named explicitly: osv's own directory walker trusts
 	// git metadata and comes back empty inside git worktrees
 	var margs []string
-	for _, m := range []string{"go.mod", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-		"requirements.txt", "poetry.lock", "Pipfile.lock", "pyproject.toml",
-		"Cargo.lock", "composer.lock", "Gemfile.lock"} {
+	for _, m := range DepManifests {
 		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
 			margs = append(margs, "-L", m)
 		}

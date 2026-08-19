@@ -59,6 +59,60 @@ var Ruff = &tools.Tool{
 	},
 }
 
+// Ktlint lints Kotlin; its default plain output is file:line:col: message.
+var Ktlint = &tools.Tool{
+	Name:        "ktlint",
+	Install:     "brew install ktlint",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "ktlint"}},
+	},
+}
+
+// Swiftlint lints Swift; the xcode reporter emits file:line:col: severity: msg.
+var Swiftlint = &tools.Tool{
+	Name:        "swiftlint",
+	Install:     "brew install swiftlint",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "swiftlint"}},
+	},
+}
+
+// RubocopLint is rubocop in lint mode (the formatter registry holds its
+// autocorrect mode); emacs format emits file:line:col: severity: msg.
+var RubocopLint = &tools.Tool{
+	Name:        "rubocop",
+	Install:     "brew install rubocop   (or: gem install rubocop)",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "rubocop"}},
+		{Manager: "gem", Args: []string{"install", "rubocop"}},
+	},
+}
+
+// Cargo carries clippy for Rust; `--message-format short` emits
+// file:line:col: severity: msg lines.
+var Cargo = &tools.Tool{
+	Name:        "cargo",
+	Install:     "rustup: https://rustup.rs (clippy: rustup component add clippy)",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "rustup"}},
+	},
+}
+
+// Checkstyle lints Java; the bundled google_checks is the baseline when
+// the repo carries no checkstyle.xml of its own (D-OVERRIDE as usual).
+var Checkstyle = &tools.Tool{
+	Name:        "checkstyle",
+	Install:     "brew install checkstyle",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "checkstyle"}},
+	},
+}
+
 // Eslint lints JS/TS, and only where the project carries an eslint config —
 // without one procoder would be imposing rules, which it never does.
 var Eslint = &tools.Tool{
@@ -96,6 +150,16 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 			byExt["sh"] = append(byExt["sh"], f)
 		case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
 			byExt["js"] = append(byExt["js"], f)
+		case ".kt", ".kts":
+			byExt["kt"] = append(byExt["kt"], f)
+		case ".swift":
+			byExt["swift"] = append(byExt["swift"], f)
+		case ".rb", ".rake":
+			byExt["rb"] = append(byExt["rb"], f)
+		case ".rs":
+			byExt["rs"] = append(byExt["rs"], f)
+		case ".java":
+			byExt["java"] = append(byExt["java"], f)
 		}
 	}
 	var out []gitx.Finding
@@ -111,8 +175,71 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 	if fs := byExt["js"]; len(fs) > 0 {
 		out = append(out, lintJS(root, fs, block)...)
 	}
+	if fs := byExt["kt"]; len(fs) > 0 {
+		out = append(out, run(root, Ktlint, fs, fs, block)...)
+	}
+	if fs := byExt["swift"]; len(fs) > 0 {
+		out = append(out, run(root, Swiftlint, append([]string{"lint", "--quiet", "--reporter", "xcode"}, fs...), fs, block)...)
+	}
+	if fs := byExt["rb"]; len(fs) > 0 {
+		out = append(out, run(root, RubocopLint, append([]string{"--format", "emacs", "--no-color"}, fs...), fs, block)...)
+	}
+	if fs := byExt["rs"]; len(fs) > 0 {
+		out = append(out, lintRust(root, fs, block)...)
+	}
+	if fs := byExt["java"]; len(fs) > 0 {
+		out = append(out, lintJava(root, fs, block)...)
+	}
 	return out
 }
+
+// lintRust runs clippy over the whole cargo workspace (clippy has no
+// per-file mode) and keeps the findings landing in the changed files.
+func lintRust(root string, files []string, block bool) []gitx.Finding {
+	if !fileExists(filepath.Join(root, "Cargo.toml")) {
+		return []gitx.Finding{{File: files[0],
+			Message: "NOT checked — clippy needs Cargo.toml at the repository root (a crate in a subdirectory is a known ceiling for now) (lint)"}}
+	}
+	bin := tools.Resolve(Cargo, root)
+	if bin == "" {
+		return notChecked(files[0], "cargo (clippy)")
+	}
+	raw, err := execute(root, bin, []string{"clippy", "--quiet", "--message-format", "short"})
+	findings := finishParse(raw, err, files[0], "clippy", block)
+	wanted := map[string]bool{}
+	for _, f := range files {
+		if rel, rerr := filepath.Rel(root, f); rerr == nil {
+			wanted[filepath.ToSlash(rel)] = true
+		}
+	}
+	var out []gitx.Finding
+	for _, f := range findings {
+		if wanted[filepath.ToSlash(f.File)] || f.File == files[0] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// lintJava runs checkstyle; the repo's own checkstyle.xml wins, the
+// bundled google_checks is the baseline otherwise. checkstyle prefixes
+// every line with a [WARN]/[ERROR] tag the shared parser would fold into
+// the file path, so it is stripped first.
+func lintJava(root string, files []string, block bool) []gitx.Finding {
+	cfg := "/google_checks.xml" // bundled inside the checkstyle jar
+	if fileExists(filepath.Join(root, "checkstyle.xml")) {
+		cfg = "checkstyle.xml"
+	}
+	bin := tools.Resolve(Checkstyle, root)
+	if bin == "" {
+		return notChecked(files[0], "checkstyle")
+	}
+	raw, err := execute(root, bin, append([]string{"-c", cfg}, files...))
+	raw = checkstyleTagRe.ReplaceAllString(raw, "")
+	return finishParse(raw, err, files[0], "checkstyle", block)
+}
+
+var checkstyleTagRe = regexp.MustCompile(`(?m)^\[(WARN|ERROR|INFO)\] `)
 
 // lintGo runs golangci-lint over the packages holding the files and keeps
 // only the findings that land in them.
