@@ -2,6 +2,7 @@ package backlog
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -321,5 +322,79 @@ func TestCloseStoryWithSuiteVerdict(t *testing.T) {
 	out2, lines2 := collect()
 	if code := CloseStoryWith(root, "s", gate, green, out2); code != 0 {
 		t.Fatalf("a green suite must close: exit %d %v", code, *lines2)
+	}
+}
+
+// Closing a sprint's worth of stories one at a time re-runs the gate and
+// the whole suite once per story — 27 closes meant 27 identical
+// verifications and thirteen minutes of waiting. The batch form verifies
+// once and applies that one verdict to every story that earns it.
+func TestCloseStoriesVerifiesOnceForTheWholeBatch(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"a", "b", "c"} {
+		writeItem(t, root, KindStory, id, solidStory)
+	}
+	gateRuns, suiteRuns := 0, 0
+	gate := func() bool { gateRuns++; return true }
+	suite := func() (bool, string) { suiteRuns++; return true, "go: pass" }
+
+	out, lines := collect()
+	if code := CloseStories(root, []string{"a", "b", "c"}, gate, suite, out); code != 0 {
+		t.Fatalf("all three must close: exit %d\n%s", code, strings.Join(*lines, "\n"))
+	}
+	if gateRuns != 1 || suiteRuns != 1 {
+		t.Fatalf("the batch must verify once, got gate=%d suite=%d", gateRuns, suiteRuns)
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		raw, err := os.ReadFile(filepath.Join(root, Dir, KindStory, id+".md"))
+		if err != nil || !strings.Contains(string(raw), "Status: done") {
+			t.Fatalf("story %s was not closed on disk", id)
+		}
+	}
+}
+
+// One incomplete story must not cost the others their close, and it must
+// be refused by name — the batch is a convenience, never a loosening.
+func TestCloseStoriesRefusesTheIncompleteOneByName(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, KindStory, "good", solidStory)
+	writeItem(t, root, KindStory, "hollow", hollowStory)
+	gate := func() bool { return true }
+
+	out, lines := collect()
+	code := CloseStories(root, []string{"good", "hollow"}, gate, nil, out)
+	joined := strings.Join(*lines, "\n")
+	if code != 1 {
+		t.Fatalf("a refused story makes the batch exit 1, got %d\n%s", code, joined)
+	}
+	if !strings.Contains(joined, "hollow") {
+		t.Fatalf("the refusal must name the story: %s", joined)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, Dir, KindStory, "good.md"))
+	if !strings.Contains(string(raw), "Status: done") {
+		t.Fatal("the complete story must still close")
+	}
+	raw, _ = os.ReadFile(filepath.Join(root, Dir, KindStory, "hollow.md"))
+	if strings.Contains(string(raw), "Status: done") {
+		t.Fatal("the incomplete story must stay open")
+	}
+}
+
+// The single-id form is the batch of one: same verdict, same output.
+func TestCloseStoriesOfOneMatchesTheSingleForm(t *testing.T) {
+	gate := func() bool { return true }
+	rootA := t.TempDir()
+	writeItem(t, rootA, KindStory, "s", solidStory)
+	outA, linesA := collect()
+	codeA := CloseStoryWith(rootA, "s", gate, nil, outA)
+
+	rootB := t.TempDir()
+	writeItem(t, rootB, KindStory, "s", solidStory)
+	outB, linesB := collect()
+	codeB := CloseStories(rootB, []string{"s"}, gate, nil, outB)
+
+	if codeA != codeB || strings.Join(*linesA, "\n") != strings.Join(*linesB, "\n") {
+		t.Fatalf("the batch of one must behave exactly as the single form:\n%d %v\n%d %v",
+			codeA, *linesA, codeB, *linesB)
 	}
 }

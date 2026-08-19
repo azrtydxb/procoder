@@ -1,9 +1,9 @@
 # backlog close story takes several ids and verifies once
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Epic: batch-verification
-Sprint: -
+Sprint: 005-batch-close-verify-once-not-per-story-0320
 
 ## Description
 
@@ -23,13 +23,29 @@ pass — refusing the individual stories that do not, by name.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `backlog close story a b c` runs the gate and the suite exactly
+- [x] `backlog close story a b c` runs the gate and the suite exactly
       once, verified by a test counting invocations.
-- [ ] A story in the batch whose criteria or evidence are incomplete is
+- [x] A story in the batch whose criteria or evidence are incomplete is
       refused by name while the others still close.
-- [ ] The single-id form behaves exactly as today.
+- [x] The single-id form behaves exactly as today.
 
 ## Evidence
+
+- TestCloseStoriesVerifiesOnceForTheWholeBatch: three stories close with
+  gate=1 and suite=1 invocations, asserted by counters, and all three
+  files carry `Status: done` afterwards.
+- TestCloseStoriesRefusesTheIncompleteOneByName: the hollow story is
+  refused by name and stays open while the complete one still closes;
+  the batch exits 1.
+- TestCloseStoriesOfOneMatchesTheSingleForm: identical exit code and
+  identical output to CloseStoryWith, so nothing about the single-id
+  path changed.
+- Live on a fixture: three serial closes took 2s, the same three batched
+  took 0s. On this repository one verification (check + test) measures
+  27s, so a 27-story sprint goes from about 729s of identical
+  re-verification to 27s.
+- The CLI takes `close story <id>...`; `close epic` and `close milestone`
+  still require exactly one id.
 
 <!-- Filled at close time: the commands run and what their output proved,
      one line per criterion. Empty evidence keeps the story open. -->

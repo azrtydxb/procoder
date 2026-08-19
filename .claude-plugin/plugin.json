@@ -1,6 +1,6 @@
 {
   "name": "procoder",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "A harness that gives AI coders the tools and skills to work like a senior developer. All nine domains shipped: security, best practices, maintainability, performance, documentation, clean code, CI/CD, DevOps, GitOps \u2014 plus the code index. Hooks hand the agent results; the agent stays in control.",
   "author": {
     "name": "Pascal Watteel"

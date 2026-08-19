@@ -183,7 +183,8 @@ const usage = `usage: procoder <command> [args]
                        stories under .procoder/backlog/ —
                        milestone <title> | epic <title> [--milestone <id>] |
                        story <title> --epic <id> | seed <spec> [--milestone
-                       <id>] | list | board | close story|epic|milestone
+                       <id>] | list | board | close story <id>... (several
+                       share one gate and suite run) | close epic|milestone
                        <id>; stories carry todo-task rigor, closes REFUSE
                        until the controller is satisfied (todo itself stays
                        the standalone list for non-spec work)
@@ -792,18 +793,28 @@ func backlogCmd(args []string) int {
 	case "board":
 		return backlog.Board(root, out)
 	case "close":
-		if len(args) != 3 {
+		if len(args) < 3 {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
 		switch args[1] {
 		case "story":
-			return backlog.CloseStoryWith(root, args[2], func() bool {
+			// several ids share one verification: the gate and the suite
+			// judge the tree, not a story
+			return backlog.CloseStories(root, args[2:], func() bool {
 				return gate.Run(nil, root, io.Discard) == 0
 			}, suiteCheck(root), out)
 		case "epic":
+			if len(args) != 3 {
+				fmt.Fprint(os.Stderr, usage)
+				return 2
+			}
 			return backlog.CloseEpic(root, args[2], out)
 		case "milestone":
+			if len(args) != 3 {
+				fmt.Fprint(os.Stderr, usage)
+				return 2
+			}
 			return backlog.CloseMilestone(root, args[2], out)
 		}
 		fmt.Fprint(os.Stderr, usage)
