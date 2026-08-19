@@ -2,6 +2,43 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.30.0 — 2026-08-19
+
+Enforcement: the two promises procoder made and did not keep.
+
+- **The commit gate is no longer voluntary.** A PreToolUse hook
+  intercepts `git commit` and stops it while the gate has blocking
+  findings, handing the agent the exact work list. `git commit
+--no-verify` still passes — loudly, never silently — and
+  `[git] commit_gate = "report" | "off"` downgrades or disables the
+  interception (default block). `procoder hook install-git` prints a
+  `.git/hooks/pre-commit` script so the gate also holds for commits
+  made outside any agent. A clean gate deliberately emits no decision
+  at all, so your own permission prompt is never bypassed.
+- **The documentation gate is universal.** The old command-coverage
+  check only ran inside procoder's own source tree and only grepped for
+  its own command names; it is replaced by a change-driven obligation
+  that works in any repository: a public-surface change (exported
+  symbol, CLI flag, config key) or a change to a file documentation
+  names, with no documentation changed in the same diff, raises an
+  obligation. It clears by editing a doc or by recording the decision —
+  `docs: none — <reason>` in the commit message, which the hook reads
+  at the moment of the commit (`procoder docs --ack "<reason>"` prints
+  the line). Silence never clears it. `[docs] policy = "block"` opts a
+  repository in; the default stays report.
+- `SurfaceCoverage` replaces the identity-gated check: exported surface
+  no document mentions, in any repository, reported in `procoder docs`
+  and deliberately kept out of the gate so the gate stays readable.
+  AGENTS.md and root-level Markdown now count as documentation.
+- **The docs backfill this rot created**: AGENTS.md gained the 19
+  commands it never mentioned (and the ten derived host rule files were
+  regenerated), configuration.md gained six missing config keys,
+  domains.md became ten domains with Testing added and bench, deps and
+  adr placed, workflow.md now describes the real sequence, and
+  index.md, getting-started.md, README.md and the nav caught up. Four
+  false claims were removed, including "start in a worktree", which no
+  code ever implemented.
+
 ## 0.29.0 — 2026-08-19
 
 - The engineering principles gain two sections: **ADHD/ASD-friendly

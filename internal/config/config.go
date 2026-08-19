@@ -43,6 +43,14 @@ type Config struct {
 	// BenchThreshold is the regression percentage `procoder bench` marks;
 	// zero means the default of 10.
 	BenchThreshold int
+	// CommitGate governs the commit interception: "block" (default) stops
+	// a commit whose gate has blocking findings, "report" prints them and
+	// lets it through, "off" skips the check.
+	CommitGate string
+	// DocsBlock: the documentation obligation blocks the gate instead of
+	// being reported. Off by default — procoder never blocks a repository
+	// by surprise on upgrade.
+	DocsBlock bool
 }
 
 // Defaults per the design contract.
@@ -52,7 +60,7 @@ const defaultMaxFileMB = 5
 // case and returns defaults; an unreadable line is skipped rather than
 // guessed at.
 func Load(root string) Config {
-	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:"}
+	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:", CommitGate: "block"}
 	raw, err := os.ReadFile(filepath.Join(root, ".procoder", "config.toml"))
 	if err != nil {
 		return cfg
@@ -90,6 +98,12 @@ func Load(root string) Config {
 			cfg.ReleaseFiles = parseList(value)
 		case "bench.threshold":
 			cfg.BenchThreshold = atoiOr(value, 0)
+		case "git.commit_gate":
+			if value == "block" || value == "report" || value == "off" {
+				cfg.CommitGate = value
+			}
+		case "docs.policy":
+			cfg.DocsBlock = value == "block"
 		case "ci.pin_actions_policy":
 			cfg.PinActions = value == "block"
 		case "maintain.gocyclo":

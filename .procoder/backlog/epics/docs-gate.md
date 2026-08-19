@@ -1,6 +1,6 @@
 # docs-gate
 
-Status: open
+Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
 Spec: docs-gate @ 361b58ea475f

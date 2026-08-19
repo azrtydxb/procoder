@@ -12,10 +12,40 @@ plain files, made to be edited, and always winning over built-in defaults
 default_branch_policy = "report"
 # Oversized-file threshold for the gate, in MB. Default 5.
 max_file_mb = 5
+# The commit interception: "block" (default) stops a commit whose gate
+# has blocking findings, "report" prints them and lets it through,
+# "off" skips the check.
+commit_gate = "block"
 
 [lint]
 # Lint findings in the gate: "report" (default) or "block".
 policy = "report"
+
+[test]
+# The suite verdict in the close controllers: "report" (default) or
+# "block" — under "block", `todo close` and `backlog close story` refuse
+# while `procoder test` is red or cannot be verified at all.
+policy = "report"
+
+[docs]
+# The documentation obligation in the gate: "report" (default) or
+# "block". Off by default — procoder never blocks a repo by surprise.
+policy = "report"
+
+[sprint]
+# The retro gate: unset, `sprint open` refuses while the last closed
+# sprint's retro is empty. Set to "off" to opt out.
+retro = "off"
+
+[release]
+# The version-bearing files `procoder release` verifies stay in sync.
+# Unset, the version-sync leg honestly reports that it verified nothing.
+files = ["README.md", "docs/index.md"]
+
+[bench]
+# Benchmark regressions beyond this percentage are marked and exit 1.
+# Default 10.
+threshold = 10
 
 [ci]
 # Actions pinned to mutable refs: "report" (default) or "block".
@@ -76,9 +106,10 @@ happens (echoing a secret, silencing a scanner).
 
 ### `.procoder/github/WORKFLOW.md`
 
-The team workflow the pr/merge skills follow: worktree-first feature work,
-the merge-watcher protocol (calibrate, poll per job, fail fast, report on
-change), and post-merge cleanup.
+The team workflow the pr/merge skills follow: worktree-first feature work
+(a git practice the skills describe — procoder itself creates and removes
+nothing), the merge-watcher protocol (calibrate, poll per job, fail fast,
+report on change), and post-merge cleanup.
 
 ### `.procoder/docs/mermaid.json`
 
@@ -95,7 +126,24 @@ The shared Mermaid theme applied when compiling diagrams.
 `procoder templates` prints the default for anything missing; the agent
 writes it — the binary creates no files itself.
 
+## Work state
+
+Committed, reviewable Markdown — the record of what is being built, kept
+where the code is:
+
+- `.procoder/specs/`, `.procoder/plans/`, `.procoder/todo/` — the design
+  documents, the implementation plans, and the standalone task list.
+- `.procoder/backlog/` — `milestones/`, `epics/`, `stories/`, and
+  `sprints/`, the project layer `procoder backlog` and `procoder sprint`
+  read and write through their controllers.
+- `.procoder/adr/` — the numbered architecture decision records; a
+  changed mind supersedes a record, it never rewrites one.
+
 ## Derived state
 
 - `.procoder/index/` — the code index (gitignored: derived, per-machine).
   The write hook keeps it current; the gate rebuilds it when stale.
+- `.procoder/bench/baseline.txt` — the benchmark baseline that
+  `procoder bench` compares against. Committed rather than derived: it
+  is a deliberate decision, written only by `bench --save`, and a
+  baseline recorded on another GOOS/GOARCH compares with a warning.

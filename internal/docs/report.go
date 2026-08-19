@@ -10,8 +10,18 @@ import (
 
 // CollectOffline is the docs slice shared by the gate and `procoder git`:
 // per-file checks on the changed Markdown files, drift and API-doc reports
-// for the changed code. Offline by construction.
+// for the changed code. Offline by construction. Callers that hold the commit
+// message and the docs policy use CollectOfflineFor instead.
 func CollectOffline(root string, changed []string) []gitx.Finding {
+	return CollectOfflineFor(root, changed, "", false)
+}
+
+// CollectOfflineFor is CollectOffline with the two things only the caller
+// knows: the commit message the acknowledgment line would live in (empty when
+// there is none at this moment, reported as unavailable) and whether the
+// repository opted the documentation obligation into blocking
+// ([docs] policy = "block").
+func CollectOfflineFor(root string, changed []string, commitMessage string, block bool) []gitx.Finding {
 	var out []gitx.Finding
 	for _, f := range changed {
 		if IsMarkdownFile(f) {
@@ -21,13 +31,24 @@ func CollectOffline(root string, changed []string) []gitx.Finding {
 	out = append(out, Drift(root, changed)...)
 	out = append(out, MissingAPIDocs(changed)...)
 	out = append(out, VersionSync(root)...)
-	out = append(out, CommandCoverage(root)...)
+	out = append(out, Obligation(root, changed, commitMessage, block)...)
+	// SurfaceCoverage is deliberately NOT here: it answers "what is
+	// undocumented in this repository", which is a standing report, not a
+	// verdict on the change in hand. Twenty informational lines on every
+	// gate run would train the reader to skim the gate. It lives in
+	// `procoder docs`, where the reader asked the question.
 	return out
 }
 
 // Run is `procoder docs [--external]`: the full documentation report. The
 // agent reads it, fixes what is real, and explains what is not.
 func Run(root string, changed []string, external bool, stdout io.Writer) int {
+	return RunFor(root, changed, "", external, false, stdout)
+}
+
+// RunFor is Run with the commit message the acknowledgment line would live in
+// and the repository's docs policy, for the caller that has read config.
+func RunFor(root string, changed []string, commitMessage string, external, block bool, stdout io.Writer) int {
 	rules := LoadRules(root)
 	md := MarkdownFiles(root)
 
@@ -42,7 +63,8 @@ func Run(root string, changed []string, external bool, stdout io.Writer) int {
 	findings = append(findings, Badges(root, rules)...)
 	findings = append(findings, ReadmeStructure(root, rules)...)
 	findings = append(findings, ReadmeMentions(root, rules)...)
-	findings = append(findings, CommandCoverage(root)...)
+	findings = append(findings, Obligation(root, changed, commitMessage, block)...)
+	findings = append(findings, SurfaceCoverage(root)...)
 	if external {
 		findings = append(findings, ExternalLinks(root, md)...)
 		findings = append(findings, PagesHealth(root)...)

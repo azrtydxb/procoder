@@ -339,14 +339,17 @@ func Drift(root string, changed []string) []gitx.Finding {
 // MarkdownFiles lists the repository's Markdown files: what git considers
 // part of the repo (tracked, plus untracked-but-not-ignored), so gitignored
 // scratch directories are never scanned. Outside a git repo it falls back to
-// a directory walk that skips the places no doc lives.
+// a directory walk that skips the places no doc lives — generated site output
+// and vendored trees, so regenerating a site never counts as documenting.
+// This is the whole documentation corpus, AGENTS.md and every root-level
+// Markdown file included: what the non-Claude hosts read is documentation too.
 func MarkdownFiles(root string) []string {
 	if out, ok := gitMarkdownFiles(root); ok {
 		return out
 	}
 	var out []string
 	skip := map[string]bool{".git": true, "node_modules": true, "vendor": true,
-		"dist": true, ".claude": true}
+		"dist": true, ".claude": true, "site": true, "_site": true}
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
