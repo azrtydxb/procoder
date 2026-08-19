@@ -140,6 +140,13 @@ func mentionTriggers(root string, changed []string) []string {
 		if rel, ok := relInRoot(root, f.File); ok {
 			page = rel
 		}
+		// procoder's own store cannot raise an obligation it is also
+		// forbidden to clear. A bug story naming the file it fixes would
+		// otherwise demand documentation that no edit to that story could
+		// ever satisfy — the tool contradicting itself.
+		if strings.HasPrefix(page, stateDir) {
+			continue
+		}
 		out = append(out, fmt.Sprintf("%s names changed file %s", page, path))
 	}
 	return out

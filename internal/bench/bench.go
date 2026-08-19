@@ -89,8 +89,12 @@ func Run(root string, save bool, threshold int, out func(string)) int {
 	lines := benchLines(raw)
 	current := parseRows(lines)
 	if len(current) == 0 {
-		out("NOT run — go test -bench produced no benchmark rows: " + textutil.FirstLine(raw))
-		return 1
+		// The run itself is the authority on what exists. hasBenchmarks is a
+		// grep, and a grep cannot tell a benchmark from the word "func
+		// Benchmark" inside a fixture string — so a successful run with no
+		// rows means there are none, not that the run failed.
+		out("no benchmarks in this repository — the perf skill starts by writing one")
+		return 0
 	}
 	for _, l := range lines {
 		out(l)

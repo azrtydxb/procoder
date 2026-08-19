@@ -116,3 +116,22 @@ does. `procoder lessons` flags entries with no adaptation.
 - Adaptation: REVIEW.md rubric line "a file-discovery walk that keeps its
   own skip list instead of asking git what it ignores"; envsync now calls
   git ls-files --ignored and TestGitIgnoredTreesAreNotSurveyed pins it
+
+## 2026-08-20 perf pass — the docs obligation could fire unclearably
+
+- Class: judgment
+- Missed by: test
+- Adaptation: procoder's own store (.procoder/) was excluded from CLEARING
+  an obligation but not from RAISING one, so a bug story naming the file
+  it fixes demanded documentation no edit to that story could supply.
+  Exclusion is symmetric now, pinned by
+  TestStateMarkdownRaisesNoObligationItCannotClear
+
+## 2026-08-20 perf pass — a benchmark that measured an early return
+
+- Class: mechanical
+- Missed by: test
+- Adaptation: Drift skips changed files that do not exist, so a fixture
+  that never created them timed a nil return at 2µs and looked fast.
+  Every benchmark here now asserts the work happened before timing it
+  (the guard in BenchmarkDriftOverATypicalCorpus)

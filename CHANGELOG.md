@@ -2,6 +2,27 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.2 — 2026-08-20
+
+Two defects found by using the tool, plus the first benchmarks.
+
+- `procoder bench` reported a successful run with no benchmarks as
+  `NOT run … exit 1`. The detector is a `git grep` for `func Benchmark`,
+  and a grep cannot tell a benchmark from those words inside a fixture
+  string — which internal/bench's own test file contains. The run is the
+  authority now: zero rows from a successful run means there are no
+  benchmarks, said plainly, exit 0.
+- The documentation obligation could fire unclearably. procoder's own
+  store under `.procoder/` was excluded from CLEARING an obligation but
+  not from RAISING one, so a bug story naming the file it fixes demanded
+  documentation that no edit to that story could ever supply. The
+  exclusion is symmetric now.
+- The first benchmarks, over the two paths that run on every write and
+  scale with the repository rather than the change: `docs.Drift` across
+  a 200-page corpus and `codeindex.Refresh` over a 1500-entry index.
+  Both measure ~10ms; the baseline is committed so a future change that
+  makes either ten times worse is caught rather than felt.
+
 ## 0.32.1 — 2026-08-20
 
 - Internal cleanup, no behaviour change: four text helpers that had been

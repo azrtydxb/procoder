@@ -276,3 +276,25 @@ func TestLiveSaveThenCompare(t *testing.T) {
 		t.Fatalf("identical code must not regress:\n%s", got)
 	}
 }
+
+// The detector is a grep, and a grep cannot tell a real benchmark from the
+// words "func Benchmark" inside a fixture string — this very file contains
+// such a fixture. A successful run with no rows therefore means there are
+// no benchmarks, and saying "NOT run" there would report a working command
+// as a broken one.
+func TestFixtureStringDoesNotFakeABenchmark(t *testing.T) {
+	requireGo(t)
+	root := t.TempDir()
+	write(t, root, "go.mod", "module fixture\n\ngo 1.21\n")
+	write(t, root, "lib.go", "package fixture\n\n// Add adds.\nfunc Add(a, b int) int { return a + b }\n")
+	// a test file that only MENTIONS a benchmark, exactly like this package's
+	write(t, root, "lib_test.go", "package fixture\n\nconst sample = `func BenchmarkAdd(b *testing.B) {}`\n")
+
+	out, lines := collect()
+	if code := Run(root, false, 0, out); code != 0 {
+		t.Fatalf("a repository with no real benchmarks exits 0, got %d\n%s", code, joined(lines))
+	}
+	if !strings.Contains(joined(lines), "no benchmarks in this repository") {
+		t.Fatalf("want the honest no-benchmarks line, got:\n%s", joined(lines))
+	}
+}

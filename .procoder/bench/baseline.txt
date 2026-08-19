@@ -1,0 +1,3 @@
+# procoder bench baseline 2026-08-20 cab269d darwin/arm64
+BenchmarkRefreshRewritesTheIndex-10    	     100	  10461830 ns/op	 3287319 B/op	    3284 allocs/op
+BenchmarkDriftOverATypicalCorpus-10    	     112	   9901965 ns/op	  337464 B/op	    2014 allocs/op
