@@ -76,12 +76,32 @@ func init() {
 		if lint.HasEslintConfig(root) {
 			out = append(out, lint.Eslint)
 		}
+		// the wider language matrix: each linter only where its files exist
+		// (the FORMATTERS for these languages ride doctor's extension
+		// survey automatically via the formatter registry)
+		if exts[".kt"] || exts[".kts"] {
+			out = append(out, lint.Ktlint)
+		}
+		if exts[".swift"] {
+			out = append(out, lint.Swiftlint)
+		}
+		if exts[".rb"] || exts[".rake"] {
+			out = append(out, lint.RubocopLint)
+		}
+		if _, err := os.Stat(root + "/Cargo.toml"); err == nil {
+			out = append(out, lint.Cargo)
+		}
+		if exts[".java"] {
+			out = append(out, lint.Checkstyle)
+		}
 		// domain 1: gitleaks guards every repo; SAST and dependency scans
 		// where there is code and manifests to scan
 		out = append(out, security.Gitleaks)
 		out = append(out, security.Semgrep)
-		for _, m := range []string{"/go.mod", "/package.json", "/pyproject.toml", "/requirements.txt", "/Cargo.toml"} {
-			if _, err := os.Stat(root + m); err == nil {
+		// one shared list with Deps(), so doctor requires the scanner for
+		// exactly the repos the scan would cover
+		for _, m := range security.DepManifests {
+			if _, err := os.Stat(root + "/" + m); err == nil {
 				out = append(out, security.OsvScanner)
 				break
 			}
@@ -111,6 +131,15 @@ func init() {
 		}
 		if _, err := os.Stat(root + "/pyproject.toml"); err == nil {
 			out = append(out, codeindex.ScipPython, codeindex.ScipCLI)
+		}
+		if _, err := os.Stat(root + "/Cargo.toml"); err == nil {
+			out = append(out, codeindex.RustAnalyzer, codeindex.ScipCLI)
+		}
+		for _, m := range []string{"/pom.xml", "/build.gradle", "/build.gradle.kts"} {
+			if _, err := os.Stat(root + m); err == nil {
+				out = append(out, codeindex.ScipJava, codeindex.ScipCLI)
+				break
+			}
 		}
 		return out
 	}

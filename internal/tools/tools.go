@@ -53,6 +53,10 @@ type Tool struct {
 	// macOS ships a BSD ctags that answers to the same name; presence on
 	// PATH is not the same as the right tool being installed.
 	Probe func(bin string) bool
+	// ExitOneIsAnswer: this tool exits 1 even on success when it detected
+	// something (rubocop detects offenses it corrected) — exit 1 WITH
+	// stdout is the answer, not a failure.
+	ExitOneIsAnswer bool
 }
 
 // ByExtension maps a file extension (lowercase, with dot) to its formatter.
@@ -138,6 +142,75 @@ var (
 			{Manager: "winget", Args: []string{"install", "--id", "mvdan.shfmt", "-e"}},
 		},
 	}
+	googleJavaFormat = &Tool{
+		Name:        "google-java-format",
+		Args:        func(f string) []string { return []string{f} }, // prints to stdout by default
+		Install:     "brew install google-java-format",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "google-java-format"}},
+		},
+	}
+	ktfmt = &Tool{
+		Name: "ktfmt",
+		// kotlinlang style is what ktlint's default enforces — the
+		// formatter and the linter must not fight over indentation
+		Args:        func(f string) []string { return []string{"--kotlinlang-style", "-"} }, // stdin -> stdout
+		Stdin:       true,
+		Install:     "brew install ktfmt",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "ktfmt"}},
+		},
+	}
+	swiftformat = &Tool{
+		Name: "swiftformat",
+		// stdinpath lets it find the project's own .swiftformat config
+		Args:        func(f string) []string { return []string{"stdin", "--stdinpath", f} },
+		Stdin:       true,
+		Install:     "brew install swiftformat",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "swiftformat"}},
+		},
+	}
+	rubocopFmt = &Tool{
+		Name: "rubocop",
+		// --stdin + -x (layout-only autocorrect: formatting, not semantics)
+		// prints the corrected source to stdout, diagnostics to stderr; the
+		// project's own .rubocop.yml is resolved from the path. rubocop
+		// exits 1 whenever offenses were DETECTED, corrected or not — with
+		// output on stdout that is an answer, not a failure.
+		Args:            func(f string) []string { return []string{"--stdin", f, "-x", "--stderr", "--format", "quiet"} },
+		Stdin:           true,
+		ExitOneIsAnswer: true,
+		Install:         "brew install rubocop   (or: gem install rubocop)",
+		VersionArgs:     []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "rubocop"}},
+			{Manager: "gem", Args: []string{"install", "rubocop"}},
+		},
+	}
+	dartFmt = &Tool{
+		Name: "dart",
+		// --summary none: dart_style otherwise appends "Formatted 1 file…"
+		// to stdout, which would corrupt the handed-back source
+		Args:        func(f string) []string { return []string{"format", "-o", "show", "--summary", "none", f} },
+		Install:     "brew install dart-sdk   (or: https://dart.dev/get-dart)",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "brew", Args: []string{"install", "dart-sdk"}},
+		},
+	}
+	csharpier = &Tool{
+		Name:        "csharpier",
+		Args:        func(f string) []string { return []string{"format", "--write-stdout", f} },
+		Install:     "dotnet tool install -g csharpier",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "dotnet", Args: []string{"tool", "install", "-g", "csharpier"}},
+		},
+	}
 )
 
 func init() {
@@ -153,6 +226,12 @@ func init() {
 	reg(rustfmt, ".rs")
 	reg(clangFormat, ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp")
 	reg(shfmt, ".sh", ".bash")
+	reg(googleJavaFormat, ".java")
+	reg(ktfmt, ".kt", ".kts")
+	reg(swiftformat, ".swift")
+	reg(rubocopFmt, ".rb", ".rake")
+	reg(dartFmt, ".dart")
+	reg(csharpier, ".cs")
 }
 
 // ForFile returns the formatter for a path, or nil when the file type is out
@@ -176,7 +255,8 @@ func Resolve(t *Tool, repoRoot string) string {
 		// the conventional install dirs `go install` and tarball installs
 		// use are often missing from PATH; a tool sitting there is installed
 		if home, herr := os.UserHomeDir(); herr == nil {
-			for _, dir := range []string{filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin")} {
+			for _, dir := range []string{filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
+				filepath.Join(home, ".dotnet", "tools")} {
 				for _, name := range candidateNames(t.Name) {
 					cand := filepath.Join(dir, name)
 					if runnable(cand) && (t.Probe == nil || t.Probe(cand)) {

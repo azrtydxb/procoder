@@ -41,6 +41,11 @@ procoder imposes nothing where the repo has spoken.
 | Python    | ruff check    | ruff's defaults                                                                                                       |
 | Shell     | shellcheck    | shellcheck's defaults                                                                                                 |
 | JS/TS     | eslint        | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed) |
+| Rust      | cargo clippy  | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                   |
+| Kotlin    | ktlint        | ktlint's defaults                                                                                                     |
+| Swift     | swiftlint     | swiftlint's defaults                                                                                                  |
+| Ruby      | rubocop       | rubocop's defaults                                                                                                    |
+| Java      | checkstyle    | the bundled google_checks; a repo `checkstyle.xml` wins                                                               |
 
 Report by default; `[lint] policy = "block"` in config.toml makes
 findings block. Lint is judgment where formatting was not — the findings
@@ -72,8 +77,9 @@ measurement infrastructure would violate the honesty contract.
 
 ## 5. Documentation
 
-Documentation is a product: correct, presentable, delivered, and —
-since it has burned us — **complete**.
+Documentation is a product: correct, presentable, delivered, and
+**complete** — completeness has its own blocking checks, because
+presence checks alone let documentation rot silently.
 
 | Check                                                                                                                        | Verdict                  |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
@@ -90,8 +96,10 @@ by the harness's own CI job.
 ## 6. Clean code (formatting)
 
 Every write is checked against the ecosystem's canonical formatter —
-gofmt, ruff format, prettier, rustfmt, clang-format (config required —
-procoder has no style opinion of its own), shfmt. Three verdicts, never
+gofmt, ruff format, prettier (JS/TS/JSON/CSS/HTML/Markdown/YAML),
+rustfmt, clang-format (config required — procoder has no style opinion
+of its own), shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
+rubocop (Ruby), dart format, and csharpier (C#). Three verdicts, never
 collapsed: **clean**, **unformatted** (the agent receives the formatted
 result in-turn and writes it itself), **unchecked** (tool missing or
 failed — fails the gate). The file is never touched behind the agent's
@@ -149,6 +157,20 @@ Two tiers — universal-ctags for breadth, SCIP for precision — with
 eleven queries from `find` to the call `graph`, kept current by the hook,
 consumed by the agent and the domains alike (maintainability's dead-code
 sweep and the gate's impact lines both read it).
+
+The language matrix, stated honestly:
+
+- **Broad tier** (find/search/outline/textual refs/impact): everything
+  universal-ctags parses — 160+ languages including C/C++/C#, Java,
+  Kotlin, Ruby, Rust, PHP — plus procoder-supplied regex parsers for the
+  two it lacks, Swift and Dart (top-level symbols, approximate by
+  nature).
+- **Precise tier** (exact refs/callers/graph): where a SCIP indexer
+  exists and is wired — Go (scip-go), TypeScript (scip-typescript),
+  Python (scip-python), Rust (rust-analyzer), and Java/Kotlin/Scala
+  builds (scip-java). One indexer runs per repository (the first layout
+  match); everything else answers textually and says so in the output —
+  a textual ref is labeled, never passed off as precise.
 
 ## Above them: the quality chain
 

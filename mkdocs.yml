@@ -40,4 +40,5 @@ nav:
   - Workflow: workflow.md
   - Every agent: portability.md
   - Architecture: architecture.md
+  - Influences: influences.md
   - Changelog: changelog.md

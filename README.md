@@ -7,7 +7,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.21.0-0e5563)
+![Version](https://img.shields.io/badge/version-0.22.0-0e5563)
 ![License](https://img.shields.io/badge/license-Apache--2.0-0e5563)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-0e5563)
 
@@ -63,8 +63,9 @@ Two modes, one principle:
 
 ## What's inside
 
-**The commit gate** (`procoder check`) — formatting per ecosystem
-(gofmt, ruff, prettier, rustfmt, clang-format, shfmt — the project's
+**The commit gate** (`procoder check`) — formatting across the popular
+languages (Go, Python, JS/TS/HTML/CSS, Rust, C/C++, Java, Kotlin, Swift,
+Ruby, Dart, C#, shell — one canonical formatter each, the project's
 config always wins), git hygiene (conflict markers, junk, oversized
 files, AI-attribution lines), secrets, lint, ci and infra hygiene, and
 documentation health, all through one code path so `check`, `git`, and
@@ -123,8 +124,8 @@ procoder's reports never overclaim: a file that could not be checked is
 never called clean, a task without fresh verification evidence cannot
 close, and this README is itself held to a completeness check — a
 feature family it stops mentioning blocks the gate. No benchmark
-numbers appear here because we have not run benchmarks; when we do, the
-method will be attached to the number.
+numbers appear here because none have been run; any future number will
+carry its method alongside it.
 
 ## Implementation
 

@@ -80,6 +80,47 @@ var ScipPython = &tools.Tool{
 	},
 }
 
+// swiftDartOptlib defines regex parsers for the two matrix languages
+// universal-ctags does not ship: Swift and Dart. Kinds mirror what the
+// broad tier needs (definitions with names and lines); signatures and
+// scopes stay best-effort, which is the broad tier's contract anyway.
+var swiftDartOptlib = []string{
+	"--langdef=procoderswift",
+	"--map-procoderswift=+.swift",
+	`--regex-procoderswift=/^[[:space:]]*(public |private |internal |open |fileprivate )*(final )?class[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\3/c,class/`,
+	`--regex-procoderswift=/^[[:space:]]*(public |private |internal |open |fileprivate )*struct[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\2/s,struct/`,
+	`--regex-procoderswift=/^[[:space:]]*(public |private |internal |open |fileprivate )*enum[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\2/e,enum/`,
+	`--regex-procoderswift=/^[[:space:]]*(public |private |internal |open |fileprivate )*protocol[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\2/p,protocol/`,
+	`--regex-procoderswift=/^[[:space:]]*(public |private |internal |open |fileprivate |static |class |override |mutating )*func[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\2/f,function/`,
+	"--langdef=procoderdart",
+	"--map-procoderdart=+.dart",
+	`--regex-procoderdart=/^[[:space:]]*(abstract[[:space:]]+)?(base[[:space:]]+|final[[:space:]]+|sealed[[:space:]]+)?class[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\3/c,class/`,
+	`--regex-procoderdart=/^[[:space:]]*enum[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\1/e,enum/`,
+	`--regex-procoderdart=/^[[:space:]]*mixin[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)/\1/m,mixin/`,
+	`--regex-procoderdart=/^[[:space:]]*(static[[:space:]]+)?[A-Za-z_<>,\[\]? ]+[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)\(/\2/f,function/`,
+}
+
+// RustAnalyzer emits SCIP for Rust workspaces (`rust-analyzer scip .`).
+var RustAnalyzer = &tools.Tool{
+	Name:        "rust-analyzer",
+	Install:     "rustup component add rust-analyzer",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "rustup", Args: []string{"component", "add", "rust-analyzer"}},
+		{Manager: "brew", Args: []string{"install", "rust-analyzer"}},
+	},
+}
+
+// ScipJava indexes Java, Kotlin, and Scala builds (Maven/Gradle).
+var ScipJava = &tools.Tool{
+	Name:        "scip-java",
+	Install:     "brew install coursier && cs install --contrib scip-java",
+	VersionArgs: []string{"--version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "cs", Args: []string{"install", "--contrib", "scip-java"}},
+	},
+}
+
 // ScipCLI converts .scip protobuf to JSON at build time. It ships only as a
 // pinned release tarball, so the install candidate is a shell one-liner.
 var ScipCLI = &tools.Tool{
@@ -165,8 +206,13 @@ func Build(root string, stdout func(string)) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, // nosemgrep -- resolved from the fixed tool table, never user input
-		"--output-format=json", "--fields=+nSl", "-L", "-", "-o", "-")
+	args := []string{"--output-format=json", "--fields=+nSl", "-L", "-", "-o", "-"}
+	// universal-ctags ships no Swift or Dart parser; procoder supplies
+	// regex-based definitions so the broad tier covers them too (top-level
+	// symbols — approximate by nature, and the precise tier stays honest
+	// about not covering these languages)
+	args = append(args, swiftDartOptlib...)
+	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	cmd.Stdin = strings.NewReader(strings.Join(files, "\n"))
 	raw, err := cmd.Output()
@@ -224,19 +270,29 @@ func normalizeTags(raw []byte) ([]byte, int) {
 // buildPrecise runs the language's SCIP indexer and converts to JSON while
 // the scip CLI is at hand, so queries never need it again.
 func buildPrecise(root, dir string, stdout func(string)) bool {
+	// ordered by signal strength: language-specific manifests first, the
+	// generic package.json LAST — nearly every repo carries one (tooling,
+	// agent adapters), and it must not shadow a Rust or Java layout
 	indexer := ""
 	switch {
 	case exists(root, "go.mod"):
 		indexer = "scip-go"
-	case exists(root, "tsconfig.json") || exists(root, "package.json"):
+	case exists(root, "Cargo.toml"):
+		indexer = "rust-analyzer"
+	case exists(root, "pom.xml") || exists(root, "build.gradle") || exists(root, "build.gradle.kts"):
+		indexer = "scip-java"
+	case exists(root, "tsconfig.json"):
 		indexer = "scip-typescript"
 	case exists(root, "pyproject.toml") || exists(root, "requirements.txt"):
 		indexer = "scip-python"
+	case exists(root, "package.json"):
+		indexer = "scip-typescript"
 	default:
 		stdout("precise tier: no SCIP indexer covers this repository's layout — refs stay textual")
 		return false
 	}
-	tool := map[string]*tools.Tool{"scip-go": ScipGo, "scip-typescript": ScipTypescript, "scip-python": ScipPython}[indexer]
+	tool := map[string]*tools.Tool{"scip-go": ScipGo, "scip-typescript": ScipTypescript,
+		"scip-python": ScipPython, "rust-analyzer": RustAnalyzer, "scip-java": ScipJava}[indexer]
 	bin := tools.Resolve(tool, root)
 	if bin == "" {
 		stdout("precise tier: NOT built — " + indexer + " is not installed; run `procoder init` (refs stay textual)")
@@ -253,6 +309,11 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
 	case "scip-python":
 		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath, ".") // nosemgrep -- resolved from the fixed tool table, never user input
+	case "rust-analyzer":
+		// rust-analyzer writes index.scip into the current dir; point it home
+		cmd = exec.CommandContext(ctx, bin, "scip", ".", "--output", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
+	case "scip-java":
+		cmd = exec.CommandContext(ctx, bin, "index", "--output", scipPath) // nosemgrep -- resolved from the fixed tool table, never user input
 	}
 	cmd.Dir = root
 	var errb bytes.Buffer

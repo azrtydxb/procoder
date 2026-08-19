@@ -1,10 +1,14 @@
 # The quality chain
 
-procoder's core belief: **the thinking happens before the code, and
-"done" is a verdict a controller gives — not a feeling the agent has.**
-The chain runs spec → plan → todo → gate → lessons, and every link has a
-quality controller in the binary that refuses to advance until the work
-is actually complete. The agent writes; the binary judges (P-CONTROL).
+This is procoder's **spec-based development** system: the design
+document and architecture creator (`spec`), the implementation planner
+(`plan`), the evidence-gated task tracker (`todo`), and the **quality
+gates** that connect them. The core belief: **the thinking happens
+before the code, and "done" is a verdict a controller gives — not a
+feeling the agent has.** The chain runs spec → plan → todo → gate →
+lessons, and every link has a quality controller in the binary that
+refuses to advance until the work is actually complete. The agent
+writes; the binary judges (P-CONTROL).
 
 ```
 idea ──► SPEC ──► PLAN ──► TODO ──► GATE ──► merged
@@ -16,7 +20,7 @@ idea ──► SPEC ──► PLAN ──► TODO ──► GATE ──► merge
      questions   tasks   evidence
 ```
 
-## Spec — close the gaps before they cost
+## Spec — the design document, with a gap-closing interview
 
 `/procoder:spec` classifies the work out loud first — **spike** (answer a
 question, keep nothing), **bounded** (a short design in chat for a flow
@@ -29,8 +33,25 @@ modes, acceptance criteria. Decisions the user hasn't made go in as
 
 `procoder spec check` is the controller: it blocks while any section is
 missing or empty, any `OPEN:` question is unresolved, or any acceptance
-criterion is untestable ("user-friendly" is called out; "renders with
-the network cable pulled" passes).
+criterion is untestable. A real run, verbatim, on a half-written spec:
+
+```
+$ procoder spec check payments
+spec payments: NOT ready — the quality controller found:
+  - section missing: In scope
+  - section missing: Out of scope
+  - section missing: Constraints
+  - section missing: Interfaces
+  - section missing: Data
+  - section missing: Edge cases
+  - section missing: Failure modes
+  - 1 unresolved OPEN: question(s) — resolve each with the user and rewrite it as a decision
+  - untestable criterion: the UI is user-friendly — say what a reviewer would observe, not how it should feel
+```
+
+The spec that survives this is a real design document: a different
+engineer could build the feature from it without asking its author
+anything.
 
 ## Plan — how, exactly, for a stranger
 

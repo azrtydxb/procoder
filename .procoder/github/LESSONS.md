@@ -65,6 +65,12 @@ does. `procoder lessons` flags entries with no adaptation.
 - Missed by: rubric
 - Adaptation: three layers — `## README must mention` families in the docs rules (blocking, mechanical floor), the mandatory docs-impact question in /procoder:pr (judgment ceiling), and the product-story line in this rubric; plus the full README/site rewrite
 
+## 2026-08-19 user review — docs written in diary voice (personal names, project anecdotes)
+
+- Class: taste
+- Missed by: rubric
+- Adaptation: docs-voice standard written into .procoder/docs/RULES.md Guidance and a rubric line in REVIEW.md; all pages swept to professional product voice
+
 ## 2026-08-19 self-scan (procoder debt) — our own test fixtures carried literal debt markers
 
 - Class: judgment

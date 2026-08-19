@@ -10,6 +10,41 @@ import (
 	"procoder/internal/tools"
 )
 
+// checkstyle prefixes every line with a severity tag; stripped, the
+// shared parser must yield clean file paths — pinned so a checkstyle
+// output-format change fails here, not in a user's repo.
+func TestCheckstyleTagsStripBeforeParse(t *testing.T) {
+	raw := "[WARN] /abs/path/App.java:5:10: Missing a Javadoc comment. [MissingJavadocMethod]\n" +
+		"[ERROR] src/Main.java:3: Utility classes should not have a public constructor. [HideUtilityClassConstructor]\n"
+	stripped := checkstyleTagRe.ReplaceAllString(raw, "")
+	findings := parse(stripped, false)
+	if len(findings) != 2 {
+		t.Fatalf("want 2 findings, got %+v", findings)
+	}
+	for _, f := range findings {
+		if strings.Contains(f.File, "[") || strings.Contains(f.File, "WARN") {
+			t.Errorf("severity tag leaked into the file path: %q", f.File)
+		}
+	}
+	if findings[0].Line != 5 || findings[1].Line != 3 {
+		t.Errorf("lines wrong: %+v", findings)
+	}
+}
+
+// clippy --message-format short emits file:line:col: severity: msg —
+// the shared parser must read it as-is.
+func TestClippyShortFormatParses(t *testing.T) {
+	raw := "src/main.rs:10:9: warning: unused variable: `x`\n" +
+		"src/lib.rs:42:1: error: mismatched types\n"
+	findings := parse(raw, false)
+	if len(findings) != 2 {
+		t.Fatalf("want 2 findings, got %+v", findings)
+	}
+	if findings[0].File != "src/main.rs" || findings[0].Line != 10 {
+		t.Errorf("first finding wrong: %+v", findings[0])
+	}
+}
+
 func TestParseKeepsFindingsAndDropsExcerpts(t *testing.T) {
 	raw := `internal/gitx/gitx_test.go:41:14: Error return value not checked (errcheck)
 	os.WriteFile(p, []byte("x"), 0o644)

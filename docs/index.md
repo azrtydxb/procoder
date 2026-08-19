@@ -7,7 +7,7 @@ bug's whole class, and one contract that works across every AI coding
 agent. The agent stays in control; nothing ever touches your code behind
 its back.
 
-Current version: **0.21.0**
+Current version: **0.22.0**
 
 ```mermaid
 flowchart LR
@@ -21,13 +21,17 @@ flowchart LR
 
 - **[Getting started](getting-started.md)** — install to governed in ten
   minutes, on Claude Code or any agent.
-- **[The quality chain](quality-chain.md)** — spec → plan → todo → gate →
-  lessons, and why every link refuses instead of advising.
+- **[The quality chain](quality-chain.md)** — spec-based development:
+  the design-document interview, the implementation planner, the
+  evidence-gated todo list, and the quality gates that connect them
+  (spec → plan → todo → gate → lessons).
 - **[Every agent](portability.md)** — Cursor, Codex, Copilot, OpenCode,
   Kilo Code and the rest: one `AGENTS.md`, thin adapters, drift-guarded.
 - **[Architecture](architecture.md)** — the binary, the hooks, and the
   three contracts (agent in control, unchecked is never clean, the
   repo's files win).
+- **[Influences](influences.md)** — the ideas adopted from the
+  superpowers and ponytail plugins, and where each lives in procoder.
 
 ## The reference
 
@@ -54,8 +58,8 @@ be waved through.
 **Honesty as a feature.** NOT-checked never reads as clean, claims
 carry their method, and the docs you are reading are themselves held to
 completeness checks that block the gate — this site cannot silently go
-stale, because that has happened and became a
-[lesson](quality-chain.md#lessons-escapes-close-their-class).
+stale ([how the lessons loop enforces
+that](quality-chain.md#lessons-escapes-close-their-class)).
 
 **One engine, thin everything else.** A single Go binary computes every
 verdict; skills, hooks, and per-agent adapters are pointers to it. No
