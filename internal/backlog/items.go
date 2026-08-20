@@ -55,15 +55,35 @@ type Item struct {
 	ID        string
 	Kind      string // one of the Kind* constants
 	Title     string
-	Status    string // open | done ... | active | closed ... | unreadable
-	Milestone string // epics: parent milestone slug, "" when none
-	Epic      string // stories: parent epic slug
-	Sprint    string // stories: sprint id, "-" or "" when in the backlog
-	Type      string // stories: "bug" from a Type: header; "" means feature
-	Severity  string // stories: s1..s4 from a Severity: header, "" when absent
-	SpecName  string // epics: source spec name, "" when none
-	SpecPrint string // epics: spec fingerprint recorded at seed time
+	Status    string   // open | done ... | active | closed ... | unreadable
+	Milestone string   // epics: parent milestone slug, "" when none
+	Epic      string   // stories: parent epic slug
+	Sprint    string   // stories: sprint id, "-" or "" when in the backlog
+	Type      string   // stories: "bug" from a Type: header; "" means feature
+	Severity  string   // stories: s1..s4 from a Severity: header, "" when absent
+	SpecName  string   // epics: source spec name, "" when none
+	SpecPrint string   // epics: spec fingerprint recorded at seed time
+	Missing   []string // stories: required sections the file does not carry
 	Path      string
+}
+
+// storySections are the sections CloseStory reads. A story that does not
+// carry them cannot be judged — and until the board said so, that fact
+// surfaced only when someone tried to close it, one story at a time. The
+// list lives here so the board and the controller read the same shape.
+var storySections = []string{"Description", "Acceptance criteria", "Evidence"}
+
+// missingSections names the required sections a story's file has no heading
+// for. A section that is present and empty is a different fact — the close
+// controller says so in its own words — so only absence is reported here.
+func missingSections(text string) []string {
+	var out []string
+	for _, s := range storySections {
+		if !strings.Contains(text, "## "+s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Done reports whether the item's status counts as finished. Anything the
@@ -111,6 +131,9 @@ func LoadAll(root string) ([]Item, error) {
 			text := string(raw)
 			if m := statusRe.FindStringSubmatch(text); m != nil {
 				it.Status = m[1]
+			}
+			if kind == KindStory {
+				it.Missing = missingSections(text)
 			}
 			if m := milestoneRe.FindStringSubmatch(text); m != nil {
 				it.Milestone = m[1]

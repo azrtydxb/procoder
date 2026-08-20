@@ -366,6 +366,23 @@ a linter enabled, a line added to the pre-PR review rubric
 Entries with no adaptation are flagged UNLEARNED and exit 1 — recorded is
 not learned. An unreadable ledger exits 2.
 
+#### `procoder copilot-leak [--since <dur>] [--quiet] [--from-copilot]`
+
+What GitHub Copilot's auto-review caught that this repository's gates did
+not. Findings are sanitised before anything is shown or sent — fenced and
+indented code stripped, secrets redacted, absolute paths made relative — so
+what leaves the machine is metadata about a failure, never the source that
+failed. Nothing is published without an explicit yes on a terminal; with no
+terminal to ask, it asks nothing and captures nothing.
+
+A captured finding becomes a GitHub issue and an entry in
+`.procoder/github/COPILOT-LEAKS.md`, deliberately not `LESSONS.md`: a raw
+finding is not yet a lesson until a human names its class and its adaptation.
+`--from-copilot` reads that ledger back, listing each entry as learned or
+UNLEARNED, and exits 1 while any remain unclassified. `--quiet` reports the
+count without asking. Without `gh`, or outside a GitHub repository, it says
+what it could not check rather than reporting zero.
+
 #### `procoder principles`
 
 Prints the engineering principles each session starts with (a SessionStart

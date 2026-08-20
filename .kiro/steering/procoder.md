@@ -96,6 +96,9 @@ text).
   Regenerate after editing it; drift blocks the gate.
 - `procoder lessons` — the ledger of what escaped the gates. A lesson
   with no adaptation is UNLEARNED and exits 1.
+- `procoder copilot-leak` — what Copilot's auto-review caught that our
+  gates did not: sanitised, filed as issues only if you say yes, and
+  recorded as unlearned. `--from-copilot` reads that ledger back.
 - `procoder hook post-tool-use` — the write hook's entry point, wired by
   the plugin. You do not call it by hand.
 - `procoder version` — the version, when a report needs to name it.

@@ -249,12 +249,14 @@ const usage = `usage: procoder <command> [args]
                        Kubernetes manifests (kubeconform), Helm charts
   init [--yes]         print the install commands for the missing formatters;
                        --yes runs them and re-checks that every tool answers
-  copilot-leak [--since <dur>] [--quiet]
+  copilot-leak [--since <dur>] [--quiet] [--from-copilot]
                        what Copilot's auto-review found that our gates did
                        not: sanitised of every trace of your code, then —
                        only if you say yes — filed as issues and recorded in
                        .procoder/github/COPILOT-LEAKS.md as unlearned; asks
-                       nothing when there is no terminal to ask
+                       nothing when there is no terminal to ask.
+                       --from-copilot reads that ledger back instead, and
+                       exits 1 while any finding is still unclassified
   lessons              the self-learning ledger (.procoder/github/LESSONS.md):
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
@@ -642,11 +644,13 @@ func testCmd(args []string) int {
 // not run. Only a real answer exits 0.
 func copilotLeakCmd(args []string) int {
 	since := 24 * time.Hour
-	quiet := false
+	quiet, report := false, false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--quiet":
 			quiet = true
+		case args[i] == "--from-copilot":
+			report = true
 		case args[i] == "--since" && i+1 < len(args):
 			d, ok := parseWindow(args[i+1])
 			if !ok {
@@ -660,6 +664,13 @@ func copilotLeakCmd(args []string) int {
 		}
 	}
 	root := doctor.Root()
+	if report {
+		// The ledger half of the loop: what was captured, and what nobody has
+		// turned into an adaptation yet. It reaches no network and asks
+		// nothing — reading back what the capture wrote is a different job
+		// from going to look for more.
+		return lessons.RunCopilotLeaks(root, printLine)
+	}
 	finds, ok := copilot.Find(root, since, printLine)
 	if !ok {
 		return 2 // Find has already said what it could not check

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"procoder/internal/spec"
 )
@@ -192,7 +193,15 @@ func storyLine(s Item, note string) string {
 	if s.Sprint != "" && s.Sprint != "-" {
 		tag = "  → sprint " + s.Sprint
 	}
-	return fmt.Sprintf("    [%s] %s%s  %s%s%s", mark, bug, s.ID, s.Title, tag, note)
+	// A story missing the sections the close controller reads cannot be
+	// judged at all, and that used to surface one story at a time, at close.
+	// A done story is not warned about: whatever shape it closed in, the
+	// controller already accepted it.
+	shape := ""
+	if len(s.Missing) > 0 && !s.Done() && s.Status != "unreadable" {
+		shape = "  ⚠ not a story yet: no " + strings.Join(s.Missing, ", no ")
+	}
+	return fmt.Sprintf("    [%s] %s%s  %s%s%s%s", mark, bug, s.ID, s.Title, tag, note, shape)
 }
 
 // driftFlag compares an epic's recorded spec fingerprint against the spec

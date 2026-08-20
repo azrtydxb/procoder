@@ -162,3 +162,42 @@ func TestAnEpicThatWasNeverSeededSaysSoInsteadOfClaimingDrift(t *testing.T) {
 		t.Errorf("nothing drifted — there was never a seeding to drift from: %s", joined)
 	}
 }
+
+// TestTheBoardNamesAStoryNothingCanJudge pins the earlier warning: four
+// stories in sprint 006 were written with Steps/Files/Verification instead of
+// the sections CloseStory reads, and nothing said so until someone tried to
+// close them, one at a time. An open story missing a required section says so
+// on the board; a done one does not, because the controller already accepted
+// whatever shape it closed in.
+func TestTheBoardNamesAStoryNothingCanJudge(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open\n")
+	writeItem(t, root, KindStory, "20260101-shapeless",
+		"# Shapeless\n\nStatus: open\nEpic: auth\nSprint: -\n\n## Steps\n\n1. do it\n")
+	writeItem(t, root, KindStory, "20260102-whole",
+		"# Whole\n\nStatus: open\nEpic: auth\nSprint: -\n\n## Description\n\nreal\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Evidence\n\n- none yet\n")
+	writeItem(t, root, KindStory, "20260103-closed",
+		"# Closed\n\nStatus: done 2026-01-03\nEpic: auth\nSprint: -\n\n## Steps\n\n1. done long ago\n")
+
+	out, lines := collect()
+	if code := Board(root, out); code != 0 {
+		t.Fatalf("board: exit %d %v", code, *lines)
+	}
+	for _, c := range []struct{ id, want string }{
+		{"20260101-shapeless", "⚠ not a story yet: no Description, no Acceptance criteria, no Evidence"},
+		{"20260102-whole", ""},
+		{"20260103-closed", ""},
+	} {
+		for _, l := range *lines {
+			if !strings.Contains(l, c.id) {
+				continue
+			}
+			switch {
+			case c.want == "" && strings.Contains(l, "⚠"):
+				t.Errorf("%s must earn no shape warning: %q", c.id, l)
+			case c.want != "" && !strings.Contains(l, c.want):
+				t.Errorf("%s must name every missing section, got %q", c.id, l)
+			}
+		}
+	}
+}

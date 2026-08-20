@@ -50,7 +50,7 @@ func finding() Sanitised {
 
 func ledger(t *testing.T, root string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(LedgerPath)))
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(lessons.CopilotLeaksPath)))
 	if err != nil {
 		t.Fatalf("ledger unreadable: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestUnwritableLedgerStillCreatesTheIssues(t *testing.T) {
 	log := stubGh(t, 0, "")
 	root := t.TempDir()
 	// a directory where the file belongs: the open fails, nothing else does
-	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(LedgerPath)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(lessons.CopilotLeaksPath)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +137,7 @@ func TestUnwritableLedgerStillCreatesTheIssues(t *testing.T) {
 	if written != 0 {
 		t.Fatalf("an unwritten ledger must not be reported as written: %d", written)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], LedgerPath) {
+	if len(notes) != 1 || !strings.Contains(notes[0], lessons.CopilotLeaksPath) {
 		t.Fatalf("the note must name the ledger that could not be written: %v", notes)
 	}
 	if strings.Contains(notes[0], "\\") {
@@ -166,7 +166,7 @@ func TestEmptyBodyIsSkippedWithANote(t *testing.T) {
 	if _, err := os.Stat(log); err == nil {
 		t.Fatal("gh must not be called for a finding with nothing safe to publish")
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(LedgerPath))); err == nil {
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(lessons.CopilotLeaksPath))); err == nil {
 		t.Fatal("no entry means no ledger file is created")
 	}
 }
@@ -208,5 +208,28 @@ func TestOnlyYesCountsAsConsent(t *testing.T) {
 	}
 	if Prompt(nil, func(string) {}, 1, time.Hour) {
 		t.Fatal("no stdin at all is not a yes")
+	}
+}
+
+// TestWhatCaptureWritesTheLedgerReportReads pins the seam that had already
+// come apart once: this package grew its own ledger path, header and entry
+// shape while lessons kept the reader and a writer nobody called. Two writers
+// for one file drift, and the drift is silent until a captured leak fails to
+// show up as unlearned.
+func TestWhatCaptureWritesTheLedgerReportReads(t *testing.T) {
+	stubGh(t, 0, "")
+	root := t.TempDir()
+	if _, written, notes := Capture([]Sanitised{finding()}, root); written != 1 {
+		t.Fatalf("capture wrote no entry: %v", notes)
+	}
+
+	var lines []string
+	code := lessons.RunCopilotLeaks(root, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if code != 1 {
+		t.Fatalf("a captured leak nobody classified must exit 1, got %d:\n%s", code, joined)
+	}
+	if !strings.Contains(joined, "UNLEARNED") || !strings.Contains(joined, "1 finding(s), 1 unlearned") {
+		t.Errorf("the report must name the captured finding as unlearned:\n%s", joined)
 	}
 }

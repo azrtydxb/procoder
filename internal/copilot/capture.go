@@ -4,25 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"procoder/internal/lessons"
 )
-
-// LedgerPath is the copilot ledger, beside LESSONS.md under D-HOME. It is
-// deliberately NOT the lessons ledger: a raw Copilot finding is not yet a
-// lesson — a human still has to name the class and the adaptation — and
-// merging the two would let unclassified notes fail the lessons check.
-const LedgerPath = ".procoder/github/COPILOT-LEAKS.md"
-
-// unlearnedAdaptation is what every captured entry records instead of an
-// adaptation. lessons.Parse reads the text after "Adaptation:", and
-// lessons.Run counts an adaptation starting with "<" as UNLEARNED — so this
-// placeholder makes a captured leak read as an open class until a human
-// replaces it. The angle bracket is the contract; the words are for the human.
-const unlearnedAdaptation = "<the concrete change that catches this class from now on>"
 
 // ghTimeout bounds one `gh issue create`: a hung network call must not hold
 // the capture open, and a capture that never returns loses the ledger too.
@@ -45,7 +33,6 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 		bin = ""
 	}
 
-	var entries []string
 	for _, f := range finds {
 		if strings.TrimSpace(f.Body) == "" {
 			// sanitisation removed everything it was given; an empty issue
@@ -60,33 +47,22 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 				issuesCreated++
 			}
 		}
-		entries = append(entries, entry(f))
+		when := f.Created
+		if when.IsZero() {
+			when = time.Now()
+		}
+		head := strings.TrimSpace(f.Title)
+		if head == "" {
+			head = firstLine(f.Body)
+		}
+		if err := lessons.RecordCopilotEntry(root, head, originOf(f), f.Body, when); err != nil {
+			notes = append(notes, filepath.ToSlash(lessons.CopilotLeaksPath)+" NOT written for "+originOf(f)+
+				" — "+err.Error()+fmt.Sprintf("; %d issue(s) were still created", issuesCreated))
+			continue
+		}
+		lessonsWritten++
 	}
-	if len(entries) == 0 {
-		return issuesCreated, 0, notes
-	}
-	if err := appendLedger(root, entries); err != nil {
-		notes = append(notes, filepath.ToSlash(LedgerPath)+" NOT written — "+err.Error()+
-			fmt.Sprintf("; %d issue(s) were still created", issuesCreated))
-		return issuesCreated, 0, notes
-	}
-	return issuesCreated, len(entries), notes
-}
-
-// entry is one ledger record, in LESSONS.md's shape so lessons.Parse reads it
-// without a second parser: a "## " heading, then the dashed fields.
-func entry(f Sanitised) string {
-	when := f.Created
-	if when.IsZero() {
-		when = time.Now()
-	}
-	head := strings.TrimSpace(f.Title)
-	if head == "" {
-		head = firstLine(f.Body)
-	}
-	origin := originOf(f)
-	return fmt.Sprintf("## %s %s — %s\n\n- Source: Copilot auto-review\n- Original: %s\n- Adaptation: %s\n",
-		when.Format("2006-01-02"), origin, head, origin, unlearnedAdaptation)
+	return issuesCreated, lessonsWritten, notes
 }
 
 // originOf names the finding in messages and in the entry heading. A finding
@@ -178,44 +154,3 @@ func ghError(raw string, err error) string {
 		return err.Error()
 	}
 }
-
-// appendLedger adds the entries to the ledger, creating it (and its directory)
-// with a header when it does not exist yet. Append, never rewrite: the ledger
-// is history, and this binary must not be able to lose an older entry.
-func appendLedger(root string, entries []string) error {
-	path := filepath.Join(root, filepath.FromSlash(LedgerPath))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	fresh := false
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fresh = true
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }() // the checked close is below; this one only covers the error paths
-	var b strings.Builder
-	if fresh {
-		b.WriteString(ledgerHeader)
-	}
-	for _, e := range entries {
-		b.WriteString("\n" + e)
-	}
-	if _, err := f.WriteString(b.String()); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-// ledgerHeader introduces a fresh ledger. It carries no "## " line: Parse
-// treats every one of those as an entry, so an example heading here would
-// make an empty ledger report a phantom unlearned lesson.
-const ledgerHeader = `# Copilot leaks — findings from Copilot auto-reviews
-
-One entry per finding captured by ` + "`procoder copilot-leak`" + `, sanitised: no
-user code, no secrets, no absolute paths. Each entry stays UNLEARNED until a
-human classifies it and writes the adaptation that closes its class — then it
-becomes a real entry in LESSONS.md.
-`
