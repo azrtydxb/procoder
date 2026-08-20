@@ -88,7 +88,16 @@ jobs:
             exit 1
           fi
 
-          base="$GITHUB_REF_NAME"
+          # The default branch, not the ref this run happened to start from:
+          # a workflow_dispatch on a tag or a feature branch would otherwise
+          # open bump PRs against that ref, and the pins it exists to keep
+          # fresh are the default branch's.
+          base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+          if [ -z "$base" ]; then
+            echo "cannot determine the default branch" >&2
+            exit 1
+          fi
+          git fetch -q origin "$base"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -110,7 +119,11 @@ jobs:
             esac
             # A source that answers 200 with something that is not a version —
             # an error page, a moved field — must not be written into the file.
-            if ! printf '%s' "$latest" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+'; then
+            # The WHOLE answer must be a version. A prefix match would
+            # accept "1.2.3<garbage>", and `grep -x` would accept a second
+            # line, either of which sed writes straight into the file for the
+            # next gate run to choke on.
+            if ! [[ "$latest" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               record_failure "$key: its source answered '$latest', which is not a version"
               continue
             fi
@@ -133,8 +146,15 @@ jobs:
               continue
             fi
 
-            git checkout -q -B "$branch" "$base"
-            sed -i "s|^$key=.*|$key=$latest|" .github/tool-versions.env
+            if ! git checkout -q -B "$branch" "origin/$base"; then
+              record_failure "$key: could not start a branch from $base"
+              continue
+            fi
+            if ! sed -i "s|^$key=.*|$key=$latest|" .github/tool-versions.env; then
+              record_failure "$key: could not rewrite its line in tool-versions.env"
+              git checkout -qf "$base" || true
+              continue
+            fi
             # One tool per commit and per PR: each bump is independently
             # reviewable and revertable, and its CI verdict is unambiguous —
             # a new golangci-lint ruleset turning the tree red leaves nothing
