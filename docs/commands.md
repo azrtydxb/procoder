@@ -476,6 +476,22 @@ unreleased branch is never told to install an older tag. The download lands
 beside the binary and the rename is the last step, so a failed download
 leaves the working binary exactly where it was.
 
+Every download is verified before it is installed. The asset is fetched
+from GitHub over https and from nowhere else — the URL comes out of the
+release payload, and a redirect that leaves those hosts is refused — and
+its sha256 is compared against the `SHA256SUMS` file the release publishes
+beside the binaries. A mismatch refuses the install, deletes the download
+and leaves the working binary untouched. A release that publishes no
+`SHA256SUMS` at all is refused too, rather than warned about: unknown is
+never the same as verified, and treating a missing file as permission would
+make deleting one small file the whole attack.
+
+`scripts/build-dist.sh` is what writes both the `dist/` binaries and that
+`SHA256SUMS`. It builds every platform with `CGO_ENABLED=0 -trimpath`, so
+the same Go toolchain produces the same bytes anywhere, and the test suite
+checks the recorded digests against the committed binaries — a rebuild that
+skipped the script goes red there rather than after a tag is cut.
+
 Where the binary belongs to a package manager — a Homebrew cellar, a snap,
 a nix store path, `/usr/bin`, a scoop shims directory — the upgrade refuses
 and prints that manager's own upgrade command instead, because overwriting
