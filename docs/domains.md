@@ -75,7 +75,10 @@ flags no-trigger entries as rot.
 
 Complexity is Go and Python only — gocyclo rides golangci and mccabe
 rides ruff, and no other ecosystem has a linter procoder can isolate
-the metric out of. The dead-code sweep is limited to the index's precise
+the metric out of. Length and complexity are reported separately even
+when they land on the same function: golangci keeps only the first
+issue per line by default, and since a long function is usually a
+branchy one, that default hid every length finding until 0.32.6. The dead-code sweep is limited to the index's precise
 tier, so it answers for the languages a SCIP indexer covers and stays
 silent elsewhere rather than guessing.
 

@@ -2,6 +2,38 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.6 — 2026-08-20
+
+**`procoder maintain` was silently dropping every function-length
+finding.** golangci-lint keeps only the first issue per line by
+default — and a long function is usually a branchy one, so funlen and
+gocyclo land on the same line and funlen loses. On this repository that
+meant 31 complexity findings, 0 length findings, over a dispatch
+function 343 lines long. The generated config now sets
+`uniq-by-line: false`, and the two linters say their different things
+about the same function. Seven length findings appeared here the moment
+it was fixed.
+
+A report that quietly drops half of what it found is worse than one
+that says NOT checked, because nothing tells the reader anything is
+missing. Same family as the honesty rule, opposite direction.
+
+Then the report was taken at its word:
+
+- **One findings printer instead of four.** `ci`, `infra`, `security`
+  and `lint` each carried their own copy of the same render loop —
+  mark, location, message, count line, exit code — which is how three
+  of them drift while the fourth gets fixed. They now share
+  `printFindings`, which has tests of its own.
+- **`procoder lint` and `procoder security` now print repository-relative
+  paths**, as `ci` and `infra` already did. Paths outside the repository
+  are still printed as given rather than as a climb of `../..`.
+- **`adr`, `lint` and `test` moved out of the dispatch switch** into
+  their own functions, following `indexCmd` and `backlogCmd`. `run` drops
+  from cyclomatic complexity 113 to 73 and from 269 statements to 159.
+- The `func(s string) { fmt.Println(s) }` closure, written out 23 times,
+  is now `printLine`.
+
 ## 0.32.5 — 2026-08-20
 
 **`procoder deps` no longer reports an empty shelf as an unread one.**
