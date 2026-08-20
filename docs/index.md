@@ -1,4 +1,4 @@
-# procoder
+![Procoder — senior dev wisdom, automated](assets/banner.png){ .procoder-banner }
 
 **Make your AI coder work like a senior developer** — a commit gate it
 cannot talk its way past, quality controllers that refuse to call

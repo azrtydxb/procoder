@@ -1,4 +1,6 @@
-# procoder
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Procoder — senior dev wisdom, automated" width="100%">
+</p>
 
 **Make your AI coder work like a senior developer.** One Go binary gives
 the agent a commit gate it cannot talk its way past, quality controllers
@@ -7,9 +9,9 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.32.6-0e5563)
-![License](https://img.shields.io/badge/license-Apache--2.0-0e5563)
-![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-0e5563)
+![Version](https://img.shields.io/badge/version-0.32.6-7C3AED)
+![License](https://img.shields.io/badge/license-Apache--2.0-7C3AED)
+![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-7C3AED)
 
 ## Quick start
 

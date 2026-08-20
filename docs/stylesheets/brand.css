@@ -1,0 +1,88 @@
+/* Procoder brand palette — see brand/README.md, which is the source of
+   truth for these values. Change a color there and here together.
+
+   mkdocs-material's `primary` setting only accepts its own named colors,
+   and none of them is #7C3AED, so the brand colors are set directly on
+   the theme's custom properties instead of approximated. */
+
+:root {
+  --procoder-black: #05070f;
+  --procoder-midnight: #0b1020;
+  --procoder-purple: #7c3aed;
+  --procoder-violet: #9333ea;
+  --procoder-blue: #2563eb;
+  --procoder-cyan: #06b6d4;
+  --procoder-white: #f8fafc;
+  --procoder-slate: #94a3b8;
+  --procoder-muted: #64748b;
+}
+
+/* Light scheme: purple leads, cyan answers. The header stays dark in
+   both schemes — the mark is drawn for a dark ground and loses its
+   contrast on white. */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--procoder-purple);
+  --md-primary-fg-color--light: var(--procoder-violet);
+  --md-primary-fg-color--dark: #5b21b6;
+  --md-accent-fg-color: var(--procoder-blue);
+  --md-typeset-a-color: var(--procoder-purple);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--procoder-purple);
+  --md-primary-fg-color--light: var(--procoder-violet);
+  --md-primary-fg-color--dark: var(--procoder-black);
+  --md-accent-fg-color: var(--procoder-cyan);
+  --md-typeset-a-color: #a78bfa;
+
+  --md-default-bg-color: var(--procoder-black);
+  --md-code-bg-color: var(--procoder-midnight);
+  --md-default-fg-color: var(--procoder-white);
+  --md-default-fg-color--light: var(--procoder-slate);
+  --md-default-fg-color--lighter: var(--procoder-muted);
+}
+
+.md-header,
+.md-tabs {
+  background-color: var(--procoder-black);
+}
+
+/* The signature gradient, used as a hairline rather than a field: energy
+   flowing through a restrained interface, never a large area of it. */
+.md-header {
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(
+      90deg,
+      var(--procoder-violet) 0%,
+      var(--procoder-purple) 35%,
+      var(--procoder-blue) 70%,
+      var(--procoder-cyan) 100%
+    )
+    1;
+}
+
+.md-typeset h1,
+.md-typeset h2 {
+  font-weight: 700;
+}
+
+/* Cards and code panels take the brand's border treatment. */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.md-typeset pre > code {
+  border-radius: 8px;
+}
+
+/* The banner is the page's own header on the overview — full width, no
+   frame competing with it. */
+.procoder-banner {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 0 0 1.5rem;
+}

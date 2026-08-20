@@ -5,22 +5,29 @@ repo_url: https://github.com/azrtydxb/procoder
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/favicon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
+      primary: deep purple
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
+      primary: deep purple
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: light mode
   features:
     - navigation.sections
     - content.code.copy
+
+extra_css:
+  - stylesheets/brand.css
 
 markdown_extensions:
   - admonition
