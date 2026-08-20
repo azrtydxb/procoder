@@ -45,9 +45,9 @@ downstream reviewer's:
 - Give that same agent the SECOND lens in the same pass, quoted from
   /procoder:simplify the way the rubric is quoted: the five tags with
   their definitions, the one-line finding format
-  `<file>:L<line>: <tag> <what>. <replacement>.`, the never-invent-a-
-  finding rule, and the exact null result `Lean already. Ship.` Scope it
-  to the DIFF — the repo sweep belongs to /procoder:release.
+  `<file>:L<line>: <tag> <what>. <replacement>.`, the rule against
+  inventing a finding, and the exact null result `Lean already. Ship.`
+  Scope it to the DIFF — the repo sweep belongs to /procoder:release.
 - Report the simplify findings first, the correctness verdict last.
 - Fix every Critical/Important finding (commit them), decide each cut —
   taking it or saying why not, P-CONTROL — re-run `launcher.sh check`,

@@ -69,9 +69,9 @@ different jobs they are.
   for an empty struct, a single-use helper): all three surfaced with
   replacements and `net: -24 lines possible.`
 - Trial 2, the same fixture with the padding removed but a speculative
-  empty-string guard left in: one finding, `delete: speculative
-empty-message placeholder — nothing sets Message to ""`. Defensible
-  against that fixture, not an invention.
+  empty-string guard left in: one finding, tagged `delete:`, reporting a
+  speculative empty-message placeholder that nothing ever sets.
+  Defensible against that fixture, not an invention.
 - Trial 3, a diff with genuinely nothing to cut (a one-word comment typo
   fix): exactly `Lean already. Ship.` — the null path returns the null
   string rather than inventing a finding.
