@@ -6,12 +6,14 @@
 # architecture and execs it with everything passed through — argv, stdin,
 # stdout — so hooks.json and the skills only ever name this one path.
 set -u
+ext=""
 
 dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 case "$(uname -s)" in
 Darwin) os=darwin ;;
 Linux) os=linux ;;
+MINGW* | MSYS* | CYGWIN*) os=windows ext=".exe" ;;
 *)
 	echo "procoder: unsupported OS $(uname -s)" >&2
 	exit 1
@@ -27,7 +29,7 @@ x86_64 | amd64) arch=amd64 ;;
 	;;
 esac
 
-bin="$dir/dist/$os-$arch/procoder"
+bin="$dir/dist/$os-$arch/procoder$ext"
 if [ ! -x "$bin" ]; then
 	echo "procoder: no binary for $os/$arch at $bin — reinstall the plugin" >&2
 	exit 1

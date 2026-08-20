@@ -18,7 +18,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5 gitleaks:allow
+      # v6 is the first major that reads go.mod's toolchain directive; v5
+      # matched only the `go` line and installed the newest patch of it, so
+      # the pin in go.mod would have been ignored here. v6+ also exports
+      # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
+      # a different compiler than the one this step installed.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
         with:
           go-version-file: go.mod
       - name: gofmt is clean
@@ -52,12 +57,46 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5 gitleaks:allow
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
         with:
           go-version-file: go.mod
-      - name: install the tools the gate needs
+      - name: read the pinned tool versions
+        # Only the assignments: GITHUB_ENV rejects anything that is not
+        # KEY=VALUE, and the file leads with the paragraph explaining why the
+        # pins exist at all.
+        run: grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env >> "$GITHUB_ENV"
+      - name: the tools that have to be compiled, from cache when possible
+        id: gotools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
+        with:
+          # gopls and scip-go publish no binaries, so these are the only two
+          # the gate still builds. Keyed on the versions file: bumping a line
+          # there is what earns a rebuild, and nothing else does.
+          path: ~/go/bin
+          key: gate-gotools-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
+      - name: python and node package caches
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
+        with:
+          # mermaid-cli pulls puppeteer, which downloads a browser — and that
+          # browser lands in ~/.cache/puppeteer, not in the npm cache. Caching
+          # ~/.npm alone would have cached the small half and re-downloaded
+          # the expensive one on every run.
+          path: |
+            ~/.cache/pip
+            ~/.npm
+            ~/.cache/puppeteer
+          key: gate-pkgs-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
+      - name: the procoder binary the gate runs
+        env:
+          # setup-go exports GOTOOLCHAIN=local so nothing drifts off the pin,
+          # but the two go-installed tools below are other people's modules:
+          # gopls declares go 1.26, and `local` makes that a hard install
+          # failure instead of a toolchain fetch. The pin governs what
+          # compiles procoder; it has no business governing the linters.
+          GOTOOLCHAIN: auto
+        run: go build -o /usr/local/bin/procoder ./cmd/procoder
+      - name: system packages
         run: |
-          go build -o /usr/local/bin/procoder ./cmd/procoder
           # the runner's azure apt mirrors die for minutes at a time (two gate
           # runs burned their whole timeout on them). apt reads its mirrors
           # from /etc/apt/apt-mirrors.txt on these runners — rewriting the
@@ -65,26 +104,54 @@ jobs:
           # with the canonical archive, and fail fast if that also stalls
           echo "https://archive.ubuntu.com/ubuntu/	priority:1" | sudo tee /etc/apt/apt-mirrors.txt
           echo 'Acquire::Retries "3"; Acquire::http::Timeout "15";' | sudo tee /etc/apt/apt.conf.d/99procoder-fastfail
-          sudo apt-get update -q && sudo apt-get install -y -q shfmt shellcheck gitleaks
-          # ruff: the Hermes adapter (__init__.py) makes this a Python-bearing
-          # repo, so doctor requires the Python formatter too
-          pip install semgrep ruff
-          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-          npm install -g prettier @mermaid-js/mermaid-cli
-          go install github.com/rhysd/actionlint/cmd/actionlint@latest
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
-          pip install mkdocs-material
+          sudo apt-get update -q
+          sudo apt-get install -y -q shfmt shellcheck gitleaks universal-ctags
+      - name: released binaries, downloaded rather than compiled
+        run: |
+          # Each of these used to be `go install …@latest`, which compiled the
+          # tool from source on every run — osv-scanner alone cost 92 seconds.
+          # All three publish per-platform archives, so this is a download.
+          cd /tmp
+          curl -sSfL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER}/osv-scanner_linux_amd64"
+          sudo install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+          curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT}/golangci-lint-${GOLANGCI_LINT}-linux-amd64.tar.gz" | tar xz
+          sudo install -m 0755 "golangci-lint-${GOLANGCI_LINT}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint
+          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT}/actionlint_${ACTIONLINT}_linux_amd64.tar.gz" | tar xz actionlint
+          sudo install -m 0755 actionlint /usr/local/bin/actionlint
           # extracted OUTSIDE the workspace: the tarball carries its own docs,
           # and the docs report must only ever see this repository's files
-          curl -sL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /tmp
-          sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
-          sudo apt-get install -y -q universal-ctags
-          go install github.com/scip-code/scip-go/cmd/scip-go@latest
+          curl -sSfL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE}/lychee-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          sudo install -m 0755 lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/lychee
+          curl -sSfL "https://github.com/sourcegraph/scip/releases/download/v${SCIP}/scip-linux-amd64.tar.gz" | tar xz scip
+          sudo install -m 0755 scip /usr/local/bin/scip
+      - name: the two tools with no published binary
+        if: steps.gotools.outputs.cache-hit != 'true'
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          # proxy.golang.org drops a stream mid-download often enough to have
+          # failed this job once already; these two are the only compiles left
+          # and they run on a cache miss, so a retry costs nothing on the runs
+          # that matter and saves a red gate on the ones that do not.
+          install_tool() {
+            for attempt in 1 2 3; do
+              if go install "$1"; then return 0; fi
+              echo "go install $1 failed (attempt $attempt)" >&2
+              sleep 5
+            done
+            return 1
+          }
+          install_tool "github.com/scip-code/scip-go/cmd/scip-go@${SCIP_GO}"
           # gopls: doctor requires it on Go repos since index rename
-          go install golang.org/x/tools/gopls@latest
-          curl -sL https://github.com/sourcegraph/scip/releases/download/v0.9.0/scip-linux-amd64.tar.gz | tar xz -C /tmp scip
-          sudo mv /tmp/scip /usr/local/bin/
+          install_tool "golang.org/x/tools/gopls@${GOPLS}"
+      - name: python and node tools
+        run: |
+          # ruff: the Hermes adapter (__init__.py) makes this a Python-bearing
+          # repo, so doctor requires the Python formatter too
+          pip install "semgrep==${SEMGREP}" "ruff==${RUFF}" "mkdocs-material==${MKDOCS_MATERIAL}"
+          npm install -g "prettier@${PRETTIER}" "@mermaid-js/mermaid-cli@${MERMAID_CLI}"
+      - name: put the go tool directory on PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: puppeteer config for mmdc on a runner
         run: |
           echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"], \"timeout\": 120000, \"protocolTimeout\": 180000}" > /tmp/puppeteer.json
