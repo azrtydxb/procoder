@@ -77,11 +77,14 @@ jobs:
       - name: python and node package caches
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
         with:
-          # mermaid-cli pulls puppeteer, which pulls a browser; the npm cache
-          # is most of what makes that bearable on a second run.
+          # mermaid-cli pulls puppeteer, which downloads a browser — and that
+          # browser lands in ~/.cache/puppeteer, not in the npm cache. Caching
+          # ~/.npm alone would have cached the small half and re-downloaded
+          # the expensive one on every run.
           path: |
             ~/.cache/pip
             ~/.npm
+            ~/.cache/puppeteer
           key: gate-pkgs-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
       - name: the procoder binary the gate runs
         env:
