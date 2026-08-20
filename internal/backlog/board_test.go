@@ -131,7 +131,9 @@ func TestAnEpicThatWasNeverSeededSaysSoInsteadOfClaimingDrift(t *testing.T) {
 	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open 2026-08-20\nSpec: auth @ 0\n")
 
 	var lines []string
-	Board(root, func(s string) { lines = append(lines, s) })
+	if code := Board(root, func(s string) { lines = append(lines, s) }); code != 0 {
+		t.Fatalf("board exit code = %d, want 0", code)
+	}
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "⚠ spec not seeded") {
 		t.Errorf("a fingerprint that was never recorded must say so: %s", joined)

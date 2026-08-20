@@ -98,9 +98,10 @@ raw Copilot notes that haven't been converted yet.
 
 ### 4. Integration: `procoder lessons --from-copilot`
 
-An optional flag on `lecrons learned from Copilot reviews — entries in
-COPILOT-LEAKS.md that still have placeholder adaptations (`<...>`) but
-have a matching GitHub issue that can be used as context.
+An optional flag on `procoder lessons` that lists the lessons learned
+from Copilot reviews — entries in COPILOT-LEAKS.md that still have
+placeholder adaptations (`<...>`) but have a matching GitHub issue that
+can be used as context.
 
 ### 5. Hook integration: session start / merge
 
