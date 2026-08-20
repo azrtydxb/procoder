@@ -23,8 +23,11 @@ export CGO_ENABLED=0
 # the committed binaries against the manifest. A rebuild that omitted it
 # would produce binaries reporting "dev" and fail that check — so the same
 # manifest CI reads is the one this script reads.
-version=$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')
-if [ -z "$version" ]; then
+# The read is guarded rather than trusted: under `set -e` a missing file, a
+# missing key, broken JSON or no python3 at all kills the script inside the
+# substitution, so the friendly message below would never print and the
+# maintainer would meet a traceback instead of a sentence.
+if ! version=$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])' 2>/dev/null) || [ -z "$version" ]; then
 	echo "cannot read the version from .claude-plugin/plugin.json — refusing to build unstamped binaries" >&2
 	exit 1
 fi
