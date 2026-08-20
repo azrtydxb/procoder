@@ -126,9 +126,21 @@ jobs:
         env:
           GOTOOLCHAIN: auto
         run: |
-          go install "github.com/scip-code/scip-go/cmd/scip-go@${SCIP_GO}"
+          # proxy.golang.org drops a stream mid-download often enough to have
+          # failed this job once already; these two are the only compiles left
+          # and they run on a cache miss, so a retry costs nothing on the runs
+          # that matter and saves a red gate on the ones that do not.
+          install_tool() {
+            for attempt in 1 2 3; do
+              if go install "$1"; then return 0; fi
+              echo "go install $1 failed (attempt $attempt)" >&2
+              sleep 5
+            done
+            return 1
+          }
+          install_tool "github.com/scip-code/scip-go/cmd/scip-go@${SCIP_GO}"
           # gopls: doctor requires it on Go repos since index rename
-          go install "golang.org/x/tools/gopls@${GOPLS}"
+          install_tool "golang.org/x/tools/gopls@${GOPLS}"
       - name: python and node tools
         run: |
           # ruff: the Hermes adapter (__init__.py) makes this a Python-bearing
