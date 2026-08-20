@@ -189,3 +189,39 @@ func TestASpecClaimingCompleteWithGapsIsContradicted(t *testing.T) {
 		t.Errorf("the contradiction must be named: %v", *lines)
 	}
 }
+
+// A question is unresolved because it is still in the section, whatever it
+// is called. Two specs in this repository carried seven undecided questions
+// between them, written as `- [O-1] …` rather than `OPEN:`, and were
+// reported COMPLETE — and `backlog seed` refuses anything that is not
+// COMPLETE, so it would have seeded stories from a design nobody had
+// finished.
+// proved by: matched only the OPEN: prefix again — the [O-1] spec then
+// passes and the controller blesses an unfinished design.
+func TestOpenQuestionsAreUnresolvedWhateverTheyAreCalled(t *testing.T) {
+	root := t.TempDir()
+	for _, shape := range []string{
+		"- [O-1] Should answers persist across runs?",
+		"OPEN: should answers persist across runs?",
+		"Should answers persist? Nobody has decided.",
+		"1. persist or re-ask",
+	} {
+		spec := strings.Replace(completeSpec(), "## Open questions\n\n", "## Open questions\n\n"+shape+"\n\n", 1)
+		writeSpec(t, root, "widget", spec)
+		out, lines := collect()
+		if code := Check(root, "widget", out); code != 1 {
+			t.Errorf("an undecided question must block, whatever its shape (%q): exit %d", shape, code)
+		}
+		if !strings.Contains(strings.Join(*lines, "\n"), "Open questions") {
+			t.Errorf("the refusal must name the section (%q): %v", shape, *lines)
+		}
+	}
+
+	// A section holding only the template's comment is resolved: that is how
+	// a finished spec records "none — decisions above".
+	writeSpec(t, root, "widget", completeSpec())
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 0 {
+		t.Errorf("an empty section is a resolved one: exit %d %v", code, *lines)
+	}
+}
