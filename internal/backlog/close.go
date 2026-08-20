@@ -271,6 +271,10 @@ func driftWarnings(root string, epic Item) []string {
 	if err != nil {
 		return []string{"⚠ spec " + epic.SpecName + " is missing — traceability lost, not blocking"}
 	}
+	if !recordedFingerprint.MatchString(epic.SpecPrint) {
+		return []string{"⚠ epic " + epic.SpecName + " records no seeding fingerprint (" + epic.SpecPrint +
+			") — it was written by hand, so nothing ties these stories to the spec; re-seed to restore the link (not blocking)"}
+	}
 	if now := fingerprint(b); now != epic.SpecPrint {
 		return []string{"⚠ spec " + epic.SpecName + " changed its acceptance criteria since seeding — review the stories before trusting them (not blocking); once reviewed, record `Spec: " + epic.SpecName + " @ " + now + "`"}
 	}

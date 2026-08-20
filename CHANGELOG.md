@@ -2,6 +2,54 @@
 
 Every release, in words a user can read. Newest first.
 
+## 1.0.2 — 2026-08-20
+
+**Kilo Code is a first-class host, and the gate goes with it.** Kilo's
+CLI is an OpenCode fork and its plugin API is the same one, so the JS
+shim that already served OpenCode now serves both, byte for byte. It
+gained the piece that matters: the commit gate runs at the tool
+boundary and refuses a commit with blocking findings — in Kilo that
+covers the VS Code extension, not only a terminal, which makes it the
+first editor where "done" has to survive the gate. OpenCode gets the
+same enforcement in the same change. Every host reaches one
+implementation, so there is one verdict wherever you work, and a
+machine without the binary is told the gate did NOT run rather than
+having its commits blocked.
+
+Three more tiers came with it: Kilo's current rules path, a command
+set, and `skills/procoder/SKILL.md` — the contract under the Agent
+Skills envelope, read by Kilo and by any host that scans a skills
+directory.
+
+**A correct link stopped reading as a broken one.** The reference
+check reproduced mkdocs' slugify everywhere, including repositories
+whose Markdown is only ever read on github.com, which does not collapse
+runs of hyphens. Every heading containing an ampersand, an em dash, or
+a colon had a working anchor the gate called broken — blocking, with no
+way out but rewording public headings. A heading is now credited with
+the anchor each renderer generates. Underscores inside code spans
+survive too, so a heading naming a snake_case symbol is reachable.
+
+**The documentation acknowledgment works from wherever git reads the
+message.** `docs: none — <reason>` only cleared its obligation when the
+message arrived through `-m`. With `-F <file>`, a heredoc, or an editor
+commit the line was invisible, so the finding told you to write exactly
+the line it then ignored. All the forms the gate can see are read now,
+and where no message can reach the check it says so instead of naming a
+remedy that cannot work.
+
+**The documentation obligation asks about your branch, not your
+uncommitted slice.** Writing the doc in one commit and the code in the
+next demanded an acknowledgment for work that was already documented.
+The question now spans the commits your branch carries. The public
+surface is also compared like with like — the previous revision read by
+the same parser as the current one — so a capitalised local constant in
+JavaScript no longer reports itself removed on every run.
+
+**An epic that was never seeded says so.** A `Spec:` line carrying
+anything a fingerprint could not produce read as spec drift forever,
+pointing at a comparison that had never happened.
+
 ## 1.0.1 — 2026-08-20
 
 **A tag is the release now.** Twenty-seven tags were pushed while exactly
