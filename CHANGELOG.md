@@ -2,6 +2,26 @@
 
 Every release, in words a user can read. Newest first.
 
+## 1.0.1 — 2026-08-20
+
+**A tag is the release now.** Twenty-seven tags were pushed while exactly
+one GitHub Release was ever created by hand, so everything that reads
+"latest release" — the documentation site's own header among them — sat
+on a version from weeks earlier while the site body reported the current
+one.
+
+CI publishes the Release when a `v*` tag is pushed, with the changelog
+entry as the notes and the five platform binaries attached, so the
+manual install no longer means cloning the repository for one file. It
+runs only after the suite and the gate pass on the tagged tree: the
+Release is what people download, so it ships on the same evidence as
+everything else.
+
+A missing changelog entry fails the job rather than publishing empty
+notes. `procoder release` already refuses to tag without one, so its
+absence at this point means something went wrong upstream, and a release
+that looks finished but says nothing is worse than a red job.
+
 ## 1.0.0 — 2026-08-20
 
 Procoder is 1.0. Not because anything new landed today, but because what
