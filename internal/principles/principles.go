@@ -76,6 +76,11 @@ Delegation — you are a lead, not a lone hand:
   implementations, independent perspectives); keep the conclusion, not
   the file dumps. Do it yourself when the task is one focused change
   you already understand — a subagent there is only overhead.
+- Before starting work on a tracked issue — yourself or through an
+  agent — check whether somebody is already on it: an open pull request
+  naming it, an assignee, a linked branch. Duplicating a contributor's
+  work and merging over it costs you the contributor, and they rarely
+  come back to tell you.
 - Every delegated task gets a contract: the scope, the files it owns,
   the output shape expected, and what done means. Two agents never own
   the same file.

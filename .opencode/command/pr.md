@@ -13,6 +13,12 @@ Every procoder command below is the `procoder` binary on PATH.
    default-branch checkout — if this work isn't in one yet, note it and keep
    the branch clean.
 
+0b. If this branch closes a tracked issue, check that nobody else already
+has a pull request open for it (`gh pr list --search "<issue number>"`,
+and the issue's own timeline). A second PR for the same fix wastes the
+reviewer and, when the other one is a contributor's, costs the
+contributor. If one exists, review theirs instead of opening yours.
+
 1. Run `procoder git` and `procoder check`. Fix everything BLOCKING
    before going further — a PR that fails its own gate wastes the reviewer.
    The gate's `info` impact lines are the change's blast radius: open each
