@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"procoder/internal/actions"
 	"procoder/internal/gitx"
@@ -184,8 +185,11 @@ func RelativeRefs(root, file string) []gitx.Finding {
 				strings.HasPrefix(target, "#") || strings.HasPrefix(target, "data:") {
 				continue
 			}
-			// strip anchors and query strings from file targets
+			anchor := ""
 			if j := strings.IndexAny(target, "#?"); j >= 0 {
+				if target[j] == '#' {
+					anchor = target[j+1:]
+				}
 				target = target[:j]
 			}
 			if target == "" {
@@ -198,10 +202,109 @@ func RelativeRefs(root, file string) []gitx.Finding {
 			if _, err := os.Stat(resolved); err != nil {
 				out = append(out, gitx.Finding{File: file, Line: i + 1, Blocking: true,
 					Message: fmt.Sprintf("broken reference: %q does not resolve", m[1])})
+				continue
+			}
+			// A link may name a heading, and a heading that no longer
+			// exists drops the reader at the top of the page. mkdocs
+			// reports that at INFO, so --strict stays green and it ships.
+			if anchor != "" && strings.EqualFold(filepath.Ext(resolved), ".md") {
+				ids, ok := anchorIDs(resolved)
+				if ok && !ids[strings.ToLower(anchor)] {
+					out = append(out, gitx.Finding{File: file, Line: i + 1, Blocking: true,
+						Message: fmt.Sprintf("broken reference: %q resolves but no heading in it generates the anchor %q", target, anchor)})
+				}
 			}
 		}
 	}
 	return out
+}
+
+var (
+	headingLine = regexp.MustCompile(`(?m)^#{1,6}\s+(.+?)\s*$`)
+	explicitID  = regexp.MustCompile(`\{#([^}\s]+)\}`)
+	htmlID      = regexp.MustCompile(`(?i)\bid\s*=\s*["']([^"']+)["']`)
+)
+
+// anchorIDs collects every anchor a Markdown page offers: the slug each
+// heading generates, plus ids written by hand — attr_list's `{#custom}`
+// and raw HTML `id="…"`. The second return is whether the file could be
+// read at all; a file that could not be read yields no verdict rather
+// than a wrong one.
+func anchorIDs(path string) (map[string]bool, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	text := string(data)
+	ids := map[string]bool{}
+	for _, m := range explicitID.FindAllStringSubmatch(text, -1) {
+		ids[strings.ToLower(m[1])] = true
+	}
+	for _, m := range htmlID.FindAllStringSubmatch(text, -1) {
+		ids[strings.ToLower(m[1])] = true
+	}
+	// duplicate headings get -1, -2… appended, the way the toc extension
+	// disambiguates them
+	seen := map[string]int{}
+	inFence := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		m := headingLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		slug := headingSlug(explicitID.ReplaceAllString(m[1], ""))
+		if slug == "" {
+			continue
+		}
+		if n := seen[slug]; n > 0 {
+			ids[fmt.Sprintf("%s-%d", slug, n)] = true
+		} else {
+			ids[slug] = true
+		}
+		seen[slug]++
+	}
+	return ids, true
+}
+
+// headingSlug reproduces Python-Markdown's toc slugify, which is what
+// mkdocs uses: drop everything that is not a word character, whitespace,
+// or a hyphen, then collapse runs of whitespace and hyphens into one
+// hyphen. An em dash disappears rather than becoming a separator, which
+// is precisely the case that is easy to get wrong by hand.
+func headingSlug(title string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(stripInlineMarkup(title)) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		case r == ' ' || r == '\t' || r == '-':
+			b.WriteByte('-')
+		case r > 127 && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+			b.WriteRune(r) // \w matches unicode letters and digits too
+		}
+	}
+	slug := b.String()
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+	return strings.Trim(slug, "-")
+}
+
+// stripInlineMarkup removes the emphasis, code, and link syntax that a
+// heading may carry — the slug is built from the rendered text.
+func stripInlineMarkup(s string) string {
+	s = mdLink.ReplaceAllString(s, "")
+	for _, mark := range []string{"`", "**", "*", "__", "_"} {
+		s = strings.ReplaceAll(s, mark, "")
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "[", ""), "]", "")
 }
 
 // mermaidBlock is one fenced ```mermaid block with its starting line number.

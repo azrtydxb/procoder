@@ -51,6 +51,12 @@ Check every hunk for:
 - Docs voice: professional product documentation — no personal names,
   no project-history anecdotes, no first-person diary; history belongs
   in the changelog and lessons ledger, not the docs.
+- Rendered output was LOOKED AT. A change to CSS, client-side JS, a
+  diagram, a template, or Markdown that renders as a table or a figure
+  is not reviewed until someone has seen it rendered — both colour
+  schemes where the site has two. A passing build and a green assertion
+  both report on what the code says, not on what the reader sees; when
+  the two disagree, the screenshot is right.
 
 End with a verdict line: findings counted by severity, or exactly
 "Nothing found — open the PR."

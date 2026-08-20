@@ -60,8 +60,8 @@ func TestLinksInsideCodeFencesAreIgnored(t *testing.T) {
 
 func TestAnchorAndQueryAreStrippedFromFileTargets(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "docs/a.md", "x\n")
-	md := write(t, root, "README.md", "[a](docs/a.md#part)\n")
+	write(t, root, "docs/a.md", "## Part\n\nx\n")
+	md := write(t, root, "README.md", "[a](docs/a.md#part)\n[b](docs/a.md?v=2)\n")
 	if got := RelativeRefs(root, md); len(got) != 0 {
 		t.Fatalf("anchored link to existing file is fine: %+v", got)
 	}
@@ -433,5 +433,112 @@ func skipOnWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("sh-script tool stubs cannot run on Windows; POSIX legs carry this coverage")
+	}
+}
+
+// A link into another page can name a heading, and a heading that no
+// longer exists leaves the reader at the top of the page wondering.
+// mkdocs reports this at INFO, so --strict stays green and it ships —
+// which is exactly how one shipped from this repository.
+// proved by: kept the old behaviour of discarding the anchor — the dead
+// one is then reported as fine.
+func TestAnAnchorThatNoHeadingGeneratesIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n\nbody\n")
+	src := filepath.Join(dir, "src.md")
+	mustWrite(t, src, "See [it](target.md#contract-1--p-control-the-agent-stays-in-control).\n")
+
+	got := RelativeRefs(dir, src)
+	if len(got) != 1 {
+		t.Fatalf("want 1 finding for the dead anchor, got %d: %+v", len(got), got)
+	}
+	if !strings.Contains(got[0].Message, "anchor") || !got[0].Blocking {
+		t.Errorf("finding must name the anchor and block: %+v", got[0])
+	}
+}
+
+// The same link with the slug the heading actually generates is fine —
+// em dash dropped, colon dropped, runs of separators collapsed, exactly
+// as Python-Markdown's toc slugify does it.
+// proved by: made the slug keep punctuation — the correct link is then
+// reported as broken, which is worse than not checking at all.
+func TestTheRealSlugResolves(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n")
+	for _, link := range []string{
+		"target.md#contract-1-p-control-the-agent-stays-in-control",
+		"target.md#page",
+	} {
+		src := filepath.Join(dir, "src.md")
+		mustWrite(t, src, "See [it]("+link+").\n")
+		if got := RelativeRefs(dir, src); len(got) != 0 {
+			t.Errorf("%s must resolve, got %+v", link, got)
+		}
+	}
+}
+
+// An explicit id — attr_list `{#custom}` or a raw HTML anchor — counts.
+// proved by: dropped explicit-id collection; a deliberate anchor is then
+// called broken and the writer is told to fix something that works.
+func TestExplicitIdsCount(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "target.md"),
+		"# Page\n\n## Something {#custom-id}\n\n<a id=\"raw-html-anchor\"></a>\n")
+	for _, link := range []string{"target.md#custom-id", "target.md#raw-html-anchor"} {
+		src := filepath.Join(dir, "src.md")
+		mustWrite(t, src, "See [it]("+link+").\n")
+		if got := RelativeRefs(dir, src); len(got) != 0 {
+			t.Errorf("%s must resolve, got %+v", link, got)
+		}
+	}
+}
+
+// A target that is not Markdown has no headings to check, and an anchor
+// into it is not something this can judge — say nothing rather than
+// something wrong.
+// proved by: checked anchors on every target type; a link into an image
+// or a source file is then reported broken.
+func TestAnchorsIntoNonMarkdownAreNotJudged(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "diagram.svg"), "<svg></svg>\n")
+	src := filepath.Join(dir, "src.md")
+	mustWrite(t, src, "See [it](diagram.svg#layer1).\n")
+	if got := RelativeRefs(dir, src); len(got) != 0 {
+		t.Errorf("an anchor into a non-Markdown target is not judged, got %+v", got)
+	}
+}
+
+func mustWrite(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A target that exists but cannot be read yields no verdict. Answering
+// "it has no anchors" would report every link into it as broken, which
+// is a false positive that blocks the gate — the honesty rule pointed
+// the other way round.
+// proved by: made anchorIDs answer (empty, true) on a read error — the
+// link into the unreadable page is then called broken.
+func TestAnUnreadableTargetYieldsNoAnchorVerdict(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod does not deny the read here")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.md")
+	mustWrite(t, target, "## Something\n")
+	if err := os.Chmod(target, 0o000); err != nil {
+		t.Skip("cannot make the file unreadable")
+	}
+	t.Cleanup(func() { _ = os.Chmod(target, 0o644) })
+	if data, err := os.ReadFile(target); err == nil {
+		t.Skipf("file is still readable (%d bytes) — the guard cannot be exercised", len(data))
+	}
+
+	src := filepath.Join(dir, "src.md")
+	mustWrite(t, src, "See [it](target.md#anything-at-all).\n")
+	if got := RelativeRefs(dir, src); len(got) != 0 {
+		t.Errorf("an unreadable target must produce no anchor verdict, got %+v", got)
 	}
 }
