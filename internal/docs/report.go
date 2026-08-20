@@ -55,6 +55,11 @@ func CollectSweep(root string, files []string) []gitx.Finding {
 	return append(out, VersionSync(root)...)
 }
 
+// RunFor is `procoder docs`: the full documentation report over the whole
+// repository, plus the diff-scoped questions the caller has the answers
+// for — the commit message an acknowledgment would live in, and whether
+// the repository opted the obligation into blocking. external adds the
+// link and Pages checks, which are the only ones that touch the network.
 func RunFor(root string, changed []string, commitMessage string, external, block bool, stdout io.Writer) int {
 	rules := LoadRules(root)
 	md := MarkdownFiles(root)
