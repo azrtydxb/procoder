@@ -84,6 +84,71 @@ point, so there is one gate implementation and one verdict, whatever the
 host. A host without the binary is told the gate did NOT run rather than
 having its commits blocked.
 
+## The trailer your host adds
+
+Several hosts append an attribution trailer to every commit message they
+write — `Co-Authored-By: Claude <noreply@anthropic.com>`, a "Generated
+with …" line, a robot emoji, `Co-authored-by: Codex <noreply@openai.com>`.
+The gate blocks the ones it recognises, and blocks them without a knob:
+the work is the author's, and a repository that wants the rule off
+already has `[git] commit_gate`.
+
+That makes the trailer a recurring wall rather than a one-time fix.
+Amending the message clears the finding; the host writes the trailer
+again on the next commit, because the setting that produced it never
+changed. The fix belongs in the host, not in the commit.
+
+### Settings that turn it off
+
+| Host                           | Setting                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| Claude Code                    | `attribution` in `settings.json` — `commit` and `pr` to `""`, `sessionUrl` to `false` |
+| VS Code, and Copilot inside it | `git.addAICoAuthor` to `"off"`                                                        |
+| Codex                          | account or workspace policy, not a local setting — see below                          |
+
+Claude Code reads `attribution` from any settings file it loads
+(`~/.claude/settings.json` for every project, `.claude/settings.json` to
+commit the choice with the repository, `.claude/settings.local.json` to
+keep it to yourself):
+
+```json
+{
+  "attribution": { "commit": "", "pr": "", "sessionUrl": false }
+}
+```
+
+`commit` covers the trailer, `pr` the pull-request body, and `sessionUrl`
+the session link appended as its own trailer. The setting supersedes the
+deprecated `includeCoAuthoredBy`.
+
+`git.addAICoAuthor` is VS Code's own git setting and takes `off`,
+`chatAndAgent`, or `all`; `off` is the one that stops the trailer. Editors
+forked from VS Code may carry the same key under the same name — worth
+trying before assuming they do not.
+
+Codex resolves attribution as a policy from the account rather than from
+a config file, and the instruction it injects explicitly outranks any
+request to drop the trailer. Turn it off where the account or workspace
+is administered; there is no `config.toml` key for it.
+
+### Hosts without a verified setting
+
+Every other host in the tables above is **unverified**. That means no
+setting has been confirmed against the host's own documentation or
+source — not that none exists. A key printed here on a guess would cost
+more than the gap it filled. To settle it for your host:
+
+1. Let the host write one commit, then read `git log -1 --format=%B`. No
+   trailer, nothing to turn off.
+2. Search the host's own settings for `attribution`, `co-author`, or
+   `coAuthored` — that is where such a key is named when it exists.
+3. Failing both, the repository's own defence still holds: the gate
+   refuses the commit, and `procoder scrub` catches the same lines in a
+   drafted PR body before it is sent.
+
+A host you confirm either way is worth an issue, with the host name and
+the setting.
+
 ## The everywhere-binary
 
 All tiers assume the `procoder` binary is reachable. Claude Code gets it
