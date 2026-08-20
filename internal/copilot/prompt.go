@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -25,11 +26,13 @@ func CanAsk(in *os.File) bool {
 	// `procoder version --check < /dev/null` printed a prompt and read the
 	// EOF as a no. The outcome was safe; the reasoning was wrong, and the
 	// next caller to trust CanAsk would not be as lucky.
-	null, err := os.Stat(os.DevNull)
-	if err != nil {
-		return true // cannot rule it out; a char device is the best answer left
+	if null, err := os.Stat(os.DevNull); err == nil {
+		return !os.SameFile(info, null)
 	}
-	return !os.SameFile(info, null)
+	// Windows: os.Stat("NUL") fails, so SameFile cannot answer. The name is
+	// the only thing left to go on, and it is a reserved device name there —
+	// no real file can be called it.
+	return !strings.EqualFold(filepath.Base(in.Name()), os.DevNull)
 }
 
 // Prompt asks once whether to publish and record the findings, and answers no

@@ -560,14 +560,32 @@ func run(args []string) int {
 		}
 		return gitcmd.Scrub(args[1], os.Stdin, os.Stdout)
 	case "version":
-		if len(args) > 1 && args[1] == "--check" {
+		// An unrecognised flag is refused rather than ignored: `version
+		// --chekc` printing the version and exiting 0 tells the user their
+		// check ran when nothing checked anything.
+		if len(args) > 2 {
+			printLine("version takes at most --check")
+			return 2
+		}
+		if len(args) == 2 {
+			if args[1] != "--check" {
+				printLine("version: unknown argument " + args[1])
+				return 2
+			}
 			return versionCheckCmd()
 		}
 		// N-05: bare `version` stays one line and asks nobody anything.
 		fmt.Println(version)
 		return 0
 	case "self-upgrade":
-		force := len(args) > 1 && args[1] == "--force"
+		force := false
+		for _, a := range args[1:] {
+			if a != "--force" {
+				printLine("self-upgrade: unknown argument " + a)
+				return 2
+			}
+			force = true
+		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
 	default:
 		fmt.Fprint(os.Stderr, usage)
@@ -657,42 +675,27 @@ func testCmd(args []string) int {
 	return testrun.Report(testrun.Run(doctor.Root(), paths, coverage, name), printLine)
 }
 
-// copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit
-// codes follow the spec's own Exit 2 line — declining, or having nobody to
-// ask, is a reporting exit rather than an error, and so is a check that could
-// not run. Only a real answer exits 0.
 // versionCheckCmd is `procoder version --check`: the version, then what
-// GitHub says is newest. A check that could not run says so and exits 2 —
-// silence here would read as "you are current", which is the one thing an
-// unanswered check never proves.
+// GitHub says is newest, then the offer. It performs exactly one query and
+// makes exactly one decision, both inside releases.Upgrade — asking here and
+// deciding there meant two round trips, so a release published between them
+// installed a version the user was never shown, and a package-manager
+// refusal arrived only after they had already said yes.
 func versionCheckCmd() int {
 	printLine(version)
-	if cfg := config.Load(doctor.Root()); cfg.VersionCheckOff {
+	if config.Load(doctor.Root()).VersionCheckOff {
 		printLine("version check is off in .procoder/config.toml ([version] check)")
 		return 0
 	}
-	latest, warn, err := releases.Check(version, releases.Timeout)
-	switch {
-	case err != nil:
-		printLine("the latest version is NOT known — " + err.Error())
-		return 2
-	case latest == "":
-		printLine("this build carries no version, so there is nothing to compare")
-		return 0
-	case !warn:
-		printLine("procoder " + version + " is the latest release")
-		return 0
-	}
+	return releases.Upgrade(version, false, announceThenAsk, printLine)
+}
+
+// announceThenAsk is the consent function `--check` hands to the upgrade: it
+// says what is newer before asking, because a bare prompt does not tell the
+// reader what they are agreeing to.
+func announceThenAsk(latest string) bool {
 	printLine(releases.WarningLine(version, latest))
-	if !copilot.CanAsk(os.Stdin) {
-		// R-08: the warning is the answer when there is nobody to ask.
-		return 0
-	}
-	if !upgradeConsent(strings.TrimPrefix(latest, "v")) {
-		printLine("nothing was downloaded and nothing was replaced")
-		return 0
-	}
-	return releases.Upgrade(version, false, func(string) bool { return true }, printLine)
+	return upgradeConsent(latest)
 }
 
 // upgradeConsent asks before anything is downloaded or run (N-08). No
@@ -706,6 +709,10 @@ func upgradeConsent(latest string) bool {
 	return copilot.ReadYes(os.Stdin)
 }
 
+// copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit
+// codes follow the spec's own Exit 2 line — declining, or having nobody to
+// ask, is a reporting exit rather than an error, and so is a check that could
+// not run. Only a real answer exits 0.
 func copilotLeakCmd(args []string) int {
 	since := 24 * time.Hour
 	quiet, report := false, false

@@ -2,6 +2,7 @@ package principles
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,17 @@ func TestPlainRunStaysPrinciplesOnly(t *testing.T) {
 // the repository the hook actually runs in.
 func TestSessionStartStaysInsideTheBudget(t *testing.T) {
 	hostEnv(t, "claude")
+	// The version check is the slowest thing the hook can do, and with
+	// Version left at dev it never runs at all — the budget guard would
+	// cover everything except the part most likely to blow it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+	}))
+	defer srv.Close()
+	prevHost, prevVer, prevErr := releases.APIHost, Version, Stderr
+	releases.APIHost, Version, Stderr = srv.URL, "1.0.0", io.Discard
+	defer func() { releases.APIHost, Version, Stderr = prevHost, prevVer, prevErr }()
+
 	start := time.Now()
 	RunHook("../..", func(string) {})
 	elapsed := time.Since(start)
@@ -139,21 +151,33 @@ func TestTheVersionCheckNeverHoldsTheSessionOpen(t *testing.T) {
 	defer func() { releases.APIHost, Version = prevHost, prevVer }()
 
 	var buf bytes.Buffer
-	prevErr := releases.Stderr
-	releases.Stderr = &buf
-	defer func() { releases.Stderr = prevErr }()
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
 
 	root := t.TempDir()
 	var lines []string
+	var firstOut time.Duration
 	start := time.Now()
-	if code := RunHook(root, func(s string) { lines = append(lines, s) }); code != 0 {
+	if code := RunHook(root, func(s string) {
+		if len(lines) == 0 {
+			firstOut = time.Since(start)
+		}
+		lines = append(lines, s)
+	}); code != 0 {
 		t.Fatalf("the hook must answer: exit %d", code)
 	}
-	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Errorf("a slow GitHub held the session start for %s", elapsed)
-	}
 	if len(lines) == 0 {
-		t.Error("the principles payload must be printed regardless")
+		t.Fatal("the principles payload must be printed regardless")
+	}
+	// The property is not "the hook finishes eventually" — a fully
+	// synchronous hook finishes inside the check's own one-second cap, so a
+	// five-second bound passes on the very mutation this test exists to
+	// reject. What must hold is that the PAYLOAD is out before the check
+	// has had time to answer: the session is not waiting on GitHub.
+	if firstOut >= releases.Timeout {
+		t.Errorf("the payload waited %s for a check capped at %s — the session start was held behind GitHub",
+			firstOut, releases.Timeout)
 	}
 	if buf.Len() != 0 {
 		t.Errorf("a check that did not answer says nothing: %q", buf.String())
@@ -173,9 +197,9 @@ func TestTheVersionWarningStaysOutOfTheHookPayload(t *testing.T) {
 	defer func() { releases.APIHost, Version = prevHost, prevVer }()
 
 	var buf bytes.Buffer
-	prevErr := releases.Stderr
-	releases.Stderr = &buf
-	defer func() { releases.Stderr = prevErr }()
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
 
 	var lines []string
 	RunHook(t.TempDir(), func(s string) { lines = append(lines, s) })
@@ -207,9 +231,9 @@ func TestTheConfigKnobSilencesTheCheckEntirely(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	prevErr := releases.Stderr
-	releases.Stderr = &buf
-	defer func() { releases.Stderr = prevErr }()
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
 	RunHook(root, func(string) {})
 	if buf.Len() != 0 {
 		t.Errorf("check = off says nothing: %q", buf.String())

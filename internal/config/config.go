@@ -111,7 +111,12 @@ func Load(root string) Config {
 				cfg.CommitGate = value
 			}
 		case "version.check":
-			cfg.VersionCheckOff = value == "off"
+			// Only the two documented values mean anything. A typo — "of",
+			// or the spec's own "warn" misspelt — must not silently leave
+			// the check in a state the writer did not choose.
+			if value == "off" || value == "warn" {
+				cfg.VersionCheckOff = value == "off"
+			}
 		case "docs.policy":
 			cfg.DocsBlock = value == "block"
 		case "ci.pin_actions_policy":

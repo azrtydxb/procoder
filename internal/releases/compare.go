@@ -5,6 +5,7 @@
 package releases
 
 import (
+	"cmp"
 	"regexp"
 	"strconv"
 )
@@ -48,21 +49,15 @@ func Compare(current, latest string) int {
 	if !okC || !okL {
 		return 0
 	}
-	for _, pair := range [][2]int{{l.Major, c.Major}, {l.Minor, c.Minor}, {l.Patch, c.Patch}} {
-		switch {
-		case pair[0] > pair[1]:
-			return 1
-		case pair[0] < pair[1]:
-			return -1
-		}
-	}
-	return 0
+	return cmp.Or(
+		cmp.Compare(l.Major, c.Major),
+		cmp.Compare(l.Minor, c.Minor),
+		cmp.Compare(l.Patch, c.Patch),
+	)
 }
 
-// ShouldWarn reports whether the user is running behind. Every newer
-// release earns the warning — patch, minor and major alike (D-1): a major
-// is exactly the upgrade whose behaviour changes, and hiding it to keep the
-// output quiet would hide the one that matters most.
+// ShouldWarn reports whether the user is running behind (D-1: every newer
+// release counts, majors included).
 func ShouldWarn(current, latest string) bool {
 	return Compare(current, latest) == 1
 }

@@ -8,6 +8,7 @@ package principles
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,24 +214,20 @@ func versionWarning(root string) func() {
 	if config.Load(root).VersionCheckOff {
 		return func() {}
 	}
-	type answer struct {
-		latest string
-		warn   bool
-	}
-	ch := make(chan answer, 1)
+	ch := make(chan string, 1)
 	go func() {
 		latest, warn, err := releases.Check(Version, releases.Timeout)
-		if err != nil {
-			ch <- answer{}
+		if err != nil || !warn {
+			ch <- ""
 			return
 		}
-		ch <- answer{latest, warn}
+		ch <- releases.WarningLine(Version, latest)
 	}()
 	return func() {
 		select {
-		case a := <-ch:
-			if a.warn {
-				fmt.Fprintln(releases.Stderr, releases.WarningLine(Version, a.latest))
+		case line := <-ch:
+			if line != "" {
+				fmt.Fprintln(Stderr, line)
 			}
 		case <-time.After(releases.Timeout):
 			// The goroutine outlives this call and writes to a buffered
@@ -238,6 +235,12 @@ func versionWarning(root string) func() {
 		}
 	}
 }
+
+// Stderr is where a version warning goes: this package writes it, so this
+// package owns the sink. The hook's stdout is a JSON payload to three of
+// the four hosts, and a friendly line in the middle of it is a corrupted
+// payload.
+var Stderr io.Writer = os.Stderr
 
 // Version is the running binary's version, set by main at startup. The
 // principles hook needs it to say what is newer, and importing main is not

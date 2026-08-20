@@ -483,6 +483,3 @@ a file a package database believes it owns is a change the manager will
 silently revert. The detection is a path heuristic and errs toward
 refusing; `--force` is the way past it when the install really is yours.
 
-#### `procoder version`
-
-Prints the version.

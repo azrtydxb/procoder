@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -78,14 +77,27 @@ func Latest(timeout time.Duration) (Release, error) {
 	if strings.TrimSpace(rel.TagName) == "" {
 		return Release{}, fmt.Errorf("GitHub named no tag for the latest release")
 	}
+	if _, ok := Parse(rel.TagName); !ok {
+		// A tag this cannot compare is a question that did not get answered.
+		// Returning it would let ShouldWarn's "equal" — which is what an
+		// unparseable version compares as — be read as "you are current",
+		// which is the one thing an unanswered check never proves.
+		return Release{}, fmt.Errorf("GitHub named a tag this cannot compare: %q", rel.TagName)
+	}
 	return rel, nil
 }
 
 // AssetName is the file this platform needs from a release, matching the
 // names the release workflow publishes.
-func AssetName() string {
-	name := fmt.Sprintf("procoder-%s-%s", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
+func AssetName() string { return assetNameFor(runtime.GOOS, runtime.GOARCH) }
+
+// assetNameFor is the naming rule itself, separated from the platform it is
+// usually asked about so a test can check the release workflow's own
+// spellings against it — the name is written in two places, and the day
+// they disagree is the day self-upgrade stops working for everyone.
+func assetNameFor(goos, goarch string) string {
+	name := fmt.Sprintf("procoder-%s-%s", goos, goarch)
+	if goos == "windows" {
 		name += ".exe"
 	}
 	return name
@@ -117,7 +129,10 @@ func Check(current string, timeout time.Duration) (latest string, warn bool, err
 	if err != nil {
 		return "", false, err
 	}
-	return rel.TagName, ShouldWarn(current, rel.TagName), nil
+	// D-1: every newer release warns — patch, minor and major alike. A major
+	// is exactly the upgrade whose behaviour changes, and hiding it to keep
+	// the output quiet would hide the one that matters most.
+	return rel.TagName, Compare(current, rel.TagName) == 1, nil
 }
 
 // WarningLine is the sentence a user sees when they are behind. It names
@@ -127,8 +142,3 @@ func WarningLine(current, latest string) string {
 	return fmt.Sprintf("== procoder: newer version %s is available (current: %s) — `procoder self-upgrade` installs it",
 		strings.TrimPrefix(latest, "v"), current)
 }
-
-// Stderr is where a version warning goes when the command's stdout belongs
-// to a hook payload: a hook's stdout is parsed as JSON, and a friendly line
-// in the middle of it is a corrupted payload (R-07, R-08).
-var Stderr io.Writer = os.Stderr

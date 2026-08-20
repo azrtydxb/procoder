@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -171,4 +174,77 @@ func TestWarningLineNamesBothVersions(t *testing.T) {
 	if strings.Contains(got, "v1.2.0") {
 		t.Errorf("the tag's v prefix is not part of a version a user reads: %s", got)
 	}
+}
+
+// A tag the comparator cannot read is a question that did not get answered.
+// It compares as equal — which "you are current" is indistinguishable from —
+// so the check has to refuse it at the door rather than pass the ambiguity
+// on to a caller that will print a verdict.
+// proved by: returned rel with the unparseable tag — Check then answers
+// warn=false, err=nil and `version --check` prints "is the latest release"
+// against a nightly build nobody can compare against.
+func TestATagThatCannotBeComparedIsNotAnUpToDateAnswer(t *testing.T) {
+	for _, tag := range []string{"nightly-2026-08-21", "latest", "release-2026.08"} {
+		stub(t, http.StatusOK, `{"tag_name":"`+tag+`"}`)
+		if _, err := Latest(Timeout); err == nil {
+			t.Errorf("tag %q cannot be compared and must not be returned as an answer", tag)
+		} else if !strings.Contains(err.Error(), tag) {
+			t.Errorf("the reason must name the tag it could not read: %v", err)
+		}
+		_, warn, err := Check("1.0.0", Timeout)
+		if err == nil {
+			t.Errorf("Check must surface it: tag %q", tag)
+		}
+		if warn {
+			t.Errorf("nothing is known to be newer: tag %q", tag)
+		}
+	}
+}
+
+// The asset name is spelled twice: here, derived from GOOS/GOARCH, and in
+// the release workflow, which stages the files by hand. They agree today,
+// and nothing has ever checked that they do — a rename on either side
+// breaks self-upgrade for every user, with no test going red and the
+// failure surfacing only after a tag is cut.
+// proved by: changed the prefix in AssetName to "procoder_" — this test
+// then names every workflow asset it can no longer account for.
+func TestEveryReleaseAssetIsANameThisCanAskFor(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Skip("no workflow to compare against: ", err)
+	}
+	// The staged basenames, as the release job writes them.
+	staged := regexp.MustCompile(`/tmp/assets/(procoder-[a-z0-9]+-[a-z0-9]+(?:\.exe)?)`).FindAllStringSubmatch(string(raw), -1)
+	if len(staged) == 0 {
+		t.Fatal("no staged assets found in the workflow — repoint this test before trusting it")
+	}
+	seen := map[string]bool{}
+	for _, m := range staged {
+		seen[m[1]] = true
+	}
+	for name := range seen {
+		goos, goarch, ok := platformOf(name)
+		if !ok {
+			t.Errorf("%s is not a name AssetName could produce", name)
+			continue
+		}
+		if want := assetNameFor(goos, goarch); want != name {
+			t.Errorf("the workflow stages %s where this package asks for %s", name, want)
+		}
+	}
+	// The platform running this test must be one the release actually
+	// publishes, or self-upgrade cannot work here.
+	if !seen[AssetName()] && runtime.GOOS != "windows" {
+		t.Errorf("no release asset named %s — self-upgrade has nothing to fetch on this platform", AssetName())
+	}
+}
+
+// platformOf reverses an asset name into the pair that produced it.
+func platformOf(name string) (goos, goarch string, ok bool) {
+	trimmed := strings.TrimSuffix(strings.TrimPrefix(name, "procoder-"), ".exe")
+	parts := strings.SplitN(trimmed, "-", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
