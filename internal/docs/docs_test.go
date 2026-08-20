@@ -446,7 +446,7 @@ func TestAnAnchorThatNoHeadingGeneratesIsBroken(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n\nbody\n")
 	src := filepath.Join(dir, "src.md")
-	mustWrite(t, src, "See [it](target.md#contract-1--p-control-the-agent-stays-in-control).\n")
+	mustWrite(t, src, "See [it](target.md#contract-2-the-agent-stays-in-control).\n")
 
 	got := RelativeRefs(dir, src)
 	if len(got) != 1 {
@@ -458,15 +458,22 @@ func TestAnAnchorThatNoHeadingGeneratesIsBroken(t *testing.T) {
 }
 
 // The same link with the slug the heading actually generates is fine —
-// em dash dropped, colon dropped, runs of separators collapsed, exactly
-// as Python-Markdown's toc slugify does it.
+// em dash dropped, colon dropped — in either dialect: mkdocs collapses the
+// run of separators the dropped characters leave, github.com keeps it, and
+// the same page is read through both.
 // proved by: made the slug keep punctuation — the correct link is then
-// reported as broken, which is worse than not checking at all.
+// reported as broken, which is worse than not checking at all; and dropped
+// the github spelling — every heading with an `&`, an em dash, or a colon
+// then reads as a broken reference on the renderer most repositories use.
 func TestTheRealSlugResolves(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n")
+	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n\n## Files & skills\n\n### DeepSeek: `reasoning_content`\n")
 	for _, link := range []string{
 		"target.md#contract-1-p-control-the-agent-stays-in-control",
+		"target.md#contract-1--p-control-the-agent-stays-in-control",
+		"target.md#files-skills",
+		"target.md#files--skills",
+		"target.md#deepseek-reasoning_content",
 		"target.md#page",
 	} {
 		src := filepath.Join(dir, "src.md")

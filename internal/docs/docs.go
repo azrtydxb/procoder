@@ -259,25 +259,48 @@ func anchorIDs(path string) (map[string]bool, bool) {
 		if m == nil {
 			continue
 		}
-		slug := headingSlug(explicitID.ReplaceAllString(m[1], ""))
-		if slug == "" {
-			continue
+		for _, slug := range headingAnchors(explicitID.ReplaceAllString(m[1], "")) {
+			if n := seen[slug]; n > 0 {
+				ids[fmt.Sprintf("%s-%d", slug, n)] = true
+			} else {
+				ids[slug] = true
+			}
+			seen[slug]++
 		}
-		if n := seen[slug]; n > 0 {
-			ids[fmt.Sprintf("%s-%d", slug, n)] = true
-		} else {
-			ids[slug] = true
-		}
-		seen[slug]++
 	}
 	return ids, true
 }
 
-// headingSlug reproduces Python-Markdown's toc slugify, which is what
-// mkdocs uses: drop everything that is not a word character, whitespace,
-// or a hyphen, then collapse runs of whitespace and hyphens into one
-// hyphen. An em dash disappears rather than becoming a separator, which
-// is precisely the case that is easy to get wrong by hand.
+// headingAnchors returns every anchor one heading offers, because the two
+// renderers a repository's Markdown meets disagree. Python-Markdown's toc
+// slugify — what mkdocs uses — collapses runs of hyphens; GitHub does not,
+// so `## Files & skills` is `files-skills` on a site and `files--skills` on
+// github.com. Which renderer the reader used is not knowable from here, and
+// the same file is routinely read through both, so a heading is credited
+// with both spellings: the check exists to catch an anchor no heading
+// generates at all, not to enforce a dialect. Deduplicated, because the two
+// agree for most headings and the caller counts these for the `-1`, `-2`
+// suffixes duplicate headings get.
+func headingAnchors(title string) []string {
+	github := headingSlug(title)
+	mkdocs := github
+	for strings.Contains(mkdocs, "--") {
+		mkdocs = strings.ReplaceAll(mkdocs, "--", "-")
+	}
+	switch github {
+	case "":
+		return nil
+	case mkdocs:
+		return []string{github}
+	}
+	return []string{github, mkdocs}
+}
+
+// headingSlug maps a heading's text to GitHub's anchor: lower case, drop
+// everything that is not a word character, whitespace, or a hyphen, and turn
+// each remaining separator into one hyphen. An em dash disappears rather than
+// becoming a separator — it leaves the two hyphens its surrounding spaces
+// made, which is precisely the case that is easy to get wrong by hand.
 func headingSlug(title string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(stripInlineMarkup(title)) {
@@ -290,18 +313,17 @@ func headingSlug(title string) string {
 			b.WriteRune(r) // \w matches unicode letters and digits too
 		}
 	}
-	slug := b.String()
-	for strings.Contains(slug, "--") {
-		slug = strings.ReplaceAll(slug, "--", "-")
-	}
-	return strings.Trim(slug, "-")
+	return strings.Trim(b.String(), "-")
 }
 
 // stripInlineMarkup removes the emphasis, code, and link syntax that a
-// heading may carry — the slug is built from the rendered text.
+// heading may carry — the slug is built from the rendered text. Underscores
+// survive: `_` is emphasis only around a word, and inside a code span it is
+// part of the name, so a heading about `reasoning_content` keeps it — both
+// renderers do.
 func stripInlineMarkup(s string) string {
 	s = mdLink.ReplaceAllString(s, "")
-	for _, mark := range []string{"`", "**", "*", "__", "_"} {
+	for _, mark := range []string{"`", "**", "*"} {
 		s = strings.ReplaceAll(s, mark, "")
 	}
 	return strings.ReplaceAll(strings.ReplaceAll(s, "[", ""), "]", "")
