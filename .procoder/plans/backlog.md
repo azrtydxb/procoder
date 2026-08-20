@@ -111,7 +111,7 @@ out func(string)) int`. main.go passes the same
 `func() bool { return gate.Run(nil, root, io.Discard) == 0 }` that todo
 close uses.
 
-- [ ] `CloseStory` mirrors `todo.Close` verbatim in rigor: empty
+- [ ] `CloseStoryWith` mirrors `todo.CloseWith` verbatim in rigor: empty
       description, placeholder criteria, no checked box, N unchecked
       boxes, empty evidence, dirty gate — ALL findings listed in one
       refusal; already-done exits 0; success rewrites

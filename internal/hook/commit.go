@@ -221,12 +221,6 @@ func decide(stdout io.Writer, verdict, reason string) int {
 	return 0
 }
 
-// IsGitCommit reports whether the shell command would create a commit through
-// git. False positives are worse than false negatives here, so the rule is
-// narrow: a `git` word that starts a command segment, whose first non-flag
-// argument is exactly `commit`.
-func IsGitCommit(command string) bool { return parseCommand(command).isCommit }
-
 type commitCommand struct {
 	isCommit    bool
 	noVerify    bool

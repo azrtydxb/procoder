@@ -88,7 +88,7 @@ func TestCloseBugRefusesWithoutSeverity(t *testing.T) {
 	p := writeItem(t, root, KindStory, "20260819-login-500s",
 		strings.Replace(solidBug, "%s\n", "", 1))
 	out, lines := collect()
-	if code := CloseStory(root, "20260819-login-500s", gate(true), out); code != 1 {
+	if code := closeStory(root, "20260819-login-500s", gate(true), out); code != 1 {
 		t.Fatalf("a bug without a severity must stay open: exit %d %v", code, *lines)
 	}
 	if !strings.Contains(strings.Join(*lines, "\n"), "add Severity: s1..s4") {
@@ -100,7 +100,7 @@ func TestCloseBugRefusesWithoutSeverity(t *testing.T) {
 		t.Fatal(err)
 	}
 	out2, lines2 := collect()
-	if code := CloseStory(root, "20260819-login-500s", gate(true), out2); code != 1 {
+	if code := closeStory(root, "20260819-login-500s", gate(true), out2); code != 1 {
 		t.Fatalf("an invalid severity must stay open: exit %d %v", code, *lines2)
 	}
 
@@ -109,7 +109,7 @@ func TestCloseBugRefusesWithoutSeverity(t *testing.T) {
 		t.Fatal(err)
 	}
 	out3, lines3 := collect()
-	if code := CloseStory(root, "20260819-login-500s", gate(true), out3); code != 0 {
+	if code := closeStory(root, "20260819-login-500s", gate(true), out3); code != 0 {
 		t.Fatalf("a triaged bug must close: exit %d %v", code, *lines3)
 	}
 }

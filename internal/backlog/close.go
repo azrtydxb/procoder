@@ -16,16 +16,6 @@ import (
 	"procoder/internal/textutil"
 )
 
-// CloseStory is the quality controller for the execution unit: it verifies
-// and either closes the story (rewrites Status) or refuses with exactly
-// what is missing. gateClean runs `procoder check` on demand — the gate
-// result belongs in the verdict because "done" includes not having broken
-// anything. Mirrors todo.Close in full rigor; the two domains stay
-// independent.
-func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
-	return CloseStoryWith(root, id, gateClean, nil, out)
-}
-
 // CloseStories closes several stories against ONE verification. The gate
 // and the suite judge the tree, not a story, so asking them once per story
 // re-runs the same answer N times — a sprint's worth of closes cost

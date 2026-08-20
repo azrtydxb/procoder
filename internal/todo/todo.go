@@ -131,14 +131,6 @@ func Add(root, title string, out func(string)) int {
 	return 0
 }
 
-// Close is the quality controller: it verifies and either closes the task
-// (rewrites Status) or refuses with exactly what is missing. gateClean runs
-// `procoder check` on demand — the gate result belongs in the verdict
-// because "done" includes not having broken anything.
-func Close(root, id string, gateClean func() bool, out func(string)) int {
-	return CloseWith(root, id, gateClean, nil, out)
-}
-
 // CloseWith is Close plus the test-suite verdict: under `[test] policy =
 // "block"` the caller passes testrun.Suite and a red (or unverifiable)
 // suite keeps the task open. suite nil means the policy is off.

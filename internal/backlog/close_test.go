@@ -61,7 +61,7 @@ func TestCloseStoryWalksFromRefusedToClosed(t *testing.T) {
 
 	// Every gap listed in ONE refusal — not just the first.
 	out, lines := collect()
-	if code := CloseStory(root, "20260819-login-form", gate(false), out); code != 1 {
+	if code := closeStory(root, "20260819-login-form", gate(false), out); code != 1 {
 		t.Fatalf("hollow story must refuse: exit %d %v", code, *lines)
 	}
 	joined := strings.Join(*lines, "\n")
@@ -84,7 +84,7 @@ func TestCloseStoryWalksFromRefusedToClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	out2, lines2 := collect()
-	if code := CloseStory(root, "20260819-login-form", gate(false), out2); code != 1 {
+	if code := closeStory(root, "20260819-login-form", gate(false), out2); code != 1 {
 		t.Fatalf("dirty gate must refuse: exit %d %v", code, *lines2)
 	}
 	j2 := strings.Join(*lines2, "\n")
@@ -94,7 +94,7 @@ func TestCloseStoryWalksFromRefusedToClosed(t *testing.T) {
 
 	// Everything true — the story closes and the file records it.
 	out3, lines3 := collect()
-	if code := CloseStory(root, "20260819-login-form", gate(true), out3); code != 0 {
+	if code := closeStory(root, "20260819-login-form", gate(true), out3); code != 0 {
 		t.Fatalf("solid story must close: exit %d %v", code, *lines3)
 	}
 	raw, err := os.ReadFile(p)
@@ -107,7 +107,7 @@ func TestCloseStoryWalksFromRefusedToClosed(t *testing.T) {
 
 	// Closing again is idempotent — exit 0, no rewrite complaint.
 	out4, lines4 := collect()
-	if code := CloseStory(root, "20260819-login-form", gate(true), out4); code != 0 {
+	if code := closeStory(root, "20260819-login-form", gate(true), out4); code != 0 {
 		t.Fatalf("re-close must be idempotent: exit %d %v", code, *lines4)
 	}
 	if !strings.Contains(strings.Join(*lines4, "\n"), "already") {
@@ -119,7 +119,7 @@ func TestCloseStoryAlreadyDoneExitsZero(t *testing.T) {
 	root := t.TempDir()
 	writeItem(t, root, KindStory, "20260819-shipped", "# Shipped\n\nStatus: done 2026-01-01\nEpic: auth\nSprint: -\n")
 	out, lines := collect()
-	if code := CloseStory(root, "20260819-shipped", gate(false), out); code != 0 {
+	if code := closeStory(root, "20260819-shipped", gate(false), out); code != 0 {
 		t.Fatalf("already-done must exit 0: exit %d %v", code, *lines)
 	}
 	if !strings.Contains(strings.Join(*lines, "\n"), "already done 2026-01-01") {
@@ -131,12 +131,12 @@ func TestCloseStoryGuardsIdsAndMissingFiles(t *testing.T) {
 	root := t.TempDir()
 	for _, id := range []string{"", "../escape", "a/b", ".."} {
 		out, lines := collect()
-		if code := CloseStory(root, id, gate(true), out); code != 2 {
+		if code := closeStory(root, id, gate(true), out); code != 2 {
 			t.Fatalf("id %q must be refused with exit 2: %d %v", id, code, *lines)
 		}
 	}
 	out, lines := collect()
-	if code := CloseStory(root, "no-such-story", gate(true), out); code != 2 {
+	if code := closeStory(root, "no-such-story", gate(true), out); code != 2 {
 		t.Fatalf("missing story must exit 2: %d %v", code, *lines)
 	}
 	if !strings.Contains(strings.Join(*lines, "\n"), "procoder backlog list") {
@@ -397,4 +397,11 @@ func TestCloseStoriesOfOneMatchesTheSingleForm(t *testing.T) {
 		t.Fatalf("the batch of one must behave exactly as the single form:\n%d %v\n%d %v",
 			codeA, *linesA, codeB, *linesB)
 	}
+}
+
+// closeStory is CloseStoryWith with no suite verdict — the shape the tests
+// below use. It lived in close.go as an exported wrapper until the dead-code
+// tier pointed out that nothing outside these tests ever called it.
+func closeStory(root, id string, gateClean func() bool, out func(string)) int {
+	return CloseStoryWith(root, id, gateClean, nil, out)
 }

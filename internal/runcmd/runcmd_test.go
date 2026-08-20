@@ -47,7 +47,7 @@ func find(t *testing.T, cands []Candidate, command string) Candidate {
 func TestDetectsPackageJSONScriptsWithEvidence(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "package.json", "{\n  \"name\": \"x\",\n  \"scripts\": {\n    \"build\": \"tsc\",\n    \"dev\": \"vite\",\n    \"start\": \"node server.js\"\n  }\n}\n")
-	cands := Detect(root)
+	cands := candidates(root)
 	dev := find(t, cands, "npm run dev")
 	if dev.Source != "package.json" || dev.Line != 5 {
 		t.Fatalf("dev must point at the line that declared it: %+v", dev)
@@ -60,7 +60,7 @@ func TestDetectsPackageJSONScriptsWithEvidence(t *testing.T) {
 	}
 	// the lockfile decides the manager, never a guess
 	write(t, root, "pnpm-lock.yaml", "lockfileVersion: 6\n")
-	find(t, Detect(root), "pnpm run dev")
+	find(t, candidates(root), "pnpm run dev")
 }
 
 func TestDetectsMakefileGoCargoPythonComposeProcfile(t *testing.T) {
@@ -73,7 +73,7 @@ func TestDetectsMakefileGoCargoPythonComposeProcfile(t *testing.T) {
 	write(t, root, "pyproject.toml", "[project]\nname = \"demo\"\n\n[project.scripts]\ndemo = \"demo.cli:main\"\nother = \"demo.other:main\"\n")
 	write(t, root, "docker-compose.yml", "services:\n  web:\n    image: x\n")
 	write(t, root, "Procfile", "web: gunicorn app:app\nworker: python worker.py\n")
-	cands := Detect(root)
+	cands := candidates(root)
 
 	for cmd, want := range map[string]struct {
 		src  string
@@ -118,7 +118,7 @@ func TestRankingIsMostSpecificFirst(t *testing.T) {
 	write(t, root, "package.json", "{\n  \"scripts\": {\n    \"start\": \"node .\",\n    \"dev\": \"vite\",\n    \"serve\": \"http-server\"\n  }\n}\n")
 	write(t, root, "Makefile", "run:\n\t./app\n")
 	got := []string{}
-	for _, c := range Detect(root) {
+	for _, c := range candidates(root) {
 		got = append(got, c.Command)
 	}
 	want := "make run npm run dev npm run start npm run serve"
@@ -133,7 +133,7 @@ func TestMultipleGoMainsAreEachCandidates(t *testing.T) {
 	write(t, root, "cmd/a/main.go", "package main\n\nfunc main() {}\n")
 	write(t, root, "cmd/b/main.go", "package main\n\nfunc main() {}\n")
 	write(t, root, "lib/lib.go", "package lib\n")
-	cands := Detect(root)
+	cands := candidates(root)
 	if len(cands) != 2 {
 		t.Fatalf("each main package is its own candidate, never a guess between them: %+v", cands)
 	}
@@ -145,7 +145,7 @@ func TestMultipleGoMainsAreEachCandidates(t *testing.T) {
 	lib := t.TempDir()
 	write(t, lib, "go.mod", "module lib\n\ngo 1.22\n")
 	write(t, lib, "lib.go", "package lib\n\n// detect looks for \"package main\" plus \"func main()\".\nvar Clause = \"package main\"\n")
-	if cands := Detect(lib); len(cands) != 0 {
+	if cands := candidates(lib); len(cands) != 0 {
 		t.Fatalf("a library has nothing to launch: %+v", cands)
 	}
 }
@@ -153,7 +153,7 @@ func TestMultipleGoMainsAreEachCandidates(t *testing.T) {
 func TestMakefileRecipeDecidesLongRunning(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "Makefile", "run:\n\tdocker compose up\n")
-	c := find(t, Detect(root), "make run")
+	c := find(t, candidates(root), "make run")
 	if !c.LongRunning {
 		t.Fatalf("the RECIPE makes this long-running, whatever the target is called: %+v", c)
 	}
@@ -308,8 +308,16 @@ func TestSplitArgsKeepsQuotedRunsWhole(t *testing.T) {
 func TestPyprojectScriptsAreEachCandidates(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "pyproject.toml", "[project.scripts]\nalpha = \"a:main\"\nbeta = \"b:main\"\n")
-	cands := Detect(root)
+	cands := candidates(root)
 	if len(cands) != 2 {
 		t.Fatalf("every entry point is a candidate, none is \"the\" one: %+v", cands)
 	}
+}
+
+// candidates is detect without the notes half, which is all these tests want.
+// It was exported as Detect until the dead-code tier reported that only tests
+// called it.
+func candidates(root string) []Candidate {
+	cands, _ := detect(root)
+	return cands
 }
