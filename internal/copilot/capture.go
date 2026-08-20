@@ -50,20 +50,22 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 		if f.Created.IsZero() {
 			when = time.Now().UTC()
 		}
+		// The heading both halves carry, derived once: the issue and the
+		// ledger entry are the same finding under two roofs.
+		head := strings.TrimSpace(f.Title)
+		if head == "" {
+			head = firstLine(f.Body)
+		}
 		if bin != "" {
 			if !labelled {
 				notes = append(notes, ensureLabels(bin, root)...)
 				labelled = true
 			}
-			if err := createIssue(bin, root, f, when); err != nil {
+			if err := createIssue(bin, root, f, head, when); err != nil {
 				notes = append(notes, "issue NOT created for "+originOf(f)+" — "+err.Error()+"; the ledger still records it")
 			} else {
 				issuesCreated++
 			}
-		}
-		head := strings.TrimSpace(f.Title)
-		if head == "" {
-			head = firstLine(f.Body)
 		}
 		if err := lessons.RecordCopilotEntry(root, head, originOf(f), f.Body, when); err != nil {
 			notes = append(notes, filepath.ToSlash(lessons.CopilotLeaksPath)+" NOT written for "+originOf(f)+
@@ -127,13 +129,9 @@ func ensureLabels(bin, root string) []string {
 // are passed: `auto-copilot` is the family the finder queries, `copilot-leak`
 // marks the ones procoder itself opened, so a later run cannot mistake our own
 // issue for a fresh Copilot review and capture it again.
-func createIssue(bin, root string, f Sanitised, when time.Time) error {
+func createIssue(bin, root string, f Sanitised, title string, when time.Time) error {
 	ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
 	defer cancel()
-	title := strings.TrimSpace(f.Title)
-	if title == "" {
-		title = firstLine(f.Body)
-	}
 	cmd := exec.CommandContext(ctx, bin, "issue", "create", // nosemgrep -- gh resolved from PATH with fixed subcommands
 		"--title", title,
 		"--body", issueBody(f, when),

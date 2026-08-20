@@ -84,11 +84,11 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		return 0
 	}
 	var missing []string
-	desc := textutil.Section(text, "Description")
+	desc := textutil.Section(text, sectionDescription)
 	if strings.TrimSpace(textutil.StripComments(desc)) == "" {
 		missing = append(missing, "Description is empty — a title is not a description")
 	}
-	criteria := textutil.Section(text, "Acceptance criteria")
+	criteria := textutil.Section(text, sectionCriteria)
 	if placeholder.MatchString(criteria) {
 		missing = append(missing, "Acceptance criteria still contain the placeholder — write real, testable criteria")
 	}
@@ -109,7 +109,7 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 			missing = append(missing, "a bug closes with a severity — add Severity: s1..s4")
 		}
 	}
-	evidence := textutil.Section(text, "Evidence")
+	evidence := textutil.Section(text, sectionEvidence)
 	if strings.TrimSpace(textutil.StripComments(evidence)) == "" {
 		missing = append(missing, "Evidence is empty — record the commands run and what their output proved")
 	}

@@ -67,11 +67,21 @@ type Item struct {
 	Path      string
 }
 
-// storySections are the sections CloseStory reads. A story that does not
-// carry them cannot be judged — and until the board said so, that fact
-// surfaced only when someone tried to close it, one story at a time. The
-// list lives here so the board and the controller read the same shape.
-var storySections = []string{"Description", "Acceptance criteria", "Evidence"}
+// The three sections a story is judged by. They are constants because two
+// readers depend on them: CloseStoryWith reads each one by name, and the
+// board reports a story that carries none of them — renaming a section in
+// one place without the other would leave the board flagging stories the
+// controller is happy with, or the reverse.
+const (
+	sectionDescription = "Description"
+	sectionCriteria    = "Acceptance criteria"
+	sectionEvidence    = "Evidence"
+)
+
+// storySections is that list, in the order the controller reads them. A
+// story missing one cannot be judged at all — and until the board said so,
+// that surfaced only when someone tried to close it, one story at a time.
+var storySections = []string{sectionDescription, sectionCriteria, sectionEvidence}
 
 // missingSections names the required sections a story's file has no heading
 // for. A section that is present and empty is a different fact — the close
