@@ -3,6 +3,7 @@
 Status: open 2026-08-20
 Epic: auto-copilot-leak
 Created: 2026-08-20
+Sprint: 006-auto-copilot-leak-capture-copilots-auto-review-findings-as
 
 ## Description
 
