@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # The action pins in .github/workflows/ are SHAs, and a SHA rots the same
+  # way a tool version does — with the difference that it is the one an
+  # attacker would rather move. Dependabot resolves the tag, rewrites the
+  # SHA and keeps the trailing version comment truthful, all of which is
+  # already what every reviewer here recognises.
+  #
+  # The trailing `gitleaks:allow` on each pin must survive the rewrite: the
+  # gate reads a bare 40-hex string as a secret, so a bump that drops the
+  # marker fails the gate rather than merging quietly.
+  #
+  # .github/tool-versions.env is NOT an ecosystem Dependabot knows about;
+  # .github/workflows/bump-tools.yml covers those twelve pins.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

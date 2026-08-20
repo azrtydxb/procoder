@@ -1,0 +1,180 @@
+name: bump-tools
+on:
+  schedule:
+    # Monday morning UTC. A bump that lands at the start of the week gets
+    # read; one that lands on a Friday sits over the weekend.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+concurrency:
+  # Two runs at once would race each other's force pushes onto the same
+  # bump branches and open duplicate PRs. Never cancelled: a half-finished
+  # run leaves branches pushed with no PR attached to them.
+  group: bump-tools
+  cancel-in-progress: false
+permissions:
+  contents: write # push one bump branch per tool
+  pull-requests: write # open one PR per bump branch
+jobs:
+  bump:
+    # The other half of pinning. A pin never moves on its own, so without
+    # this the gate's tools rot quietly until one is three majors behind or
+    # a fixed CVE is still sitting in CI.
+    #
+    # The action SHAs in .github/workflows/ are NOT this job's business —
+    # .github/dependabot.yml owns those.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
+      - name: one PR per pin that is behind
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          # Nothing here is skipped in silence: a pin whose source cannot be
+          # reached, cannot be parsed, or has no source wired up at all is
+          # recorded and re-raised at the end of the run. A bump workflow that
+          # quietly passes over two of its twelve entries reports success while
+          # leaving them pinned forever — unknown is never the same as current.
+          failed=0
+          record_failure() {
+            echo "::error::$*"
+            failed=1
+          }
+
+          gh_release_tag() { gh api "repos/$1/releases/latest" --jq '.tag_name'; }
+          # --retry covers a registry blipping; -f turns an HTTP error into a
+          # non-zero exit instead of a body that jq would read as garbage, and
+          # jq -e does the same for a 200 that carries no version field.
+          pypi_version() { curl -sSfL --retry 3 "https://pypi.org/pypi/$1/json" | jq -er '.info.version'; }
+          npm_version() { curl -sSfL --retry 3 "https://registry.npmjs.org/$1/latest" | jq -er '.version'; }
+
+          # Each source answers in its own shape, and tool-versions.env records
+          # each pin the way ci.yml consumes it: OSV_SCANNER, SCIP_GO and GOPLS
+          # keep the leading v because the URL or the module path uses the tag
+          # verbatim, the rest drop it because their consumer writes "v${VAR}"
+          # itself. Writing the wrong shape breaks the next gate run, so the
+          # normalisation lives on the same line as the source it undoes.
+          # Exit 3 means no source is wired up, which is a failure of its own.
+          latest_version() {
+            case "$1" in
+            OSV_SCANNER) gh_release_tag google/osv-scanner ;;
+            GOLANGCI_LINT) gh_release_tag golangci/golangci-lint | sed 's|^v||' ;;
+            ACTIONLINT) gh_release_tag rhysd/actionlint | sed 's|^v||' ;;
+            LYCHEE) gh_release_tag lycheeverse/lychee | sed 's|^lychee-v||' ;;
+            SCIP) gh_release_tag sourcegraph/scip | sed 's|^v||' ;;
+            SCIP_GO) gh_release_tag scip-code/scip-go ;;
+            # golang/tools publishes no GitHub releases at all and tags gopls
+            # as gopls/vX.Y.Z among every other x/tools tag, so releases/latest
+            # answers nothing for it. The module proxy resolves exactly what
+            # `go install golang.org/x/tools/gopls@latest` would, which is the
+            # command the gate actually runs.
+            GOPLS) curl -sSfL --retry 3 "https://proxy.golang.org/golang.org/x/tools/gopls/@latest" | jq -er '.Version' ;;
+            SEMGREP) pypi_version semgrep ;;
+            RUFF) pypi_version ruff ;;
+            MKDOCS_MATERIAL) pypi_version mkdocs-material ;;
+            PRETTIER) npm_version prettier ;;
+            MERMAID_CLI) npm_version @mermaid-js/mermaid-cli ;;
+            *) return 3 ;;
+            esac
+          }
+
+          # A renamed or emptied file would otherwise run the loop zero times
+          # and report success, which is the silence D-5 exists to forbid.
+          if ! grep -qE '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env; then
+            echo "no pins found in .github/tool-versions.env" >&2
+            exit 1
+          fi
+
+          base="$GITHUB_REF_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Only the assignments: the file leads with the paragraph explaining
+          # why the pins exist, and ci.yml reads it through the same filter.
+          while IFS='=' read -r key current; do
+            rc=0
+            latest=$(latest_version "$key") || rc=$?
+            case "$rc" in
+            0) ;;
+            3)
+              record_failure "$key: no version source is wired up for this pin — add one to latest_version"
+              continue
+              ;;
+            *)
+              record_failure "$key: its source could not be reached or read"
+              continue
+              ;;
+            esac
+            # A source that answers 200 with something that is not a version —
+            # an error page, a moved field — must not be written into the file.
+            if ! printf '%s' "$latest" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+'; then
+              record_failure "$key: its source answered '$latest', which is not a version"
+              continue
+            fi
+            if [ "$latest" = "$current" ]; then
+              echo "$key: $current is current"
+              continue
+            fi
+
+            branch="bump-tools/$(printf '%s' "$key" | tr 'A-Z_' 'a-z-')"
+            # A bump whose CI went red stays open as the record that the
+            # upgrade exists and is blocked; re-proposing it every week would
+            # bury that under identical PRs. Closing one says "not this
+            # version", and the next run offers whatever came after it.
+            if ! open_pr=$(gh pr list --head "$branch" --state open --json number --jq '.[].number'); then
+              record_failure "$key: could not ask whether a bump PR is already open"
+              continue
+            fi
+            if [ -n "$open_pr" ]; then
+              echo "$key: PR #$open_pr is already open for this pin, leaving it alone"
+              continue
+            fi
+
+            git checkout -q -B "$branch" "$base"
+            sed -i "s|^$key=.*|$key=$latest|" .github/tool-versions.env
+            # One tool per commit and per PR: each bump is independently
+            # reviewable and revertable, and its CI verdict is unambiguous —
+            # a new golangci-lint ruleset turning the tree red leaves nothing
+            # else stuck behind it.
+            if ! git commit -q -am "ci: bump $key from $current to $latest"; then
+              record_failure "$key: rewriting its line in tool-versions.env changed nothing"
+              git checkout -qf "$base"
+              continue
+            fi
+            # --force, not --force-with-lease: a closed PR leaves its branch
+            # behind at an unrelated commit, and the next offer for that tool
+            # is a fresh branch off the base rather than a descendant of it.
+            if ! git push -q --force origin "$branch"; then
+              record_failure "$key: could not push $branch"
+              git checkout -qf "$base"
+              continue
+            fi
+            # debt: a PR opened with GITHUB_TOKEN does not trigger workflow
+            # runs, so the gate does not start on its own and the body says so.
+            # Ceiling: the reviewer has to close and reopen the PR to get the
+            # verdict this workflow exists to produce. Revisit when that step
+            # is missed once, or when a repo-owned PAT is worth the key.
+            if ! gh pr create --base "$base" --head "$branch" \
+              --title "ci: bump $key from $current to $latest" \
+              --body "\`$key\` moves from \`$current\` to \`$latest\` in \`.github/tool-versions.env\`.
+
+          Bumping that line invalidates the tool cache, so the gate on this PR installs the new version and its verdict is the evidence — read the tool's changelog before merging, because a linter's new rule turning a green tree red is exactly what the pin exists to make visible.
+
+          Close and reopen this PR to start CI: it was opened by the workflow's own token, which does not trigger workflow runs.
+
+          Opened by \`.github/workflows/bump-tools.yml\`. Refs #92"; then
+              record_failure "$key: pushed $branch but could not open its PR"
+              git checkout -qf "$base"
+              continue
+            fi
+            echo "$key: proposed $current -> $latest on $branch"
+            git checkout -qf "$base"
+          done < <(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)
+
+          if [ "$failed" -ne 0 ]; then
+            echo "at least one pin could not be checked — unknown is never the same as current" >&2
+            exit 1
+          fi
