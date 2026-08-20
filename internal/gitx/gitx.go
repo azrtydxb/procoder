@@ -122,12 +122,44 @@ func UnpushedMessages(root string) []string {
 // the middle is.
 var conflictMarker = regexp.MustCompile(`(?m)^(<{7}( |$)|>{7}( |$))`)
 
+// conflictAllow exempts a whole file from the conflict-marker check, and
+// only with a reason after the token: a document whose subject IS merge
+// conflicts cannot show a reader one otherwise, and the alternatives are
+// all worse — mangle the example so a copy of it is broken, drop the
+// topic, or turn the check off everywhere.
+//
+// File-scoped and explicit rather than "skip fenced code blocks", because
+// a real conflict lands inside a fence often enough that skipping them
+// would be a silent miss — and a check that quietly misses things is the
+// failure this product argues against. Same spirit as gitleaks:allow: one
+// greppable line, a stated reason, and nothing implicit.
+var conflictAllow = regexp.MustCompile(`procoder:allow-conflict-markers(.*)`)
+
+// conflictAllowed reports whether the file carries the exemption WITH a
+// reason. The comment terminator is stripped first, so the reason in
+// `<!-- procoder:allow-conflict-markers -->` reads as empty — a bare
+// token is someone silencing the check, not documenting an exception.
+func conflictAllowed(data []byte) bool {
+	m := conflictAllow.FindSubmatch(data)
+	if m == nil {
+		return false
+	}
+	reason := strings.TrimSpace(string(m[1]))
+	for _, close := range []string{"-->", "*/", "#}", "-}"} {
+		reason = strings.TrimSpace(strings.TrimSuffix(reason, close))
+	}
+	return reason != ""
+}
+
 // ConflictMarkers finds merge-conflict markers left in changed files.
 func ConflictMarkers(files []string) []Finding {
 	var out []Finding
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil || !utf8ish(data) {
+			continue
+		}
+		if conflictAllowed(data) {
 			continue
 		}
 		for _, idx := range conflictMarker.FindAllIndex(data, -1) {

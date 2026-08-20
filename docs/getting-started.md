@@ -1,100 +1,167 @@
+<!-- procoder:allow-conflict-markers this tutorial shows a learner what a conflict looks like -->
+
 # Getting started
 
-Ten minutes from install to a gated, indexed, principled repository.
+**A tutorial.** By the end you will have Procoder installed, and you will
+have watched its commit gate refuse a change and then accept it. Ten
+minutes. Follow it exactly; explanations come later.
 
-## 1. Install
+## 1. Install the plugin
 
-**Claude Code** (the reference host):
+In Claude Code:
 
 ```
 /plugin marketplace add azrtydxb/procoder
 /plugin install procoder
 ```
 
-Restart or `/reload-plugins`, and the hooks are live: every file write is
-checked in-turn, and every session starts with the engineering
-principles.
+Then run `/reload-plugins`.
 
-**Any other agent**: put the binary for your platform on PATH (it ships
-in `dist/` of the repo), then follow [Every agent](portability.md) for
-your host's one-file setup — most hosts need nothing beyond `AGENTS.md`.
+The hooks are now live. Every file the agent writes is checked in the
+same turn, and every session starts with the engineering principles.
 
-## 2. Let it install its tools
+## 2. Put the binary on PATH
 
-```
-/procoder:init
-```
-
-`procoder doctor` surveys what THIS repository needs — formatters,
-linters, scanners, index builders, by the files you actually have — and
-`init` prints one install command per gap for your machine's package
-managers. The agent runs them in the open; doctor confirms every gap
-closed. A tool that is missing is never silently skipped: files it
-would have checked are reported as **unchecked, which fails the gate**.
-
-## 3. Onboard the codebase
-
-New repository or one Procoder has never governed? Run the sweep:
+The plugin ships the binary, and this tutorial calls it directly so you
+can see what the agent sees.
 
 ```
-/procoder:audit
+git clone https://github.com/azrtydxb/procoder
+export PATH="$PWD/procoder/dist/darwin-arm64:$PATH"
+procoder version
 ```
 
-Every domain's checks over the whole tree, aggregated into a
-triage-ordered scorecard: secrets first (each needs removal AND
-rotation), then blocking hygiene, then judgment calls. The skill walks
-the agent through fixing incrementally — one theme per commit,
-gate-clean after each — and finishes by writing the repo's `.procoder/`
-files so the standard holds from here on.
+Replace `darwin-arm64` with your platform: `darwin-amd64`,
+`linux-amd64`, `linux-arm64`, or `windows-amd64`.
 
-## 4. Build the index
+You will see the version number:
 
 ```
-/procoder:index build
+0.32.8
 ```
 
-Two tiers — universal-ctags (broad) and SCIP (precise, where the
-language has an indexer) — giving the agent `find`, `refs`, `callers`,
-`impact`, `unused`, and `entrypoints` instead of grep. The write hook
-keeps it fresh.
+## 3. Make a repository to break
 
-## 5. Work
+```
+mkdir checkout-notes && cd checkout-notes
+git init -q .
+```
 
-From here the loop is the senior developer's loop:
+Create `NOTES.md` with a merge conflict left in it, and trailing
+whitespace after `cents.`:
 
-1. **Think first** — `/procoder:spec` for anything non-trivial (the
-   interview refuses to end while design gaps remain), `/procoder:plan`
-   to turn the spec into executable tasks. Track them with
-   `/procoder:todo` for standalone work, or seed `/procoder:backlog`
-   from the spec and work the stories in `/procoder:sprint` when the
-   project has a shape worth planning. Each link has a controller that
-   blocks until the work is real — see
-   [The quality chain](quality-chain.md).
-2. **Write** — every save is format-checked in-turn; the agent gets the
-   fixed content, reviews it, writes it. The binary never touches your
-   files.
-3. **Prove it** — `/procoder:test` runs the repository's real suite,
-   with NOT run reported as NOT run. Set `[test] policy = "block"` in
-   `.procoder/config.toml` and a green suite becomes part of what "done"
-   means.
-4. **Finish** — `/procoder:check` is the same gate CI runs. Then
-   `/procoder:pr` (docs-impact answered, self-review passed, template
-   filled, attribution scrubbed) and `/procoder:merge` (every check
-   green, every review thread answered, reflection on anything that
-   escaped, then merge and cleanup). When it is time to ship,
-   `/procoder:release` lists everything standing between the tree and
-   the tag, then prints the tag command for you to run.
+```
+# Checkout notes
 
-## What you get that you didn't have
+The checkout total is computed in cents.
 
-- A **"done" that means verified** — evidence-gated todos, a gate that
-  counts unchecked as failing, and controllers that name exactly what is
-  missing instead of arguing.
-- A repo that **teaches its own agent** — principles at session start,
-  rules files the repo owns, and a lessons ledger that closes each
-  escaped bug's whole class.
-- **One standard across every agent** you or your team run — the same
-  contract file serves them all, drift-guarded by the gate.
+<<<<<<< HEAD
+Refunds reuse the same path.
+=======
+Refunds have their own path.
+>>>>>>> feature/refunds
+```
 
-Next: [The quality chain](quality-chain.md) ·
-[Every command](commands.md) · [Configuration](configuration.md)
+Stage it:
+
+```
+git add NOTES.md
+```
+
+## 4. Run the gate
+
+```
+procoder check
+```
+
+```
+unformatted  /tmp/checkout-notes/NOTES.md  (run `procoder format "/tmp/checkout-notes/NOTES.md"` for the result)
+BLOCKING     /tmp/checkout-notes/NOTES.md:5  merge conflict marker left in the file
+BLOCKING     /tmp/checkout-notes/NOTES.md:9  merge conflict marker left in the file
+info         .procoder/github/PULL_REQUEST_TEMPLATE.md is missing — run `procoder templates` and write it
+info         .procoder/github/COMMIT_TEMPLATE.md is missing — run `procoder templates` and write it
+info         .procoder/github/WORKFLOW.md is missing — run `procoder templates` and write it
+procoder gate: 0 clean, 1 unformatted, 0 unchecked, 0 out of scope, 5 hygiene finding(s) (2 blocking)
+```
+
+Check the exit code:
+
+```
+echo $?
+```
+
+```
+1
+```
+
+**BLOCKING** lines fail. **info** lines do not.
+
+## 5. Resolve the conflict
+
+Edit `NOTES.md`, keep one side, and leave the trailing whitespace alone
+for now:
+
+```markdown
+# Checkout notes
+
+The checkout total is computed in cents.
+
+Refunds reuse the same path.
+```
+
+## 6. Ask for the formatted result
+
+```
+procoder format NOTES.md
+```
+
+```
+== NOTES.md — formatted result (prettier), review and write it:
+# Checkout notes
+
+The checkout total is computed in cents.
+
+Refunds reuse the same path.
+```
+
+The trailing whitespace is gone from the printed result — and still
+present in your file. **Procoder printed the fix; it did not apply it.**
+Copy that content into `NOTES.md` yourself.
+
+## 7. Run the gate again
+
+```
+procoder check
+```
+
+```
+info         .procoder/github/PULL_REQUEST_TEMPLATE.md is missing — run `procoder templates` and write it
+info         .procoder/github/COMMIT_TEMPLATE.md is missing — run `procoder templates` and write it
+info         .procoder/github/WORKFLOW.md is missing — run `procoder templates` and write it
+procoder gate: 1 clean, 0 unformatted, 0 unchecked, 0 out of scope, 3 hygiene finding(s) (0 blocking)
+```
+
+```
+echo $?
+```
+
+```
+0
+```
+
+The gate passes. You can commit.
+
+## What you just did
+
+You ran the same gate CI runs, watched it refuse a commit over two
+conflict markers, and saw `format` hand back a fix for you to apply
+rather than editing your file. That last part is the whole design: **the binary computes and
+reports, you decide and write.**
+
+Next:
+
+- [Ship a change](workflow.md) — the daily sequence, start to tag.
+- [Onboard an existing codebase](how-to-onboard.md) — for a repository
+  that predates Procoder.
+- [The quality chain](quality-chain.md) — why every controller refuses
+  instead of advising.

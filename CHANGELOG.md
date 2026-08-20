@@ -2,6 +2,90 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.8 — 2026-08-20
+
+**Documentation now has a shape, not just a checklist.** The docs domain
+enforced that documentation exists — required files, badges, a README
+first screen, no broken links. It said nothing about what a page should
+be, so every page invented its own shape and drifted toward serving
+three readers at once.
+
+The shipped `.procoder/docs/RULES.md` now carries the
+[Divio documentation system](https://docs.divio.com/documentation-system/):
+four kinds of document, never mixed, the kind decided before the first
+line.
+
+| Kind         | Serves                        | Answers                 |
+| ------------ | ----------------------------- | ----------------------- |
+| Tutorial     | a newcomer learning           | "teach me"              |
+| How-to guide | a competent user working      | "how do I X?"           |
+| Reference    | someone looking a thing up    | "what are the options?" |
+| Explanation  | someone wanting to understand | "why is it like this?"  |
+
+Each has a characteristic failure, and the rules name them: a tutorial
+that stops to explain trade-offs loses the learner; a how-to that
+teaches from scratch wastes a reader who already knows; reference that
+argues cannot be trusted to describe; explanation carrying steps rots,
+because the steps then live in two places.
+
+Alongside it, the writing rules that follow: answer first, examples over
+prose about examples, real names rather than `foo`, sentences under
+fifteen words, scannable structure, the searchable synonym included, and
+an explicit "common pitfalls" list wherever a feature has a known
+misuse. `/procoder:docs` now applies all of it when it WRITES, where
+before it only checked what already existed.
+
+Every word of this is repo-overridable (D-OVERRIDE) — replace it with
+your own house style and your copy wins. None of it blocks a commit; it
+is guidance the agent follows, and the reasoning is recorded in
+ADR 0002 along with the mechanical enforcement that was considered and
+rejected.
+
+**The site was then rebuilt to follow it.** The nav is grouped by kind,
+and every page says which kind it is in its opening sentence.
+
+- `getting-started.md` is a tutorial: install, watch the gate refuse a
+  commit over a merge conflict, fix it, watch it pass. Every shell
+  command in it was executed in order in a clean repository and the
+  output blocks are that run, verbatim.
+- `workflow.md` became **How to ship a change** — eleven numbered steps
+  and a common-pitfalls list, with no paragraph arguing for the design.
+- `how-to-onboard.md` is new: the audit path for a repository Procoder
+  has never governed, which used to be a step inside the tutorial.
+- `quality-chain.md` became explanation only, and now admits what
+  refusal costs when a controller is wrong — the section it was missing.
+- `commands.md`, `configuration.md`, `domains.md` and `portability.md`
+  are reference; `architecture.md` and `influences.md` are explanation.
+
+**The diagrams were rebuilt to the brand.** The site had exactly one
+diagram and three ASCII-art blocks, and the shared Mermaid theme was
+still the old teal. There are now five, all Mermaid, all on the brand
+palette in both light and dark: the write-hook loop on the overview, the
+quality chain with its refusal loops, the three-layer architecture, the
+ship-a-change sequence, and the onboarding triage order.
+
+Colour comes from the theme and meaning comes from shape — rounded for a
+start or end, rectangle for a step, diamond for something that decides.
+Hard-coded fills were tried first and rejected: they cannot follow a
+reader who switches to dark mode. The rules file now says so, along with
+the rest of what makes a diagram worth having.
+
+**A gate gap surfaced while writing the tutorial.** `procoder check`
+blocked on the tutorial's own conflict-marker example, and every
+workaround was bad: mangle the sample so a reader who copies it gets
+broken text, drop the topic, or turn the check off. A document whose
+subject is merge conflicts now declares it:
+
+```
+<!-- procoder:allow-conflict-markers this tutorial shows what a conflict looks like -->
+```
+
+The reason is required — a bare token exempts nothing, because that is
+silencing a check rather than documenting an exception. The exemption is
+file-scoped and explicit rather than "skip fenced code blocks", since a
+real conflict lands inside a fence often enough that skipping fences
+would be a silent miss.
+
 ## 0.32.7 — 2026-08-20
 
 **The product is spelled Procoder**, taken from the wordmark. The logo

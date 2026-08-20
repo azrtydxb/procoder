@@ -208,3 +208,71 @@ func TestOnDefaultBranchReportsAndCanBlock(t *testing.T) {
 		t.Fatalf("on a branch there is nothing to say: %+v", got)
 	}
 }
+
+// A document whose SUBJECT is merge conflicts cannot show a learner what
+// one looks like while the check treats every marker as a defect. The
+// exemption is explicit, greppable and carries a reason, in the spirit of
+// gitleaks:allow.
+// proved by: made ConflictMarkers ignore the allow line — the exempt file
+// then reports its markers again.
+func TestAnExplicitAllowWithAReasonExemptsTheFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tutorial.md")
+	os.WriteFile(p, []byte(
+		"<!-- procoder:allow-conflict-markers teaching what a conflict looks like -->\n"+
+			"```\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> branch\n```\n"), 0o644)
+	if got := ConflictMarkers([]string{p}); len(got) != 0 {
+		t.Fatalf("an explicit allow with a reason must exempt the file, got %+v", got)
+	}
+}
+
+// The other half: without the allow, the same content still blocks — and
+// being inside a fenced code block changes nothing, because a real
+// conflict lands inside a fence often enough that skipping fences would
+// be a silent miss.
+// proved by: made ConflictMarkers skip fenced blocks — this then passes
+// while a genuine conflict in a documented code sample goes unreported.
+func TestMarkersInAFenceStillBlockWithoutAnAllow(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tutorial.md")
+	os.WriteFile(p, []byte("```\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> branch\n```\n"), 0o644)
+	if got := ConflictMarkers([]string{p}); len(got) != 2 {
+		t.Fatalf("markers in a fence still block without an allow, got %d: %+v", len(got), got)
+	}
+}
+
+// An allow with no reason is someone silencing the check, not documenting
+// an exception. It does not count.
+// proved by: dropped the reason requirement — a bare token then silences
+// the file, which is the bypass this design exists to prevent.
+func TestAnAllowWithoutAReasonDoesNotExempt(t *testing.T) {
+	dir := t.TempDir()
+	for _, bare := range []string{
+		"<!-- procoder:allow-conflict-markers -->\n",
+		"# procoder:allow-conflict-markers\n",
+		"<!-- procoder:allow-conflict-markers    -->\n",
+	} {
+		p := filepath.Join(dir, "x.md")
+		os.WriteFile(p, []byte(bare+"<<<<<<< HEAD\nmine\n>>>>>>> branch\n"), 0o644)
+		if got := ConflictMarkers([]string{p}); len(got) != 2 {
+			t.Errorf("%q must not exempt anything, got %d findings", bare, len(got))
+		}
+	}
+}
+
+// A reason is prose, and prose starts with whatever it starts with — an
+// implementation that sniffs the first character rejects a perfectly good
+// one. This pins the reason as "any non-empty text".
+// proved by: restored the first-character check — a reason beginning with
+// a dash is then read as no reason at all.
+func TestAReasonMayStartWithAnyCharacter(t *testing.T) {
+	dir := t.TempDir()
+	for _, reason := range []string{"- teaching the reader", "-> see ADR 0002", "(illustration)"} {
+		p := filepath.Join(dir, "x.md")
+		os.WriteFile(p, []byte("<!-- procoder:allow-conflict-markers "+reason+" -->\n"+
+			"<<<<<<< HEAD\nmine\n>>>>>>> branch\n"), 0o644)
+		if got := ConflictMarkers([]string{p}); len(got) != 0 {
+			t.Errorf("reason %q must exempt the file, got %d findings", reason, len(got))
+		}
+	}
+}

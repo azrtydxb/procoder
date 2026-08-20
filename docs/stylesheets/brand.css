@@ -77,6 +77,35 @@
   border-radius: 8px;
 }
 
+/* Diagrams. mkdocs-material renders Mermaid client-side and reads these
+   custom properties, so the diagrams take the brand palette in both
+   schemes instead of Mermaid's defaults. The compile-time theme used by
+   `procoder docs` lives in .procoder/docs/mermaid.json — keep the two
+   in step. */
+[data-md-color-scheme="default"] {
+  --md-mermaid-font-family: var(--md-text-font-family), sans-serif;
+  --md-mermaid-node-bg-color: #ede9fe;
+  --md-mermaid-node-fg-color: var(--procoder-purple);
+  --md-mermaid-edge-color: var(--procoder-purple);
+  --md-mermaid-label-bg-color: #ede9fe;
+  --md-mermaid-label-fg-color: #1e1b31;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-mermaid-node-bg-color: #241b47;
+  --md-mermaid-node-fg-color: #a78bfa;
+  --md-mermaid-edge-color: #a78bfa;
+  --md-mermaid-label-bg-color: #241b47;
+  --md-mermaid-label-fg-color: var(--procoder-white);
+}
+
+/* Diagrams are content, not decoration: give them room and let a wide
+   one scroll inside its own box rather than stretching the page. */
+.md-typeset .mermaid {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+}
+
 /* The banner is the page's own header on the overview — full width, no
    frame competing with it. */
 .procoder-banner {

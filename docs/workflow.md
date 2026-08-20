@@ -1,103 +1,198 @@
-# The workflow
+# How to ship a change
 
-How work moves from an idea to a tagged release under Procoder's
-discipline. The skills drive it; the rules live in
-`.procoder/github/WORKFLOW.md` and are the repo's to edit.
+**A how-to guide.** Goal: take a change from idea to tagged release. The
+skills drive each step; the team rules live in
+`.procoder/github/WORKFLOW.md` and are yours to edit.
 
-## 1. Spec
+Assumes Procoder is installed and the repository is onboarded. New here?
+Start with the [tutorial](getting-started.md).
 
-`/procoder:spec` interviews the design gaps closed and writes
-`.procoder/specs/<name>.md`. `procoder spec check` blocks while a
-section is empty, an `OPEN:` question is unresolved, or an acceptance
-criterion is untestable. Small, bounded work skips this — the skill
-classifies first and says which path it took.
+```mermaid
+flowchart TD
+    S[1 spec] --> P[2 plan] --> T[3 track] --> B[4 branch and build]
+    B --> TE[5 test] --> G{6 check} --> PR[7 PR]
+    PR --> RV[8 answer every review thread] --> M[9 merge]
+    M --> SP{10 close the sprint} --> REL{11 release}
+    G -->|"any blocking finding"| B
+    SP -->|"story unfinished or without evidence"| B
+    REL -->|"version · changelog · tree · gate · suite"| B
+```
 
-## 2. Plan
+Dotted arrows are refusals: the step that sends you back, and what it
+checks before it does.
 
-`/procoder:plan` turns the COMPLETE spec into `.procoder/plans/<name>.md`
-for an engineer with zero context: Goal, Architecture, Constraints
-verbatim, and `## Task N:` blocks with files, interfaces, and test-first
-steps. `procoder plan check` blocks placeholders and tasks with no files
-or steps.
+## 1. Write the spec
 
-## 3. Seed the backlog
+```
+/procoder:spec <feature>
+```
 
-`procoder backlog seed <spec>` decomposes the spec into an epic and one
-story per acceptance criterion, fingerprinting the spec so the board can
-flag drift later. Work not born from a spec goes to `procoder todo add`
-instead — the same closing rigor, no project layer.
+The skill classifies the work first and says which path it took. Small,
+bounded changes to a flow that already exists skip the spec file
+entirely.
 
-## 4. Open a sprint and pull
+```
+procoder spec check <feature>
+```
 
-`procoder sprint open <goal>` — one active sprint at a time, and it
-refuses while the last closed sprint's retro is empty. `sprint pull
-<story-id>…` commits stories to it; `sprint status` shows the goal and
-the done/total.
+Blocks while a section is empty, an `OPEN:` question is unresolved, or
+an acceptance criterion is untestable.
 
-## 5. Build
+## 2. Write the plan
 
-Branch the work. A worktree per feature is the practice
-`.procoder/github/WORKFLOW.md` prescribes and the pr/merge skills follow
-— it is plain git, and Procoder automates none of it: no command creates
-or removes a worktree.
+```
+/procoder:plan <feature>
+```
 
-While you write, the PostToolUse hook checks every file in the same turn
-and hands back the formatted result and the domain findings; the binary
-never edits the file. `procoder index` answers structural questions
-faster than grep, and the hook keeps the index current.
+Turns a COMPLETE spec into `.procoder/plans/<feature>.md`: Goal,
+Architecture, Constraints verbatim, and `## Task N:` blocks carrying
+files, interfaces, and test-first steps.
 
-## 6. Test
+```
+procoder plan check <feature>
+```
 
-`procoder test` runs each detected ecosystem's canonical runner. NOT run
-is never green. With `[test] policy = "block"` the suite joins the close
-controllers: `todo close` and `backlog close story` refuse on a red or
-unverifiable suite. `procoder bench` proves a performance claim against
-the saved baseline, in Go.
+Blocks placeholders and tasks with no files or steps.
 
-## 7. Check
+## 3. Track the work
 
-`procoder git` and `procoder check` must be clean: formatting, hygiene,
-lint, secrets, docs, CI and infra rules all answer at once, through the
-one code path CI also runs.
+For a project with a shape worth planning:
 
-## 8. PR
+```
+procoder backlog seed .procoder/specs/<feature>.md
+procoder sprint open "<goal>"
+procoder sprint pull <story-id>
+```
 
-The pr skill summarises the real diff, fills the PR template from
-`.procoder/github/`, scrubs attribution, verifies the blast radius the
-gate reported (`procoder index impact`), and shows everything before
-`gh pr create`. Titles stay ≤ 72 characters — they become squash-commit
-subjects.
+`seed` makes an epic and one story per acceptance criterion. One sprint
+is active at a time.
 
-Merge-gate polling is delegated to a watch-only background agent
-following the watcher protocol: calibrate against previous runs of the
-same workflow, poll per job in the foreground, report the first failure
-immediately with its log excerpt, report every state change. The watcher
-never fixes, replies, or merges — the main agent acts on its reports.
+For standalone work not born from a spec:
 
-## 9. Reviews and merge
+```
+procoder todo add "<task>"
+```
 
-Every review thread — human or bot, Copilot included — is either fixed
-(commit, push, reply saying what changed) or answered with a concrete
-reason. Threads are resolved only after, never to hide them. Nothing
-merges over a red check or an unaddressed comment.
+Same closing rigor, no project layer.
 
-Squash-merge when everything answers green, then: delete the remote
-branch, delete the local branch, remove the worktree if one was used,
-`git fetch --prune`, and return to an updated default branch. Anything
-that escaped to a reviewer becomes a `.procoder/github/LESSONS.md` entry
-with the adaptation that closes its class, in the same PR.
+## 4. Branch and build
+
+```
+git worktree add ../<feature> -b <feature>
+```
+
+A worktree per feature is what `.procoder/github/WORKFLOW.md`
+prescribes. It is plain git — Procoder creates and removes nothing.
+
+While you write, the write hook (PostToolUse) checks each file in the
+same turn and hands back the formatted result plus the domain findings.
+Use the index instead of grep:
+
+```
+procoder index find <symbol>
+procoder index refs <symbol>
+procoder index impact <file>
+```
+
+## 5. Run the suite
+
+```
+procoder test
+```
+
+Each detected ecosystem's canonical runner. **NOT run is never green.**
+With `[test] policy = "block"` in `.procoder/config.toml`, the suite
+joins the close controllers.
+
+For a performance claim:
+
+```
+procoder bench
+```
+
+Compares against the saved baseline. Go only.
+
+## 6. Clear the gate
+
+```
+procoder check
+```
+
+Formatting, hygiene, lint, secrets, docs, CI and infra rules — the same
+code path CI runs. Must be clean before a PR exists.
+
+## 7. Open the PR
+
+```
+/procoder:pr
+```
+
+The skill summarises the real diff, fills the template from
+`.procoder/github/`, scrubs attribution, verifies the blast radius with
+`procoder index impact`, and shows you everything before `gh pr create`.
+
+Keep the title at 72 characters or fewer — it becomes the squash-commit
+subject.
+
+## 8. Answer every review thread
+
+Every thread — human or bot, Copilot included — is either fixed (commit,
+push, reply saying what changed) or answered with a concrete reason.
+Resolve a thread only after that, never to clear the list.
+
+## 9. Merge and clean up
+
+```
+/procoder:merge
+```
+
+Squash-merge when every check is green and every thread is answered,
+then delete the remote branch, delete the local branch, remove the
+worktree, and `git fetch --prune`.
+
+Anything that escaped to a reviewer becomes a
+`.procoder/github/LESSONS.md` entry with the adaptation that closes its
+class — in the same PR.
 
 ## 10. Close the sprint
 
-`procoder backlog close story <id>` refuses without checked criteria,
-recorded evidence, and a clean gate. `sprint close` refuses while a
-committed story is neither done nor carried back with a reason — and
-scaffolds the retro whose answers are the price of the next `sprint
-open`.
+```
+procoder backlog close story <id>
+procoder sprint close
+```
+
+The story close refuses without checked criteria, recorded evidence, and
+a clean gate. The sprint close refuses while a committed story is
+neither done nor carried back with a reason, then scaffolds the retro.
+That retro is the price of the next `sprint open`.
 
 ## 11. Release
 
-`procoder release [<version>]` verifies the version across
-`[release] files`, the changelog entry, a clean tree, the gate, and the
-suite — every failure listed at once. On success it prints the `git tag`
-command for a human to run. It tags nothing itself.
+```
+procoder release <version>
+```
+
+Verifies the version across `[release] files`, the changelog entry, a
+clean tree, the gate, and the suite — every failure listed at once. On
+success it prints the `git tag` command for you to run.
+
+**It tags nothing itself.**
+
+## Common pitfalls
+
+- **Do not** skip `procoder check` because the write hook was quiet. The
+  hook sees one file at a time; the gate sees the whole changed set,
+  including staged junk and conflict markers in files you never opened.
+- **Do not** weaken an acceptance criterion to make a close controller
+  pass. The refusal names a real gap; softening the criterion hides it.
+- **Do not** resolve a review thread to tidy the list. Resolve it because
+  it is answered.
+- **Do not** treat a green write hook as a green suite. Formatting and
+  tests are different questions.
+
+## Next
+
+- [The quality chain](quality-chain.md) — why each controller refuses
+  rather than warns.
+- [Command reference](commands.md) — every command and its flags.
+- [The ten domains](domains.md) — what each check covers.

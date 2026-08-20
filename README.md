@@ -9,7 +9,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.32.7-7C3AED)
+![Version](https://img.shields.io/badge/version-0.32.8-7C3AED)
 ![License](https://img.shields.io/badge/license-Apache--2.0-7C3AED)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-7C3AED)
 
@@ -138,11 +138,17 @@ ledger. Full reference:
 
 ## The docs
 
-The full story lives on the site — start at
-[Getting started](https://azrtydxb.github.io/procoder/getting-started/),
-then [the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
-[every command](https://azrtydxb.github.io/procoder/commands/), and
-[how it's built](https://azrtydxb.github.io/procoder/architecture/).
+The full story lives on the site, organised the way the
+[Divio documentation system](https://docs.divio.com/documentation-system/)
+splits it: the tutorial
+([Getting started](https://azrtydxb.github.io/procoder/getting-started/)),
+the how-to guides
+([Ship a change](https://azrtydxb.github.io/procoder/workflow/)),
+the reference
+([every command](https://azrtydxb.github.io/procoder/commands/)), and
+the explanation
+([the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
+[how it's built](https://azrtydxb.github.io/procoder/architecture/)).
 
 ## Honesty, by design
 

@@ -1,30 +1,38 @@
 # Architecture
 
-How Procoder is built, and the three contracts that shape every design
-decision in it.
+**An explanation.** How Procoder is built, and the three contracts that
+shape every design decision in it.
 
 ## The shape
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  agent (Claude Code, Cursor, Codex, … any host)         │
-│    skills/commands: thin markdown callers               │
-│    hooks: PostToolUse (every write), SessionStart       │
-└───────────────▲───────────────────┬─────────────────────┘
-                │ findings, fixed   │ invokes
-                │ content, verdicts │
-┌───────────────┴───────────────────▼─────────────────────┐
-│  the binary (one Go executable, no runtime deps)        │
-│  cmd/procoder → internal/{gate,format,security,lint,    │
-│  docs,ciops,infra,maintain,codeindex,spec,plan,todo,    │
-│  debt,lessons,principles,portability,host,…}            │
-└───────────────┬─────────────────────────────────────────┘
-                │ reads/writes only its own state
-┌───────────────▼─────────────────────────────────────────┐
-│  .procoder/  config.toml · PRINCIPLES.md · specs/ ·     │
-│  plans/ · todo/ · github/{templates,REVIEW,LESSONS} ·   │
-│  docs+security rules · index/ (derived, gitignored)     │
-└─────────────────────────────────────────────────────────┘
+Three layers, and the arrows only point the way they are drawn: the
+binary answers the agent, and never reaches back into the agent's files.
+
+```mermaid
+flowchart LR
+    subgraph AGENT["the agent — Claude Code, Cursor, Codex, any host"]
+        direction TB
+        SKILLS["skills / commands<br/><i>thin Markdown callers</i>"]
+        HOOKS["hooks<br/><i>PostToolUse on every write<br/>SessionStart</i>"]
+    end
+
+    subgraph BIN["the binary — one Go executable, no runtime dependencies"]
+        direction TB
+        CMD["cmd/procoder"]
+        DOM["internal/…<br/>gate · format · security · lint · docs<br/>ciops · infra · maintain · codeindex<br/>spec · plan · todo · debt · lessons"]
+        CMD --> DOM
+    end
+
+    subgraph STATE[".procoder/ — the repository's own files"]
+        direction TB
+        CFG["config.toml · PRINCIPLES.md<br/>rules files"]
+        WORK["specs/ · plans/ · todo/<br/>backlog/ · adr/"]
+        DERIVED["index/<br/><i>derived, gitignored</i>"]
+    end
+
+    AGENT -->|invokes| BIN
+    BIN -->|"findings, fixed content, verdicts<br/><b>never a write to your code</b>"| AGENT
+    BIN -->|"reads rules<br/>writes only its own state"| STATE
 ```
 
 The binary is the whole engine. Skills are instructions _about_ calling
