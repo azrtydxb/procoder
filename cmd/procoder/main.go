@@ -332,6 +332,7 @@ func main() {
 	// The principles hook reports what is newer than this build; the version
 	// is stamped here at link time, so this is the only place that knows it.
 	principles.Version = version
+	releases.Running = version
 
 	os.Exit(run(os.Args[1:]))
 }

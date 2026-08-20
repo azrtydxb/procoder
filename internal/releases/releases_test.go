@@ -248,3 +248,28 @@ func platformOf(name string) (goos, goarch string, ok bool) {
 	}
 	return parts[0], parts[1], true
 }
+
+// The request names the caller. GitHub accepts Go's default agent — the
+// live check worked without this — but every Go program on a machine sends
+// the same one, so a rate limit or a block is unattributable in GitHub's
+// logs and in the user's.
+// proved by: dropped the header — the stub then sees Go-http-client and the
+// assertion fails.
+func TestTheRequestNamesProcoder(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0"}`))
+	}))
+	defer srv.Close()
+	prevHost, prevRunning := APIHost, Running
+	APIHost, Running = srv.URL, "1.2.3"
+	defer func() { APIHost, Running = prevHost, prevRunning }()
+
+	if _, err := Latest(Timeout); err != nil {
+		t.Fatal(err)
+	}
+	if got != "procoder/1.2.3" {
+		t.Errorf("User-Agent = %q, want procoder/1.2.3", got)
+	}
+}

@@ -2,6 +2,7 @@ package releases
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -680,5 +681,42 @@ func TestTheBuildScriptChecksumsTheNamesThisAsksFor(t *testing.T) {
 	}
 	if len(seen) != 5 {
 		t.Errorf("the release publishes five binaries, the script hashes %d: %v", len(seen), seen)
+	}
+}
+
+// The one outcome the user must hear about in full: the new binary could
+// not be renamed into place AND the old one could not be put back, so the
+// tool they would use to recover is the one that is gone. Reporting only
+// the first error hides that.
+// proved by: swallowed the rollback error (`_ = os.Rename(old, self)`) —
+// the message then names one failure and the user never learns their
+// binary is sitting beside itself under another name.
+func TestAFailedRollbackIsReportedInFull(t *testing.T) {
+	dir := t.TempDir()
+	self := filepath.Join(dir, "procoder")
+	if err := os.WriteFile(self, []byte("old binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Move it aside for real, then fail everything after: the first rename
+	// is what the rollback has to undo, so it must actually happen.
+	calls := 0
+	prev := renameFile
+	renameFile = func(from, to string) error {
+		calls++
+		if calls == 1 {
+			return os.Rename(from, to)
+		}
+		return errors.New("device is full")
+	}
+	defer func() { renameFile = prev }()
+
+	err := replace(filepath.Join(dir, "incoming"), self)
+	if err == nil {
+		t.Fatal("both renames failed; that is not a success")
+	}
+	for _, want := range []string{"rollback failed", "device is full", filepath.ToSlash(self + ".old"), filepath.ToSlash(self)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the message must carry %q so the binary can be recovered by hand: %v", want, err)
+		}
 	}
 }

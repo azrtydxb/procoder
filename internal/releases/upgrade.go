@@ -327,17 +327,31 @@ func installMode(self string) os.FileMode {
 // docs promise the command works. Moving the running binary aside first is
 // the way through, and it runs on every platform rather than under a GOOS
 // branch, so the path Windows depends on is the path the tests exercise.
+// renameFile is os.Rename behind a seam, for the same reason selfPath and
+// checkAssetURL are: the double-failure path below cannot be produced with
+// permissions alone — every arrangement that breaks the second rename also
+// breaks the first — and it is the one path whose message the user needs
+// most.
+var renameFile = os.Rename
+
 func replace(tmpName, self string) error {
 	old := self + ".old"
 	// A leftover from a previous upgrade must not be what blocks this one.
 	_ = os.Remove(old)
-	if err := os.Rename(self, old); err != nil {
+	if err := renameFile(self, old); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, self); err != nil {
+	if err := renameFile(tmpName, self); err != nil {
 		// Put the working binary back. A failure here that left self
-		// missing would have uninstalled procoder instead of upgrading it.
-		_ = os.Rename(old, self)
+		// missing would have uninstalled procoder instead of upgrading it —
+		// and a rollback that ALSO fails is the one outcome the user must
+		// hear about in full, because the tool they would use to recover is
+		// the one that is gone. Both errors, and the path the binary is
+		// sitting at.
+		if back := renameFile(old, self); back != nil {
+			return fmt.Errorf("%v — and the rollback failed too (%v): the working binary is at %s and must be moved back to %s by hand",
+				err, back, filepath.ToSlash(old), filepath.ToSlash(self))
+		}
 		return err
 	}
 	// Best effort: Windows cannot delete the image of a running process, so

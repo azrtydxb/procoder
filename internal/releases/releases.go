@@ -53,6 +53,11 @@ func Latest(timeout time.Duration) (Release, error) {
 	// nothing about who is asking leaves the machine.
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	// Go already sends Go-http-client/1.1, which GitHub accepts — this is
+	// not a fix for a rejected request. It names the caller in GitHub's own
+	// logs and rate-limit accounting, which is worth one line when the
+	// alternative is every Go program on the machine looking identical.
+	req.Header.Set("User-Agent", "procoder/"+strings.TrimPrefix(Running, "v"))
 	resp, err := client.Do(req)
 	if err != nil {
 		return Release{}, err
@@ -115,6 +120,11 @@ func (r Release) AssetFor(name string) (Asset, error) {
 	}
 	return Asset{}, fmt.Errorf("release %s publishes no %s — this platform has no binary in it", r.TagName, name)
 }
+
+// Running is this binary's version, set by main at startup. It names the
+// caller in the request; `Version` is already the parsed-number type, and
+// one package cannot spell one word two ways.
+var Running = Dev
 
 // Check is the whole question in one call: what is running, what is newest,
 // and is there anything to say. A caller that gets ok=false has an answer it
