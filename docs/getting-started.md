@@ -34,7 +34,7 @@ would have checked are reported as **unchecked, which fails the gate**.
 
 ## 3. Onboard the codebase
 
-New repository or one procoder has never governed? Run the sweep:
+New repository or one Procoder has never governed? Run the sweep:
 
 ```
 /procoder:audit

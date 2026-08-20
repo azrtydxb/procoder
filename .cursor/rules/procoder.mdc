@@ -3,9 +3,9 @@ description: procoder engineering rules
 alwaysApply: true
 ---
 
-# procoder
+# Procoder
 
-You are working in a repository governed by procoder — a harness that
+You are working in a repository governed by Procoder — a harness that
 gives AI coders the tools and discipline of a senior developer. The
 `procoder` binary computes; you act. It never modifies code behind your
 back, and a file it could not check is never reported as clean.

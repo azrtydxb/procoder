@@ -1,6 +1,6 @@
 # Command reference
 
-Every procoder command, what it computes, and what blocks. The binary only
+Every Procoder command, what it computes, and what blocks. The binary only
 ever computes and reports — the agent (or you) acts on the results
 (P-CONTROL).
 
@@ -8,7 +8,7 @@ ever computes and reports — the agent (or you) acts on the results
 
 ### `procoder audit`
 
-The onboarding sweep for a repository procoder has not governed before:
+The onboarding sweep for a repository Procoder has not governed before:
 every domain's checks over the WHOLE tracked tree — formatting verdicts,
 hygiene, secrets, lint — aggregated into one scorecard with a triage
 order. Exit 1 while the repository would fail the gate; the
@@ -41,9 +41,9 @@ reviewed and written. Never touches the file.
 
 The canonical linter per ecosystem: golangci-lint (Go), ruff check
 (Python), shellcheck (shell), eslint (JS/TS — configless plain JavaScript
-gets the built-in-rules procoder baseline; configless TypeScript is out of
+gets the built-in-rules Procoder baseline; configless TypeScript is out of
 scope), cargo clippy (Rust), ktlint (Kotlin), swiftlint (Swift), rubocop
-(Ruby), and checkstyle (Java, google_checks baseline). Go repositories without a golangci config get procoder's curated
+(Ruby), and checkstyle (Java, google_checks baseline). Go repositories without a golangci config get Procoder's curated
 baseline (standard set plus gosec, gocritic, errorlint, unparam,
 copyloopvar, nilerr) — the repo's own golangci config always wins,
 whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report
@@ -181,7 +181,7 @@ never runs the gate, the suite, or any network tool.
 How to run this project: the launch command(s) it declares — package.json
 scripts, Makefile targets, a Go main, a Cargo bin, manage.py, docker
 compose, a Procfile — each with the file and line that declared it,
-most specific first. procoder does not manage processes: a server is
+most specific first. Procoder does not manage processes: a server is
 long-running, and backgrounding and log capture belong to the shell that
 owns it. `--exec` runs a single one-shot candidate (120s, stdin closed)
 and refuses when there is a choice to make or the command looks like a
@@ -354,7 +354,7 @@ a claim, the tool resolving is the fact.
 
 ### `procoder templates`
 
-Prints the default content for any missing repo file procoder reads:
+Prints the default content for any missing repo file Procoder reads:
 the PR/commit/workflow templates under `.procoder/github/`, the docs and
 security rules, the Mermaid theme.
 

@@ -2,6 +2,21 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.7 — 2026-08-20
+
+**The product is spelled Procoder**, taken from the wordmark. The logo
+reads _Procoder_, so every word of text around it does too: the README,
+the documentation site and its header, the brand guide, the rules every
+agent reads, and the engineering principles injected at session start.
+The artwork is the authority — a name is a picture people recognise
+before it is a string they parse, and text is the cheaper thing to
+change.
+
+Everywhere a machine reads the name it stays `procoder`, unchanged and
+unchangeable: the binary, the package, the plugin id, `.procoder/`,
+every command, and every URL. That distinction is the whole rename;
+nothing executable moved.
+
 ## 0.32.6 — 2026-08-20
 
 **`procoder maintain` was silently dropping every function-length
