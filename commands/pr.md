@@ -42,8 +42,21 @@ downstream reviewer's:
   verbatim, the branch diff, and the instruction to report findings as
   file:line, what breaks, and the fix, ending with a severity-counted
   verdict or exactly "Nothing found — open the PR."
-- Fix every Critical/Important finding (commit them), re-run
-  `launcher.sh check`, and only then continue. Downstream bot reviews
+- Give that same agent the SECOND lens in the same pass: the five
+  /procoder:simplify tags (delete, stdlib, native, yagni, shrink) over
+  the same diff, reported separately from the correctness findings, each
+  with its mandatory replacement, and a real null result when the diff
+  has nothing to cut. One read, two verdicts — the rubric asks whether
+  the code is right, this asks whether it should exist at all, and a
+  diff deserves both before anyone else spends attention on it. Scope it
+  to the DIFF: the repo-wide sweep answers about code this change never
+  touched, and it belongs before a tag (/procoder:release), not on every
+  pull request.
+- Fix every Critical/Important finding (commit them), decide each cut —
+  taking it or saying why not, P-CONTROL — re-run `launcher.sh check`,
+  and only then continue. Cuts land BEFORE the PR opens: changing code
+  after a review invalidates the review you just received, and every
+  post-green commit costs another full CI run. Downstream bot reviews
   are the fallback net — anything they catch later becomes a lesson
   (see /procoder:merge's reflection step).
 
