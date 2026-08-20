@@ -148,21 +148,78 @@ func TestIgnoreCoverageNamesTheGapAndTheReason(t *testing.T) {
 	}
 }
 
-func TestAttributionBlocksInAllItsCostumes(t *testing.T) {
-	bad := []string{
-		"fix parser\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
-		"fix parser\n\nGenerated with Claude Code",
-		"fix parser\n\n🤖 automated",
+// One case per trailer a host is known to write. The two hosts a procoder user
+// is most likely to be sitting in — Codex and VS Code — wrote lines the gate
+// used to wave through, which left those users with the policy and none of the
+// enforcement.
+//
+// proved by: deleting the Codex entry from aiIdentities — the Codex trailer
+// went unfound and this test failed. Same with the Copilot entry deleted.
+func TestAttributionBlocksEveryRecognisedIdentity(t *testing.T) {
+	bad := []struct{ message, identity string }{
+		{"fix parser\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>", "Claude"},
+		{"fix parser\n\nGenerated with Claude Code", "Claude"},
+		{"fix parser\n\n🤖 automated", "a robot emoji"},
+		{"fix parser\n\nCo-authored-by: Codex <noreply@openai.com>", "Codex"},
+		{"fix parser\n\nCo-authored-by: Copilot <copilot@github.com>", "Copilot"},
+		{"fix parser\n\nCo-authored-by: Cursor Agent <agent@cursor.com>", "Cursor"},
+		{"fix parser\n\nMade with Cursor", "Cursor"},
+		{"fix parser\n\nCo-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>", "Devin"},
+		{"fix parser\n\nCo-authored-by: gemini-code-assist[bot] <176961590+gemini-code-assist[bot]@users.noreply.github.com>", "Gemini"},
+		{"fix parser\n\nCo-authored-by: aider (gpt-4) <noreply@aider.chat>", "aider"},
 	}
-	for _, m := range bad {
-		got := Attribution([]string{m})
-		if len(got) == 0 || !got[0].Blocking {
-			t.Fatalf("not caught: %q -> %+v", m, got)
+	for _, c := range bad {
+		got := Attribution([]string{c.message})
+		if len(got) != 1 || !got[0].Blocking {
+			t.Fatalf("not caught: %q -> %+v", c.message, got)
+		}
+		// Naming the identity is what makes a false positive arguable: the
+		// reader can point at the list entry that was wrong about them.
+		if !strings.Contains(got[0].Message, c.identity) {
+			t.Errorf("finding must name %q: %q", c.identity, got[0].Message)
 		}
 	}
-	clean := "fix parser\n\nHandles the empty-input case the old loop skipped."
-	if got := Attribution([]string{clean}); len(got) != 0 {
-		t.Fatalf("false positive on a clean message: %+v", got)
+}
+
+// The other half of the rule, and the half that decides whether anyone leaves
+// the gate switched on. Co-Authored-By predates AI coders by a decade: pair
+// programming, a patch carried on someone's behalf and a squashed contribution
+// all use it correctly, and so does a human who happens to work at an AI lab or
+// to be called Devin. Blocking those teaches users to bypass the gate, which
+// costs more than the trailers it would have caught.
+//
+// proved by: replacing the Claude entry's inTrailer with a bare `.*` so any
+// co-author line matched — every case below fired and this test failed.
+func TestAttributionLeavesLegitimateCoAuthorsAlone(t *testing.T) {
+	clean := []string{
+		"fix parser\n\nHandles the empty-input case the old loop skipped.",
+		"fix parser\n\nCo-authored-by: Jane Roe <jane@example.com>",
+		// A noreply address belonging to a person, not to a vendor.
+		"fix parser\n\nCo-authored-by: Jane Roe <12345+janeroe@users.noreply.github.com>",
+		// A squash carrying everyone who touched the branch.
+		"feat: the importer\n\nCo-authored-by: Jane Roe <jane@example.com>\nCo-authored-by: Sam Poe <sam@example.com>",
+		// A human at an AI lab is a person; only the vendor's noreply mailbox
+		// is the tool.
+		"fix parser\n\nCo-authored-by: Jane Roe <jane@openai.com>",
+		"fix parser\n\nCo-authored-by: Devin Marsh <devin@example.com>",
+	}
+	for _, m := range clean {
+		if got := Attribution([]string{m}); len(got) != 0 {
+			t.Errorf("false positive on a legitimate message %q: %+v", m, got)
+		}
+	}
+}
+
+// The quoted match is the whole trailer, not the fragment that happened to
+// satisfy the pattern: a reader shown half an address cannot grep their own
+// history for the line the gate is refusing.
+//
+// proved by: dropping the `[^\n]*` tail from aiIdentity.pattern — the finding
+// quoted "Co-authored-by: Codex <noreply@openai" and this test failed.
+func TestAttributionQuotesTheWholeTrailer(t *testing.T) {
+	got := Attribution([]string{"fix parser\n\nCo-authored-by: Codex <noreply@openai.com>"})
+	if len(got) != 1 || !strings.Contains(got[0].Message, "Co-authored-by: Codex <noreply@openai.com>") {
+		t.Fatalf("the finding must quote the trailer in full: %+v", got)
 	}
 }
 
