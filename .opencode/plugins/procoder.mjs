@@ -17,19 +17,34 @@ import { fileURLToPath } from "node:url";
 const SELF = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SELF, "..", "..");
 
-// Kilo reads AGENTS.md natively; OpenCode does not. The plugin knows which
-// host loaded it from its own path, so one file serves both without
-// injecting the contract twice where it is already there.
-const isKilo = path.basename(path.dirname(SELF)).startsWith(".kilo");
+// Kilo reads AGENTS.md natively; OpenCode does not, so the contract is
+// injected there and only there. Kilo says so itself through KILO in the
+// plugin's environment (it sets OPENCODE too — it is a fork — so that one
+// answers nothing). The host is asked rather than guessed from this file's
+// own path, because Kilo loads BOTH copies of this plugin and the path
+// therefore lies for one of them.
+const isKilo = Boolean(process.env.KILO || process.env.KILOCODE_VERSION);
 
-// Each host names its command directory differently — `.opencode/command`,
-// `.kilo/commands` — and the plugin sits one level below whichever it is.
-function commandDir() {
+// Kilo reads opencode.json as well as scanning its own plugin directory, so
+// in a repository carrying both adapters this file registers twice in one
+// session. The first registration serves; a second would spawn the gate
+// twice per commit and say everything twice.
+const registered = Symbol.for("procoder.plugin.registered");
+
+// The directories a skill-aware host should scan in a governed repository:
+// the command set — each host names it differently, and the plugin sits one
+// level below whichever it is — and `skills/`, where the canonical procoder
+// SKILL.md lives, so a repository that has procoder needs no per-host copy
+// of it.
+function skillPaths() {
+  const dirs = [];
   for (const name of ["command", "commands"]) {
     const dir = path.join(SELF, "..", name);
-    if (existsSync(dir)) return dir;
+    if (existsSync(dir)) dirs.push(dir);
   }
-  return null;
+  const skills = path.join(ROOT, "skills");
+  if (existsSync(skills)) dirs.push(skills);
+  return dirs;
 }
 
 // The gate runs in the binary, not here: `hook pre-tool-use` is the same
@@ -85,6 +100,8 @@ function gateVerdict(command, cwd) {
 }
 
 export const ProcoderPlugin = async ({ client, directory } = {}) => {
+  if (globalThis[registered]) return {};
+  globalThis[registered] = true;
   const log = async (level, message) => {
     try {
       await client?.app?.log({ body: { service: "procoder", level, message } });
@@ -94,14 +111,14 @@ export const ProcoderPlugin = async ({ client, directory } = {}) => {
   };
   return {
     config: async (config) => {
-      // Both hosts discover their own command directory; this hook only adds
-      // it to the skills path for skill-aware hosts
-      const commands = commandDir();
-      if (!commands) return;
+      // Both hosts discover their own command directory; this hook adds it,
+      // and the repository's skills/, to what a skill-aware host scans
+      const dirs = skillPaths();
+      if (dirs.length === 0) return;
       config.skills ??= {};
       config.skills.paths ??= [];
-      if (!config.skills.paths.includes(commands)) {
-        config.skills.paths.push(commands);
+      for (const dir of dirs) {
+        if (!config.skills.paths.includes(dir)) config.skills.paths.push(dir);
       }
     },
     "experimental.chat.system.transform": async (_input, output) => {

@@ -52,7 +52,10 @@ try {
 }
 console.log("LOGS:" + logs.join("|"));`
 	cmd := exec.Command(node, "--input-type=module", "-e", script, command)
-	cmd.Env = append(os.Environ(), "PATH="+pathDir+":"+os.Getenv("PATH"))
+	// PATH is the stub directory and nothing else: a real procoder installed
+	// on the machine would otherwise answer these tests, and the one about a
+	// missing binary would silently stop testing anything
+	cmd.Env = append(os.Environ(), "PATH="+pathDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("node failed: %v\n%s", err, out)
