@@ -95,6 +95,11 @@ function gateVerdict(command, cwd) {
         }
       },
     );
+    // The child can exit before the payload is flushed — a procoder that is
+    // not there, or one that answers and leaves. An unhandled 'error' on this
+    // stream takes the whole session down with an EPIPE, which is a very
+    // expensive way to learn the gate could not run.
+    child.stdin.on("error", () => {});
     child.stdin.end(payload);
   });
 }

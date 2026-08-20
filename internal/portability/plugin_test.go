@@ -39,13 +39,18 @@ func runHook(t *testing.T, pathDir, command string) string {
 		t.Skip("no node on PATH")
 	}
 	plugin := filepath.Join(repoRoot(t), ".opencode/plugins/procoder.mjs")
+	// A payload larger than the pipe buffer is what exposes the write race,
+	// and argv cannot carry one portably — so the harness builds it here.
 	script := `
 import { ProcoderPlugin } from "file://` + plugin + `";
+const command = process.argv[1] === "__big__"
+  ? "git commit -m " + "x".repeat(300000)
+  : process.argv[1];
 const logs = [];
 const client = { app: { log: async ({ body }) => { logs.push(body.level + ":" + body.message); } } };
 const hooks = await ProcoderPlugin({ client, directory: process.cwd() });
 try {
-  await hooks["tool.execute.before"]({ tool: "bash" }, { args: { command: process.argv[1] } });
+  await hooks["tool.execute.before"]({ tool: "bash" }, { args: { command } });
   console.log("ALLOWED");
 } catch (e) {
   console.log("DENIED:" + e.message);
@@ -61,6 +66,31 @@ console.log("LOGS:" + logs.join("|"));`
 		t.Fatalf("node failed: %v\n%s", err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// stubIgnoringStdin is a procoder that exits without reading its input. A
+// binary that answers and leaves closes the pipe under the write still in
+// flight, which is the shape of the failure below.
+func stubIgnoringStdin(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "procoder"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// Writing to a gate that has already exited must not take the session with
+// it. An unhandled 'error' on the child's stdin is a process-level throw, so
+// the cost of a commit message too large for the pipe buffer would be the
+// whole editor session — for a check that is meant to be advisory when it
+// cannot run.
+// proved by: removed the stdin error handler — this test dies with EPIPE
+// instead of failing, which is exactly what it did on CI.
+func TestAGateThatExitsEarlyDoesNotCrashTheSession(t *testing.T) {
+	if got := runHook(t, stubIgnoringStdin(t), "__big__"); !strings.Contains(got, "ALLOWED") {
+		t.Errorf("a gate that closed its input must not crash or block, got %q", got)
+	}
 }
 
 // A blocking gate stops the commit in Kilo and OpenCode the same way it does
