@@ -1,0 +1,33 @@
+name: Documentation issue
+description: The docs are wrong, stale, or silent — a page that misleads, a command the site never explains, a claim the code no longer backs.
+labels: [documentation]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where
+      description: The page and section — a URL on the docs site, or a path like `docs/commands.md`. "Nowhere" is a valid answer if the problem is that it isn't documented at all.
+      placeholder: "docs/configuration.md, the [lint] section"
+    validations:
+      required: true
+  - type: textarea
+    id: says
+    attributes:
+      label: What it says (or doesn't)
+      description: Quote the current text, or state what is missing. Paste it, don't paraphrase it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reality
+    attributes:
+      label: What is actually true
+      description: What the code or the tool really does, and how you know — the command you ran, the output you got, the source file that contradicts the page.
+    validations:
+      required: true
+  - type: input
+    id: procoder-version
+    attributes:
+      label: procoder version
+      description: From `procoder version` — docs drift is often version drift.
+      placeholder: "1.0.1"
