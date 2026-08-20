@@ -345,7 +345,11 @@ type aiIdentity struct {
 var aiIdentities = []aiIdentity{
 	// Claude Code writes the trailer, the "Generated with" line and the
 	// session emoji; `attribution` in settings.json turns all three off.
-	{name: "Claude", inTrailer: `claude|anthropic`, anywhere: `generated with[^\n]*\bclaude\b|noreply@anthropic\.com`},
+	// `anthropic` is deliberately NOT in the trailer pattern: it would match
+	// a person at that company co-authoring from their own address, which is
+	// the rule this list states — the vendor's noreply mailbox is the tool,
+	// the domain is an employer.
+	{name: "Claude", inTrailer: `claude`, anywhere: `generated with[^\n]*\bclaude\b|noreply@anthropic\.com`},
 	// Codex injects the trailer from an account-level policy, so a user who
 	// cannot administer the account meets it on every commit.
 	{name: "Codex", inTrailer: `codex|noreply@openai\.com`},

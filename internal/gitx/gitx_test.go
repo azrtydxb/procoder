@@ -201,6 +201,7 @@ func TestAttributionLeavesLegitimateCoAuthorsAlone(t *testing.T) {
 		// A human at an AI lab is a person; only the vendor's noreply mailbox
 		// is the tool.
 		"fix parser\n\nCo-authored-by: Jane Roe <jane@openai.com>",
+		"fix parser\n\nCo-authored-by: Jane Roe <jane@anthropic.com>",
 		"fix parser\n\nCo-authored-by: Devin Marsh <devin@example.com>",
 	}
 	for _, m := range clean {
