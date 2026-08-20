@@ -51,6 +51,11 @@ Check every hunk for:
 - Docs voice: professional product documentation — no personal names,
   no project-history anecdotes, no first-person diary; history belongs
   in the changelog and lessons ledger, not the docs.
+- Guards test the property they claim to test. `-s` is size, not
+  content; a zero exit is "the command ran", not "the command found
+  what you wanted"; a non-nil slice is not a non-empty one. A guard that
+  passes on the input it exists to reject is worse than no guard,
+  because the message beside it says the case is handled.
 - Rendered output was LOOKED AT. A change to CSS, client-side JS, a
   diagram, a template, or Markdown that renders as a table or a figure
   is not reviewed until someone has seen it rendered — both colour
