@@ -2,6 +2,40 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.4 — 2026-08-20
+
+A test sweep across the codebase, driven by mutation rather than by
+coverage: every test written here was proved by breaking the code it
+covers and watching it fail. Total statement coverage 64.2% → 71.9%,
+with the weakest packages carrying the change.
+
+| package  | before | after  |
+| -------- | ------ | ------ |
+| host     | 0.0%   | 100.0% |
+| doctor   | 0.0%   | 93.7%  |
+| audit    | 8.8%   | 95.6%  |
+| tools    | 20.8%  | 81.9%  |
+| gitcmd   | 27.4%  | 83.7%  |
+| deps     | 38.2%  | 77.5%  |
+| security | 39.8%  | 89.2%  |
+| config   | 47.1%  | 98.0%  |
+
+- **`procoder debt` no longer calls sound debt rot.** A marker's revisit
+  condition routinely lands on a continuation line, because the marker
+  line is already full of what the ceiling is. The harvester judged the
+  first line alone and flagged every such marker as having no trigger —
+  including two written the same day, following the principles exactly.
+  The whole comment block counts now; the ledger still shows the first
+  line, which is the summary.
+- **A fix from 0.32.3 was incomplete.** `maintain`'s file survey still
+  swallowed an unreadable root, so the walk error it recorded was always
+  nil and the ecosystem was silently skipped. The test written for that
+  behaviour is what found it.
+- Two branches that cannot be tested without adding a seam — a failed
+  rename beside a successful write, and a failed Close — are recorded
+  as debt with the condition that would make them testable, rather than
+  covered by a test that proves nothing.
+
 ## 0.32.3 — 2026-08-20
 
 The audit run on procoder itself, and the four honesty gaps it found in

@@ -470,6 +470,11 @@ func Refresh(root, file string) {
 		// fire-and-forget from the write hook. What must not also happen is
 		// a .tmp accumulating beside it on every failed write; the next
 		// `index build` is the recovery, and staleNote already says so.
+		//
+		// debt: this cleanup is unprotected by tests, revisit if Refresh
+		// grows a second failure mode — a rename cannot be made to fail
+		// while the write beside it succeeds without injecting a seam, and
+		// one seam would then pay for itself twice.
 		os.Remove(tmp)
 	}
 }

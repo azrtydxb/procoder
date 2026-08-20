@@ -78,19 +78,64 @@ func scanFile(root, rel string, re *regexp.Regexp) []Entry {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	line := 0
-	for sc.Scan() {
-		line++
-		m := re.FindStringSubmatch(sc.Text())
+	// a marker's block is consumed while looking for its trigger, so the
+	// line that ended it must still be offered to the next iteration
+	pending, pendingLine := "", 0
+	for {
+		var cur string
+		if pendingLine != 0 {
+			cur, line = pending, pendingLine
+			pending, pendingLine = "", 0
+		} else {
+			if !sc.Scan() {
+				break
+			}
+			line++
+			cur = sc.Text()
+		}
+		m := re.FindStringSubmatch(cur)
 		if m == nil {
 			continue
 		}
-		text := strings.TrimSpace(m[1])
-		text = strings.TrimSpace(strings.TrimSuffix(text, "-->"))
-		text = strings.TrimSpace(strings.TrimSuffix(text, "*/"))
-		entries = append(entries, Entry{File: rel, Line: line,
-			Text: text, NoTrigger: !triggerRe.MatchString(text)})
+		markerLine := line
+		text := trimMarkerTail(strings.TrimSpace(m[1]))
+		// The revisit condition routinely lands on a continuation line: the
+		// marker line is already full of what the ceiling IS. Judging the
+		// trigger on the first line alone cries rot over debt recorded
+		// exactly as the principles ask, so the whole comment block counts —
+		// while the ledger still SHOWS the first line, which is the summary.
+		block := text
+		for sc.Scan() {
+			line++
+			cont, ok := continuationOf(sc.Text())
+			if !ok {
+				pending, pendingLine = sc.Text(), line
+				break
+			}
+			block += " " + cont
+		}
+		entries = append(entries, Entry{File: rel, Line: markerLine,
+			Text: text, NoTrigger: !triggerRe.MatchString(block)})
 	}
 	return entries
+}
+
+// trimMarkerTail drops a comment terminator the marker text swallowed.
+func trimMarkerTail(text string) string {
+	text = strings.TrimSpace(strings.TrimSuffix(text, "-->"))
+	return strings.TrimSpace(strings.TrimSuffix(text, "*/"))
+}
+
+// continuationOf returns the prose of a line that continues the marker's
+// comment block, and false for anything that ends it.
+func continuationOf(raw string) (string, bool) {
+	t := strings.TrimSpace(raw)
+	for _, p := range []string{"//", "#", "--", ";", "*"} {
+		if rest, ok := strings.CutPrefix(t, p); ok {
+			return trimMarkerTail(strings.TrimSpace(rest)), true
+		}
+	}
+	return "", false
 }
 
 // Run prints the ledger.

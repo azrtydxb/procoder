@@ -187,7 +187,15 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 func hasFiles(root, ext string) bool {
 	found := false
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || found {
+		// an unreadable subdirectory is skipped, not fatal; an unreadable
+		// ROOT is no survey at all, and must not answer "nothing here"
+		if err != nil {
+			if path == root {
+				return err
+			}
+			return nil
+		}
+		if found {
 			return nil
 		}
 		if d.IsDir() {
