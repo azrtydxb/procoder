@@ -213,3 +213,16 @@ does. `procoder lessons` flags entries with no adaptation.
   guard and the comment beside it promised to prevent. Now
   `grep -q '[^[:space:]]'`, proved both ways before pushing
 
+## 2026-08-20 v1.0.1 (CI) — release assets uploaded under one colliding name
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "a third-party tool's semantics come
+  from its own help or docs". `gh release create path#label` was read as
+  renaming the asset; it sets the display label, so all five binaries
+  uploaded as `procoder` and the second collided. The binaries are staged
+  under distinct names now, with a guard that counts them and refuses at
+  four. The deeper miss is what was verified: the awk extraction was run
+  against the real changelog, the upload was assumed — the part that
+  could not be tested locally is the part that broke
+
