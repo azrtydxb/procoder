@@ -65,6 +65,69 @@ func TestParseCommandPicksUpBypassAndDirectory(t *testing.T) {
 	}
 }
 
+// The acknowledgment must reach the gate from wherever git reads the
+// message, not only from -m: an agent writing a body with a preformatted
+// block reaches for a heredoc, and a `docs: none — <reason>` line that the
+// gate cannot see sends the user to a remedy that cannot work.
+// proved by: kept the -m-only scan — the heredoc and -F messages come back
+// empty and the obligation stands with a correct acknowledgment in hand.
+func TestTheMessageIsReadFromEveryFormGitReadsItFrom(t *testing.T) {
+	heredoc := parseCommand("git commit -F - <<'EOF'\nchore: adopt the config\n\ndocs: none — the file documents itself.\nEOF")
+	if !strings.Contains(heredoc.message, "docs: none") {
+		t.Errorf("heredoc message lost: %q", heredoc.message)
+	}
+	// an indented line that reads like the delimiter is body, not the end of
+	// it: only `<<-` allows a tab-indented terminator, and neither form
+	// allows a space-indented one
+	indented := parseCommand("git commit -F - <<'EOF'\nchore: x\n\n    EOF\n\ndocs: none — reason.\nEOF")
+	if !strings.Contains(indented.message, "docs: none") {
+		t.Errorf("an indented look-alike ended the message early: %q", indented.message)
+	}
+	tabbed := parseCommand("git commit -F - <<-EOF\nchore: x\n\ndocs: none — reason.\n\tEOF")
+	if !strings.Contains(tabbed.message, "docs: none") {
+		t.Errorf("<<- accepts a tab-indented terminator: %q", tabbed.message)
+	}
+	for _, cmd := range []string{
+		"git commit -F msg.txt",
+		"git commit --file msg.txt",
+		"git commit --file=msg.txt",
+		"git commit -Fmsg.txt",
+	} {
+		if p := parseCommand(cmd); p.messageFile != "msg.txt" {
+			t.Errorf("%s: message file lost: %+v", cmd, p)
+		}
+	}
+	// a quoted escape inside the message keeps the argument whole — the
+	// tokenizer used to end the word at the backslash and lose every -m
+	// after it, the acknowledgment included
+	esc := parseCommand(`git commit -m "feat: say \"no\" politely" -m "docs: none — behaviour only."`)
+	if !strings.Contains(esc.message, "docs: none") {
+		t.Errorf("escaped quote swallowed the rest: %q", esc.message)
+	}
+	multi := parseCommand("git commit -m \"chore: x\" -m \"body:\n\n  key  value\" -m \"docs: none — reason.\"")
+	if !strings.Contains(multi.message, "docs: none") {
+		t.Errorf("multi-line -m lost the ack: %q", multi.message)
+	}
+}
+
+// -F names a file the gate must actually read, in the directory the command
+// runs in — the message only clears the obligation if it arrives at the
+// check.
+// proved by: left readMessageFile out of PreToolUse — the acknowledgment in
+// the file is invisible and the commit stays blocked.
+func TestAnAcknowledgmentInAMessageFileClearsTheObligation(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "msg.txt"), []byte("chore: x\n\ndocs: none — reason.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readMessageFile(dir, "msg.txt"); !strings.Contains(got, "docs: none") {
+		t.Errorf("message file not read: %q", got)
+	}
+	if got := readMessageFile(dir, "absent.txt"); got != "" {
+		t.Errorf("an unreadable file is no message, got %q", got)
+	}
+}
+
 // --- PreToolUse ---
 
 func requireGit(t *testing.T) {

@@ -91,10 +91,19 @@ func Obligation(root string, changed []string, commitMessage string, block bool)
 		more = fmt.Sprintf(" (and %d more)", len(named)-maxTriggersNamed)
 		named = named[:maxTriggersNamed]
 	}
+	// Naming a remedy that cannot work here is worse than naming none: the
+	// user writes the acknowledgment exactly as printed, nothing changes,
+	// and the tool looks broken. So the remedy depends on whether a message
+	// reached this check at all.
+	remedy := fmt.Sprintf("update a doc, or record the decision with a `%s — <reason>` line in the commit message (`procoder docs --ack \"<reason>\"` prints it)", AckPrefix)
+	noMessage := strings.TrimSpace(commitMessage) == ""
+	if noMessage {
+		remedy = fmt.Sprintf("update a doc — no commit message reached this check, so a `%s — <reason>` line cannot be read here; it clears the obligation when the message is one the check sees (`git commit -m`, `-F <file>`, or `-F -` with a heredoc)", AckPrefix)
+	}
 	out = append(out, gitx.Finding{Blocking: block,
-		Message: fmt.Sprintf("documentation obligation: %s%s — no documentation file changed in this diff; update a doc, or record the decision with a `%s — <reason>` line in the commit message (`procoder docs --ack \"<reason>\"` prints it)",
-			strings.Join(named, "; "), more, AckPrefix)})
-	if strings.TrimSpace(commitMessage) == "" {
+		Message: fmt.Sprintf("documentation obligation: %s%s — no documentation file changed in this diff; %s",
+			strings.Join(named, "; "), more, remedy)})
+	if noMessage {
 		out = append(out, gitx.Finding{
 			Message: "acknowledgment path unavailable — no commit message at check time; the obligation stands until a doc changes or the check runs where the message exists"})
 	}
