@@ -1,5 +1,5 @@
 ---
-description: "The over-engineering review: five tags (delete, stdlib, native, yagni, shrink), a mandatory replacement per finding, and an honest null result."
+description: "The over-engineering review: five tags (delete, stdlib, native, yagni, shrink), a mandatory replacement per finding, and a real null result when there is nothing to cut."
 ---
 
 The user invoked /procoder:simplify with arguments:

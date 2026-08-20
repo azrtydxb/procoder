@@ -39,7 +39,7 @@ retro = "off"
 
 [release]
 # The version-bearing files `procoder release` verifies stay in sync.
-# Unset, the version-sync leg honestly reports that it verified nothing.
+# Unset, the version-sync leg reports that it verified nothing.
 files = ["README.md", "docs/index.md"]
 
 [bench]

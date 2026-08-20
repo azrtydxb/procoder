@@ -31,12 +31,9 @@ The skill classifies the work first and says which path it took. Small,
 bounded changes to a flow that already exists skip the spec file
 entirely.
 
-```
-procoder spec check <feature>
-```
-
-Blocks while a section is empty, an `OPEN:` question is unresolved, or
-an acceptance criterion is untestable.
+The skill runs the controller for you, and it blocks while a section is
+empty, an `OPEN:` question is unresolved, or an acceptance criterion is
+untestable.
 
 ## 2. Write the plan
 
@@ -48,20 +45,16 @@ Turns a COMPLETE spec into `.procoder/plans/<feature>.md`: Goal,
 Architecture, Constraints verbatim, and `## Task N:` blocks carrying
 files, interfaces, and test-first steps.
 
-```
-procoder plan check <feature>
-```
-
-Blocks placeholders and tasks with no files or steps.
+Its controller blocks placeholders and tasks with no files or steps.
 
 ## 3. Track the work
 
 For a project with a shape worth planning:
 
 ```
-procoder backlog seed .procoder/specs/<feature>.md
-procoder sprint open "<goal>"
-procoder sprint pull <story-id>
+/procoder:backlog seed .procoder/specs/<feature>.md
+/procoder:sprint open "<goal>"
+/procoder:sprint pull <story-id>
 ```
 
 `seed` makes an epic and one story per acceptance criterion. One sprint
@@ -70,7 +63,7 @@ is active at a time.
 For standalone work not born from a spec:
 
 ```
-procoder todo add "<task>"
+/procoder:todo add "<task>"
 ```
 
 Same closing rigor, no project layer.
@@ -89,15 +82,15 @@ same turn and hands back the formatted result plus the domain findings.
 Use the index instead of grep:
 
 ```
-procoder index find <symbol>
-procoder index refs <symbol>
-procoder index impact <file>
+/procoder:index find <symbol>
+/procoder:index refs <symbol>
+/procoder:index impact <file>
 ```
 
 ## 5. Run the suite
 
 ```
-procoder test
+/procoder:test
 ```
 
 Each detected ecosystem's canonical runner. **NOT run is never green.**
@@ -107,7 +100,7 @@ joins the close controllers.
 For a performance claim:
 
 ```
-procoder bench
+/procoder:perf
 ```
 
 Compares against the saved baseline. Go only.
@@ -115,7 +108,7 @@ Compares against the saved baseline. Go only.
 ## 6. Clear the gate
 
 ```
-procoder check
+/procoder:check
 ```
 
 Formatting, hygiene, lint, secrets, docs, CI and infra rules — the same
@@ -157,8 +150,8 @@ class — in the same PR.
 ## 10. Close the sprint
 
 ```
-procoder backlog close story <id>
-procoder sprint close
+/procoder:backlog close story <id>
+/procoder:sprint close
 ```
 
 The story close refuses without checked criteria, recorded evidence, and
@@ -169,7 +162,7 @@ That retro is the price of the next `sprint open`.
 ## 11. Release
 
 ```
-procoder release <version>
+/procoder:release <version>
 ```
 
 Verifies the version across `[release] files`, the changelog entry, a

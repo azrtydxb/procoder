@@ -47,6 +47,7 @@ nav:
   - How-to guides:
       - Ship a change: workflow.md
       - Onboard an existing codebase: how-to-onboard.md
+      - Install without the plugin: how-to-install-manually.md
   - Reference:
       - Commands: commands.md
       - Configuration: configuration.md

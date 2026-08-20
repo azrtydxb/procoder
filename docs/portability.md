@@ -49,13 +49,13 @@ Host detection lives in the binary (`internal/host`): `COPILOT_PLUGIN_DATA`
 `QODER_SESSION_ID` → Qoder, else Claude. `procoder principles --hook`
 answers in each host's session-start shape.
 
-## Honesty note
+## Test coverage per host
 
-Claude Code is the tested reference host — every command, hook, and skill
-is exercised there daily. The other adapters follow each host's published
+Claude Code is the reference host — every command, hook, and skill is
+exercised there daily. The other adapters follow each host's published
 plugin shape (largely proven in the wild by the ponytail plugin's
-portability layer, which this design follows) but are not continuously
-tested against live installs; if one misbehaves on your host, that is a
+portability layer, which this design follows) and are not continuously
+tested against live installs. If one misbehaves on your host, that is a
 bug — report it with the host name and the adapter file.
 
 Manifest versions are pinned to `.claude-plugin/plugin.json` by the gate,

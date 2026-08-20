@@ -56,16 +56,15 @@ flowchart LR
 Re-run `procoder audit` after each theme until the scorecard says the
 repository would pass the gate.
 
-## 4. Write the repository's rules files
+## 4. Keep the rules files the audit wrote
 
-```
-procoder templates
-```
+`/procoder:audit` finishes by writing the repository's `.procoder/`
+files — config, documentation rules, security rules, the review rubric,
+the GitHub templates — so the standard holds from here on.
 
-This prints the default `.procoder/` files — config, documentation
-rules, security rules, the review rubric, the GitHub templates. Write
-them, then edit them. The repository's copy always wins over the
-built-in default.
+They are yours now. Open them and edit them: the repository's copy
+always wins over the built-in default. See
+[Configuration](configuration.md) for what each one controls.
 
 ## 5. Build the index
 

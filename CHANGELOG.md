@@ -2,6 +2,36 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.9 — 2026-08-20
+
+Documentation, after reading it as a user rather than as its author.
+
+- **Serena joins the provenance map.** [Influences](https://azrtydxb.github.io/procoder/influences/)
+  covered superpowers and ponytail but not serena, whose navigation half
+  Procoder took into the binary — `index find` / `refs` / `outline` /
+  `callers` / `impls` / `rename`, plus `lint --types` and `.procoder/` as
+  the memory that survives a lost context. Serena's symbol-level **write**
+  tools are listed under what was deliberately not adopted: the binary
+  computes the rename and hands over the diff. The README now says
+  outright that all three plugins can be uninstalled, because running
+  them alongside Procoder puts two sets of instructions in front of one
+  agent.
+- **The tutorial installs once.** It read as though the plugin install
+  were step one of seven, with a clone and a `PATH` export after it. For
+  Claude Code the marketplace install is the whole thing, and the tools
+  step (`/procoder:init`) was missing entirely. The manual path — the
+  binary on `PATH`, the agent contract, the git hook — is now its own
+  how-to for the agents that need it.
+- **The command reference leads with the commands you run.** All 33
+  `/procoder:` skills in one table, then the binary underneath for
+  scripting CI, other hosts, and debugging Procoder itself. The
+  instructional pages call the skills; `procoder templates` is gone from
+  the onboarding guide, since `/procoder:audit` writes those files.
+- **Tone.** The word "honest" is out of the documentation. The behaviour
+  it described stays exactly as it is — a file that could not be checked
+  is never called clean — but a product that keeps calling itself honest
+  is telling the reader what to think of it.
+
 ## 0.32.8 — 2026-08-20
 
 **Documentation now has a shape, not just a checklist.** The docs domain
