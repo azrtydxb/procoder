@@ -1,8 +1,10 @@
 package docs
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -255,5 +257,36 @@ func TestStateMarkdownRaisesNoObligationItCannotClear(t *testing.T) {
 		if strings.Contains(f.Message, "names changed file") {
 			t.Fatalf("state markdown must not raise a mention obligation: %s", f.Message)
 		}
+	}
+}
+
+// proved by: restoring the swallowed root error in markdownFiles
+//
+// A survey that cannot walk the tree returns a subset, and a subset that
+// reads as the whole repository is the lie the honesty rule bans: it would
+// let a sweep report a clean documentation corpus it never saw.
+func TestUnwalkableTreeIsReportedNotSilentlyEmpty(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod does not deny the walk here")
+	}
+	root := t.TempDir()
+	write(t, root, "docs/guide.md", "# Guide\n")
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(root, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
+
+	var said bool
+	for _, f := range CollectSweep(root, nil) {
+		if strings.Contains(f.Message, "NOT complete") {
+			said = true
+		}
+	}
+	if !said {
+		t.Fatal("an unwalkable tree must be reported, never read as a clean corpus")
 	}
 }

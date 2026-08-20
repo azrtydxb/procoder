@@ -120,3 +120,43 @@ func TestRunCleanLedger(t *testing.T) {
 		t.Errorf("no explicit null result: %v", lines)
 	}
 }
+
+// A marker's revisit condition routinely lands on a continuation line —
+// the marker line is already full of what the ceiling is. Reading only the
+// first line calls those "no trigger", which is the ledger crying rot over
+// debt that was recorded exactly as the principles ask.
+func TestTriggerOnAContinuationLineCounts(t *testing.T) {
+	// the marker is assembled rather than written literally: a fixture that
+	// carries one would be harvested from this repository's own ledger
+	m := "de" + "bt:"
+	root := gitRepo(t, map[string]string{"a.go": "package a\n\nfunc f() {\n" +
+		"\t// " + m + " tsc checks the whole project but only findings in the asked\n" +
+		"\t// files are kept (the clippy precedent) — cross-file fallout hides;\n" +
+		"\t// revisit if a rename ships broken siblings past this.\n\t_ = 1\n}\n"})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want one marker, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].NoTrigger {
+		t.Fatalf("the revisit condition is on the third line and must count: %q", entries[0].Text)
+	}
+}
+
+// A marker with no revisit condition anywhere in its block is still rot,
+// and must stay flagged — the fix above must not simply stop flagging.
+func TestAMarkerWithNoConditionAnywhereIsStillFlagged(t *testing.T) {
+	m := "de" + "bt:"
+	root := gitRepo(t, map[string]string{"b.go": "package b\n\nfunc g() {\n" +
+		"\t// " + m + " a global lock here, it is coarse and slow\n" +
+		"\t// and nothing about this comment says what would change our mind\n\t_ = 2\n}\n"})
+	entries, err := Scan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].NoTrigger {
+		t.Fatalf("a marker with no condition must stay flagged: %+v", entries)
+	}
+}

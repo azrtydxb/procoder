@@ -153,3 +153,22 @@ does. `procoder lessons` flags entries with no adaptation.
   ROOT's error"; infra, docs and maintain distinguish an unreadable root
   (no survey) from a skippable subdirectory, pinned by
   TestUnwalkableTreeIsNotSurveyedRatherThanEmpty
+
+## 2026-08-20 tdd sweep — the debt ledger cried rot over sound debt
+
+- Class: mechanical
+- Missed by: test
+- Adaptation: a marker's revisit condition usually lands on a
+  continuation line; debt.scanFile judges the whole comment block now,
+  pinned by TestTriggerOnAContinuationLineCounts plus a guard test that
+  a marker with no condition anywhere is still flagged
+
+## 2026-08-20 tdd sweep — a walk-root fix shipped incomplete, twice
+
+- Class: judgment
+- Missed by: test
+- Adaptation: the 0.32.3 root-error distinction was applied to infra and
+  docs but not to maintain's predicate, so its recorded walk error was
+  always nil. Writing the test for the behaviour is what found it — the
+  rubric line already exists; the adaptation is that a fix applied to
+  "the places that do X" now gets a test per place, not per class

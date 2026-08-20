@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,5 +78,34 @@ func TestThresholdsComeFromRepoConfig(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in generated config:\n%s", want, got)
 		}
+	}
+}
+
+// proved by: returning `found` instead of `true` in hasFiles' walk-error branch
+//
+// hasFiles gates whether an ecosystem's complexity check runs at all. A
+// failed survey answering "no files of this type" silently skips that
+// ecosystem, which reads exactly like a clean result. When the survey
+// could not look, the honest answer is to let the tool run and report for
+// itself — it says NOT checked when it cannot.
+func TestUnwalkableTreeErrsTowardRunningTheCheck(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod does not deny the walk here")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(root, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
+
+	if !hasFiles(root, ".go") {
+		t.Fatal("a survey that could not look must not answer \"no files of this type\"")
 	}
 }

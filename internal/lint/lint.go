@@ -410,7 +410,11 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 	cfg := cfgFile.Name()
 	defer os.Remove(cfg)
 	// a failed Close can mean the write never hit disk — treat it as a
-	// write failure, exactly as lintGo does; the rubric names this case
+	// write failure, exactly as lintGo does; the rubric names this case.
+	//
+	// debt: this branch is unprotected by tests, revisit if the temp-config
+	// write grows an interface — os.File.Close cannot be made to fail on
+	// demand without a seam, and an interface would make the class testable.
 	_, werr := cfgFile.WriteString(baselineEslintConfig)
 	if cerr := cfgFile.Close(); werr == nil {
 		werr = cerr
