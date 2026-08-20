@@ -135,8 +135,14 @@ user stories**, with the story as the execution unit of spec-based work
   spec is refused
   with the spec checker's gaps replayed.
 - `list` / `board` — the flat listing, and the tree with statuses,
-  sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing`),
-  orphans, and a summary line.
+  sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing` /
+  `⚠ spec not seeded`), orphans, and a summary line. An open story
+  missing a section the close controller reads is flagged there rather
+  than at close. The backlog is versioned like the code, so the board
+  answers about the current checkout: its last line names the branch it
+  read and counts the open stories the default branch holds that this
+  one cannot see. The two are never merged — whose status wins when
+  both branches carry a story is a decision, not a default.
 - `close story <id>...` — refuses until the description is real, every
   acceptance criterion is checked, evidence is recorded, and the gate
   is clean — todo-close rigor, applied to stories. Several ids share

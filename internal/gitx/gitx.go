@@ -92,6 +92,28 @@ func DefaultBranch(root string) string {
 	return ""
 }
 
+// GrepOn lists the files on a ref whose content matches a regular
+// expression, as repo-relative paths. It is how a report asks what another
+// branch holds without checking it out; err is a git that could not answer,
+// which is never the same as a match of none.
+func GrepOn(root, ref, pattern, pathspec string) ([]string, error) {
+	out, err := git(root, "grep", "-l", "-e", pattern, ref, "--", pathspec)
+	if err != nil {
+		// git grep exits 1 for no matches, which is an answer, not a failure.
+		if code, ok := err.(*exec.ExitError); ok && code.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if _, path, found := strings.Cut(line, ":"); found && path != "" {
+			files = append(files, path)
+		}
+	}
+	return files, nil
+}
+
 // UnpushedMessages returns the full message of every commit not yet on the
 // upstream — the set whose wording the gate can still save. No upstream means
 // no basis for "unpushed", so the last commit alone is checked: better one

@@ -1,6 +1,9 @@
 package backlog
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -199,5 +202,71 @@ func TestTheBoardNamesAStoryNothingCanJudge(t *testing.T) {
 				t.Errorf("%s must name every missing section, got %q", c.id, l)
 			}
 		}
+	}
+}
+
+// TestTheBoardSaysWhichBranchItRead pins the lie this footer exists to stop:
+// the backlog is versioned like the code, so a board run on a feature branch
+// reported "0 open · 78 done" while thirty-four specced stories sat one
+// branch away, and it was read as a statement about the project. The footer
+// names the branch and counts what the default branch holds that this
+// checkout cannot see. It does not merge the two — whose status wins when
+// both carry a story is a design question, not a default.
+func TestTheBoardSaysWhichBranchItRead(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v\n%s", err, out)
+		}
+	}
+	story := func(id, status string) {
+		t.Helper()
+		writeItem(t, root, KindStory, id, "# "+id+"\n\nStatus: "+status+"\nEpic: auth\nSprint: -\n"+
+			"\n## Description\n\nreal\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Evidence\n\n- none\n")
+	}
+	run("init", "-q", "-b", "main")
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open\n")
+	story("20260101-onmain", "open")
+	run("add", "-A")
+	run("commit", "-qm", "main has a story")
+
+	// On main itself the footer names the branch and compares nothing.
+	out, lines := collect()
+	Board(root, out)
+	if last := (*lines)[len(*lines)-1]; last != "read from branch main" {
+		t.Errorf("on the default branch the footer just names it, got %q", last)
+	}
+
+	// A branch that never received that story cannot see it.
+	run("checkout", "-q", "-b", "feature")
+	if err := os.Remove(filepath.Join(root, Dir, KindStory, "20260101-onmain.md")); err != nil {
+		t.Fatal(err)
+	}
+	story("20260102-onbranch", "open")
+	run("add", "-A")
+	run("commit", "-qm", "the branch goes its own way")
+
+	out2, lines2 := collect()
+	Board(root, out2)
+	last := (*lines2)[len(*lines2)-1]
+	if !strings.Contains(last, "read from branch feature") || !strings.Contains(last, "main has 1 open story(ies) this branch cannot see") {
+		t.Errorf("the footer must count what the default branch holds and this one lacks, got %q", last)
+	}
+	if !strings.Contains(strings.Join(*lines2, "\n"), "1 open · 0 done") {
+		t.Errorf("the counts stay about this checkout: %v", *lines2)
+	}
+}
+
+// Outside a repository there are no branches to name, so the board says
+// nothing rather than inventing an unknown.
+func TestTheBranchFooterIsSilentOutsideARepository(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open\n")
+	out, lines := collect()
+	Board(root, out)
+	if joined := strings.Join(*lines, "\n"); strings.Contains(joined, "read from branch") {
+		t.Errorf("no repository, no branch line:\n%s", joined)
 	}
 }
