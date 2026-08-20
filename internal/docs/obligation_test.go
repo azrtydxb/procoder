@@ -291,7 +291,10 @@ func TestUnwalkableTreeIsReportedNotSilentlyEmpty(t *testing.T) {
 	}
 }
 
-// gitRun runs one git command in the fixture, failing the test if it cannot.
+// gitRun runs one git command in the fixture. A git that cannot do the work
+// skips the test rather than failing it: these tests are about the
+// obligation, not about the machine's git, and the fixture above already
+// skips where git is absent entirely.
 func gitRun(t *testing.T, root string, args ...string) {
 	t.Helper()
 	full := append([]string{"-C", root, "-c", "user.email=t@example.com", "-c", "user.name=t"}, args...)
