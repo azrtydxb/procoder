@@ -24,7 +24,11 @@ var criterionRe = regexp.MustCompile(`(?m)^\s*- \[[ xX]\]\s*(.+)$`)
 // to live on the epic's `Spec:` header line. The board compares it against
 // the current spec file to flag drift.
 func fingerprint(b []byte) string {
-	sum := sha1.Sum(b)
+	// Change detection, not a signature: nobody gains anything by colliding
+	// their own spec file, and the digest is persisted on every seeded
+	// epic's Spec: line — changing the algorithm would flag drift on every
+	// epic that already exists.
+	sum := sha1.Sum(b) // nosemgrep: use-of-sha1
 	return hex.EncodeToString(sum[:])[:12]
 }
 

@@ -2,6 +2,48 @@
 
 Every release, in words a user can read. Newest first.
 
+## 1.0.0 — 2026-08-20
+
+Procoder is 1.0. Not because anything new landed today, but because what
+is here has been used long enough to be worth promising.
+
+**What 1.0 means.** These are the public interface, and breaking any of
+them takes a major version: command and subcommand names; exit codes (0
+clean, 1 findings or refusal, 2 usage); what blocks versus what informs,
+so a new blocking check cannot fail a build that passed yesterday; the
+`.procoder/` formats a repository commits — config keys, the
+spec/plan/todo/backlog/adr shapes, the epic `Spec:` fingerprint, the
+rules files' machine-read sections; and the hook payloads and envelopes,
+per host.
+
+Deliberately not covered, because pinning them would freeze the product:
+the wording of report lines (verdicts are for people; exit codes are the
+contract), the default rules content every repository is meant to
+override, the `internal/` Go packages, and the gitignored index format.
+`.procoder/adr/0003-what-1-0-promises.md` carries the reasoning and the
+alternatives that lost.
+
+**What it is.** One Go binary, no runtime dependencies, cross-compiled
+for five platforms and committed with the plugin — no npm, no network at
+hook time, air-gapped installs included. Ten domains behind one gate.
+The quality chain from spec to release, every link refusing rather than
+advising. A universal agent layer serving twenty-odd hosts from one
+`AGENTS.md`. A code index instead of grep. A lessons ledger where an
+escape is not closed until the layer that missed it has been adapted.
+
+**Where it stands.** 73.2% statement coverage from a mutation-driven
+sweep; the whole-tree audit reports zero blocking findings; the deep
+security scan reports zero findings; 25 lessons recorded with zero
+unlearned; three debt markers, each with the condition that will bring
+it back.
+
+**One judgment reviewed for this release.** The spec fingerprint and the
+tool-cache directory name both use SHA-1. Both are change detection
+rather than signatures, and the fingerprint is persisted on every seeded
+epic, so switching the digest would flag drift on work that has not
+changed. Kept deliberately, marked at both call sites with the reason,
+and now covered by the compatibility promise.
+
 ## 0.32.11 — 2026-08-20
 
 **`procoder docs` now checks the anchor, not just the file.** A link
