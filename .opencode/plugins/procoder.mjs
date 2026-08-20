@@ -31,6 +31,11 @@ const isKilo = Boolean(process.env.KILO || process.env.KILOCODE_VERSION);
 // twice per commit and say everything twice.
 const registered = Symbol.for("procoder.plugin.registered");
 
+// The cheap half of the question: does this command say `commit` as a word
+// of its own? The binary decides whether it is really a commit; this only
+// keeps the ordinary shell call from paying for a process spawn.
+const isCommitish = /(^|\s)commit(\s|$)/;
+
 // The directories a skill-aware host should scan in a governed repository:
 // the command set — each host names it differently, and the plugin sits one
 // level below whichever it is — and `skills/`, where the canonical procoder
@@ -60,7 +65,11 @@ function gateVerdict(command, cwd) {
     const child = execFile(
       "procoder",
       ["hook", "pre-tool-use"],
-      { timeout: 180_000 },
+      // A deny verdict carries every blocking finding, and the default
+      // buffer is small enough that a long one would be truncated — which
+      // reads back as no verdict, which lets the commit through. The gate
+      // must not fail open because it had too much to say.
+      { timeout: 180_000, maxBuffer: 32 * 1024 * 1024 },
       (err, stdout) => {
         const text = (stdout || "").trim();
         if (!text) {
@@ -138,9 +147,11 @@ export const ProcoderPlugin = async ({ client, directory } = {}) => {
     "tool.execute.before": async (input, output) => {
       if (input.tool !== "bash") return;
       const command = output?.args?.command;
-      // every `git commit` carries the word; anything else never reaches the
-      // binary, so the gate costs nothing on ordinary shell calls
-      if (typeof command !== "string" || !command.includes("commit")) return;
+      // Every `git commit` carries the word as its own argument; nothing
+      // else reaches the binary, so the gate costs nothing on ordinary shell
+      // calls — `git log --abbrev-commit` among them, which an agent runs
+      // constantly and which is not a commit by any reading.
+      if (typeof command !== "string" || !isCommitish.test(command)) return;
       const { decision, reason } = await gateVerdict(
         command,
         directory ?? ROOT,

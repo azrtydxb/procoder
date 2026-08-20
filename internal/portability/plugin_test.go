@@ -127,8 +127,15 @@ func TestACleanGateLetsTheCommitThrough(t *testing.T) {
 // the session cannot run an ordinary command.
 func TestOrdinaryShellCommandsNeverConsultTheGate(t *testing.T) {
 	stub := stubProcoder(t, `{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"should never be asked"}}`)
-	if got := runHook(t, stub, "ls -la"); !strings.Contains(got, "ALLOWED") {
-		t.Errorf("a non-commit command must not be judged, got %q", got)
+	for _, cmd := range []string{
+		"ls -la",
+		// the word appears, but as part of a flag: an agent runs this one
+		// constantly and it creates nothing
+		"git log --oneline --abbrev-commit",
+	} {
+		if got := runHook(t, stub, cmd); !strings.Contains(got, "ALLOWED") {
+			t.Errorf("%s must not be judged, got %q", cmd, got)
+		}
 	}
 }
 
