@@ -611,7 +611,9 @@ func parse(raw string, block bool) []gitx.Finding {
 
 // CacheDir gives each repository root its own tool-cache directory.
 func CacheDir(root string) string {
-	sum := sha1.Sum([]byte(root))
+	// A directory name derived from a path, so each repository gets its own
+	// tool cache. No security property rests on it.
+	sum := sha1.Sum([]byte(root)) // nosemgrep: use-of-sha1
 	return filepath.Join(os.TempDir(), "procoder-cache-"+hex.EncodeToString(sum[:6]))
 }
 
