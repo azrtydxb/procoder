@@ -136,6 +136,28 @@ jobs:
             exit 1
           fi
           head -3 /tmp/notes.md
+      - name: stage the binaries under names that do not collide
+        run: |
+          # gh takes an asset's NAME from the file name; `path#text` sets only
+          # its display label. Five files all called `procoder` therefore
+          # upload as five assets called `procoder`, and the second one fails.
+          # cleared, not just created: a reused workspace could leave files
+          # behind and the count would then pass or fail for the wrong reason
+          rm -rf /tmp/assets
+          mkdir -p /tmp/assets
+          cp dist/darwin-arm64/procoder      /tmp/assets/procoder-darwin-arm64
+          cp dist/darwin-amd64/procoder      /tmp/assets/procoder-darwin-amd64
+          cp dist/linux-amd64/procoder       /tmp/assets/procoder-linux-amd64
+          cp dist/linux-arm64/procoder       /tmp/assets/procoder-linux-arm64
+          cp dist/windows-amd64/procoder.exe /tmp/assets/procoder-windows-amd64.exe
+          # five files, five distinct names, or the upload is not worth trying
+          count=$(find /tmp/assets -type f -exec basename {} \; | sort -u | wc -l)
+          if [ "$count" -ne 5 ]; then
+            echo "expected 5 distinctly named assets, staged $count" >&2
+            find /tmp/assets -type f -exec ls -l {} + >&2
+            exit 1
+          fi
+          find /tmp/assets -type f -exec ls -l {} +
       - name: publish the release with the platform binaries
         env:
           GH_TOKEN: ${{ github.token }}
@@ -144,11 +166,11 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file /tmp/notes.md \
             --latest \
-            dist/darwin-arm64/procoder#procoder-darwin-arm64 \
-            dist/darwin-amd64/procoder#procoder-darwin-amd64 \
-            dist/linux-amd64/procoder#procoder-linux-amd64 \
-            dist/linux-arm64/procoder#procoder-linux-arm64 \
-            dist/windows-amd64/procoder.exe#procoder-windows-amd64.exe
+            /tmp/assets/procoder-darwin-arm64 \
+            /tmp/assets/procoder-darwin-amd64 \
+            /tmp/assets/procoder-linux-amd64 \
+            /tmp/assets/procoder-linux-arm64 \
+            /tmp/assets/procoder-windows-amd64.exe
 
   docs:
     # Build and publish the documentation site — domain 5's delivery leg.

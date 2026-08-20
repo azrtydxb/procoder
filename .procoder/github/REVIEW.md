@@ -51,6 +51,10 @@ Check every hunk for:
 - Docs voice: professional product documentation — no personal names,
   no project-history anecdotes, no first-person diary; history belongs
   in the changelog and lessons ledger, not the docs.
+- A third-party tool's semantics come from its own help or docs, not from
+  what the syntax looks like it should mean. `gh`'s `path#text` sets an
+  asset's display LABEL; the name still comes from the file. One line of
+  `--help` separates a working release job from a red one.
 - Guards test the property they claim to test. `-s` is size, not
   content; a zero exit is "the command ran", not "the command found
   what you wanted"; a non-nil slice is not a non-empty one. A guard that
