@@ -98,6 +98,11 @@ text).
 - `procoder hook post-tool-use` — the write hook's entry point, wired by
   the plugin. You do not call it by hand.
 - `procoder version` — the version, when a report needs to name it.
+- `procoder version --check` and `procoder self-upgrade` — what is newer
+  than this binary, and the install, after an explicit yes. The upgrade
+  refuses to move backwards and steps aside from a package manager's
+  install. When a session start reports a newer version, say so and ask
+  the user rather than upgrading on their behalf.
 
 Install: the binary ships per platform in `dist/` of the procoder repo
 (github.com/azrtydxb/procoder); put the one for your platform on PATH,

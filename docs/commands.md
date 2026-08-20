@@ -455,6 +455,34 @@ The write hook's entry point — reads a PostToolUse payload on stdin and
 answers with findings for the file just written. Wired by the plugin;
 rarely invoked by hand.
 
+#### `procoder version [--check]` and `procoder self-upgrade [--force]`
+
+Bare `version` prints one line and asks nobody anything.
+
+`--check` asks GitHub for the newest release, compares it against this
+build, and says which is which. Every newer release earns the warning —
+patch, minor and major alike, because a major is exactly the upgrade whose
+behaviour changes. A check that could not run reports NOT known and exits
+2: an unanswered check never means "you are current". A build with no
+version stamped has nothing to compare and says so. `[version] check =
+"off"` in `.procoder/config.toml` silences the session-start check for CI
+and scripted runs; there is no third value, because a setting that
+upgraded without asking would remove the consent this is built on.
+
+`self-upgrade` installs the newest release over the running binary, and
+only after an explicit yes on a terminal — no terminal is a question nobody
+answered, not a yes. It refuses to move backwards, so a maintainer on an
+unreleased branch is never told to install an older tag. The download lands
+beside the binary and the rename is the last step, so a failed download
+leaves the working binary exactly where it was.
+
+Where the binary belongs to a package manager — a Homebrew cellar, a snap,
+a nix store path, `/usr/bin`, a scoop shims directory — the upgrade refuses
+and prints that manager's own upgrade command instead, because overwriting
+a file a package database believes it owns is a change the manager will
+silently revert. The detection is a path heuristic and errs toward
+refusing; `--force` is the way past it when the install really is yours.
+
 #### `procoder version`
 
 Prints the version.

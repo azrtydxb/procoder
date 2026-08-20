@@ -22,7 +22,7 @@ var Commands = []string{
 	"copilot-leak", "debt", "deps", "docs", "doctor", "env",
 	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
 	"maintain", "plan", "principles", "release", "run", "scrub", "security", "spec",
-	"sprint", "status", "templates", "test", "todo", "version",
+	"self-upgrade", "sprint", "status", "templates", "test", "todo", "version",
 }
 
 // surfaceCoverageCap is how many undocumented symbols are worth listing; past

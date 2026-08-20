@@ -43,6 +43,7 @@ import (
 	"procoder/internal/portability"
 	"procoder/internal/principles"
 	"procoder/internal/release"
+	"procoder/internal/releases"
 	"procoder/internal/runcmd"
 	"procoder/internal/security"
 	"procoder/internal/spec"
@@ -317,10 +318,21 @@ const usage = `usage: procoder <command> [args]
                        add <title> | list | show <id> | close <id> — close
                        REFUSES until every acceptance criterion is checked,
                        evidence is recorded, and the gate is clean
-  version              print the version
+  version [--check]    print the version; --check asks GitHub what the
+                       newest release is and offers to install it when this
+                       build is behind. Silenced by [version] check = "off"
+  self-upgrade [--force]
+                       install the newest release over this binary, after
+                       an explicit yes. Refuses to move backwards, and
+                       steps aside from a package manager's install unless
+                       --force says the file is really yours
 `
 
 func main() {
+	// The principles hook reports what is newer than this build; the version
+	// is stamped here at link time, so this is the only place that knows it.
+	principles.Version = version
+
 	os.Exit(run(os.Args[1:]))
 }
 
@@ -548,8 +560,15 @@ func run(args []string) int {
 		}
 		return gitcmd.Scrub(args[1], os.Stdin, os.Stdout)
 	case "version":
+		if len(args) > 1 && args[1] == "--check" {
+			return versionCheckCmd()
+		}
+		// N-05: bare `version` stays one line and asks nobody anything.
 		fmt.Println(version)
 		return 0
+	case "self-upgrade":
+		force := len(args) > 1 && args[1] == "--force"
+		return releases.Upgrade(version, force, upgradeConsent, printLine)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return 2
@@ -642,6 +661,51 @@ func testCmd(args []string) int {
 // codes follow the spec's own Exit 2 line — declining, or having nobody to
 // ask, is a reporting exit rather than an error, and so is a check that could
 // not run. Only a real answer exits 0.
+// versionCheckCmd is `procoder version --check`: the version, then what
+// GitHub says is newest. A check that could not run says so and exits 2 —
+// silence here would read as "you are current", which is the one thing an
+// unanswered check never proves.
+func versionCheckCmd() int {
+	printLine(version)
+	if cfg := config.Load(doctor.Root()); cfg.VersionCheckOff {
+		printLine("version check is off in .procoder/config.toml ([version] check)")
+		return 0
+	}
+	latest, warn, err := releases.Check(version, releases.Timeout)
+	switch {
+	case err != nil:
+		printLine("the latest version is NOT known — " + err.Error())
+		return 2
+	case latest == "":
+		printLine("this build carries no version, so there is nothing to compare")
+		return 0
+	case !warn:
+		printLine("procoder " + version + " is the latest release")
+		return 0
+	}
+	printLine(releases.WarningLine(version, latest))
+	if !copilot.CanAsk(os.Stdin) {
+		// R-08: the warning is the answer when there is nobody to ask.
+		return 0
+	}
+	if !upgradeConsent(strings.TrimPrefix(latest, "v")) {
+		printLine("nothing was downloaded and nothing was replaced")
+		return 0
+	}
+	return releases.Upgrade(version, false, func(string) bool { return true }, printLine)
+}
+
+// upgradeConsent asks before anything is downloaded or run (N-08). No
+// terminal is not a yes: it is a question nobody was asked.
+func upgradeConsent(latest string) bool {
+	if !copilot.CanAsk(os.Stdin) {
+		printLine("no terminal to ask on — an upgrade needs an explicit yes, so nothing was installed")
+		return false
+	}
+	printLine("Upgrade procoder " + version + " → " + latest + "? [y/N]")
+	return copilot.ReadYes(os.Stdin)
+}
+
 func copilotLeakCmd(args []string) int {
 	since := 24 * time.Hour
 	quiet, report := false, false

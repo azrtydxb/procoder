@@ -7,11 +7,15 @@ package principles
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"procoder/internal/config"
 	"procoder/internal/host"
+	"procoder/internal/releases"
 	"procoder/internal/status"
 )
 
@@ -171,6 +175,11 @@ func hookText(root string) string {
 // SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
 // and Qoder each want a JSON envelope. One hooks file serves them all.
 func RunHook(root string, out func(string)) int {
+	// The version check runs alongside the payload, never in front of it:
+	// the hook's stdout is parsed as JSON by three of the four hosts, so the
+	// warning goes to stderr (R-07), and a slow or absent GitHub cannot hold
+	// a session start open (N-02, N-03).
+	done := versionWarning(root)
 	text := hookText(root)
 	switch h := host.Detect(); h {
 	case host.Claude:
@@ -187,8 +196,53 @@ func RunHook(root string, out func(string)) int {
 		enc, _ := json.Marshal(payload)
 		out(string(enc))
 	}
+	done()
 	return 0
 }
+
+// versionWarning starts the check and returns the function that reports it.
+// Splitting the two is what keeps the check off the session's critical path:
+// GitHub is asked while the principles text is being assembled, and the
+// answer — if it arrived — is printed after the payload is out.
+//
+// A check that did not answer says nothing at all here. This is the one
+// place where silence is right: a session start is not the moment to explain
+// a network failure, and `procoder version --check` says it plainly when
+// somebody asks on purpose.
+func versionWarning(root string) func() {
+	if config.Load(root).VersionCheckOff {
+		return func() {}
+	}
+	type answer struct {
+		latest string
+		warn   bool
+	}
+	ch := make(chan answer, 1)
+	go func() {
+		latest, warn, err := releases.Check(Version, releases.Timeout)
+		if err != nil {
+			ch <- answer{}
+			return
+		}
+		ch <- answer{latest, warn}
+	}()
+	return func() {
+		select {
+		case a := <-ch:
+			if a.warn {
+				fmt.Fprintln(releases.Stderr, releases.WarningLine(Version, a.latest))
+			}
+		case <-time.After(releases.Timeout):
+			// The goroutine outlives this call and writes to a buffered
+			// channel, so nothing leaks and nothing blocks.
+		}
+	}
+}
+
+// Version is the running binary's version, set by main at startup. The
+// principles hook needs it to say what is newer, and importing main is not
+// a thing a package can do.
+var Version = releases.Dev
 
 // Run prints the effective principles and where they came from.
 func Run(root string, out func(string)) int {
