@@ -41,10 +41,18 @@ downstream reviewer's:
   verbatim, the branch diff, and the instruction to report findings as
   file:line, what breaks, and the fix, ending with a severity-counted
   verdict or exactly "Nothing found — open the PR."
-- Fix every Critical/Important finding (commit them), re-run
-  `procoder check`, and only then continue. Downstream bot reviews
-  are the fallback net — anything they catch later becomes a lesson
-  (see /procoder:merge's reflection step).
+- Give that same agent the SECOND lens in the same pass, quoted from
+  /procoder:simplify the way the rubric is quoted: the five tags with
+  their definitions, the one-line finding format
+  `<file>:L<line>: <tag> <what>. <replacement>.`, the rule against
+  inventing a finding, and the exact null result `Lean already. Ship.`
+  Scope it to the DIFF — the repo sweep belongs to /procoder:release.
+- Report the simplify findings first, the correctness verdict last.
+- Fix every Critical/Important finding (commit them), decide each cut —
+  taking it or saying why not, P-CONTROL — re-run `procoder check`,
+  and only then continue. Downstream bot reviews are the fallback net —
+  anything they catch later becomes a lesson (see /procoder:merge's
+  reflection step).
 
 3. Fill .procoder/github/PULL_REQUEST_TEMPLATE.md section by section from that
    diff. If the template is missing, get it via `procoder templates`,

@@ -124,6 +124,11 @@ The skill summarises the real diff, fills the template from
 `.procoder/github/`, scrubs attribution, verifies the blast radius with
 `procoder index impact`, and shows you everything before `gh pr create`.
 
+Before any of that it dispatches a fresh-context reviewer over the diff
+with two lenses: the correctness rubric in `.procoder/github/REVIEW.md`,
+and the five simplification tags — what should not exist. Critical and
+Important findings are fixed, and cuts decided, before the PR opens.
+
 Keep the title at 72 characters or fewer — it becomes the squash-commit
 subject.
 
@@ -180,6 +185,10 @@ That retro is the price of the next `sprint open`.
 Verifies the version across `[release] files`, the changelog entry, a
 clean tree, the gate, and the suite — every failure listed at once. On
 success it prints the `git tag` command for you to run.
+
+The release flow also runs the simplification sweep over the whole
+repository: a tag ships the accumulated shape of the code, not just the
+last change.
 
 **It tags nothing itself.**
 

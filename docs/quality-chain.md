@@ -148,7 +148,9 @@ a capitalised local constant is exported in Go and in no other language
 ## Why escapes have to close their class
 
 Before a PR exists, the pre-PR self-review reads the diff with fresh
-context against `.procoder/github/REVIEW.md`. Anything that still
+context against `.procoder/github/REVIEW.md`, and with the five
+simplification tags in the same pass — one asks whether the code is
+right, the other whether it should exist. Anything that still
 escapes to a downstream reviewer triggers the reflection step: name the
 layer that should have caught it, adapt that layer in the same PR, and
 record it.
