@@ -130,7 +130,9 @@ user stories**, with the story as the execution unit of spec-based work
   refused. The board marks open bugs with their severity.
 - `seed <spec> [--milestone <id>]` — decompose a COMPLETE spec into an
   epic plus one story per acceptance criterion. The epic records the
-  spec name and a content fingerprint; an incomplete spec is refused
+  spec name and a fingerprint of its acceptance criteria — the
+  contract, so rewrapping prose never reads as drift; an incomplete
+  spec is refused
   with the spec checker's gaps replayed.
 - `list` / `board` — the flat listing, and the tree with statuses,
   sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing`),
@@ -320,7 +322,9 @@ interviews the gaps closed; the binary judges completeness.
 - `check [name|all]` — the quality controller: blocks while any required
   section is missing or empty, while any `OPEN:` question is unresolved,
   and while acceptance criteria are not testable checkboxes. A complete
-  spec seeds the todo list — one task per criterion group.
+  spec whose `Status:` line still says `draft` earns a note to advance it
+  to `complete` — a note, never a gap. A complete spec seeds the todo
+  list — one task per criterion group.
 
 #### `procoder plan <sub>`
 

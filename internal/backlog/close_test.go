@@ -193,7 +193,7 @@ func TestCloseEpicWarnsOnSpecDrift(t *testing.T) {
 	if err := os.MkdirAll(root+"/.procoder/specs", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := []byte("# auth\n\nStatus: complete\n\n## Problem\n\nreal\n")
+	original := []byte("# auth\n\nStatus: complete\n\n## Problem\n\nreal\n\n## Acceptance criteria\n\n- [ ] sign-in works\n")
 	if err := os.WriteFile(specPath, original, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -212,14 +212,14 @@ func TestCloseEpicWarnsOnSpecDrift(t *testing.T) {
 	}
 
 	// The spec changes after seeding — the warning fires on the refusal…
-	if err := os.WriteFile(specPath, []byte("# auth\n\nrewritten since seeding\n"), 0o644); err != nil {
+	if err := os.WriteFile(specPath, []byte("# auth\n\nStatus: complete\n\n## Acceptance criteria\n\n- [ ] sign-in works\n- [ ] sign-out works\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out2, lines2 := collect()
 	if code := CloseEpic(root, "auth", out2); code != 1 {
 		t.Fatalf("drift must warn, never block or unblock: exit %d %v", code, *lines2)
 	}
-	if !strings.Contains(strings.Join(*lines2, "\n"), "⚠ spec auth changed since seeding") {
+	if !strings.Contains(strings.Join(*lines2, "\n"), "⚠ spec auth changed its acceptance criteria since seeding") {
 		t.Fatalf("drift warning must appear on refusal: %v", *lines2)
 	}
 
@@ -229,7 +229,7 @@ func TestCloseEpicWarnsOnSpecDrift(t *testing.T) {
 	if code := CloseEpic(root, "auth", out3); code != 0 {
 		t.Fatalf("drift must not block the close: exit %d %v", code, *lines3)
 	}
-	if !strings.Contains(strings.Join(*lines3, "\n"), "⚠ spec auth changed since seeding") {
+	if !strings.Contains(strings.Join(*lines3, "\n"), "⚠ spec auth changed its acceptance criteria since seeding") {
 		t.Fatalf("drift warning must appear on success: %v", *lines3)
 	}
 }

@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
-Spec: inner-loop @ a2486c0150e9
+Spec: inner-loop @ 439fb17263f3
 
 ## Description
 

@@ -14,7 +14,8 @@ for standalone work not born from a spec.
 - `procoder backlog seed <spec> [--milestone <id>]` — decompose a
   COMPLETE spec into an epic plus one story per acceptance criterion.
   Everything is PRINTED for you to review and write; the epic records
-  the spec and a fingerprint, so the board can flag drift later.
+  the spec and a fingerprint of its acceptance criteria, so the board
+  can flag drift when the contract changes later.
 - `procoder backlog milestone <title>` /
   `procoder backlog epic <title> [--milestone <id>]` /
   `procoder backlog story <title> --epic <id>` — print the file for

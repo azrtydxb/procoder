@@ -13,15 +13,15 @@ func boardTree(t *testing.T) string {
 	root := t.TempDir()
 	writeItem(t, root, KindMilestone, "v1", "# V1\n\nStatus: open\n")
 	// the auth spec was seeded at one fingerprint, then hand-modified
-	seeded := []byte("# auth\n\nStatus: draft\n\n## Problem\n\noriginal\n")
-	writeSpec(t, root, "auth", string(seeded)+"\nedited after seeding\n")
+	seeded := []byte("# auth\n\nStatus: draft\n\n## Acceptance criteria\n\n- [ ] sign-in works\n")
+	writeSpec(t, root, "auth", "# auth\n\nStatus: draft\n\n## Acceptance criteria\n\n- [ ] sign-in works\n- [ ] sign-out works\n")
 	writeItem(t, root, KindEpic, "auth",
 		"# Auth\n\nStatus: open\nMilestone: v1\nSpec: auth @ "+fingerprint(seeded)+"\n")
 	// the billing spec file was deleted after seeding
 	writeItem(t, root, KindEpic, "billing",
 		"# Billing\n\nStatus: open\nMilestone: v1\nSpec: billing @ abc123def456\n")
 	// the search spec is untouched — its fingerprint still matches
-	intact := []byte("# search\n\nStatus: draft\n")
+	intact := []byte("# search\n\nStatus: draft\n\n## Acceptance criteria\n\n- [ ] results rank\n")
 	writeSpec(t, root, "search", string(intact))
 	writeItem(t, root, KindEpic, "search",
 		"# Search\n\nStatus: open\nMilestone: v1\nSpec: search @ "+fingerprint(intact)+"\n")

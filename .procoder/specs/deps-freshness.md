@@ -1,6 +1,6 @@
 # deps-freshness
 
-Status: draft
+Status: complete
 
 ## Problem
 

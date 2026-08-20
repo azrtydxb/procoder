@@ -1,6 +1,6 @@
 # release-discipline
 
-Status: draft
+Status: complete
 
 ## Problem
 

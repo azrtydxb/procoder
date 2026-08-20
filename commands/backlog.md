@@ -14,7 +14,8 @@ for standalone work not born from a spec.
 - `launcher.sh backlog seed <spec> [--milestone <id>]` — decompose a
   COMPLETE spec into an epic plus one story per acceptance criterion.
   Everything is PRINTED for you to review and write; the epic records
-  the spec and a fingerprint, so the board can flag drift later.
+  the spec and a fingerprint of its acceptance criteria, so the board
+  can flag drift when the contract changes later.
 - `launcher.sh backlog milestone <title>` /
   `launcher.sh backlog epic <title> [--milestone <id>]` /
   `launcher.sh backlog story <title> --epic <id>` — print the file for

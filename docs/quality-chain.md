@@ -82,8 +82,8 @@ was decided: "TBD", "handle edge cases", "similar to Task N".
 
 Larger work needs a shape that a task list cannot hold, so the backlog
 adds milestones, epics, and user stories. Seeding an epic from a spec
-records the spec's fingerprint, which is what lets the board flag drift
-when the spec changes afterwards — a story quietly built against an
+records a fingerprint of the spec's acceptance criteria, which is what
+lets the board flag drift when that contract changes afterwards — a story quietly built against an
 older design is a defect nobody sees until review.
 
 The story is the execution unit and carries the same rigor as a

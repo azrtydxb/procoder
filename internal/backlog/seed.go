@@ -19,17 +19,26 @@ import (
 // never disagree about what counts as a criterion.
 var criterionRe = regexp.MustCompile(`(?m)^\s*- \[[ xX]\]\s*(.+)$`)
 
-// fingerprint is the first 12 hex characters of the SHA-1 of the spec file
-// bytes: enough to detect that the spec changed after seeding, short enough
-// to live on the epic's `Spec:` header line. The board compares it against
-// the current spec file to flag drift.
+// fingerprint is the first 12 hex characters of the SHA-1 of a spec's
+// acceptance criteria — the contract the stories were seeded from, not the
+// file's bytes. Rewrapping a paragraph, fixing a typo in Problem, or
+// reflowing one criterion over two lines leaves it unchanged; adding,
+// removing, or rewording a criterion changes it. The board compares it
+// against the spec file to flag drift.
 func fingerprint(b []byte) string {
-	// Change detection, not a signature: nobody gains anything by colliding
-	// their own spec file, and the digest is persisted on every seeded
-	// epic's Spec: line — changing the algorithm would flag drift on every
-	// epic that already exists.
-	sum := sha1.Sum(b) // nosemgrep: use-of-sha1
+	// Hashing the whole file flagged a cosmetic edit exactly as loudly as a
+	// deleted criterion, which trains readers to ignore the flag — and a
+	// flag nobody reads is worse than none. Change detection, not a
+	// signature: nobody gains anything by colliding their own spec file.
+	sum := sha1.Sum([]byte(strings.Join(specCriteria(b), "\n"))) // nosemgrep: use-of-sha1
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+// specCriteria is the criteria list of a whole spec file — the one reading
+// seed, board, and close all fingerprint, so they never disagree about what
+// the contract is.
+func specCriteria(b []byte) []string {
+	return criteria(textutil.Section(string(b), "Acceptance criteria"))
 }
 
 // Seed decomposes a COMPLETE spec into one epic plus one story per
@@ -57,7 +66,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 		out("spec " + specName + " unreadable: " + err.Error())
 		return 2
 	}
-	crits := criteria(textutil.Section(string(raw), "Acceptance criteria"))
+	crits := specCriteria(raw)
 	if len(crits) == 0 {
 		out("an epic with no stories is not a decomposition — the spec needs acceptance criteria")
 		return 1

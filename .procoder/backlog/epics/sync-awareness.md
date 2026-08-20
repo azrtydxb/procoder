@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
-Spec: sync-awareness @ 2e231d8e5b81
+Spec: sync-awareness @ 333f63fef26b
 
 ## Description
 

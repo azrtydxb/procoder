@@ -271,8 +271,8 @@ func driftWarnings(root string, epic Item) []string {
 	if err != nil {
 		return []string{"⚠ spec " + epic.SpecName + " is missing — traceability lost, not blocking"}
 	}
-	if fingerprint(b) != epic.SpecPrint {
-		return []string{"⚠ spec " + epic.SpecName + " changed since seeding — review the stories before trusting them (not blocking)"}
+	if now := fingerprint(b); now != epic.SpecPrint {
+		return []string{"⚠ spec " + epic.SpecName + " changed its acceptance criteria since seeding — review the stories before trusting them (not blocking); once reviewed, record `Spec: " + epic.SpecName + " @ " + now + "`"}
 	}
 	return nil
 }

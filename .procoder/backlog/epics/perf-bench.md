@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
-Spec: perf-bench @ ef14d6e2b19b
+Spec: perf-bench @ 6c61587bce60
 
 ## Description
 

@@ -211,3 +211,40 @@ func TestSeedRefusesExistingEpic(t *testing.T) {
 		t.Fatalf("refusal must name the existing epic file: %v", *lines)
 	}
 }
+
+// TestFingerprintTracksCriteriaNotProse pins the reason the fingerprint
+// hashes the acceptance criteria rather than the file: an epic closed
+// against an unchanged contract carried a permanent ⚠ spec drift flag
+// because someone rewrapped a paragraph before committing. Prose edits,
+// typo fixes, and a criterion reflowed over two lines are the same
+// contract; a reworded, added, or deleted criterion is not.
+func TestFingerprintTracksCriteriaNotProse(t *testing.T) {
+	seeded := []byte("# auth\n\nStatus: draft\n\n## Problem\n\nSign-in is manual.\n\n" +
+		"## Acceptance criteria\n\n- [ ] `procoder auth login` prints the token and exits 0\n- [ ] a bad password exits 1\n")
+	same := map[string][]byte{
+		"prose rewritten": []byte("# auth\n\nStatus: complete\n\n## Problem\n\nSigning in is done by hand today, badly.\n\n" +
+			"## Acceptance criteria\n\n- [ ] `procoder auth login` prints the token and exits 0\n- [ ] a bad password exits 1\n"),
+		"criterion reflowed": []byte("# auth\n\nStatus: draft\n\n## Problem\n\nSign-in is manual.\n\n" +
+			"## Acceptance criteria\n\n- [ ] `procoder auth login` prints the token\n      and exits 0\n- [ ] a bad password exits 1\n"),
+		"criterion checked off": []byte("# auth\n\nStatus: draft\n\n## Problem\n\nSign-in is manual.\n\n" +
+			"## Acceptance criteria\n\n- [x] `procoder auth login` prints the token and exits 0\n- [ ] a bad password exits 1\n"),
+	}
+	for name, b := range same {
+		if fingerprint(b) != fingerprint(seeded) {
+			t.Errorf("%s must not read as drift: %s vs %s", name, fingerprint(b), fingerprint(seeded))
+		}
+	}
+	changed := map[string][]byte{
+		"criterion reworded": []byte("# auth\n\nStatus: draft\n\n## Acceptance criteria\n\n" +
+			"- [ ] `procoder auth login` prints the token and exits 2\n- [ ] a bad password exits 1\n"),
+		"criterion added": []byte("# auth\n\nStatus: draft\n\n## Acceptance criteria\n\n" +
+			"- [ ] `procoder auth login` prints the token and exits 0\n- [ ] a bad password exits 1\n- [ ] the token is never logged\n"),
+		"criterion deleted": []byte("# auth\n\nStatus: draft\n\n## Acceptance criteria\n\n" +
+			"- [ ] `procoder auth login` prints the token and exits 0\n"),
+	}
+	for name, b := range changed {
+		if fingerprint(b) == fingerprint(seeded) {
+			t.Errorf("%s must read as drift", name)
+		}
+	}
+}

@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
-Spec: test-domain @ 3383659ce17a
+Spec: test-domain @ 37a4616103c9
 
 ## Description
 

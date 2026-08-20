@@ -1,6 +1,6 @@
 # perf-bench
 
-Status: draft
+Status: complete
 
 ## Problem
 
