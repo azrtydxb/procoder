@@ -37,7 +37,8 @@ var Copies = []Copy{
 		Frontmatter: "---\ndescription: procoder engineering rules\nalwaysApply: true\n---\n\n"},
 	{Host: "Windsurf", Path: ".windsurf/rules/procoder.md"},
 	{Host: "Cline", Path: ".clinerules/procoder.md"},
-	{Host: "Kilo Code", Path: ".kilocode/rules/procoder.md"},
+	{Host: "Kilo Code", Path: ".kilo/rules/procoder.md"},
+	{Host: "Kilo Code (legacy path)", Path: ".kilocode/rules/procoder.md"},
 	{Host: "Roo Code", Path: ".roo/rules/procoder.md"},
 	{Host: "Kiro", Path: ".kiro/steering/procoder.md",
 		Frontmatter: "---\ninclusion: always\n---\n\n"},
@@ -45,7 +46,36 @@ var Copies = []Copy{
 	{Host: "Qoder", Path: ".qoder/rules/procoder.md"},
 	{Host: "Copilot (editors)", Path: ".github/copilot-instructions.md"},
 	{Host: "OpenAI Codex (repo docs)", Path: ".codex/AGENTS.md"},
+	// The Agent Skills copy is a rule file with a different envelope: hosts
+	// that scan a skills directory (Kilo, and any host reading .claude/skills
+	// or .agents/skills) load it on demand, and the Kilo Marketplace indexes
+	// this exact path. Its frontmatter is the skill's activation contract; the
+	// body is the same AGENTS.md every other host gets.
+	{Host: "Agent Skills (skills/, Kilo Marketplace source)", Path: "skills/procoder/SKILL.md",
+		Frontmatter: skillFrontmatter},
 }
+
+// skillFrontmatter is the Agent Skills envelope (agentskills.io), which the
+// Kilo Marketplace validates with `skills-ref validate`. The description is
+// what a host matches a request against, so it names the trigger — a governed
+// repository — and the verbs a user actually types.
+const skillFrontmatter = `---
+name: procoder
+description: >-
+  Work like a senior developer in a repository governed by procoder: run the
+  commit gate before calling anything done, format and lint through the
+  binary, and drive the spec, plan, todo, backlog, and sprint chain in
+  .procoder/. Use this skill when the repository contains a .procoder/
+  directory or an AGENTS.md naming procoder, or when the user asks to run the
+  gate, check formatting, open a spec or plan, close a task, or prepare a
+  release.
+license: Apache-2.0
+metadata:
+  category: development
+  author: pascal-watteel
+---
+
+`
 
 // versionedManifests are the plugin-tier manifests whose version field
 // must match .claude-plugin/plugin.json — a release where every manifest
