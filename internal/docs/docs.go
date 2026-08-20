@@ -344,14 +344,29 @@ func Drift(root string, changed []string) []gitx.Finding {
 // This is the whole documentation corpus, AGENTS.md and every root-level
 // Markdown file included: what the non-Claude hosts read is documentation too.
 func MarkdownFiles(root string) []string {
+	out, _ := markdownFiles(root)
+	return out
+}
+
+// markdownFiles is MarkdownFiles with the survey's own honesty: when the
+// walk itself fails, the corpus is a subset, and a subset that reads as
+// the whole repository is the lie the honesty rule bans. Callers that
+// produce findings report it; the rest keep the simple form.
+func markdownFiles(root string) ([]string, error) {
 	if out, ok := gitMarkdownFiles(root); ok {
-		return out
+		return out, nil
 	}
 	var out []string
 	skip := map[string]bool{".git": true, "node_modules": true, "vendor": true,
 		"dist": true, ".claude": true, "site": true, "_site": true}
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		// one unreadable directory deeper in is skipped, not fatal: a
+		// survey that stops at the first bad entry answers less than one
+		// that continues. An unreadable ROOT is no survey at all.
 		if err != nil {
+			if path == root {
+				return err
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -365,7 +380,7 @@ func MarkdownFiles(root string) []string {
 		}
 		return nil
 	})
-	return out
+	return out, err
 }
 
 func gitMarkdownFiles(root string) ([]string, bool) {

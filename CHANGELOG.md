@@ -2,6 +2,34 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.3 — 2026-08-20
+
+The audit run on procoder itself, and the four honesty gaps it found in
+procoder's own code.
+
+- **The sweep no longer asks diff-scoped questions.** `audit` passes
+  every tracked file, so doc-drift and the documentation obligation —
+  both of which ask about a CHANGE — answered about everything at once:
+  129 of the hygiene section's 138 findings were that noise. The
+  diff-independent half is `docs.CollectSweep` now, and the hygiene
+  section on this repository went from 138 findings to 9. The diff path
+  is untouched.
+- **A swallowed walk error made "could not look" read as "nothing
+  there."** infra, docs and maintain skipped an unreadable directory and
+  kept going, which is right, but they swallowed an unreadable ROOT the
+  same way — producing an empty inventory a caller would take for a
+  clean answer. The root is now distinguished and reported; `maintain`'s
+  file predicate errs toward running the check rather than silently
+  skipping an ecosystem.
+- **A failed index rename left a stale index and litter.** The atomic
+  swap's error is checked; the temporary file is removed so a failed
+  write does not accumulate one beside the index on every attempt.
+- **A rule the codebase already knew, applied consistently.** The review
+  rubric says a failed Close after a write IS a failed write; `lintGo`
+  honoured it and `lintJS` and `maintain` did not. All three do now.
+  Read-handle closes are deliberately left: closing a file you only read
+  cannot lose anything.
+
 ## 0.32.2 — 2026-08-20
 
 Two defects found by using the tool, plus the first benchmarks.

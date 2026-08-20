@@ -409,11 +409,15 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 	}
 	cfg := cfgFile.Name()
 	defer os.Remove(cfg)
-	if _, err := cfgFile.WriteString(baselineEslintConfig); err != nil {
-		cfgFile.Close()
+	// a failed Close can mean the write never hit disk — treat it as a
+	// write failure, exactly as lintGo does; the rubric names this case
+	_, werr := cfgFile.WriteString(baselineEslintConfig)
+	if cerr := cfgFile.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
 		return append(out, notChecked(jsFiles[0], "eslint (baseline config unwritable)")...)
 	}
-	cfgFile.Close()
 	// paths go relative to the repo root: node resolves the cwd through
 	// symlinks (macOS /var vs /private/var) and absolute args would read
 	// as outside the base path

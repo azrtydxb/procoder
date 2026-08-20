@@ -42,6 +42,10 @@ func CollectOfflineFor(root string, changed []string, commitMessage string, bloc
 // bury the real findings. A survey asks what is true, not what just moved.
 func CollectSweep(root string, files []string) []gitx.Finding {
 	var out []gitx.Finding
+	if _, err := markdownFiles(root); err != nil {
+		out = append(out, gitx.Finding{Blocking: true,
+			Message: "documentation survey NOT complete — the tree could not be walked: " + err.Error()})
+	}
 	for _, f := range files {
 		if IsMarkdownFile(f) {
 			out = append(out, CheckFile(root, f)...)

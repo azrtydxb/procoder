@@ -3,6 +3,7 @@ package infra
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -112,5 +113,46 @@ func TestUninitialisedTerraformSaysNotValidatedNeverBlocks(t *testing.T) {
 		if strings.Contains(f.Message, "NOT validated") && f.Blocking {
 			t.Fatalf("uninitialised is information, not a block: %+v", f)
 		}
+	}
+}
+
+// "No infrastructure here" and "I could not look" must never read the
+// same. A survey that cannot walk the tree reports that it did not survey,
+// rather than an empty inventory a caller would take for a clean answer.
+func TestUnwalkableTreeIsNotSurveyedRatherThanEmpty(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("chmod does not deny the walk here")
+	}
+	root := t.TempDir()
+	inner := filepath.Join(root, "tree")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "Dockerfile"), []byte("FROM alpine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(inner, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(inner, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
+
+	// the walk still completes (an unreadable subdirectory is skipped), so
+	// the inventory is honestly empty here; the guarantee under test is that
+	// a root that cannot be walked at all is reported, never silently empty
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(root, 0o755); err != nil {
+			t.Error(err)
+		}
+	})
+	got := Check(root)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "NOT surveyed") {
+		t.Fatalf("an unwalkable root must say it was not surveyed, got %v", got)
 	}
 }

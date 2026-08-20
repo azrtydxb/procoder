@@ -81,12 +81,16 @@ func complexityGo(root string, cfg config.Config, out func(string)) int {
 	}
 	cfgPath := cfgFile.Name()
 	defer os.Remove(cfgPath)
-	if _, err := cfgFile.WriteString(golangciCfg(cfg)); err != nil {
-		cfgFile.Close()
+	// a failed Close can mean the write never hit disk — a config that is
+	// not there produces a check that silently measured nothing
+	_, werr := cfgFile.WriteString(golangciCfg(cfg))
+	if cerr := cfgFile.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
 		out("  complexity  NOT checked — cannot write the isolated config")
 		return 1
 	}
-	cfgFile.Close()
 	return runTool(root, bin, []string{"run", "--config", cfgPath,
 		"--output.text.path=stdout", "--show-stats=false", "./..."}, "complexity", out)
 }
@@ -182,7 +186,7 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 
 func hasFiles(root, ext string) bool {
 	found := false
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || found {
 			return nil
 		}
@@ -199,5 +203,11 @@ func hasFiles(root, ext string) bool {
 		}
 		return nil
 	})
+	if walkErr != nil && !found {
+		// the survey failed, so "no files of this type" is not something we
+		// know — assume there may be some and let the ecosystem's own tool
+		// answer, which reports NOT checked when it cannot
+		return true
+	}
 	return found
 }
