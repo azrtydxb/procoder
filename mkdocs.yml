@@ -5,16 +5,22 @@ repo_url: https://github.com/azrtydxb/procoder
 
 theme:
   name: material
+  # the icon, never the full lockup: at header size the wordmark is
+  # unreadable and the site name already carries it
+  logo: assets/icon.png
+  favicon: assets/icon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
+      primary: deep purple
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
+      primary: deep purple
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: light mode
@@ -22,8 +28,12 @@ theme:
     - navigation.sections
     - content.code.copy
 
+extra_css:
+  - stylesheets/brand.css
+
 markdown_extensions:
   - admonition
+  - attr_list
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
