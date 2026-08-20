@@ -7,7 +7,7 @@ bug's whole class, and one contract that works across every AI coding
 agent. The agent stays in control; nothing ever touches your code behind
 its back.
 
-Current version: **0.32.8**
+Current version: **0.32.9**
 
 ```mermaid
 flowchart LR
@@ -24,9 +24,9 @@ and explanation to understand by. Each page says which it is.
 
 ## Learn
 
-- **[Getting started](getting-started.md)** — the tutorial: install
-  Procoder, then watch the gate refuse a change and accept it. Ten
-  minutes.
+- **[Getting started](getting-started.md)** — the tutorial, for Claude
+  Code: one-step install, let it fit out your repository, then watch the
+  gate refuse a change and accept it. Ten minutes.
 
 ## Work
 
@@ -34,6 +34,9 @@ and explanation to understand by. Each page says which it is.
   backlog, sprint, build, test, check, PR, merge, retro, release.
 - **[Onboard an existing codebase](how-to-onboard.md)** — bring a
   repository Procoder has never governed up to a passing gate.
+- **[Install without the plugin](how-to-install-manually.md)** — the
+  binary on `PATH` for Cursor, Codex, Copilot, or anything reading
+  `AGENTS.md`.
 
 ## The reference
 
@@ -59,8 +62,9 @@ and explanation to understand by. Each page says which it is.
 - **[Architecture](architecture.md)** — the binary, the hooks, and the
   three contracts (agent in control, unchecked is never clean, the
   repo's files win).
-- **[Influences](influences.md)** — the ideas adopted from the
-  superpowers and ponytail plugins, and where each lives in Procoder.
+- **[Influences](influences.md)** — what Procoder absorbed from
+  superpowers, ponytail and serena, where each idea lives now, and why
+  you no longer need to run them alongside it.
 
 ## What makes it different
 
@@ -70,13 +74,12 @@ unfinished story; `release` lists every reason the tag is not earned
 yet; the gate counts a tool that could not run as failing. Verdicts mean
 something because they cannot be waved through.
 
-**Honesty as a feature.** NOT-checked never reads as clean, a test suite
-that did not run is never green, single-ecosystem checks say which
-ecosystem (benchmarks are Go, licenses are Go, complexity is Go and
+**Reports that mean what they say.** NOT-checked never reads as clean, a
+test suite that did not run is never green, single-ecosystem checks name
+their ecosystem (benchmarks are Go, licenses are Go, complexity is Go and
 Python), claims carry their method, and the docs you are reading are
-themselves held to completeness checks that block the gate — this site cannot silently go
-stale ([how the lessons loop enforces
-that](quality-chain.md#why-escapes-have-to-close-their-class)).
+held to completeness checks that block the gate ([how the lessons loop
+enforces that](quality-chain.md#why-escapes-have-to-close-their-class)).
 
 **One engine, thin everything else.** A single Go binary computes every
 verdict; skills, hooks, and per-agent adapters are pointers to it. No

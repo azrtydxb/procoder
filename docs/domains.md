@@ -120,9 +120,8 @@ baseline — explicit, because a baseline is a decision, not a side effect.
 **Go only in this version**, and the output says so: other ecosystems
 answer NOT run rather than letting the scope look wider than it is.
 Results are single-run and machine-local; a baseline recorded on a
-different GOOS/GOARCH still compares, with a warning attached. That is
-the honesty contract applied to numbers — they arrive with the
-conditions that produced them, or they do not arrive.
+different GOOS/GOARCH still compares, with a warning attached. Numbers
+arrive with the conditions that produced them.
 
 ## 5. Documentation
 
@@ -259,7 +258,7 @@ thirteen queries from `find` to the call `graph`, kept current by the hook,
 consumed by the agent and the domains alike (maintainability's dead-code
 sweep and the gate's impact lines both read it).
 
-The language matrix, stated honestly:
+The language matrix:
 
 - **Broad tier** (find/search/outline/textual refs/impact): everything
   universal-ctags parses — 160+ languages including C/C++/C#, Java,

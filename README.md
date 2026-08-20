@@ -9,7 +9,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.32.8-7C3AED)
+![Version](https://img.shields.io/badge/version-0.32.9-7C3AED)
 ![License](https://img.shields.io/badge/license-Apache--2.0-7C3AED)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-7C3AED)
 
@@ -93,9 +93,9 @@ Downstream bot reviewers are the fallback net, not the net.
 
 **The test domain** — `procoder test` runs the repository's real suite
 with each ecosystem's canonical runner (go test, cargo test, the
-package.json test script, pytest, gradle/maven), reported honestly:
-PASS with counts, FAIL with the failing tests named, and **NOT run**,
-which is never the same as green. Coverage is reported where the runner
+package.json test script, pytest, gradle/maven): PASS with counts, FAIL
+with the failing tests named, and **NOT run**, which is never the same
+as green. Coverage is reported where the runner
 measures it natively and never enforced. Set `[test] policy = "block"`
 and a green suite becomes part of "done" — the closes refuse while it is
 red or unverifiable.
@@ -127,6 +127,28 @@ corner-cuts marked and harvested as
 **debt** with revisit triggers, and an **audit** command that onboards
 any existing codebase with a triaged scorecard.
 
+## Replaces the plugins you are already running
+
+Procoder absorbed three earlier tools, and running them alongside it
+means two sets of instructions competing for the same agent:
+
+- **[superpowers](https://github.com/anthropics/claude-plugins-official)** —
+  plans for an engineer with zero context, spike/bounded/architectural
+  classification, evidence before "done", systematic debugging, TDD with
+  the mutation check. All of it here, with controllers that refuse where
+  the originals advised.
+- **[ponytail](https://github.com/DietrichGebert/ponytail)** — the build
+  ladder, the `debt:` marker convention, the five-tag over-engineering
+  review, one instruction file serving every agent.
+- **[serena](https://github.com/oraios/serena)** — symbol-level
+  navigation, cross-file rename, interface implementations, project
+  memory. Now `procoder index` and `.procoder/`, with no MCP server to
+  keep running. Serena's symbol-level **write** tools are deliberately
+  not adopted: the binary computes the rename and hands you the diff.
+
+Full provenance map, including where the serena replacement stops:
+[Influences](https://azrtydxb.github.io/procoder/influences/).
+
 ## Configuration
 
 Everything Procoder owns lives in `.procoder/` — plain files, made to be
@@ -150,14 +172,13 @@ the explanation
 ([the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
 [how it's built](https://azrtydxb.github.io/procoder/architecture/)).
 
-## Honesty, by design
+## What the reports mean
 
-Procoder's reports never overclaim: a file that could not be checked is
-never called clean, a task without fresh verification evidence cannot
-close, and this README is itself held to a completeness check — a
-feature family it stops mentioning blocks the gate. No benchmark
-numbers appear here because none have been run; any future number will
-carry its method alongside it.
+A file that could not be checked is never called clean. A task without
+fresh verification evidence cannot close. This README is held to a
+completeness check — a feature family it stops mentioning blocks the
+gate. No benchmark numbers appear here because none have been run; any
+future number will carry its method alongside it.
 
 ## Implementation
 

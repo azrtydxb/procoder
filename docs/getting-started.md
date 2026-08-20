@@ -2,11 +2,17 @@
 
 # Getting started
 
-**A tutorial.** By the end you will have Procoder installed, and you will
-have watched its commit gate refuse a change and then accept it. Ten
-minutes. Follow it exactly; explanations come later.
+**A tutorial**, for Claude Code. By the end you will have Procoder
+installed and its tools in place, and you will have watched the commit
+gate refuse a change and then accept it. Ten minutes.
 
-## 1. Install the plugin
+Follow it exactly. Explanations come later.
+
+Not using Claude Code? [Install the binary
+manually](how-to-install-manually.md) — every other agent reads the same
+`AGENTS.md` contract.
+
+## 1. Install
 
 In Claude Code:
 
@@ -17,38 +23,38 @@ In Claude Code:
 
 Then run `/reload-plugins`.
 
-The hooks are now live. Every file the agent writes is checked in the
-same turn, and every session starts with the engineering principles.
+**That is the whole install.** The plugin carries the binary for your
+platform, so there is nothing to clone, compile, or put on `PATH`. The
+hooks are live now: every file the agent writes is checked in the same
+turn, and every session starts with the engineering principles.
 
-## 2. Put the binary on PATH
+## 2. Let it install the tools this repository needs
 
-The plugin ships the binary, and this tutorial calls it directly so you
-can see what the agent sees.
-
-```
-git clone https://github.com/azrtydxb/procoder
-export PATH="$PWD/procoder/dist/darwin-arm64:$PATH"
-procoder version
-```
-
-Replace `darwin-arm64` with your platform: `darwin-amd64`,
-`linux-amd64`, `linux-arm64`, or `windows-amd64`.
-
-You will see the version number:
+Open the repository you want to work in and run:
 
 ```
-0.32.8
+/procoder:init
 ```
 
-## 3. Make a repository to break
+Procoder surveys what **this** repository needs — formatters, linters,
+scanners, index builders, chosen by the files you actually have — and
+prints one install command per gap. Every command is visible before it
+runs.
+
+With nothing missing you will see:
 
 ```
-mkdir checkout-notes && cd checkout-notes
-git init -q .
+procoder init: every formatter this repository needs is installed
 ```
 
-Create `NOTES.md` with a merge conflict left in it, and trailing
-whitespace after `cents.`:
+This step matters more than it looks. A missing tool is never silently
+skipped: files it would have checked are reported **unchecked, and
+unchecked fails the gate**.
+
+## 3. Give the gate something to catch
+
+Still in that repository, create `NOTES.md` with a merge conflict left
+in it and trailing whitespace after `cents.`:
 
 ```
 # Checkout notes
@@ -71,30 +77,20 @@ git add NOTES.md
 ## 4. Run the gate
 
 ```
-procoder check
+/procoder:check
 ```
 
 ```
-unformatted  /tmp/checkout-notes/NOTES.md  (run `procoder format "/tmp/checkout-notes/NOTES.md"` for the result)
-BLOCKING     /tmp/checkout-notes/NOTES.md:5  merge conflict marker left in the file
-BLOCKING     /tmp/checkout-notes/NOTES.md:9  merge conflict marker left in the file
-info         .procoder/github/PULL_REQUEST_TEMPLATE.md is missing — run `procoder templates` and write it
-info         .procoder/github/COMMIT_TEMPLATE.md is missing — run `procoder templates` and write it
-info         .procoder/github/WORKFLOW.md is missing — run `procoder templates` and write it
-procoder gate: 0 clean, 1 unformatted, 0 unchecked, 0 out of scope, 5 hygiene finding(s) (2 blocking)
-```
-
-Check the exit code:
-
-```
-echo $?
-```
-
-```
-1
+unformatted  NOTES.md  (run `procoder format "NOTES.md"` for the result)
+BLOCKING     NOTES.md:5  merge conflict marker left in the file
+BLOCKING     NOTES.md:9  merge conflict marker left in the file
+procoder gate: 0 clean, 1 unformatted, 0 unchecked, 0 out of scope, 2 hygiene finding(s) (2 blocking)
 ```
 
 **BLOCKING** lines fail. **info** lines do not.
+
+Try committing and the gate stops you — this is the same check CI runs,
+wired into the commit itself.
 
 ## 5. Resolve the conflict
 
@@ -112,7 +108,7 @@ Refunds reuse the same path.
 ## 6. Ask for the formatted result
 
 ```
-procoder format NOTES.md
+/procoder:format NOTES.md
 ```
 
 ```
@@ -126,42 +122,32 @@ Refunds reuse the same path.
 
 The trailing whitespace is gone from the printed result — and still
 present in your file. **Procoder printed the fix; it did not apply it.**
-Copy that content into `NOTES.md` yourself.
+The agent reviews that content and writes it.
 
 ## 7. Run the gate again
 
 ```
-procoder check
+/procoder:check
 ```
 
 ```
-info         .procoder/github/PULL_REQUEST_TEMPLATE.md is missing — run `procoder templates` and write it
-info         .procoder/github/COMMIT_TEMPLATE.md is missing — run `procoder templates` and write it
-info         .procoder/github/WORKFLOW.md is missing — run `procoder templates` and write it
-procoder gate: 1 clean, 0 unformatted, 0 unchecked, 0 out of scope, 3 hygiene finding(s) (0 blocking)
-```
-
-```
-echo $?
-```
-
-```
-0
+procoder gate: 1 clean, 0 unformatted, 0 unchecked, 0 out of scope, 0 hygiene finding(s) (0 blocking)
 ```
 
 The gate passes. You can commit.
 
 ## What you just did
 
-You ran the same gate CI runs, watched it refuse a commit over two
-conflict markers, and saw `format` hand back a fix for you to apply
-rather than editing your file. That last part is the whole design: **the binary computes and
-reports, you decide and write.**
+You installed Procoder in one step, let it close the tool gaps for your
+repository, and watched the gate refuse a commit and then accept it. And
+you saw `format` hand back a fix rather than editing your file — that
+last part is the whole design: **the binary computes and reports, you
+decide and write.**
 
 Next:
 
 - [Ship a change](workflow.md) — the daily sequence, start to tag.
 - [Onboard an existing codebase](how-to-onboard.md) — for a repository
-  that predates Procoder.
+  that predates Procoder and needs a full sweep.
 - [The quality chain](quality-chain.md) — why every controller refuses
   instead of advising.

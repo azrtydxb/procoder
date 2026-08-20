@@ -55,7 +55,7 @@ Why: an agent that experiences its tools as collaborators uses them; an
 agent that gets silently overridden routes around its harness. And every
 change stays reviewable in one place — the agent's own actions.
 
-## Contract 2 — honesty: unchecked is never clean
+## Contract 2 — unchecked is never clean
 
 A tool that is missing, times out, or returns unparseable output yields
 **NOT checked** — counted by the gate as failing, never collapsed into

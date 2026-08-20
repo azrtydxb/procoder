@@ -1,5 +1,5 @@
 ---
-description: "Run the repository's actual test suite: every ecosystem's canonical runner, reported honestly — NOT run is never green."
+description: "Run the repository's actual test suite: every ecosystem's canonical runner — NOT run is never green."
 ---
 
 The user invoked /procoder:test with arguments: $ARGUMENTS
@@ -10,7 +10,7 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    runner measures it natively; pass paths to narrow Go packages and
    pytest targets). Every detected ecosystem runs: go test, cargo test,
    the package.json test script, pytest, gradle/maven.
-2. Read the verdicts honestly: `ok` passed, `FAIL` names what broke —
+2. Read the verdicts as given: `ok` passed, `FAIL` names what broke —
    fix the code or the test, never delete the assertion to get green.
    `----` means NOT run (no runner, no test script): that is a gap, not
    a pass — say so when reporting.
