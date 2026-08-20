@@ -234,6 +234,12 @@ The finishing discipline — most of it rides the gate:
 | Agent-layer drift (rule copies vs `AGENTS.md`, manifest versions)                 | **blocks**                                        |
 | Commit subject shape (≤72, blank line before body); working on the default branch | reports (`[git] default_branch_policy` can block) |
 
+The attribution line is the one most likely to come back: the host adds
+it, so amending the commit clears the finding without changing what
+produced it. [The trailer your host
+adds](portability.md#the-trailer-your-host-adds) lists the per-host
+setting that stops it at the source.
+
 Around the checks, the skills encode the workflow: a worktree per
 feature (a git practice the skills prescribe — Procoder creates and
 removes none of them itself), `/procoder:pr` (docs-impact question,

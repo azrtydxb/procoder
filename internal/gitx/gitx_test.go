@@ -166,6 +166,26 @@ func TestAttributionBlocksInAllItsCostumes(t *testing.T) {
 	}
 }
 
+// Amending removes the line the gate found; it does not stop the host that
+// wrote it from writing it again, so the finding has to name the setting too.
+// Without the pointer a user on a default-configured host meets this same
+// blocking finding on every commit and has nowhere to go from the output.
+//
+// proved by: dropping the remedy clause from the message — the finding still
+// blocked, still quoted the offending line, and this test failed.
+func TestAttributionFindingNamesTheRemedyNotOnlyTheSymptom(t *testing.T) {
+	got := Attribution([]string{"fix parser\n\nCo-Authored-By: Claude <noreply@anthropic.com>"})
+	if len(got) != 1 {
+		t.Fatalf("want exactly one finding, got %+v", got)
+	}
+	if !strings.Contains(got[0].Message, attributionRemedyURL) {
+		t.Errorf("the finding must point at the per-host settings: %q", got[0].Message)
+	}
+	if !strings.Contains(got[0].Message, "--amend") {
+		t.Errorf("the immediate action must survive alongside the remedy: %q", got[0].Message)
+	}
+}
+
 func TestSubjectShapeReportsButNeverBlocks(t *testing.T) {
 	msgs := []string{
 		strings.Repeat("x", 80),
