@@ -1,6 +1,7 @@
 # Every agent
 
-Procoder works with any AI coding agent, not just Claude Code. One
+**Reference.** Procoder works with any AI coding agent, not just Claude
+Code. One
 canonical `AGENTS.md` carries the always-on contract; every host gets the
 thinnest adapter that serves it — a rule-file copy, a manifest pointing
 at the existing files, or a hook. `procoder agents` prints anything

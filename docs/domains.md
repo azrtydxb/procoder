@@ -1,6 +1,6 @@
 # The ten domains
 
-Procoder organises senior-developer work into ten domains. Each follows
+**Reference.** Procoder organises senior-developer work into ten domains. Each follows
 the same architecture: the binary computes findings, the write hook hands
 them to the agent in the same turn, the gate carries them at commit time,
 a skill packages the workflow, and every rule is repo-overridable

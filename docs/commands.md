@@ -1,8 +1,8 @@
 # Command reference
 
-Every Procoder command, what it computes, and what blocks. The binary only
-ever computes and reports — the agent (or you) acts on the results
-(P-CONTROL).
+**Reference.** Every Procoder command, what it computes, and what blocks.
+The binary only ever computes and reports — the agent (or you) acts on
+the results (P-CONTROL).
 
 ## Onboarding
 

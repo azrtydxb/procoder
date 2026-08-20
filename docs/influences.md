@@ -1,6 +1,7 @@
 # Influences
 
-Procoder's design draws on ideas proven by two earlier plugins:
+**An explanation.** Procoder's design draws on ideas proven by two
+earlier plugins:
 [superpowers](https://github.com/anthropics/claude-plugins-official) and
 [ponytail](https://github.com/DietrichGebert/ponytail). This page is the
 provenance map — each adopted concept and exactly where it lives in

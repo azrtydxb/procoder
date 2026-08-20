@@ -41,10 +41,37 @@ is guidance the agent follows, and the reasoning is recorded in
 ADR 0002 along with the mechanical enforcement that was considered and
 rejected.
 
-Procoder's own site does not fully comply yet: `workflow.md` and
-`quality-chain.md` each mix kinds, and `getting-started.md` must become
-a tutorial that runs clean end to end. Three tasks are open for that,
-and the ADR records the gap rather than leaving it quiet.
+**The site was then rebuilt to follow it.** The nav is grouped by kind,
+and every page says which kind it is in its opening sentence.
+
+- `getting-started.md` is a tutorial: install, watch the gate refuse a
+  commit over a merge conflict, fix it, watch it pass. Every shell
+  command in it was executed in order in a clean repository and the
+  output blocks are that run, verbatim.
+- `workflow.md` became **How to ship a change** — eleven numbered steps
+  and a common-pitfalls list, with no paragraph arguing for the design.
+- `how-to-onboard.md` is new: the audit path for a repository Procoder
+  has never governed, which used to be a step inside the tutorial.
+- `quality-chain.md` became explanation only, and now admits what
+  refusal costs when a controller is wrong — the section it was missing.
+- `commands.md`, `configuration.md`, `domains.md` and `portability.md`
+  are reference; `architecture.md` and `influences.md` are explanation.
+
+**A gate gap surfaced while writing the tutorial.** `procoder check`
+blocked on the tutorial's own conflict-marker example, and every
+workaround was bad: mangle the sample so a reader who copies it gets
+broken text, drop the topic, or turn the check off. A document whose
+subject is merge conflicts now declares it:
+
+```
+<!-- procoder:allow-conflict-markers this tutorial shows what a conflict looks like -->
+```
+
+The reason is required — a bare token exempts nothing, because that is
+silencing a check rather than documenting an exception. The exemption is
+file-scoped and explicit rather than "skip fenced code blocks", since a
+real conflict lands inside a fence often enough that skipping fences
+would be a silent miss.
 
 ## 0.32.7 — 2026-08-20
 

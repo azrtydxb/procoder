@@ -1,7 +1,7 @@
 # Architecture
 
-How Procoder is built, and the three contracts that shape every design
-decision in it.
+**An explanation.** How Procoder is built, and the three contracts that
+shape every design decision in it.
 
 ## The shape
 

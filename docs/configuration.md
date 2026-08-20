@@ -1,8 +1,8 @@
 # Configuration reference
 
-Everything Procoder reads from a repository lives under `.procoder/` —
-plain files, made to be edited, and always winning over built-in defaults
-(the D-OVERRIDE rule).
+**Reference.** Everything Procoder reads from a repository lives under
+`.procoder/` — plain files, made to be edited, and always winning over
+built-in defaults (the D-OVERRIDE rule).
 
 ## `.procoder/config.toml`
 
@@ -107,6 +107,27 @@ rules that follow from it: answer first, examples over prose about
 examples, real names rather than `foo`, short sentences, scannable
 structure, and an explicit "common pitfalls" list wherever a feature has a
 known misuse. Replace it with your own house style; the repo's copy wins.
+
+## In-file exemptions
+
+Two checks can be waived from inside the file itself, and both demand a
+reason in the same line:
+
+- `gitleaks:allow` — this secret finding is a false positive (a pinned
+  SHA, a fixture). `.gitleaksignore` does the same at repository scope.
+- `procoder:allow-conflict-markers <reason>` — this file shows merge
+  conflict markers on purpose. It exempts the **whole file**, so keep it
+  to documents whose subject is conflicts; a real conflict in an exempt
+  file goes unreported.
+
+The reason is not decoration. A bare
+`<!-- procoder:allow-conflict-markers -->` exempts nothing, because a
+token with no reason is someone silencing a check rather than
+documenting an exception.
+
+Markers inside a fenced code block are **not** exempt on their own. A
+real conflict lands inside a fence often enough that skipping fences
+would be a silent miss.
 
 ### `.procoder/security/RULES.md`
 

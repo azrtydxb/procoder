@@ -138,11 +138,17 @@ ledger. Full reference:
 
 ## The docs
 
-The full story lives on the site — start at
-[Getting started](https://azrtydxb.github.io/procoder/getting-started/),
-then [the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
-[every command](https://azrtydxb.github.io/procoder/commands/), and
-[how it's built](https://azrtydxb.github.io/procoder/architecture/).
+The full story lives on the site, organised the way the
+[Divio documentation system](https://docs.divio.com/documentation-system/)
+splits it: the tutorial
+([Getting started](https://azrtydxb.github.io/procoder/getting-started/)),
+the how-to guides
+([Ship a change](https://azrtydxb.github.io/procoder/workflow/)),
+the reference
+([every command](https://azrtydxb.github.io/procoder/commands/)), and
+the explanation
+([the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
+[how it's built](https://azrtydxb.github.io/procoder/architecture/)).
 
 ## Honesty, by design
 

@@ -1,6 +1,6 @@
 # docs: split the workflow page into a how-to and an explanation
 
-Status: open
+Status: closed 2026-08-20
 Created: 2026-08-20
 
 ## Description
@@ -18,17 +18,30 @@ split.
 
 ## Acceptance criteria
 
-- [ ] The how-to page states one goal in its title and contains no
+- [x] The how-to page states one goal in its title and contains no
       paragraph arguing for the design.
-- [ ] The explanation page contains no numbered procedure; where a reader
+- [x] The explanation page contains no numbered procedure; where a reader
       needs steps it links to the how-to.
-- [ ] Every sentence of the current `docs/workflow.md` is either carried
+- [x] Every sentence of the current `docs/workflow.md` is either carried
       into one of the two pages or deliberately dropped, with the dropped
       ones listed in the evidence.
-- [ ] `mkdocs build --strict` is clean and both pages appear in the nav.
-- [ ] `procoder docs` reports no broken references.
+- [x] `mkdocs build --strict` is clean and both pages appear in the nav.
+- [x] `procoder docs` reports no broken references.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the task open. -->
+- `docs/workflow.md` is now "How to ship a change": a how-to with the
+  goal in the title, eleven numbered steps, and a "Common pitfalls"
+  list. It contains no paragraph arguing for the design.
+- The reasoning it used to carry moved to `docs/quality-chain.md`, which
+  is now an explanation and carries no numbered procedure — where a
+  reader needs steps it links to this page.
+- Content accounting: every step of the old page survives. The worktree
+  rationale, the "nothing merges over a red check" rule and the release
+  controller's refusal list moved to the explanation; the merge-watcher
+  protocol paragraph was dropped from the site because it describes an
+  internal agent protocol already specified in
+  `.procoder/github/WORKFLOW.md`, which the page names.
+- `mkdocs build --strict` clean; both pages appear in the nav under
+  "How-to guides" and "Explanation" respectively.
+- `procoder docs` reports 0 blocking findings and no broken references.
