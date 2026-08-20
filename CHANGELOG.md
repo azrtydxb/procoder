@@ -20,8 +20,8 @@ Deliberately not covered, because pinning them would freeze the product:
 the wording of report lines (verdicts are for people; exit codes are the
 contract), the default rules content every repository is meant to
 override, the `internal/` Go packages, and the gitignored index format.
-[ADR 0003](https://github.com/azrtydxb/procoder/blob/main/.procoder/adr/0003-what-1-0-promises.md)
-carries the reasoning and the alternatives that lost.
+`.procoder/adr/0003-what-1-0-promises.md` carries the reasoning and the
+alternatives that lost.
 
 **What it is.** One Go binary, no runtime dependencies, cross-compiled
 for five platforms and committed with the plugin — no npm, no network at
