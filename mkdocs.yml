@@ -5,8 +5,10 @@ repo_url: https://github.com/azrtydxb/procoder
 
 theme:
   name: material
-  logo: assets/logo.png
-  favicon: assets/favicon.png
+  # the icon, never the full lockup: at header size the wordmark is
+  # unreadable and the site name already carries it
+  logo: assets/icon.png
+  favicon: assets/icon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -31,6 +33,7 @@ extra_css:
 
 markdown_extensions:
   - admonition
+  - attr_list
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

@@ -30,11 +30,11 @@ software engineering, the **`</>`** that says software without needing a
 word, and the **cape** — the plugin giving the agent capabilities it did
 not have. Together: professional coding, supercharged.
 
-| Asset  | Master             | Use                                            |
-| ------ | ------------------ | ---------------------------------------------- |
-| Banner | `brand/banner.png` | README header, marketing, social cards         |
-| Logo   | `brand/logo.png`   | documentation site, avatars, plugin listings   |
-| Icon   | `brand/icon.png`   | favicon, CLI branding, app icon, social avatar |
+| Asset  | Master             | Use                                          |
+| ------ | ------------------ | -------------------------------------------- |
+| Banner | `brand/banner.png` | README header, marketing, social cards       |
+| Logo   | `brand/logo.png`   | avatars, plugin listings, social profiles    |
+| Icon   | `brand/icon.png`   | favicon, documentation site header, app icon |
 
 Below roughly 32 × 32 px, clarity beats detail: drop the cape and keep
 **P + `</>`**. Never place the full lockup at favicon size.
@@ -141,16 +141,17 @@ Avoid `PROCODER`, `Pro Coder`, `Pro-coder`, and `proCoder`.
 ## Assets
 
 The derivatives under `docs/assets/` are generated from the masters here.
+Only two are needed: the banner and the icon. The full lockup is never
+shrunk to header or favicon size — the wordmark turns to mush and the
+site name already carries it.
 The banner is quantized because it is mostly smooth dark gradient, which
 costs 350 KB in true color and shows no banding at 256:
 
 ```sh
 magick brand/banner.png -strip -resize 1600x -colors 256 \
   -dither FloydSteinberg -define png:compression-level=9 docs/assets/banner.png
-magick brand/logo.png -strip -resize 512x512 \
-  -define png:compression-level=9 docs/assets/logo.png
 magick brand/icon.png -strip -resize 256x256 \
-  -define png:compression-level=9 docs/assets/favicon.png
+  -define png:compression-level=9 docs/assets/icon.png
 ```
 
 The palette above is applied to the documentation site in
