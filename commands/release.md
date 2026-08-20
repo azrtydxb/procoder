@@ -12,15 +12,14 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    changelog has its entry, the working tree is clean, the gate is
    clean, and the suite is green under [test] policy.
 2. Before the first fix, run /procoder:simplify over the whole repo
-   (`repo`): a tag is the moment the accumulated shape of the code
-   ships, and the whole-tree question — what should not exist — has no
-   other owner. Take the cuts you agree with, say why not for the rest,
-   and let the controller re-judge the tree afterwards. It reports; you
-   decide (P-CONTROL).
-3. Fix everything it lists — bump the files, write the changelog entry,
-   commit — then rerun until it answers ready.
-4. When ready it prints the tag command; run that command yourself and
-   push the tag. The binary never tags (P-CONTROL).
+   (`repo`) — the whole-tree question has no other owner. Take the cuts
+   you agree with, say why not for the rest.
+3. Fix everything the release controller listed — bump the files, write
+   the changelog entry, commit — then rerun `launcher.sh release` until
+   it answers ready.
+4. When the release controller answers ready it prints the tag command;
+   run that command yourself and push the tag. The binary never tags
+   (P-CONTROL).
 5. A repo without `[release] files` in .procoder/config.toml gets an
    honest "verified nothing" on the version-sync leg — set the list so
    the check has teeth.
