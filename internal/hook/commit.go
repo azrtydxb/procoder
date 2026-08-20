@@ -345,7 +345,14 @@ func heredocBody(command string) string {
 	if i < 0 {
 		return ""
 	}
-	rest := strings.TrimPrefix(command[i+2:], "-")
+	rest := command[i+2:]
+	// `<<-EOF` lets the terminator be indented with TABS, and only tabs;
+	// plain `<<EOF` wants it at the start of the line. Accepting any
+	// indentation would end the message at a body line that merely reads
+	// like the delimiter, which loses everything after it — the
+	// acknowledgment included.
+	stripTabs := strings.HasPrefix(rest, "-")
+	rest = strings.TrimPrefix(rest, "-")
 	nl := strings.Index(rest, "\n")
 	if nl < 0 {
 		return ""
@@ -356,7 +363,11 @@ func heredocBody(command string) string {
 	}
 	var body []string
 	for _, line := range strings.Split(rest[nl+1:], "\n") {
-		if strings.TrimSpace(line) == delim {
+		candidate := strings.TrimRight(line, " \t\r")
+		if stripTabs {
+			candidate = strings.TrimLeft(candidate, "\t")
+		}
+		if candidate == delim {
 			return strings.Join(body, "\n")
 		}
 		body = append(body, line)

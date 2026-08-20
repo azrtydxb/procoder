@@ -76,6 +76,17 @@ func TestTheMessageIsReadFromEveryFormGitReadsItFrom(t *testing.T) {
 	if !strings.Contains(heredoc.message, "docs: none") {
 		t.Errorf("heredoc message lost: %q", heredoc.message)
 	}
+	// an indented line that reads like the delimiter is body, not the end of
+	// it: only `<<-` allows a tab-indented terminator, and neither form
+	// allows a space-indented one
+	indented := parseCommand("git commit -F - <<'EOF'\nchore: x\n\n    EOF\n\ndocs: none — reason.\nEOF")
+	if !strings.Contains(indented.message, "docs: none") {
+		t.Errorf("an indented look-alike ended the message early: %q", indented.message)
+	}
+	tabbed := parseCommand("git commit -F - <<-EOF\nchore: x\n\ndocs: none — reason.\n\tEOF")
+	if !strings.Contains(tabbed.message, "docs: none") {
+		t.Errorf("<<- accepts a tab-indented terminator: %q", tabbed.message)
+	}
 	for _, cmd := range []string{
 		"git commit -F msg.txt",
 		"git commit --file msg.txt",
