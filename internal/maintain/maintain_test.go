@@ -109,3 +109,39 @@ func TestUnwalkableTreeErrsTowardRunningTheCheck(t *testing.T) {
 		t.Fatal("a survey that could not look must not answer \"no files of this type\"")
 	}
 }
+
+// A long function is usually also a branchy one, so funlen and gocyclo
+// land on the same line — and golangci-lint's uniq-by-line processor is
+// ON by default, keeping only the first issue per line. Every funlen
+// finding in this repository was being dropped that way: 31 complexity
+// lines, 0 length lines, over a dispatch function 343 lines long.
+//
+// proved by: removed `uniq-by-line: false` from the generated config —
+// the funlen finding disappears and only gocyclo is reported.
+func TestLengthAndComplexityOnTheSameLineAreBothReported(t *testing.T) {
+	if tools.Resolve(lint.GolangciLint, "") == "" {
+		t.Skip("golangci-lint not installed")
+	}
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "go.mod"), []byte("module demo\n\ngo 1.22\n"), 0o644)
+
+	// one function that is both too branchy and too long, so both linters
+	// report it at the same file:line
+	var b strings.Builder
+	b.WriteString("package demo\n\nfunc Sprawling(x int) int {\n\tsum := 0\n\tswitch {\n")
+	for i := 0; i < 20; i++ {
+		b.WriteString("\tcase x == " + strings.Repeat("1", i+1) + ":\n\t\tsum++\n\t\tsum += x\n\t\tsum -= 1\n\t\tsum *= 2\n")
+	}
+	b.WriteString("\t}\n\treturn sum\n}\n")
+	os.WriteFile(filepath.Join(root, "demo.go"), []byte(b.String()), 0o644)
+
+	var lines []string
+	Run(root, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "(gocyclo)") {
+		t.Fatalf("the fixture must trip gocyclo, or the test proves nothing:\n%s", joined)
+	}
+	if !strings.Contains(joined, "(funlen)") {
+		t.Errorf("the same function is too long, and that finding is being dropped:\n%s", joined)
+	}
+}

@@ -80,7 +80,8 @@ func complexityGo(root string, cfg config.Config, out func(string)) int {
 		return 1
 	}
 	cfgPath := cfgFile.Name()
-	defer os.Remove(cfgPath)
+	// a temp file that will not delete is nothing the report can act on
+	defer func() { _ = os.Remove(cfgPath) }()
 	// a failed Close can mean the write never hit disk — a config that is
 	// not there produces a check that silently measured nothing
 	_, werr := cfgFile.WriteString(golangciCfg(cfg))
@@ -125,6 +126,13 @@ linters:
     funlen:
       lines: %d
       statements: %d
+issues:
+  # golangci keeps only the FIRST issue per line by default, and a long
+  # function is usually a branchy one — so every funlen finding that
+  # shares a line with a gocyclo finding was silently dropped. The two
+  # say different things about the same function and the reader judges
+  # both.
+  uniq-by-line: false
 `, gocyclo, lines, stmts)
 }
 

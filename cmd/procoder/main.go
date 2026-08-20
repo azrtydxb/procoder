@@ -313,6 +313,46 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// printLine is the reporting sink for a command that writes to stdout —
+// the domains all take an `out func(string)`, and this is the one every
+// caller here was spelling out inline.
+func printLine(s string) { fmt.Println(s) }
+
+// printFindings renders a findings list the way every reporting command
+// renders one — the mark, the location relative to the repository, the
+// message, then the count line — and answers the exit code: blocking
+// findings fail, information does not. Four commands each had their own
+// copy of this loop, which is how three of them drift while the fourth
+// gets fixed.
+func printFindings(root, label string, findings []gitx.Finding, out func(string)) int {
+	blocking := 0
+	for _, f := range findings {
+		mark := "  info "
+		if f.Blocking {
+			mark = "  BLOCK"
+			blocking++
+		}
+		loc := f.File
+		// a path outside the repository is printed as given: relativising it
+		// produces ../../.. noise that helps nobody locate anything
+		if rel, err := filepath.Rel(root, loc); err == nil && !strings.HasPrefix(rel, "..") {
+			loc = rel
+		}
+		if f.Line > 0 {
+			loc = fmt.Sprintf("%s:%d", loc, f.Line)
+		}
+		if loc != "" {
+			loc += "  "
+		}
+		out(fmt.Sprintf("%s %s%s", mark, loc, f.Message))
+	}
+	out(fmt.Sprintf("procoder %s: %d finding(s) (%d blocking)", label, len(findings), blocking))
+	if blocking > 0 {
+		return 1
+	}
+	return 0
+}
+
 func run(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
@@ -330,7 +370,7 @@ func run(args []string) int {
 		case "pre-tool-use":
 			return hook.PreToolUse(os.Stdin, os.Stdout)
 		case "install-git":
-			return hook.InstallGit(doctor.Root(), func(s string) { fmt.Println(s) })
+			return hook.InstallGit(doctor.Root(), printLine)
 		case "stop":
 			return hook.Stop(os.Stdin, doctor.Root())
 		default:
@@ -344,45 +384,29 @@ func run(args []string) int {
 		}
 		return formatCmd(args[1:])
 	case "audit":
-		return audit.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return audit.Run(doctor.Root(), printLine)
 	case "status":
-		return status.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return status.Run(doctor.Root(), printLine)
 	case "env":
 		sync := len(args) > 1 && args[1] == "--sync"
 		if len(args) > 1 && !sync {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		return envsync.Run(doctor.Root(), sync, func(s string) { fmt.Println(s) })
+		return envsync.Run(doctor.Root(), sync, printLine)
 	case "run":
 		exec := len(args) > 1 && args[1] == "--exec"
 		if len(args) > 1 && !exec {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		return runcmd.Run(doctor.Root(), exec, func(s string) { fmt.Println(s) })
+		return runcmd.Run(doctor.Root(), exec, printLine)
 	case "adr":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		root := doctor.Root()
-		out := func(s string) { fmt.Println(s) }
-		switch args[1] {
-		case "new":
-			if len(args) < 3 {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
-			}
-			return adr.New(root, strings.Join(args[2:], " "), out)
-		case "list":
-			return adr.List(root, out)
-		case "check":
-			return adr.Run(root, out)
-		default:
-			fmt.Fprint(os.Stderr, usage)
-			return 2
-		}
+		return adrCmd(args[1:])
 	case "bench":
 		root := doctor.Root()
 		save := len(args) > 1 && args[1] == "--save"
@@ -390,9 +414,9 @@ func run(args []string) int {
 			fmt.Fprint(os.Stderr, usage)
 			return 2
 		}
-		return bench.Run(root, save, config.Load(root).BenchThreshold, func(s string) { fmt.Println(s) })
+		return bench.Run(root, save, config.Load(root).BenchThreshold, printLine)
 	case "deps":
-		return deps.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return deps.Run(doctor.Root(), printLine)
 	case "release":
 		root := doctor.Root()
 		version := ""
@@ -401,7 +425,7 @@ func run(args []string) int {
 		}
 		return release.Run(root, version, func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
-		}, suiteCheck(root), func(s string) { fmt.Println(s) })
+		}, suiteCheck(root), printLine)
 	case "backlog":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -426,66 +450,18 @@ func run(args []string) int {
 	case "ci":
 		root := doctor.Root()
 		if len(args) > 1 && args[1] == "--runs" {
-			return ciops.Runs(root, func(s string) { fmt.Println(s) })
+			return ciops.Runs(root, printLine)
 		}
-		findings := ciops.Check(root, config.Load(root).PinActions)
-		blocking := 0
-		for _, f := range findings {
-			mark := "  info "
-			if f.Blocking {
-				mark = "  BLOCK"
-				blocking++
-			}
-			loc := f.File
-			if rel, err := filepath.Rel(root, loc); err == nil && !strings.HasPrefix(rel, "..") {
-				loc = rel
-			}
-			if f.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", loc, f.Line)
-			}
-			if loc != "" {
-				loc += "  "
-			}
-			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
-		}
-		fmt.Printf("procoder ci: %d finding(s) (%d blocking)\n", len(findings), blocking)
-		if blocking > 0 {
-			return 1
-		}
-		return 0
+		return printFindings(root, "ci", ciops.Check(root, config.Load(root).PinActions), printLine)
 	case "infra":
 		root := doctor.Root()
 		if infra.Detect(root).Empty() {
 			fmt.Println("procoder infra: no infrastructure files in this repository")
 			return 0
 		}
-		findings := infra.Check(root)
-		blocking := 0
-		for _, f := range findings {
-			mark := "  info "
-			if f.Blocking {
-				mark = "  BLOCK"
-				blocking++
-			}
-			loc := f.File
-			if rel, err := filepath.Rel(root, loc); err == nil && !strings.HasPrefix(rel, "..") {
-				loc = rel
-			}
-			if f.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", loc, f.Line)
-			}
-			if loc != "" {
-				loc += "  "
-			}
-			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
-		}
-		fmt.Printf("procoder infra: %d finding(s) (%d blocking)\n", len(findings), blocking)
-		if blocking > 0 {
-			return 1
-		}
-		return 0
+		return printFindings(root, "infra", infra.Check(root), printLine)
 	case "maintain":
-		return maintain.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return maintain.Run(doctor.Root(), printLine)
 	case "security":
 		root := doctor.Root()
 		changed, _ := gitx.ChangedFiles(root)
@@ -494,85 +470,9 @@ func run(args []string) int {
 			findings = append(findings, security.Sast(root)...)
 			findings = append(findings, security.Deps(root)...)
 		}
-		blocking := 0
-		for _, f := range findings {
-			mark := "  info "
-			if f.Blocking {
-				mark = "  BLOCK"
-				blocking++
-			}
-			loc := f.File
-			if f.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", loc, f.Line)
-			}
-			if loc != "" {
-				loc += "  "
-			}
-			fmt.Printf("%s %s%s\n", mark, loc, f.Message)
-		}
-		fmt.Printf("procoder security: %d finding(s) (%d blocking)\n", len(findings), blocking)
-		if blocking > 0 {
-			return 1
-		}
-		return 0
+		return printFindings(root, "security", findings, printLine)
 	case "lint":
-		root := doctor.Root()
-		types := false
-		var paths []string
-		for _, a := range args[1:] {
-			if a == "--types" {
-				types = true
-				continue
-			}
-			paths = append(paths, a)
-		}
-		if len(paths) == 0 {
-			changed, err := gitx.ChangedFiles(root)
-			if err != nil {
-				fmt.Println(err)
-				return 1
-			}
-			paths = changed
-		} else {
-			// a directory argument means its files — lint switches on file
-			// extension, so an unexpanded directory would silently lint nothing
-			var expanded []string
-			for _, p := range paths {
-				abs := p
-				if !filepath.IsAbs(abs) {
-					abs = filepath.Join(root, abs)
-				}
-				if info, err := os.Stat(abs); err == nil && info.IsDir() {
-					expanded = append(expanded, gitx.FilesUnder(root, p)...)
-				} else {
-					expanded = append(expanded, p)
-				}
-			}
-			paths = expanded
-		}
-		cfg := config.Load(root)
-		findings := lint.Files(root, paths, cfg.LintBlock)
-		if types {
-			findings = append(findings, lint.Types(root, paths, cfg.LintBlock)...)
-		}
-		blocking := 0
-		for _, f := range findings {
-			mark := "  info "
-			if f.Blocking {
-				mark = "  BLOCK"
-				blocking++
-			}
-			loc := f.File
-			if f.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", loc, f.Line)
-			}
-			fmt.Printf("%s %s  %s\n", mark, loc, f.Message)
-		}
-		fmt.Printf("procoder lint: %d finding(s) (%d blocking)\n", len(findings), blocking)
-		if blocking > 0 {
-			return 1
-		}
-		return 0
+		return lintCmd(args[1:])
 	case "docs":
 		root := doctor.Root()
 		// --ack prints the line that clears the documentation obligation;
@@ -614,35 +514,20 @@ func run(args []string) int {
 		}
 		return planCmd(args[1:])
 	case "debt":
-		return debt.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return debt.Run(doctor.Root(), printLine)
 	case "lessons":
-		return lessons.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return lessons.Run(doctor.Root(), printLine)
 	case "agents":
-		return portability.Agents(doctor.Root(), func(s string) { fmt.Println(s) })
+		return portability.Agents(doctor.Root(), printLine)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
-			return principles.RunHook(doctor.Root(), func(s string) { fmt.Println(s) })
+			return principles.RunHook(doctor.Root(), printLine)
 		}
-		return principles.Run(doctor.Root(), func(s string) { fmt.Println(s) })
+		return principles.Run(doctor.Root(), printLine)
 	case "templates":
 		return gitcmd.Templates(doctor.Root(), os.Stdout)
 	case "test":
-		root := doctor.Root()
-		coverage := false
-		name := ""
-		var paths []string
-		for i := 1; i < len(args); i++ {
-			switch {
-			case args[i] == "--coverage":
-				coverage = true
-			case args[i] == "--name" && i+1 < len(args):
-				name = args[i+1]
-				i++
-			default:
-				paths = append(paths, args[i])
-			}
-		}
-		return testrun.Report(testrun.Run(root, paths, coverage, name), func(s string) { fmt.Println(s) })
+		return testCmd(args[1:])
 	case "scrub":
 		if len(args) < 2 {
 			fmt.Fprint(os.Stderr, usage)
@@ -660,9 +545,89 @@ func run(args []string) int {
 
 // indexCmd dispatches the index subcommands; every query prints through one
 // line-writer so output stays uniform.
+func adrCmd(args []string) int {
+	root := doctor.Root()
+	switch args[0] {
+	case "new":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, usage)
+			return 2
+		}
+		return adr.New(root, strings.Join(args[1:], " "), printLine)
+	case "list":
+		return adr.List(root, printLine)
+	case "check":
+		return adr.Run(root, printLine)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		return 2
+	}
+}
+
+func lintCmd(args []string) int {
+	root := doctor.Root()
+	types := false
+	var paths []string
+	for _, a := range args {
+		if a == "--types" {
+			types = true
+			continue
+		}
+		paths = append(paths, a)
+	}
+	if len(paths) == 0 {
+		changed, err := gitx.ChangedFiles(root)
+		if err != nil {
+			fmt.Println(err)
+			return 1
+		}
+		paths = changed
+	} else {
+		// a directory argument means its files — lint switches on file
+		// extension, so an unexpanded directory would silently lint nothing
+		var expanded []string
+		for _, p := range paths {
+			abs := p
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(root, abs)
+			}
+			if info, err := os.Stat(abs); err == nil && info.IsDir() {
+				expanded = append(expanded, gitx.FilesUnder(root, p)...)
+			} else {
+				expanded = append(expanded, p)
+			}
+		}
+		paths = expanded
+	}
+	cfg := config.Load(root)
+	findings := lint.Files(root, paths, cfg.LintBlock)
+	if types {
+		findings = append(findings, lint.Types(root, paths, cfg.LintBlock)...)
+	}
+	return printFindings(root, "lint", findings, printLine)
+}
+
+func testCmd(args []string) int {
+	coverage := false
+	name := ""
+	var paths []string
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--coverage":
+			coverage = true
+		case args[i] == "--name" && i+1 < len(args):
+			name = args[i+1]
+			i++
+		default:
+			paths = append(paths, args[i])
+		}
+	}
+	return testrun.Report(testrun.Run(doctor.Root(), paths, coverage, name), printLine)
+}
+
 func indexCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	switch args[0] {
 	case "build":
 		if err := codeindex.Build(root, out); err != nil {
@@ -737,7 +702,7 @@ func indexCmd(args []string) int {
 // the refusing controllers.
 func backlogCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	// positional args with one optional flag, per subcommand
 	flagVal := func(name string, rest []string) (string, []string) {
 		val := ""
@@ -828,7 +793,7 @@ func backlogCmd(args []string) int {
 // sprintCmd dispatches the sprint lifecycle over the backlog.
 func sprintCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	switch args[0] {
 	case "open":
 		if len(args) < 2 {
@@ -872,7 +837,7 @@ func suiteCheck(root string) func() (bool, string) {
 // as its final criterion — a task is not done while the tree fails checks.
 func todoCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	switch args[0] {
 	case "list":
 		tasks, err := todo.List(root)
@@ -928,7 +893,7 @@ func todoCmd(args []string) int {
 // planCmd dispatches the plan quality controller.
 func planCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	switch args[0] {
 	case "list":
 		return plan.List(root, out)
@@ -953,7 +918,7 @@ func planCmd(args []string) int {
 // specCmd dispatches the spec quality controller.
 func specCmd(args []string) int {
 	root := doctor.Root()
-	out := func(s string) { fmt.Println(s) }
+	out := printLine
 	switch args[0] {
 	case "list":
 		return spec.List(root, out)
