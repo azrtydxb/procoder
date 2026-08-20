@@ -172,3 +172,33 @@ does. `procoder lessons` flags entries with no adaptation.
   always nil. Writing the test for the behaviour is what found it — the
   rubric line already exists; the adaptation is that a fix applied to
   "the places that do X" now gets a test per place, not per class
+
+## 2026-08-20 0.32.9 (docs) — a Markdown table shipped with no header row
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "rendered output was LOOKED AT"; the
+  generated skills table now carries its header, and the rule that
+  produced the escape — a green `mkdocs build --strict` was treated as
+  proof the page reads correctly — is named in the rubric line itself
+
+## 2026-08-20 0.32.9 (docs) — a link's anchor matched no heading, and --strict stayed green
+
+- Class: mechanical
+- Missed by: gate
+- Adaptation: `procoder docs` now resolves the anchor as well as the
+  file, reproducing Python-Markdown's toc slug (explicit `{#id}` and raw
+  HTML ids count; a target that cannot be read yields no verdict rather
+  than a false positive). Six mutations proved, all killed; the exact
+  link that shipped is caught, and 218 Markdown files produce no false
+  positive
+
+## 2026-08-20 0.32.10 (docs) — an element reported hidden was still painted
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: same rubric line. The filter set `hidden` and the scripted
+  assertion read `hidden === true`, so the check passed while Material's
+  `display` rule kept the table header on screen. An assertion about the
+  DOM is not an assertion about the render
+

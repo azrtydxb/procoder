@@ -2,6 +2,33 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.11 — 2026-08-20
+
+**`procoder docs` now checks the anchor, not just the file.** A link
+written as `architecture.md#contract-1-…` resolved as long as the file
+existed; whether any heading generated that anchor went
+unasked. mkdocs reports the mismatch at INFO, so `--strict` stays green
+and a dead link ships — which is how one shipped from this repository in
+0.32.9.
+
+The check reproduces Python-Markdown's toc slug, which is what mkdocs
+uses: punctuation dropped rather than turned into separators (an em dash
+disappears), runs of separators collapsed, duplicate headings numbered.
+Explicit ids count — attr_list's `{#custom}` and raw HTML `id="…"`. A
+target that exists but cannot be read yields **no verdict**, because
+answering "it has no anchors" would report every link into it as broken.
+
+Proved against this repository: it catches the exact link that shipped,
+and 218 Markdown files produce no false positive.
+
+**And the half that cannot be mechanised is written down.** Twice in one
+day a green assertion described what the code said while the rendered
+page said otherwise — a table that was not a table, and an element the
+DOM reported as hidden that the browser was still painting. The review
+rubric and the documentation rules now both carry the same line: for
+anything visual, look at it rendered, in both colour schemes, and when
+the assertion and the screenshot disagree the screenshot is right.
+
 ## 0.32.10 — 2026-08-20
 
 **The command reference's table was not a table.** The skills list

@@ -126,6 +126,12 @@ bulleted list is decoration.
   short pipeline. A wide `LR` chart with many nodes compresses its labels
   to nothing.
 - Say in one line what the reader should take from it, above the diagram.
+- Look at it rendered before calling it done. A build that passes and an
+  assertion that returns true both report on what the code says, not on
+  what a reader sees. For anything visual — a diagram, a table, CSS,
+  client-side behaviour — open the page, in both colour schemes where
+  the site has two. When the assertion and the screenshot disagree, the
+  screenshot is right.
 
 ### Mechanics
 
