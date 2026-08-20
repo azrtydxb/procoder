@@ -2,6 +2,29 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.10 — 2026-08-20
+
+**The command reference's table was not a table.** The skills list
+shipped in 0.32.9 with data rows and no header row, so Markdown never
+made it a table — it rendered as a wall of text with literal pipes in
+it, and the formatter reflowed it into a paragraph, which made it worse.
+Fixed, with the header row it always needed and a command column that no
+longer breaks `/procoder:agents` across two lines.
+
+**The page filters now.** The reference is long by design — 33 skills
+plus every binary subcommand — and the site search takes you to a
+different page rather than narrowing the one you are on. A filter box
+sits under the title: type `secrets` or `rename` or `sprint close` and
+the page narrows to what matches, across the skills table and the
+binary sections at once. Section headings whose contents all filtered
+away hide too, so you never get an empty "Everyday commands". Escape
+clears it, and with JavaScript off the page is simply the full list.
+
+Two things found while testing it in a browser rather than by reading
+the code: the `hidden` attribute loses to Material's own `display` rule
+on tables, so the emptied table still painted its header; and a link
+into `architecture.md` had an anchor that no heading generated.
+
 ## 0.32.9 — 2026-08-20
 
 Documentation, after reading it as a user rather than as its author.

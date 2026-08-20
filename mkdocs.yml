@@ -31,6 +31,9 @@ theme:
 extra_css:
   - stylesheets/brand.css
 
+extra_javascript:
+  - javascripts/command-filter.js
+
 markdown_extensions:
   - admonition
   - attr_list

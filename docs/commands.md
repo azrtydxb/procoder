@@ -10,39 +10,41 @@ the output, and knows what to do with it — which checks to re-run, what
 counts as evidence, when to refuse. Typing the binary yourself gets you
 the numbers without the judgment that surrounds them.
 
-| `/procoder:adr` | Architecture decision records: durable decisions with their date, context, and consequences — supersede, never rewrite. |
-| `/procoder:agents` | Keep the universal agent layer in sync: per-host rule files derived from AGENTS.md, with drift blocking the gate. |
-| `/procoder:audit` | Onboard an existing codebase: every domain's checks over the whole tree, then a triaged plan to bring it in line. |
-| `/procoder:backlog` | The project layer: milestones, epics, and user stories with refusing controllers — spec-seeded, sprint-ready. |
-| `/procoder:check` | Run the formatting gate over the changed files, as a commit or CI would. |
-| `/procoder:ci` | CI/CD hygiene and run health: pinned actions, timeouts, concurrency, tests — plus the latest runs via gh. |
-| `/procoder:debug` | Systematic debugging: root cause before any fix, one hypothesis at a time, and a three-strikes rule that questions the architecture instead of stacking patches. |
-| `/procoder:deps` | The dependency freshness report: what is behind, by how much, per ecosystem — judgment stays yours. |
-| `/procoder:docs` | The documentation report: references, diagrams, drift, API docs, badges, README structure, links, Pages. |
-| `/procoder:doctor` | Report which formatters this repository needs, which are installed, and how to install the rest. |
-| `/procoder:env` | What changed in the project's environment since you last synced: dependencies, migrations, new env keys. |
-| `/procoder:format` | Show the formatted result for files, so you can review and write it. |
-| `/procoder:git` | The pre-finish status: branch, hygiene findings, message checks, workflow lint, template state. |
-| `/procoder:index` | The code index: build it, then find, search, refs, outline, and impact instead of grepping blind. |
-| `/procoder:infra` | DevOps hygiene where the files exist: Dockerfiles, Terraform, Kubernetes manifests, Helm charts. |
-| `/procoder:init` | Install the formatters this repository needs, with every command visible before it runs. |
-| `/procoder:lint` | The canonical linter per ecosystem over your changes: findings are diagnoses you judge, fix, or explain. |
-| `/procoder:maintain` | The maintainability report: dead-code candidates, complexity, function length — judgment calls you decide on. |
-| `/procoder:merge` | Finish a PR properly: every check green, every review addressed — human and bot — then merge and clean up. |
-| `/procoder:perf` | The performance discipline: measure before touching, benchmark what matters, prove regressions and fixes with numbers. |
-| `/procoder:plan` | Turn an approved spec into an implementation plan an engineer with zero context could execute — with a quality controller that blocks placeholders and hollow tasks. |
-| `/procoder:pr` | Prepare and open a pull request the senior way: gate, template, scrubbed, everything visible. |
-| `/procoder:release` | The pre-tag controller: version sync, changelog, clean tree, gate, and suite — every failure listed, the tag printed, never run. |
-| `/procoder:run` | How to run this project: the launch commands it declares, with the file that declared each. |
-| `/procoder:security` | The security pass: secrets (blocking), SAST, dependency vulns — plus the index's entry points to review from. |
-| `/procoder:simplify` | The over-engineering review: five tags (delete, stdlib, native, yagni, shrink), a mandatory replacement per finding, and a real null result when there is nothing to cut. |
-| `/procoder:spec` | Spec-first design: a gap-closing interview that produces a complete spec, with a quality controller that blocks until every section is answered and every question resolved. |
-| `/procoder:sprint` | Scope-boxed sprints over the backlog: one active sprint, explicit carry-over, a close that refuses to hide unfinished work. |
-| `/procoder:status` | The state of play, computed fresh: branch, dirty files, the active sprint, open work, index freshness. |
-| `/procoder:tdd` | Test-driven development with tests that actually catch breaks: red before green, name the break each test catches, and the mutation check before done. |
-| `/procoder:test` | Run the repository's actual test suite: every ecosystem's canonical runner — NOT run is never green. |
-| `/procoder:todo` | The quality-gated task list: tasks with real descriptions, testable acceptance criteria, and evidence — a task only closes when the controller agrees it is done. |
-| `/procoder:update` | Update the procoder plugin from the marketplace and verify the new version end to end. |
+| Command              | What it does                                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/procoder:adr`      | Architecture decision records: durable decisions with their date, context, and consequences — supersede, never rewrite.                                                      |
+| `/procoder:agents`   | Keep the universal agent layer in sync: per-host rule files derived from AGENTS.md, with drift blocking the gate.                                                            |
+| `/procoder:audit`    | Onboard an existing codebase: every domain's checks over the whole tree, then a triaged plan to bring it in line.                                                            |
+| `/procoder:backlog`  | The project layer: milestones, epics, and user stories with refusing controllers — spec-seeded, sprint-ready.                                                                |
+| `/procoder:check`    | Run the formatting gate over the changed files, as a commit or CI would.                                                                                                     |
+| `/procoder:ci`       | CI/CD hygiene and run health: pinned actions, timeouts, concurrency, tests — plus the latest runs via gh.                                                                    |
+| `/procoder:debug`    | Systematic debugging: root cause before any fix, one hypothesis at a time, and a three-strikes rule that questions the architecture instead of stacking patches.             |
+| `/procoder:deps`     | The dependency freshness report: what is behind, by how much, per ecosystem — judgment stays yours.                                                                          |
+| `/procoder:docs`     | The documentation report: references, diagrams, drift, API docs, badges, README structure, links, Pages.                                                                     |
+| `/procoder:doctor`   | Report which formatters this repository needs, which are installed, and how to install the rest.                                                                             |
+| `/procoder:env`      | What changed in the project's environment since you last synced: dependencies, migrations, new env keys.                                                                     |
+| `/procoder:format`   | Show the formatted result for files, so you can review and write it.                                                                                                         |
+| `/procoder:git`      | The pre-finish status: branch, hygiene findings, message checks, workflow lint, template state.                                                                              |
+| `/procoder:index`    | The code index: build it, then find, search, refs, outline, and impact instead of grepping blind.                                                                            |
+| `/procoder:infra`    | DevOps hygiene where the files exist: Dockerfiles, Terraform, Kubernetes manifests, Helm charts.                                                                             |
+| `/procoder:init`     | Install the formatters this repository needs, with every command visible before it runs.                                                                                     |
+| `/procoder:lint`     | The canonical linter per ecosystem over your changes: findings are diagnoses you judge, fix, or explain.                                                                     |
+| `/procoder:maintain` | The maintainability report: dead-code candidates, complexity, function length — judgment calls you decide on.                                                                |
+| `/procoder:merge`    | Finish a PR properly: every check green, every review addressed — human and bot — then merge and clean up.                                                                   |
+| `/procoder:perf`     | The performance discipline: measure before touching, benchmark what matters, prove regressions and fixes with numbers.                                                       |
+| `/procoder:plan`     | Turn an approved spec into an implementation plan an engineer with zero context could execute — with a quality controller that blocks placeholders and hollow tasks.         |
+| `/procoder:pr`       | Prepare and open a pull request the senior way: gate, template, scrubbed, everything visible.                                                                                |
+| `/procoder:release`  | The pre-tag controller: version sync, changelog, clean tree, gate, and suite — every failure listed, the tag printed, never run.                                             |
+| `/procoder:run`      | How to run this project: the launch commands it declares, with the file that declared each.                                                                                  |
+| `/procoder:security` | The security pass: secrets (blocking), SAST, dependency vulns — plus the index's entry points to review from.                                                                |
+| `/procoder:simplify` | The over-engineering review: five tags (delete, stdlib, native, yagni, shrink), a mandatory replacement per finding, and a real null result when there is nothing to cut.    |
+| `/procoder:spec`     | Spec-first design: a gap-closing interview that produces a complete spec, with a quality controller that blocks until every section is answered and every question resolved. |
+| `/procoder:sprint`   | Scope-boxed sprints over the backlog: one active sprint, explicit carry-over, a close that refuses to hide unfinished work.                                                  |
+| `/procoder:status`   | The state of play, computed fresh: branch, dirty files, the active sprint, open work, index freshness.                                                                       |
+| `/procoder:tdd`      | Test-driven development with tests that actually catch breaks: red before green, name the break each test catches, and the mutation check before done.                       |
+| `/procoder:test`     | Run the repository's actual test suite: every ecosystem's canonical runner — NOT run is never green.                                                                         |
+| `/procoder:todo`     | The quality-gated task list: tasks with real descriptions, testable acceptance criteria, and evidence — a task only closes when the controller agrees it is done.            |
+| `/procoder:update`   | Update the procoder plugin from the marketplace and verify the new version end to end.                                                                                       |
 
 ## The binary underneath
 
