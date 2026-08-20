@@ -185,3 +185,43 @@ func TestRecordAppendsRatherThanReplaces(t *testing.T) {
 		t.Error("paths use forward slashes")
 	}
 }
+
+// The gate's reminder reads the ledger and nothing else. A gate that asked
+// GitHub would tax every commit in every repository for a question that is
+// never urgent, and would report NOT checked on every aeroplane — so the
+// network half lives in `copilot-leak` and the merge flow, and this half
+// stays a file read.
+// proved by: pointed the reminder at gh — with PATH emptied the test then
+// reports the ledger as unreadable instead of counting it.
+func TestTheGateReminderNeverLeavesTheMachine(t *testing.T) {
+	root := leakLedger(t, "## 2026-08-20 https://example.test/issues/1 — a finding\n\n- Adaptation: <the concrete change>\n")
+	t.Setenv("PATH", "") // no gh, no git, nothing to call: the answer must still come
+
+	got := LeakReminder(root)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "carry no adaptation") {
+		t.Fatalf("an unlearned capture must be reported from the file alone, got %+v", got)
+	}
+	if got[0].Blocking {
+		t.Error("an unwritten adaptation is work to do, not a broken tree — it must not block")
+	}
+}
+
+// A closed entry is silence: the reminder exists to name what is still open.
+// proved by: counted every entry instead of the unlearned ones — the gate
+// then nags forever about work that is finished.
+func TestAClosedCaptureIsSilent(t *testing.T) {
+	root := leakLedger(t, "## 2026-08-20 https://example.test/issues/1 — a finding\n\n- Adaptation: added the guard in check.go\n")
+	if got := LeakReminder(root); len(got) != 0 {
+		t.Errorf("a written adaptation closes the entry, got %+v", got)
+	}
+}
+
+// No ledger is the ordinary case in every repository that has never captured
+// anything, and it must not produce a line.
+// proved by: treated a missing ledger as an error — every repo without one
+// then carries a finding it can do nothing about.
+func TestNoLedgerIsNotAFinding(t *testing.T) {
+	if got := LeakReminder(t.TempDir()); len(got) != 0 {
+		t.Errorf("a repository that never captured anything owes nothing, got %+v", got)
+	}
+}

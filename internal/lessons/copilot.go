@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"procoder/internal/gitx"
 )
 
 // CopilotLeaksPath is the scratch ledger of Copilot auto-review findings,
@@ -56,7 +58,7 @@ func RunCopilotLeaks(root string, out func(string)) int {
 	}
 	unlearned := 0
 	for _, e := range entries {
-		if e.Adaptation == "" || strings.HasPrefix(e.Adaptation, "<") {
+		if isUnlearned(e.Adaptation) {
 			unlearned++
 			out("  UNLEARNED  " + e.Title + " — captured but not classified; no adaptation recorded")
 		} else {
@@ -110,4 +112,41 @@ func RecordCopilotEntry(root, title, url, finding string, at time.Time) error {
 // with someone else's prose.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// LeakReminder is the gate's half of the Copilot loop, and it is deliberately
+// the offline half: it reads the ledger already on disk and says how many
+// captured findings still carry no adaptation. It never asks GitHub. The gate
+// runs on every commit, in CI, and on aeroplanes; a network call there would
+// tax every commit for a question that is not urgent and would report NOT
+// checked whenever gh was unavailable.
+//
+// Finding leaks that GitHub knows about and this repository does not is
+// `procoder copilot-leak`'s job, and the merge flow runs it — at the moment
+// the work is being reflected on, which is when the answer is worth having.
+//
+// The reminder never blocks: an unwritten adaptation is work to do, not a
+// broken tree.
+func LeakReminder(root string) []gitx.Finding {
+	path := filepath.Join(root, filepath.FromSlash(CopilotLeaksPath))
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil // no ledger is the ordinary case, not a finding
+	}
+	if err != nil {
+		return []gitx.Finding{{File: path,
+			Message: CopilotLeaksPath + " NOT checked (" + err.Error() + ") — captured Copilot findings cannot be counted"}}
+	}
+	unlearned := 0
+	for _, e := range Parse(string(raw)) {
+		if isUnlearned(e.Adaptation) {
+			unlearned++
+		}
+	}
+	if unlearned == 0 {
+		return nil
+	}
+	return []gitx.Finding{{File: path,
+		Message: fmt.Sprintf("%d captured Copilot finding(s) in %s carry no adaptation — the class stays open until one is written",
+			unlearned, CopilotLeaksPath)}}
 }
