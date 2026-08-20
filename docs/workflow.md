@@ -147,6 +147,18 @@ Anything that escaped to a reviewer becomes a
 `.procoder/github/LESSONS.md` entry with the adaptation that closes its
 class — in the same PR.
 
+What GitHub Copilot's auto-review found is collected the same way:
+
+```
+procoder copilot-leak
+```
+
+Findings are sanitised before anything is shown or sent, nothing is
+published without an explicit yes, and each captured finding lands in
+`.procoder/github/COPILOT-LEAKS.md` as unlearned until someone writes
+its adaptation. `procoder copilot-leak --from-copilot` reads that ledger
+back and exits 1 while any finding is unclassified.
+
 ## 10. Close the sprint
 
 ```
