@@ -317,16 +317,25 @@ func headingSlug(title string) string {
 }
 
 // stripInlineMarkup removes the emphasis, code, and link syntax that a
-// heading may carry — the slug is built from the rendered text. Underscores
-// survive: `_` is emphasis only around a word, and inside a code span it is
-// part of the name, so a heading about `reasoning_content` keeps it — both
-// renderers do.
+// heading may carry — the slug is built from the rendered text. Code spans
+// are taken out first and their contents kept whole, because that is where
+// the two kinds of underscore part company: `reasoning_content` keeps its
+// underscore in the anchor, while the ones around _word_ are emphasis that
+// renders away and must not reach the slug.
 func stripInlineMarkup(s string) string {
 	s = mdLink.ReplaceAllString(s, "")
-	for _, mark := range []string{"`", "**", "*"} {
-		s = strings.ReplaceAll(s, mark, "")
+	var b strings.Builder
+	for i, part := range strings.Split(s, "`") {
+		if i%2 == 1 {
+			b.WriteString(part) // inside a code span: the text is the name
+			continue
+		}
+		for _, mark := range []string{"**", "*", "__", "_"} {
+			part = strings.ReplaceAll(part, mark, "")
+		}
+		b.WriteString(part)
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(s, "[", ""), "]", "")
+	return strings.ReplaceAll(strings.ReplaceAll(b.String(), "[", ""), "]", "")
 }
 
 // mermaidBlock is one fenced ```mermaid block with its starting line number.

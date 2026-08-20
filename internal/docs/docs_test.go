@@ -467,13 +467,14 @@ func TestAnAnchorThatNoHeadingGeneratesIsBroken(t *testing.T) {
 // then reads as a broken reference on the renderer most repositories use.
 func TestTheRealSlugResolves(t *testing.T) {
 	dir := t.TempDir()
-	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n\n## Files & skills\n\n### DeepSeek: `reasoning_content`\n")
+	mustWrite(t, filepath.Join(dir, "target.md"), "# Page\n\n## Contract 1 — P-CONTROL: the agent stays in control\n\n## Files & skills\n\n### DeepSeek: `reasoning_content`\n\n## Hello _world_\n")
 	for _, link := range []string{
 		"target.md#contract-1-p-control-the-agent-stays-in-control",
 		"target.md#contract-1--p-control-the-agent-stays-in-control",
 		"target.md#files-skills",
 		"target.md#files--skills",
 		"target.md#deepseek-reasoning_content",
+		"target.md#hello-world",
 		"target.md#page",
 	} {
 		src := filepath.Join(dir, "src.md")
