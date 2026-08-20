@@ -1,10 +1,17 @@
 # Plan: Interactive Q&A — `ask` Feature
 
+## Goal
+
+Ship `procoder ask`: the questions every domain already knows it cannot
+answer, collected, put to a human, and recorded where the coder and the
+gate can both read the decision. Done when a question reaches a person
+instead of being guessed at, and the answer outlives the session.
+
 ## Context
 
 Procoder's hooks inject plain text findings into the AI coder's context. When those findings contain questions (spec `OPEN:` markers, docs obligations, security flags, lint judgments), the AI coder guesses rather than asking the human. This feature introduces `procoder ask` — a structured Q&A flow that actually collects human answers and re-injects them as ground truth.
 
-## Architecture Decision
+## Architecture
 
 Create a new `internal/ask/ask` package that:
 
@@ -15,52 +22,71 @@ Create a new `internal/ask/ask` package that:
 
 The `ask` command lives at the top level (matching `check`, `lint`, etc.). It is NOT behind any config policy — when there are questions, they must be asked.
 
+## Constraints
+
+- Pure Go stdlib; package `internal/ask`.
+- P-CONTROL: `ask` prints and records answers; it never edits a spec, a
+  lint config or any file a domain owns.
+- A flagged secret's value never reaches `QA.md`, `answers.md` or the
+  terminal — the question is whether the flag is real, and the answer
+  does not need the credential to be legible.
+- Answers are keyed to a fingerprint of the question text (D-2), so an
+  unchanged question is never asked twice and a changed one always is.
+- No terminal is not a no: with no TTY, `ask` writes the file and names
+  the `--file` route rather than asking a pipe.
+- `[ask] policy = "report" | "block"` follows D-OVERRIDE like every other
+  domain policy, defaulting to report.
+
 ## Tasks
 
-### 1. Create `internal/ask/ask.go` — Question struct and collect framework
+## Task 1: Create `internal/ask/ask.go` — Question struct and collect framework
 
-**File:** `internal/ask/ask.go` (new)
-**Steps:**
-1.1 Define `Question` struct: `Source` (spec/docs/security/lint), `ID` (unique per question), `SpecName` (for spec questions), `Text` (the question), `Default` (suggested answer), `Answered` (bool)
-1.2 Define `Questions []Question` as the collection type
-1.3 Implement `Collect(root string) Questions` that calls each domain's question collector
-1.4 Implement `TTY() bool` that checks `os.Stdin` via `syscall.IsTerminal` (or fallback to existing `copilot.Prompt` terminal check)
-1.5 Implement `WriteFile(qs Questions, root string) error` that writes questions to `.procoder/ask/QA.md`
-1.6 Implement the read-write pattern: TTY -> interactive prompt; no TTY -> write file
+Files: `internal/ask/ask.go` (new)
+Steps:
+
+- [ ] Define `Question` struct: `Source` (spec/docs/security/lint), `ID` (unique per question), `SpecName` (for spec questions), `Text` (the question), `Default` (suggested answer), `Answered` (bool)
+- [ ] Define `Questions []Question` as the collection type
+- [ ] Implement `Collect(root string) Questions` that calls each domain's question collector
+- [ ] Use `copilot.CanAsk(os.Stdin)` rather than writing a terminal check: it already answers this question, and it already knows that `/dev/null` is a character device and therefore nobody to ask — a fact this feature would otherwise rediscover the hard way
+- [ ] Implement `WriteFile(qs Questions, root string) error` that writes questions to `.procoder/ask/QA.md`
+- [ ] Implement the read-write pattern: TTY -> interactive prompt; no TTY -> write file
 
 **Evidence:** Package compiles. `Collect` returns at least one Question per domain. `TTY()` correctly detects terminal.
 
-### 2. Implement question collectors per domain
+## Task 2: Implement question collectors per domain
 
-**File:** `internal/ask/ask.go` (edit, add collector functions)
-**Steps:**
-2.1 Spec collector: read each `.procoder/specs/*.md` file, parse for `OPEN:` lines in the "Open questions" section, return one Question per `OPEN:` line
-2.2 Docs obligation collector: call `docs.Obligation(root, changed, "", false)` (with block=false since we want findings to surface questions, not block), return one Question per finding
-2.3 Security collector: call `security.SecretsChangedFiles(root, changed)` with block=false, filter for flagged secrets that have uncertain classification, return one Question per flag
-2.4 Lint collector: call `lint.Files(root, changed, false)` with block=false, filter for findings in non-obvious files, return one Question per finding (or skip if trivial)
-2.5 Each collector returns `[]Question` with proper Source, ID, and Text fields
+Files: `internal/ask/ask.go` (edit, add collector functions)
+Steps:
+
+- [ ] Spec collector: read each `.procoder/specs/*.md` file and return one Question per line of real content in its "Open questions" section — NOT only `OPEN:`-prefixed lines. `spec.Check` blocks on anything left in that section whatever it is called, and a collector that only saw the prefix would miss the `- [O-1] …` shape two specs in this repository actually used, leaving the human unable to answer what the gate is refusing
+- [ ] Docs obligation collector: call `docs.Obligation(root, changed, "", false)` (with block=false since we want findings to surface questions, not block), return one Question per finding
+- [ ] Security collector: call `security.SecretsChangedFiles(root, changed)` with block=false, filter for flagged secrets that have uncertain classification, return one Question per flag
+- [ ] Lint collector: call `lint.Files(root, changed, false)` with block=false, filter for findings in non-obvious files, return one Question per finding (or skip if trivial)
+- [ ] Each collector returns `[]Question` with proper Source, ID, and Text fields
 
 **Evidence:** Each collector returns zero or more Questions. No panics on missing domains. All collectors handle empty input gracefully.
 
-### 3. Implement interactive prompt flow
+## Task 3: Implement interactive prompt flow
 
-**File:** `internal/ask/ask.go` (edit, add interactive section)
-**Steps:**
-3.1 Implement `promptQuestion(q Question) string` — prints the question text with source label, waits for stdin input
-3.2 Implement `runInteractive(qs Questions, out func(string)) int` — iterates questions, prints each one, reads answer, returns exit code
-3.3 Use the existing `copilot.Prompt` interaction pattern for consistency (terminal check, yes/no parsing) but extend to free-text input
-3.4 For each question: print source + ID + text, read answer line, write to answers map
-3.5 If answer == "skip" or empty, record as "skip" (not auto-answered)
-3.6 After all questions, print summary line: "answered: N / N questions"
+Files: `internal/ask/ask.go` (edit, add interactive section)
+Steps:
+
+- [ ] Implement `promptQuestion(q Question) string` — prints the question text with source label, waits for stdin input
+- [ ] Implement `runInteractive(qs Questions, out func(string)) int` — iterates questions, prints each one, reads answer, returns exit code
+- [ ] Use the existing `copilot.Prompt` interaction pattern for consistency (terminal check, yes/no parsing) but extend to free-text input
+- [ ] For each question: print source + ID + text, read answer line, write to answers map
+- [ ] If answer == "skip" or empty, record as "skip" (not auto-answered)
+- [ ] After all questions, print summary line: "answered: N / N questions"
 
 **Evidence:** Interactive run collects answers for all questions. Empty input is recorded as skip, not accepted as answer.
 
-### 4. Implement `ask` command at top level
+## Task 4: Implement `ask` command at top level
 
-**File:** `cmd/procoder/main.go` (edit, add `ask` subcommand)
-**Steps:**
-4.1 Add `"ask"` to the command switch in `run()`
-4.2 `askCmd` function:
+Files: `cmd/procoder/main.go` (edit, add `ask` subcommand)
+Steps:
+
+- [ ] Add `"ask"` to the command switch in `run()`
+- [ ] `askCmd` function:
 
 - Parse flags: `--file` (path to answers file)
 - Call `ask.Collect(root)` to get all questions
@@ -74,11 +100,12 @@ The `ask` command lives at the top level (matching `check`, `lint`, etc.). It is
 
 **Evidence:** `procoder ask` runs without error on any repo. `procoder ask` with questions prints them. `procoder ask` without questions exits cleanly. `procoder ask --file ans.md` reads answers from file.
 
-### 5. Write `QA.md` and `answers.md` formats
+## Task 5: Write `QA.md` and `answers.md` formats
 
-**File:** `internal/ask/file.go` (new)
-**Steps:**
-5.1 Define `.procoder/ask/QA.md` format:
+Files: `internal/ask/file.go` (new)
+Steps:
+
+- [ ] Define `.procoder/ask/QA.md` format:
 
 ```markdown
 # Procoder — Questions to Answer
@@ -98,7 +125,7 @@ Answer: skip (intentional lint)
 -->
 ```
 
-5.2 Define `.procoder/ask/answers.md` format:
+- [ ] Define `.procoder/ask/answers.md` format:
 
 ```markdown
 # Procoder — Answers
@@ -111,18 +138,19 @@ Date: 2026-08-20
 Answer: Full human answer text here.
 ```
 
-5.3 Implement `parseQA(root string) map[string]string` — reads answers.md, returns id -> answer mapping
-5.4 Implement `writeQA(qs Questions, root string) error` — writes QA.md with all questions
-5.5 Implement `writeAnswers(answers map[string]string, root string) error` — writes answers.md
+- [ ] Implement `parseQA(root string) map[string]string` — reads answers.md, returns id -> answer mapping
+- [ ] Implement `writeQA(qs Questions, root string) error` — writes QA.md with all questions
+- [ ] Implement `writeAnswers(answers map[string]string, root string) error` — writes answers.md
 
 **Evidence:** Both files parse correctly. `parseQA` returns correct mapping. File writing survives directory creation (`.procoder/ask/` may not exist).
 
-### 6. Update PostToolUse hook to inject Q&A section
+## Task 6: Update PostToolUse hook to inject Q&A section
 
-**File:** `internal/hook/hook.go` (edit)
-**Steps:**
-6.1 After the existing checks (format, docs, drift, secrets, lint), call `askCollect(root, file)` to get questions related to the just-written file
-6.2 If there are questions, add a section:
+Files: `internal/hook/hook.go` (edit)
+Steps:
+
+- [ ] After the existing checks (format, docs, drift, secrets, lint), call `askCollect(root, file)` to get questions related to the just-written file
+- [ ] If there are questions, add a section:
 
 ```
 == q&a
@@ -135,7 +163,7 @@ Answer them via: `procoder ask --file .procoder/ask/answers.md`
 Then run `procoder check` again.
 ```
 
-6.3 If there is NO TTY, write questions to `QA.md` and add:
+- [ ] If there is NO TTY, write questions to `QA.md` and add:
 
 ```
 == q&a
@@ -145,11 +173,12 @@ Procoder found questions that need human input. These are in `.procoder/ask/QA.m
 
 **Evidence:** When questions exist, output contains `== q&a` section with human instruction. When no questions, no Q&A section is added.
 
-### 7. Update principles hook with Q&A behavior instructions
+## Task 7: Update principles hook with Q&A behavior instructions
 
-**File:** `internal/principles/principles.go` (edit)
-**Steps:**
-7.1 Add a new section to the principles Default text called "Asking the user":
+Files: `internal/principles/principles.go` (edit)
+Steps:
+
+- [ ] Add a new section to the principles Default text called "Asking the user":
 
 ```
 ## Asking the user
@@ -168,23 +197,25 @@ requires a human decision you cannot make.
 
 **Evidence:** Principles output includes "Asking the user" section. The section is present in both `Run` and `RunHook` output.
 
-### 8. Update AGENTS.md and skills/procoder/SKILL.md
+## Task 8: Update AGENTS.md and skills/procoder/SKILL.md
 
-**File:** `AGENTS.md` (edit), `skills/procoder/SKILL.md` (edit)
-**Steps:**
-8.1 In AGENTS.md's "Communicating" section, add a note about asking questions (or better: add a dedicated "Asking the user" subsection)
-8.2 In SKILL.md, add the `ask` workflow: when the AI coder encounters a procoder question, it must stop and ask
-8.3 Reference the `.procoder/ask/` directory as the canonical Q&A location
-8.4 Document that answers in `answers.md` override domain judgment during `procoder check`
+Files: `AGENTS.md` (edit), `skills/procoder/SKILL.md` (edit)
+Steps:
+
+- [ ] In AGENTS.md's "Communicating" section, add a note about asking questions (or better: add a dedicated "Asking the user" subsection)
+- [ ] In SKILL.md, add the `ask` workflow: when the AI coder encounters a procoder question, it must stop and ask
+- [ ] Reference the `.procoder/ask/` directory as the canonical Q&A location
+- [ ] Document that answers in `answers.md` override domain judgment during `procoder check`
 
 **Evidence:** Both files contain the Q&A workflow. AI coders reading these files know to stop and ask.
 
-### 9. Update `procoder release` config and tests
+## Task 9: Update `procoder release` config and tests
 
-**File:** `.procoder/config.toml` (edit), `cmd/procoder/main.go` tests
-**Steps:**
-9.1 Add `.procoder/ask/` directory files to `[release] files` if they exist (they won't by default, but the config should not break if they do)
-9.2 Create tests for `internal/ask/ask.go`:
+Files: `.procoder/config.toml` (edit), `cmd/procoder/main.go` tests
+Steps:
+
+- [ ] Add `.procoder/ask/` directory files to `[release] files` if they exist (they won't by default, but the config should not break if they do)
+- [ ] Create tests for `internal/ask/ask.go`:
 
 - Test `Collect` on repo with known questions
 - Test `Collect` on clean repo (zero questions)
@@ -195,16 +226,20 @@ requires a human decision you cannot make.
 
 **Evidence:** Tests cover all `ask` package functions. `procoder release` validates the repo with `ask` files present.
 
-### 10. Final validation
+## Task 10: Final validation
 
-**Steps:**
-10.1 Run `procoder ask` on procoder's own repo — verify it collects questions (or zero if clean)
-10.2 Run `procoder ask` on a fixture repo with unresolved spec questions — verify they are collected
-10.3 Run `procoder check` after `procoder ask` with answers — verify questions are accepted
-10.4 Run `procoder ask` without TTY — verify file is written and exit code is 1
-10.5 Run `procoder format` on new files
-10.6 Run `procoder lint` — no blocking findings
-10.7 Run `procoder check` — gate must pass
+Files: the whole tree — this task writes nothing of its own and runs the
+repository's own checks over what tasks 1-9 wrote.
+
+Steps:
+
+- [ ] Run `procoder ask` on procoder's own repo — verify it collects questions (or zero if clean)
+- [ ] Run `procoder ask` on a fixture repo with unresolved spec questions — verify they are collected
+- [ ] Run `procoder check` after `procoder ask` with answers — the answered spec questions no longer block `spec check` (D-5), while an unanswered one still does
+- [ ] Run `procoder ask` without TTY — verify file is written and exit code is 1
+- [ ] Run `procoder format` on new files
+- [ ] Run `procoder lint` — no blocking findings
+- [ ] Run `procoder check` — gate must pass
 
 **Evidence:** `procoder check`, `procoder test`, `procoder lint` all pass.
 
@@ -219,10 +254,10 @@ requires a human decision you cannot make.
 
 ## Risk Assessment
 
-| Risk                                                               | Impact                                                 | Mitigation                                                                                                                           |
-| ------------------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Questions become too noisy (every lint finding creates a question) | Blocks Task 2 — users will ignore the feature          | Start conservative: only collect questions that truly need human judgment (spec, docs obligation, security flags); skip trivial lint |
-| Interactive prompt blocks the AI coder's session                   | Blocks Task 3 — the coder hangs waiting for user input | Design the TTY check carefully: only prompt when a terminal is truly available; otherwise fall back to file                          |
-| Adding Q&A to every hook output bloats the context                 | Blocks Task 6 — context window pressure                | Only add Q&A section when there are ACTUAL questions (not every hook run); keep it brief                                             |
-| Answers file becomes stale across sessions                         | Blocks Task 4 — stale answers lead to wrong decisions  | Clear answers on each `procoder ask` run; the file is ephemeral per session                                                          |
-| Spec OPEN: parsing is fragile                                      | Blocks Task 2 — wrong questions collected              | Use the existing `openRe` regex from `internal/spec/spec.go`; reuse the same parser                                                  |
+| Risk                                                               | Impact                                                 | Mitigation                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Questions become too noisy (every lint finding creates a question) | Blocks Task 2 — users will ignore the feature          | Start conservative: only collect questions that truly need human judgment (spec, docs obligation, security flags); skip trivial lint                                                                                                                                    |
+| Interactive prompt blocks the AI coder's session                   | Blocks Task 3 — the coder hangs waiting for user input | Design the TTY check carefully: only prompt when a terminal is truly available; otherwise fall back to file                                                                                                                                                             |
+| Adding Q&A to every hook output bloats the context                 | Blocks Task 6 — context window pressure                | Only add Q&A section when there are ACTUAL questions (not every hook run); keep it brief                                                                                                                                                                                |
+| Answers file becomes stale across sessions                         | Blocks Task 4 — stale answers lead to wrong decisions  | Key each answer to a fingerprint of its question text: an unchanged question is never re-asked, a changed one is asked again, and a stale answer counts for nothing (D-2). Clearing on every run was the earlier plan and would re-ask everything at each session start |
+| Spec OPEN: parsing is fragile                                      | Blocks Task 2 — wrong questions collected              | Use the existing `openRe` regex from `internal/spec/spec.go`; reuse the same parser                                                                                                                                                                                     |
