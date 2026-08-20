@@ -11,10 +11,10 @@ Current version: **0.32.8**
 
 ```mermaid
 flowchart LR
-    A[agent writes code] --> H[hook fires]
-    H --> B[procoder binary checks]
-    B -->|findings + fixed content| A2[agent reviews and implements]
-    A2 --> A
+    A[agent writes a file] --> H[/"write hook fires<br/>same turn, cannot be skipped"/]
+    H --> B[binary computes findings]
+    B -->|"findings + the fixed content"| R[agent reviews and writes]
+    R --> A
 ```
 
 This site follows the [Divio documentation

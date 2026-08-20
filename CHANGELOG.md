@@ -57,6 +57,19 @@ and every page says which kind it is in its opening sentence.
 - `commands.md`, `configuration.md`, `domains.md` and `portability.md`
   are reference; `architecture.md` and `influences.md` are explanation.
 
+**The diagrams were rebuilt to the brand.** The site had exactly one
+diagram and three ASCII-art blocks, and the shared Mermaid theme was
+still the old teal. There are now five, all Mermaid, all on the brand
+palette in both light and dark: the write-hook loop on the overview, the
+quality chain with its refusal loops, the three-layer architecture, the
+ship-a-change sequence, and the onboarding triage order.
+
+Colour comes from the theme and meaning comes from shape — rounded for a
+start or end, rectangle for a step, diamond for something that decides.
+Hard-coded fills were tried first and rejected: they cannot follow a
+reader who switches to dark mode. The rules file now says so, along with
+the rest of what makes a diagram worth having.
+
 **A gate gap surfaced while writing the tutorial.** `procoder check`
 blocked on the tutorial's own conflict-marker example, and every
 workaround was bad: mangle the sample so a reader who copies it gets

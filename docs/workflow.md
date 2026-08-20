@@ -7,6 +7,20 @@ skills drive each step; the team rules live in
 Assumes Procoder is installed and the repository is onboarded. New here?
 Start with the [tutorial](getting-started.md).
 
+```mermaid
+flowchart TD
+    S[1 spec] --> P[2 plan] --> T[3 track] --> B[4 branch and build]
+    B --> TE[5 test] --> G{6 check} --> PR[7 PR]
+    PR --> RV[8 answer every review thread] --> M[9 merge]
+    M --> SP{10 close the sprint} --> REL{11 release}
+    G -->|"any blocking finding"| B
+    SP -->|"story unfinished or without evidence"| B
+    REL -->|"version · changelog · tree · gate · suite"| B
+```
+
+Dotted arrows are refusals: the step that sends you back, and what it
+checks before it does.
+
 ## 1. Write the spec
 
 ```

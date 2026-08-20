@@ -36,6 +36,14 @@ diff. Read the whole scorecard before changing anything.
 Work the scorecard top-down, one theme per commit, gate-clean after
 each:
 
+```mermaid
+flowchart LR
+    A[1 secrets] --> B[2 other blocking] --> C[3 judged findings]
+    A --- A1[/"remove AND rotate<br/>false positive? mark it with a reason"/]
+    B --- B1[/"unformatted · conflict markers<br/>staged junk · template drift"/]
+    C --- C1[/"lint · complexity · docs gaps<br/>record why you left the rest"/]
+```
+
 1. **Secrets.** Every one needs removal **and** rotation. Check for a
    false positive first — a pinned SHA, a test fixture — and mark those
    with `gitleaks:allow` or `.gitleaksignore`, with a reason.

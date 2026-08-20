@@ -17,18 +17,30 @@ writes; a controller in the binary judges. The chain runs
 spec → plan → backlog → gate → lessons, and every link refuses to
 advance until the work is actually complete.
 
-```
-idea ──► SPEC ──► PLAN ──► BACKLOG ──► GATE ──► merged
-         │        │        │           │          │
-     spec check  plan    story/epic/  check    lessons: anything
-     blocks on   check   sprint       blocks   that escaped becomes
-     gaps and    blocks  closes       on any   an adaptation that
-     OPEN:       hollow  refuse sans  finding  closes its class
-     questions   tasks   evidence
+Each box is a stage; each diamond is a controller that can say no. The
+loops back are the point — nothing advances by being asserted done.
 
-     (todo runs beside the chain: the standalone list for
-      work not born from a spec, with the same closing rigor)
+```mermaid
+flowchart TD
+    IDEA([idea]) --> SPEC[spec]
+    SPEC --> SC{spec check}
+    SC -->|"gaps · OPEN: questions<br/>untestable criteria"| SPEC
+    SC -->|complete| PLAN[plan]
+    PLAN --> PC{plan check}
+    PC -->|"placeholders<br/>tasks with no files"| PLAN
+    PC -->|ready| WORK[story or task]
+    WORK --> CC{close controller}
+    CC -->|"no evidence<br/>criteria unchecked"| WORK
+    CC -->|closed| GATE{procoder check}
+    GATE -->|"any blocking finding<br/>unchecked counts as failing"| WORK
+    GATE -->|clean| MERGED([merged])
+    MERGED --> LESSONS[/"what escaped becomes<br/>an adaptation"/]
+    LESSONS --> GATE
 ```
+
+The `todo` list runs beside the chain rather than inside it: the
+standalone tracker for work not born from a spec, with the same closing
+rigor.
 
 ## Why the thinking comes first
 
