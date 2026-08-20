@@ -48,7 +48,11 @@ A few repo-specific rules:
   stamped with the release version and rebuilt by the maintainer at release
   time; a PR that touches them will be asked to drop those changes.
 - **Don't bump versions.** The version lives in several manifests at once
-  and moves only in release commits.
+  and moves only in release commits. The pinned tool versions in
+  `.github/tool-versions.env` are the same rule with a different owner: a
+  weekly workflow opens one PR per tool that is behind, so a hand-written
+  bump collides with it. Report a tool that needs upgrading sooner rather
+  than editing that file.
 - **Changelog entries ride releases**, not PRs — describe the change well in
   the PR body and it will be told in `CHANGELOG.md` when it ships.
 - **Every non-trivial change leaves a test behind** — the smallest thing
