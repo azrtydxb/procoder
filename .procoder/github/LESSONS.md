@@ -255,3 +255,25 @@ does. `procoder lessons` flags entries with no adaptation.
   because capture was re-capturing its own issues — pinned by
   TestOurOwnIssuesAreNeverCapturedAgain
 
+## 2026-08-21 PR#82 (Copilot) — an inline code span opened and never closed
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: docs.UnclosedSpans counts backticks per PARAGRAPH (not per
+  line — CommonMark lets a span wrap, and per-line counting flagged 46
+  correct spans in this tree) and reports a paragraph that opens one and
+  never closes it, wired into docs.CheckFile and pinned by
+  TestAnUnclosedSpanIsReported plus three false-positive guards. The
+  REVIEW.md line "code spans unbroken" already existed and the pre-PR
+  review applied it — the eye reads the intent and skips the missing
+  character, so the rule needed counting rather than better wording.
+
+## 2026-08-21 PR#82 (Copilot) — a hyphenated compound split across a line break in instruction text
+
+- Class: taste
+- Missed by: rubric
+- Adaptation: reworded rather than rewrapped, and covered by the same
+  paragraph-level reading the span check now applies; in agent-executed
+  instruction text a stray hyphen is a plausible token rather than an
+  obvious typo, which is why it survived a human-shaped review
+

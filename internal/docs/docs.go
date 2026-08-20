@@ -159,6 +159,7 @@ var mdLink = regexp.MustCompile(`!?\[[^\]]*\]\(([^)\s]+)[^)]*\)`)
 func CheckFile(root, file string) []gitx.Finding {
 	out := RelativeRefs(root, file)
 	out = append(out, MermaidBlocks(root, file)...)
+	out = append(out, UnclosedSpans(root, file)...)
 	return out
 }
 
