@@ -1,11 +1,14 @@
 {
   "name": "procoder",
-  "owner": { "name": "Pascal Watteel" },
+  "owner": {
+    "name": "Pascal Watteel"
+  },
   "plugins": [
     {
       "name": "procoder",
       "source": "./",
-      "description": "Six-rung ship gate: SAFE, TRUE, OBVIOUS, ALONE, FAST, MEANT."
+      "description": "A harness that gives AI coders the tools and skills to work like a senior developer",
+      "homepage": "https://procoder.azrty.com/"
     }
   ]
 }
