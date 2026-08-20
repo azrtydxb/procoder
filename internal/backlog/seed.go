@@ -32,6 +32,14 @@ func fingerprint(b []byte) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
+// recordedFingerprint matches what fingerprint produces: twelve lowercase hex
+// characters. An epic whose Spec: line carries anything else never had a
+// fingerprint recorded — the binary prints the epic and the agent writes it,
+// so a placeholder can be transcribed in place of the digest — and that is a
+// different fact from a spec that changed. Reporting it as drift sends the
+// reader to compare a spec against a seeding that never happened.
+var recordedFingerprint = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
 // Seed decomposes a COMPLETE spec into one epic plus one story per
 // acceptance criterion, everything printed for the agent to review and
 // write — the binary creates no files (P-CONTROL). The epic slug is the
