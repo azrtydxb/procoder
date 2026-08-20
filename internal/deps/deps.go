@@ -56,9 +56,9 @@ func Run(root string, out func(string)) int {
 
 	errored := false
 	var behind, majors, ecosystems int
-	count := func(rows []row) {
+	count := func(rows []row) int {
 		if len(rows) == 0 {
-			return
+			return 0
 		}
 		ecosystems++
 		behind += len(rows)
@@ -67,30 +67,37 @@ func Run(root string, out func(string)) int {
 				majors++
 			}
 		}
+		return len(rows)
 	}
 
+	found := map[string]int{}
 	if goMod {
 		rows, failed := checkGo(root, out)
 		errored = errored || failed
-		count(rows)
+		found["go"] = count(rows)
 	}
 	if pkgJSON {
 		rows, failed := checkJS(root, out)
 		errored = errored || failed
-		count(rows)
+		found["js"] = count(rows)
 	}
 	if cargoToml {
 		rows, failed := checkRust(root, out)
 		errored = errored || failed
-		count(rows)
+		found["rust"] = count(rows)
 	}
 	if pyProject {
 		rows, failed := checkPython(root, out)
 		errored = errored || failed
-		count(rows)
+		found["python"] = count(rows)
 	}
 
-	reportLicenses(root, out, goMod, pkgJSON, cargoToml, pyProject)
+	reportLicenses(root, out, []ecosystem{
+		{"go", goMod, found["go"]},
+		{"js", pkgJSON, found["js"]},
+		{"rust", cargoToml, found["rust"]},
+		{"python", pyProject, found["python"]},
+	})
 
 	out(fmt.Sprintf("%d dependency(ies) behind across %d ecosystem(s), %d major(s)", behind, ecosystems, majors))
 	if errored {
@@ -278,22 +285,171 @@ func pipBinary(root string) string {
 	return ""
 }
 
+// ecosystem is one detected manifest and what the freshness pass found
+// in it: behind is the number of outdated dependencies its native tool
+// reported, which is direct evidence that dependencies exist.
+type ecosystem struct {
+	name   string
+	on     bool
+	behind int
+}
+
 // reportLicenses answers with honest scope: Go via go-licenses when
 // installed (doctor recommends it, procoder never requires it); every
 // other ecosystem has no canonical no-install tool and says so —
 // never a fake all-clear.
-func reportLicenses(root string, out func(string), goMod, pkgJSON, cargoToml, pyProject bool) {
-	if goMod {
-		reportGoLicenses(root, out)
+//
+// NOT checked is reserved for a license surface that exists and was not
+// read. A repository whose manifest declares no third-party dependencies
+// has no surface at all, and saying "NOT checked" there trains the reader
+// to skim the line in the repositories where it means something.
+func reportLicenses(root string, out func(string), ecosystems []ecosystem) {
+	for _, e := range ecosystems {
+		if !e.on {
+			continue
+		}
+		// a dependency the native tool reports as behind is a dependency,
+		// whatever procoder made of the manifest text
+		if has, known := hasDeps(root, e.name); known && !has && e.behind == 0 {
+			out("licenses (" + e.name + "): no dependencies to report")
+			continue
+		}
+		if e.name == "go" {
+			reportGoLicenses(root, out)
+			continue
+		}
+		out("licenses (" + e.name + "): NOT checked — no canonical no-install tool")
 	}
-	for _, e := range []struct {
-		name string
-		on   bool
-	}{{"js", pkgJSON}, {"rust", cargoToml}, {"python", pyProject}} {
-		if e.on {
-			out("licenses (" + e.name + "): NOT checked — no canonical no-install tool")
+}
+
+// hasDeps answers whether an ecosystem's manifest declares any
+// third-party dependency. The second return is whether procoder could
+// tell at all: a manifest it cannot read, or a packaging style it does
+// not parse, answers false — and the caller keeps saying NOT checked,
+// because guessing "none" from unread text is the failure this whole
+// distinction exists to prevent.
+func hasDeps(root, eco string) (has, known bool) {
+	switch eco {
+	case "go":
+		return hasGoDeps(root)
+	case "js":
+		return hasJSDeps(root)
+	case "rust":
+		return hasTOMLDeps(root, "Cargo.toml", isCargoDepSection)
+	case "python":
+		return hasPythonDeps(root)
+	}
+	return false, false
+}
+
+// hasGoDeps reads go.mod's require directives, single-line and block
+// form alike. An indirect requirement still ships a license.
+func hasGoDeps(root string) (bool, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false, false
+	}
+	inBlock := false
+	for _, l := range strings.Split(string(raw), "\n") {
+		t := strings.TrimSpace(l)
+		if i := strings.Index(t, "//"); i >= 0 {
+			t = strings.TrimSpace(t[:i])
+		}
+		switch {
+		case t == "require (":
+			inBlock = true
+		case inBlock && t == ")":
+			inBlock = false
+		case inBlock && t != "":
+			return true, true
+		case strings.HasPrefix(t, "require ") && strings.TrimSpace(t[len("require "):]) != "":
+			return true, true
 		}
 	}
+	return false, true
+}
+
+// hasJSDeps reads package.json. Dev and peer dependencies count: they
+// are third-party code with licenses, whoever installs them.
+func hasJSDeps(root string) (bool, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		return false, false
+	}
+	var manifest struct {
+		Deps     map[string]string `json:"dependencies"`
+		Dev      map[string]string `json:"devDependencies"`
+		Peer     map[string]string `json:"peerDependencies"`
+		Optional map[string]string `json:"optionalDependencies"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return false, false
+	}
+	return len(manifest.Deps)+len(manifest.Dev)+len(manifest.Peer)+len(manifest.Optional) > 0, true
+}
+
+// hasPythonDeps only answers for a pyproject-only repository. The other
+// packaging styles — requirements.txt, Pipfile, a setup.py computing its
+// install_requires at runtime — cannot be read off the text with any
+// confidence, so procoder declines to answer rather than guess "none".
+func hasPythonDeps(root string) (bool, bool) {
+	for _, name := range []string{"requirements.txt", "Pipfile", "setup.py", "setup.cfg"} {
+		if exists(root, name) {
+			return false, false
+		}
+	}
+	return hasTOMLDeps(root, "pyproject.toml", isPythonDepSection)
+}
+
+func isCargoDepSection(header string) bool {
+	// [dependencies], [dev-dependencies], [build-dependencies], and the
+	// per-target tables [target.'cfg(unix)'.dependencies]
+	return strings.HasSuffix(header, "dependencies")
+}
+
+func isPythonDepSection(header string) bool {
+	return header == "project" || header == "project.optional-dependencies" ||
+		strings.HasPrefix(header, "tool.poetry") && strings.HasSuffix(header, "dependencies")
+}
+
+// hasTOMLDeps scans a TOML manifest for a dependency table with at least
+// one entry. It is a line scanner, not a parser: a `key = value` line
+// inside a dependency section, or a non-empty inline array assigned to a
+// `dependencies` key, is a dependency. A file it cannot open answers
+// unknown.
+func hasTOMLDeps(root, name string, isDepSection func(string) bool) (bool, bool) {
+	raw, err := os.ReadFile(filepath.Join(root, name))
+	if err != nil {
+		return false, false
+	}
+	section := ""
+	for _, l := range strings.Split(string(raw), "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]") {
+			section = strings.Trim(t, "[]")
+			continue
+		}
+		key, value, ok := strings.Cut(t, "=")
+		if !ok {
+			continue
+		}
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		// a `dependencies = [...]` array lives under [project], whose other
+		// keys (name, version, readme) are not dependencies
+		if strings.HasSuffix(key, "dependencies") {
+			if value != "[]" && value != "" {
+				return true, true
+			}
+			continue
+		}
+		if isDepSection(section) && section != "project" {
+			return true, true
+		}
+	}
+	return false, true
 }
 
 func reportGoLicenses(root string, out func(string)) {

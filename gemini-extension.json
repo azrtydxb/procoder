@@ -1,6 +1,6 @@
 {
   "name": "procoder",
-  "version": "0.32.4",
+  "version": "0.32.5",
   "description": "A harness that gives AI coders the tools and skills to work like a senior developer",
   "contextFileName": "AGENTS.md"
 }

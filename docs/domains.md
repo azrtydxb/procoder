@@ -88,6 +88,15 @@ same judgment — report-only, never blocking:
 | Licenses                     | go-licenses                                                            | **Go only** — every other ecosystem answers NOT checked     |
 | An optional tool missing     | —                                                                      | information, not failure; a tool that errored is a failure  |
 
+NOT checked is reserved for a license surface that exists and was not
+read. A repository whose manifest declares no third-party dependencies
+has nothing to check, and says so — otherwise the reader learns to skim
+the line in the repositories where it means something. Where procoder
+cannot tell (a manifest it cannot parse, or a Python project whose
+dependencies live in `requirements.txt`, a `Pipfile`, or a `setup.py`
+that computes them at runtime) it says NOT checked rather than guess
+"none".
+
 Nothing here decides for you: a major version behind is a fact, whether
 to take it is a judgment with context procoder does not have.
 
