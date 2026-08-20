@@ -128,7 +128,10 @@ jobs:
           # a release with empty notes is worse than a failed job: it looks
           # finished. procoder release already refuses to tag without the
           # entry, so its absence here means something went wrong.
-          if [ ! -s /tmp/notes.md ]; then
+          #
+          # Test for content, not for size: a section of blank lines is a
+          # non-empty file and would publish notes that say nothing.
+          if ! grep -q '[^[:space:]]' /tmp/notes.md; then
             echo "no CHANGELOG.md entry for $version — refusing to publish empty release notes" >&2
             exit 1
           fi

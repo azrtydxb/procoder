@@ -202,3 +202,14 @@ does. `procoder lessons` flags entries with no adaptation.
   `display` rule kept the table header on screen. An assertion about the
   DOM is not an assertion about the render
 
+## 2026-08-20 PR#52 (Copilot) — an empty-notes guard tested file size, not content
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "guards test the property they claim
+  to test". The release job refused notes with `[ ! -s ]`, which is size
+  — a changelog section of blank lines is a non-empty file and would
+  have published a Release saying nothing, which is exactly what the
+  guard and the comment beside it promised to prevent. Now
+  `grep -q '[^[:space:]]'`, proved both ways before pushing
+
