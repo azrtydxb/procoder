@@ -33,22 +33,26 @@ jobs:
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder
-      - name: dist binary matches the manifest version
-        # the committed release binaries are hand-built; a version bump
-        # that forgot the rebuild must fail here, not ship stale
+      - name: the committed binaries rebuild from this source
+        # The version-string check this replaces proved a binary printed the
+        # expected string. It did not prove the binary came from this tree —
+        # and the plugin auto-executes these on every session start, every
+        # Bash call and every Write. Rebuilding and comparing digests is the
+        # difference between trusting the committer and checking.
+        #
+        # Linux only: one cross-compiling host covers all five targets, and
+        # running it on three would compare the same bytes three times.
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          case "$RUNNER_OS-$RUNNER_ARCH" in
-            Linux-X64)   bin=dist/linux-amd64/procoder;;
-            Linux-ARM64) bin=dist/linux-arm64/procoder;;
-            macOS-ARM64) bin=dist/darwin-arm64/procoder;;
-            macOS-X64)   bin=dist/darwin-amd64/procoder;;
-            Windows-X64) bin=dist/windows-amd64/procoder.exe;;
-            *) echo "no dist binary for $RUNNER_OS-$RUNNER_ARCH"; exit 0;;
-          esac
-          want=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
-          got=$(./$bin version)
-          test "$got" = "$want" || { echo "dist $bin says $got, manifest says $want — rebuild dist"; exit 1; }
+          before=$(cat dist/SHA256SUMS)
+          ./scripts/build-dist.sh >/dev/null
+          if ! diff <(echo "$before") dist/SHA256SUMS; then
+            echo "dist/ does not rebuild from this source — run scripts/build-dist.sh and commit the result" >&2
+            git --no-pager diff --stat dist/ >&2
+            exit 1
+          fi
+          echo "all five binaries rebuild byte-for-byte from this tree"
 
   gate:
     # procoder's own gate over its own tree: the dogfood job. Formatting

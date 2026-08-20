@@ -2,6 +2,52 @@
 
 Every release, in words a user can read. Newest first.
 
+## 1.1.0 — 2026-08-21
+
+**procoder now knows when it is out of date, and verifies what it
+installs.** `procoder version --check` asks GitHub what the newest
+release is; `procoder self-upgrade` installs it, but only after an
+explicit yes on a terminal, only after the download matches the
+`SHA256SUMS` the release publishes, and never over a binary a package
+manager owns — that one is refused with the manager's own upgrade
+command. A check that could not run reports NOT known and exits 2,
+because an unanswered check has never meant "you are current". At a
+session start the check runs alongside the payload, capped at one
+second, so a slow network cannot hold a session open.
+
+**Windows works.** Claude Code runs hooks through Git Bash, where
+`uname -s` answers `MINGW64_NT-…`; the launcher recognised only Darwin
+and Linux and exited 1, so every hook and every slash command failed on
+a fresh install while `procoder.exe` sat there unreachable. Fixed by
+this project's first outside contributor, and now exercised on a real
+Windows runner in CI.
+
+**`procoder copilot-leak`** collects what GitHub Copilot's auto-review
+found, strips every trace of your code from it, and — only if you say
+yes — files it as issues and records it as unlearned until somebody
+writes the adaptation that closes the class.
+
+**The backlog stops overstating itself.** The board names the branch it
+read and counts the open stories the default branch holds that this
+checkout cannot see. A spec's fingerprint tracks its acceptance
+criteria rather than its prose, so rewrapping a paragraph no longer
+reads as drift. A spec with undecided questions is no longer reported
+COMPLETE whatever those questions are called, and the dead-code tier
+separates surface referenced only by its own tests from live code.
+
+**The gate is faster and no longer drifts.** Every tool it installs is
+pinned in `.github/tool-versions.env` and cached, and the three that
+publish binaries are downloaded rather than compiled: 5m47s to 3m06s.
+Tool versions can no longer change the gate's verdict between two runs
+of the same commit, and the Go toolchain is pinned for the same reason.
+
+**`dist/` is reproducible.** `scripts/build-dist.sh` records the
+procedure that used to live in a shell history, stamps the version from
+the manifest, and builds with `-buildvcs=false` so two builds of one
+tree produce identical bytes. CI rebuilds the committed binaries and
+compares digests, so a stale `dist/` fails before a tag rather than
+after one.
+
 ## 1.0.2 — 2026-08-20
 
 **Kilo Code is a first-class host, and the gate goes with it.** Kilo's

@@ -7,8 +7,13 @@
 default_branch_policy = "report"
 
 # Files larger than this (MB) block the gate — large artifacts belong in
-# releases or LFS, not in history.
-max_file_mb = 5
+# releases or LFS, not in history. Raised from the default 5 because this
+# repository IS a binary distribution: the plugin execs dist/<platform>/
+# procoder on every session start, so those five files are the product,
+# not an artifact somebody forgot to gitignore. They crossed 5 MB when the
+# copilot-leak and self-update packages landed. The rule still holds for
+# everything else, which is why this is a number and not an exemption.
+max_file_mb = 10
 
 [test]
 # The suite verdict joins the close controllers: todo close and
