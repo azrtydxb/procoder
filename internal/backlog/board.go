@@ -207,6 +207,9 @@ func driftFlag(root string, e Item) string {
 	if err != nil {
 		return "  ⚠ spec missing"
 	}
+	if !recordedFingerprint.MatchString(e.SpecPrint) {
+		return "  ⚠ spec not seeded"
+	}
 	if fingerprint(raw) != e.SpecPrint {
 		return "  ⚠ spec drift"
 	}

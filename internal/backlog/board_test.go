@@ -117,3 +117,26 @@ func TestListOrdersOpenBeforeDone(t *testing.T) {
 		t.Fatalf("done item must trail, status verbatim: %q", (*lines)[1])
 	}
 }
+
+// An epic whose Spec: line carries something no fingerprint could produce was
+// never seeded from that spec — the binary prints the epic and the agent
+// writes it, so a placeholder can land where the digest belongs. That is a
+// different fact from a spec that changed, and reporting it as drift sends
+// the reader to compare a spec against a seeding that never happened.
+// proved by: compared the digest without checking its shape — a hand-written
+// `@ 0` then reads as drift, permanently, and no re-seeding can clear it.
+func TestAnEpicThatWasNeverSeededSaysSoInsteadOfClaimingDrift(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, "auth", "# auth\n\nthe spec\n")
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open 2026-08-20\nSpec: auth @ 0\n")
+
+	var lines []string
+	Board(root, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "⚠ spec not seeded") {
+		t.Errorf("a fingerprint that was never recorded must say so: %s", joined)
+	}
+	if strings.Contains(joined, "⚠ spec drift") {
+		t.Errorf("nothing drifted — there was never a seeding to drift from: %s", joined)
+	}
+}
