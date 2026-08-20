@@ -1,0 +1,53 @@
+name: Copilot leak
+description: A Copilot auto-review found a defect our gates let through. Captured sanitised, so the class can be closed rather than the instance patched.
+labels: [auto-copilot, copilot-leak]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `procoder copilot-leak` fills this in from a sanitised finding. Filing
+        it by hand is fine too — but nothing here may carry the reviewed code,
+        a secret, or a diff. What escapes is metadata about the failure.
+  - type: textarea
+    id: finding
+    attributes:
+      label: What escaped our gates
+      description: The sanitised finding. No source, no secrets, no diffs — describe the defect, do not reproduce the code.
+    validations:
+      required: true
+  - type: input
+    id: position
+    attributes:
+      label: File and line
+      description: Where the defect was, relative to the repository root.
+      placeholder: "internal/store/db.go:42"
+    validations:
+      required: false
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What Copilot suggested
+      description: The fix or action proposed, in its own words.
+    validations:
+      required: false
+  - type: dropdown
+    id: layer
+    attributes:
+      label: What should have caught this
+      description: The layer that was supposed to stop it. "Nothing" is an honest answer and the most interesting one.
+      options:
+        - linter
+        - rubric
+        - controller
+        - test
+        - ci
+        - nothing
+    validations:
+      required: true
+  - type: textarea
+    id: adaptation
+    attributes:
+      label: Adaptation
+      description: The concrete change that catches this class from now on. Leave it empty and the ledger reads UNLEARNED until it is written — which is the point.
+    validations:
+      required: false

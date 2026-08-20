@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"procoder/internal/actions"
 	"procoder/internal/adr"
@@ -21,6 +23,7 @@ import (
 	"procoder/internal/ciops"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
+	"procoder/internal/copilot"
 	"procoder/internal/debt"
 	"procoder/internal/deps"
 	"procoder/internal/docs"
@@ -246,6 +249,12 @@ const usage = `usage: procoder <command> [args]
                        Kubernetes manifests (kubeconform), Helm charts
   init [--yes]         print the install commands for the missing formatters;
                        --yes runs them and re-checks that every tool answers
+  copilot-leak [--since <dur>] [--quiet]
+                       what Copilot's auto-review found that our gates did
+                       not: sanitised of every trace of your code, then —
+                       only if you say yes — filed as issues and recorded in
+                       .procoder/github/COPILOT-LEAKS.md as unlearned; asks
+                       nothing when there is no terminal to ask
   lessons              the self-learning ledger (.procoder/github/LESSONS.md):
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
@@ -517,6 +526,8 @@ func run(args []string) int {
 		return debt.Run(doctor.Root(), printLine)
 	case "lessons":
 		return lessons.Run(doctor.Root(), printLine)
+	case "copilot-leak":
+		return copilotLeakCmd(args[1:])
 	case "agents":
 		return portability.Agents(doctor.Root(), printLine)
 	case "principles":
@@ -623,6 +634,77 @@ func testCmd(args []string) int {
 		}
 	}
 	return testrun.Report(testrun.Run(doctor.Root(), paths, coverage, name), printLine)
+}
+
+// copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit
+// codes follow the spec's own Exit 2 line — declining, or having nobody to
+// ask, is a reporting exit rather than an error, and so is a check that could
+// not run. Only a real answer exits 0.
+func copilotLeakCmd(args []string) int {
+	since := 24 * time.Hour
+	quiet := false
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--quiet":
+			quiet = true
+		case args[i] == "--since" && i+1 < len(args):
+			d, ok := parseWindow(args[i+1])
+			if !ok {
+				printLine("copilot-leak: --since wants a duration like 6h, 90m, or 2d — got " + args[i+1])
+				return 2
+			}
+			since, i = d, i+1
+		default:
+			printLine("copilot-leak: unknown argument " + args[i])
+			return 2
+		}
+	}
+	root := doctor.Root()
+	finds, ok := copilot.Find(root, since, printLine)
+	if !ok {
+		return 2 // Find has already said what it could not check
+	}
+	if len(finds) == 0 {
+		printLine("copilot-leak: no findings since " + since.String())
+		return 0
+	}
+	// Sanitising before the count is printed, not after the answer: nothing
+	// the user is shown has been through anything less than the filter that
+	// protects the code itself.
+	var safe []copilot.Sanitised
+	for _, f := range finds {
+		safe = append(safe, copilot.Sanitise(f, root))
+	}
+	if quiet {
+		printLine(fmt.Sprintf("copilot-leak: %d finding(s) since %s — run without --quiet to capture them", len(safe), since))
+		return 0
+	}
+	if !copilot.Prompt(os.Stdin, printLine, len(safe), since) {
+		return 2
+	}
+	issues, entries, notes := copilot.Capture(safe, root)
+	for _, n := range notes {
+		printLine(n)
+	}
+	printLine(fmt.Sprintf("copilot-leak: %d issue(s) created, %d entry(ies) recorded in %s — each unlearned until you write its adaptation",
+		issues, entries, lessons.CopilotLeaksPath))
+	return 0
+}
+
+// parseWindow accepts what time.ParseDuration accepts, plus the plain day
+// suffix the interface advertises — Go rejects "2d" and a user who typed it
+// deserves the window they asked for rather than a lecture.
+func parseWindow(v string) (time.Duration, bool) {
+	if days, ok := strings.CutSuffix(v, "d"); ok {
+		if n, err := strconv.Atoi(days); err == nil && n >= 0 {
+			return time.Duration(n) * 24 * time.Hour, true
+		}
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, false
+	}
+	return d, true
 }
 
 func indexCmd(args []string) int {
