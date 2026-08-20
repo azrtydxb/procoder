@@ -1,6 +1,6 @@
 # Procoder self-update — version check, warning, and upgrade
 
-Status: open 2026-08-20
+Status: done 2026-08-20
 Created: 2026-08-20
 
 ## Goal
