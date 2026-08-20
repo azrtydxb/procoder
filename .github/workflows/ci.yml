@@ -141,6 +141,9 @@ jobs:
           # gh takes an asset's NAME from the file name; `path#text` sets only
           # its display label. Five files all called `procoder` therefore
           # upload as five assets called `procoder`, and the second one fails.
+          # cleared, not just created: a reused workspace could leave files
+          # behind and the count would then pass or fail for the wrong reason
+          rm -rf /tmp/assets
           mkdir -p /tmp/assets
           cp dist/darwin-arm64/procoder      /tmp/assets/procoder-darwin-arm64
           cp dist/darwin-amd64/procoder      /tmp/assets/procoder-darwin-amd64

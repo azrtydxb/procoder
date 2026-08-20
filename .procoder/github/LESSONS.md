@@ -222,7 +222,7 @@ does. `procoder lessons` flags entries with no adaptation.
   renaming the asset; it sets the display label, so all five binaries
   uploaded as `procoder` and the second collided. The binaries are staged
   under distinct names now, with a guard that counts them and refuses at
-  four. The deeper miss is what was verified: the awk extraction was run
+  anything other than five. The deeper miss is what was verified: the awk extraction was run
   against the real changelog, the upload was assumed — the part that
-  could not be tested locally is the part that broke
+  could not be tested locally is the part that broke.
 
