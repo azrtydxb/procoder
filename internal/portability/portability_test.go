@@ -253,3 +253,62 @@ func TestHostDetection(t *testing.T) {
 		t.Errorf("qoder: want qoder, got %s", got)
 	}
 }
+
+// The Kilo command set is the OpenCode twin set: Kilo's CLI is an OpenCode
+// fork and reads the same command markdown, so the two directories hold the
+// same files and no orphan survives a command being renamed or removed.
+// proved by: deleted one .kilo/commands file — the parity check names it.
+func TestKiloCommandParity(t *testing.T) {
+	root := repoRoot(t)
+	sources, err := os.ReadDir(filepath.Join(root, ".opencode/command"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{}
+	for _, e := range sources {
+		if !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		want[e.Name()] = true
+		src, err := os.ReadFile(filepath.Join(root, ".opencode/command", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		twin, err := os.ReadFile(filepath.Join(root, ".kilo/commands", e.Name()))
+		if err != nil {
+			t.Errorf("command %s has no .kilo/commands twin — regenerate", e.Name())
+			continue
+		}
+		if normalize(string(twin)) != normalize(string(src)) {
+			t.Errorf(".kilo/commands/%s differs from the OpenCode twin — regenerate", e.Name())
+		}
+	}
+	twins, err := os.ReadDir(filepath.Join(root, ".kilo/commands"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range twins {
+		if strings.HasSuffix(e.Name(), ".md") && !want[e.Name()] {
+			t.Errorf(".kilo/commands/%s has no OpenCode source — stale twin", e.Name())
+		}
+	}
+}
+
+// One plugin source serves both hosts, byte for byte. They differ only in
+// the extension each host scans for, and a fix applied to one that misses
+// the other is precisely the drift this pins.
+// proved by: appended a line to one copy — the check names the pair.
+func TestPluginTwinIsIdentical(t *testing.T) {
+	root := repoRoot(t)
+	a, err := os.ReadFile(filepath.Join(root, ".opencode/plugins/procoder.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, ".kilo/plugin/procoder.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalize(string(a)) != normalize(string(b)) {
+		t.Error(".kilo/plugin/procoder.js is not the .opencode/plugins/procoder.mjs source — copy it across")
+	}
+}

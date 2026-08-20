@@ -1,0 +1,14 @@
+---
+description: Report which formatters this repository needs, which are installed, and how to install the rest.
+---
+
+The user invoked /procoder:doctor.
+
+Run:
+
+    procoder doctor
+
+Show the user the result. For every line marked GAP, suggest /procoder:init,
+which installs the missing tools with every command visible. Files of a type whose formatter is missing are reported as
+unchecked by the gate — never as clean — so a GAP is a hole in the gate, not a
+cosmetic issue.
