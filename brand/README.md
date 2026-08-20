@@ -136,7 +136,12 @@ commands get a terminal treatment.
 
 The product name is **Procoder** in prose and **`procoder`** wherever a
 machine reads it — the binary, the package, the plugin id, the commands.
-Avoid `PROCODER`, `Pro Coder`, `Pro-coder`, and `proCoder`.
+Avoid `PROCODER`, `ProCoder`, `Pro Coder`, `Pro-coder`, and `proCoder`.
+
+The spelling comes from the wordmark: the logo reads _Procoder_, so the
+text reads Procoder. The artwork is the authority here, not the prose —
+a name is a picture people recognise before it is a string they parse,
+and text is the cheaper thing to change.
 
 ## Assets
 

@@ -1,6 +1,6 @@
 # The ten domains
 
-procoder organises senior-developer work into ten domains. Each follows
+Procoder organises senior-developer work into ten domains. Each follows
 the same architecture: the binary computes findings, the write hook hands
 them to the agent in the same turn, the gate carries them at commit time,
 a skill packages the workflow, and every rule is repo-overridable
@@ -33,7 +33,7 @@ comments or `.gitleaksignore`, each a reviewed decision — the flow is in
 ## 2. Best practices (lint)
 
 The canonical linter per ecosystem, under the project's own config —
-procoder imposes nothing where the repo has spoken.
+Procoder imposes nothing where the repo has spoken.
 
 | Ecosystem | Tool          | Baseline when the repo has no config                                                                                  |
 | --------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -74,7 +74,7 @@ ceiling and revisit condition; `procoder debt` harvests the ledger and
 flags no-trigger entries as rot.
 
 Complexity is Go and Python only — gocyclo rides golangci and mccabe
-rides ruff, and no other ecosystem has a linter procoder can isolate
+rides ruff, and no other ecosystem has a linter Procoder can isolate
 the metric out of. Length and complexity are reported separately even
 when they land on the same function: golangci keeps only the first
 issue per line by default, and since a long function is usually a
@@ -94,14 +94,14 @@ same judgment — report-only, never blocking:
 NOT checked is reserved for a license surface that exists and was not
 read. A repository whose manifest declares no third-party dependencies
 has nothing to check, and says so — otherwise the reader learns to skim
-the line in the repositories where it means something. Where procoder
+the line in the repositories where it means something. Where Procoder
 cannot tell (a manifest it cannot parse, or a Python project whose
 dependencies live in `requirements.txt`, a `Pipfile`, or a `setup.py`
 that computes them at runtime) it says NOT checked rather than guess
 "none".
 
 Nothing here decides for you: a major version behind is a fact, whether
-to take it is a judgment with context procoder does not have.
+to take it is a judgment with context Procoder does not have.
 
 ## 4. Performance
 
@@ -155,7 +155,7 @@ audit sweep carries those findings.
 
 Every write is checked against the ecosystem's canonical formatter —
 gofmt, ruff format, prettier (JS/TS/JSON/CSS/HTML/Markdown/YAML),
-rustfmt, clang-format (config required — procoder has no style opinion
+rustfmt, clang-format (config required — Procoder has no style opinion
 of its own), shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
 rubocop (Ruby), dart format, and csharpier (C#). Three verdicts, never
 collapsed: **clean**, **unformatted** (the agent receives the formatted
@@ -186,7 +186,7 @@ could run at all.
 
 `--coverage` reports the percentage where the runner measures it
 natively. It is reported and never enforced: a threshold turns coverage
-into a number to farm, and procoder has no opinion worth blocking on
+into a number to farm, and Procoder has no opinion worth blocking on
 about which lines matter.
 
 The suite reaches the rest of the chain through one knob. With
@@ -236,7 +236,7 @@ The finishing discipline — most of it rides the gate:
 | Commit subject shape (≤72, blank line before body); working on the default branch | reports (`[git] default_branch_policy` can block) |
 
 Around the checks, the skills encode the workflow: a worktree per
-feature (a git practice the skills prescribe — procoder creates and
+feature (a git practice the skills prescribe — Procoder creates and
 removes none of them itself), `/procoder:pr` (docs-impact question,
 pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
 polling, every review thread answered, the reflection step for anything
@@ -263,7 +263,7 @@ The language matrix, stated honestly:
 
 - **Broad tier** (find/search/outline/textual refs/impact): everything
   universal-ctags parses — 160+ languages including C/C++/C#, Java,
-  Kotlin, Ruby, Rust, PHP — plus procoder-supplied regex parsers for the
+  Kotlin, Ruby, Rust, PHP — plus Procoder-supplied regex parsers for the
   two it lacks, Swift and Dart (top-level symbols, approximate by
   nature).
 - **Precise tier** (exact refs/impls/callers/graph): where a SCIP
@@ -276,7 +276,7 @@ The language matrix, stated honestly:
   labeled, never passed off as precise.
 - **Rename** (`index rename`): the one write-shaped operation, and it
   still writes nothing — the language's own engine computes the
-  cross-file rename (Go via gopls) and procoder prints it as a unified
+  cross-file rename (Go via gopls) and Procoder prints it as a unified
   diff for the agent to review and apply. A language without an engine
   gets the reference worksheet, not a half-right rewrite.
 

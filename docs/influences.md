@@ -1,15 +1,15 @@
 # Influences
 
-procoder's design draws on ideas proven by two earlier plugins:
+Procoder's design draws on ideas proven by two earlier plugins:
 [superpowers](https://github.com/anthropics/claude-plugins-official) and
 [ponytail](https://github.com/DietrichGebert/ponytail). This page is the
 provenance map — each adopted concept and exactly where it lives in
-procoder — both as credit and as a migration reference for users of the
-originals, which procoder fully replaces.
+Procoder — both as credit and as a migration reference for users of the
+originals, which Procoder fully replaces.
 
 ## From superpowers
 
-| Concept                                                                                                                                                                                  | Where it lives in procoder                                                                                                                                     |
+| Concept                                                                                                                                                                                  | Where it lives in Procoder                                                                                                                                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plans written for an engineer with zero context: Files, exact Interfaces, test-first steps, no placeholders (from its writing-plans skill)                                               | `procoder plan` + `/procoder:plan` — the [quality chain](quality-chain.md)'s middle link, with a controller that blocks what the original only advised against |
 | Classify before designing: spike / bounded / architectural, with a one-way ratchet and an approval gate that never scales down (from brainstorming)                                      | `/procoder:spec`'s opening classification                                                                                                                      |
@@ -21,7 +21,7 @@ originals, which procoder fully replaces.
 
 ## From ponytail
 
-| Concept                                                                                                                                                                                   | Where it lives in procoder                                                                                                                                                         |
+| Concept                                                                                                                                                                                   | Where it lives in Procoder                                                                                                                                                         |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The build ladder — does it need to exist → reuse → stdlib → platform → dependency → one line → minimum code — and "the ladder runs after you understand the problem, never instead of it" | `procoder principles`, the default `AGENTS.md` contract, and `.procoder/PRINCIPLES.md` (repo-overridable, [configuration](configuration.md))                                       |
 | Deliberate corner-cuts carry a marker naming the ceiling and the revisit trigger; a command harvests the ledger and flags trigger-less rot                                                | `procoder debt` and the `debt:` convention (`[debt]` in config.toml) — the [maintainability domain](domains.md)'s sibling discipline                                               |
@@ -33,7 +33,7 @@ originals, which procoder fully replaces.
 ## Deliberately not adopted
 
 Superpowers' subagent-orchestration machinery and branch-finishing flow
-(procoder's own workflow supersedes them) and its visual-companion
+(Procoder's own workflow supersedes them) and its visual-companion
 server; ponytail's benchmark scoreboard and its lite/full/ultra level
 system (a repo-editable principles file replaces modes).
 

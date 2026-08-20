@@ -7,7 +7,7 @@ bug's whole class, and one contract that works across every AI coding
 agent. The agent stays in control; nothing ever touches your code behind
 its back.
 
-Current version: **0.32.6**
+Current version: **0.32.7**
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ flowchart LR
   three contracts (agent in control, unchecked is never clean, the
   repo's files win).
 - **[Influences](influences.md)** — the ideas adopted from the
-  superpowers and ponytail plugins, and where each lives in procoder.
+  superpowers and ponytail plugins, and where each lives in Procoder.
 
 ## The reference
 

@@ -1,6 +1,6 @@
 # Configuration reference
 
-Everything procoder reads from a repository lives under `.procoder/` —
+Everything Procoder reads from a repository lives under `.procoder/` —
 plain files, made to be edited, and always winning over built-in defaults
 (the D-OVERRIDE rule).
 
@@ -74,7 +74,7 @@ that now does (`procoder lessons` flags unlearned entries). Defaults from
 ## `.procoder/PRINCIPLES.md`
 
 The engineering principles injected at session start (see
-`procoder principles`). Absent, procoder's default build philosophy
+`procoder principles`). Absent, Procoder's default build philosophy
 applies; present, the repo's file replaces it wholesale — the override is
 total, not merged.
 
@@ -107,7 +107,7 @@ happens (echoing a secret, silencing a scanner).
 ### `.procoder/github/WORKFLOW.md`
 
 The team workflow the pr/merge skills follow: worktree-first feature work
-(a git practice the skills describe — procoder itself creates and removes
+(a git practice the skills describe — Procoder itself creates and removes
 nothing), the merge-watcher protocol (calibrate, poll per job, fail fast,
 report on change), and post-merge cleanup.
 

@@ -1,6 +1,6 @@
 # The workflow
 
-How work moves from an idea to a tagged release under procoder's
+How work moves from an idea to a tagged release under Procoder's
 discipline. The skills drive it; the rules live in
 `.procoder/github/WORKFLOW.md` and are the repo's to edit.
 
@@ -38,7 +38,7 @@ the done/total.
 
 Branch the work. A worktree per feature is the practice
 `.procoder/github/WORKFLOW.md` prescribes and the pr/merge skills follow
-— it is plain git, and procoder automates none of it: no command creates
+— it is plain git, and Procoder automates none of it: no command creates
 or removes a worktree.
 
 While you write, the PostToolUse hook checks every file in the same turn

@@ -9,7 +9,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.32.6-7C3AED)
+![Version](https://img.shields.io/badge/version-0.32.7-7C3AED)
 ![License](https://img.shields.io/badge/license-Apache--2.0-7C3AED)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-7C3AED)
 
@@ -21,14 +21,14 @@ in control — nothing ever touches your code behind its back.
 /procoder:init          # installs the tools this repository needs
 ```
 
-That's Claude Code; procoder also ships adapters for **every agent** —
+That's Claude Code; Procoder also ships adapters for **every agent** —
 Cursor, Windsurf, Cline, Kilo Code, Roo, Kiro, Codex CLI, Copilot CLI,
 Gemini, OpenCode, and anything that reads `AGENTS.md`. See
 [Every agent](https://azrtydxb.github.io/procoder/portability/).
 
 ## Before / after
 
-Without procoder, "done" is whatever the agent last said. With it, done
+Without Procoder, "done" is whatever the agent last said. With it, done
 has to survive the gate — this is a real run, verbatim, on a demo repo
 with an unformatted file, a conflict marker, and a staged junk file:
 
@@ -104,7 +104,7 @@ red or unverifiable.
 before a tag: the version in sync across every file you list, the
 changelog entry present, the tree clean, the gate clean, the suite
 green. Every failure arrives in one list, and on success the `git tag`
-command is printed for you to run. procoder tags nothing itself.
+command is printed for you to run. Procoder tags nothing itself.
 
 **The ten domains** — security (gitleaks, semgrep, osv-scanner), best
 practices (**lint** with curated baselines), **maintain**ability
@@ -129,7 +129,7 @@ any existing codebase with a triaged scorecard.
 
 ## Configuration
 
-Everything procoder owns lives in `.procoder/` — plain files, made to be
+Everything Procoder owns lives in `.procoder/` — plain files, made to be
 edited, and the repo's version always wins over the built-in default:
 `config.toml` (policies, thresholds), `PRINCIPLES.md`, the github
 templates, the docs/security rules, the review rubric, the lessons
@@ -146,7 +146,7 @@ then [the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
 
 ## Honesty, by design
 
-procoder's reports never overclaim: a file that could not be checked is
+Procoder's reports never overclaim: a file that could not be checked is
 never called clean, a task without fresh verification evidence cannot
 close, and this README is itself held to a completeness check — a
 feature family it stops mentioning blocks the gate. No benchmark

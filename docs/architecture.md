@@ -1,6 +1,6 @@
 # Architecture
 
-How procoder is built, and the three contracts that shape every design
+How Procoder is built, and the three contracts that shape every design
 decision in it.
 
 ## The shape
@@ -39,7 +39,7 @@ Tools compute results and hand them over; **nothing modifies code,
 files, or state behind the agent's back**. The write hook does not
 format your file — it hands the agent the formatted content to review
 and write. `templates`, `agents`, `spec template`, `todo add` all print
-content for the agent to write. The two exceptions are procoder's own
+content for the agent to write. The two exceptions are Procoder's own
 state (`todo close` flips a Status line; the index refreshes itself),
 never your code.
 
@@ -55,23 +55,23 @@ A tool that is missing, times out, or returns unparseable output yields
 clean/unformatted/unchecked (three, never two); a bare `package.json`
 without a lockfile is an explicit unscannable gap; an unreadable rule
 copy is UNREADABLE, not "missing"; the docs report says "offline checks
-only" when it skipped the network. If a procoder report says clean, the
+only" when it skipped the network. If a Procoder report says clean, the
 check ran.
 
 ## Contract 3 — D-OVERRIDE: the repo's files win
 
 Every domain reads its rules from `.procoder/` and the repo's version
 beats the built-in default, wholesale: config policies, principles, docs
-and security rules, review rubric, lessons ledger, templates. procoder
+and security rules, review rubric, lessons ledger, templates. Procoder
 imposes process, not opinions — a repo that wants different thresholds,
 different badges, or entirely different principles writes them down and
 the binary follows.
 
 ## The mirrors-and-drift pattern
 
-Several artifacts must exist in places procoder does not control —
+Several artifacts must exist in places Procoder does not control —
 GitHub reads the PR template only from `.github/`, each agent host reads
-its own rule path, each host manifest carries a version. procoder's
+its own rule path, each host manifest carries a version. Procoder's
 pattern for all of them: **one master, byte-pinned copies, drift blocks
 the gate**. `mirrorSync` (PR template), `portability.Check` (ten agent
 rule files + six manifest versions), `VersionSync` (README, site index,

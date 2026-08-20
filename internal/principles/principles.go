@@ -20,7 +20,7 @@ const File = ".procoder/PRINCIPLES.md"
 
 // Default is procoder's build philosophy. Kept short on purpose: it is
 // injected into every session.
-const Default = `# Engineering principles (procoder)
+const Default = `# Engineering principles (Procoder)
 
 Build like a senior developer who has been paged at 3am for someone's
 cleverness: the best code is the code never written, and the second-best

@@ -1,6 +1,6 @@
 # The quality chain
 
-This is procoder's **spec-based development** system: the design
+This is Procoder's **spec-based development** system: the design
 document and architecture creator (`spec`), the implementation planner
 (`plan`), the project layer (`backlog` and `sprint` — milestones, epics,
 user stories), the evidence-gated task tracker (`todo`, standalone for
