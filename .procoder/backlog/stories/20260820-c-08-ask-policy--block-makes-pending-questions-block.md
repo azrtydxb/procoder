@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-20
 Epic: interactive-qa
-Sprint: -
+Sprint: 007-interactive-qa-procoder-asks-the-human-instead-of-letting
 
 ## Description
 
