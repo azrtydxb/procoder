@@ -77,7 +77,10 @@ jobs:
         with:
           go-version-file: go.mod
       - name: read the pinned tool versions
-        run: cat .github/tool-versions.env >> "$GITHUB_ENV"
+        # Only the assignments: GITHUB_ENV rejects anything that is not
+        # KEY=VALUE, and the file leads with the paragraph explaining why the
+        # pins exist at all.
+        run: grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: the tools that have to be compiled, from cache when possible
         id: gotools
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
