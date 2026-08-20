@@ -120,7 +120,9 @@ code path CI runs. Must be clean before a PR exists.
 /procoder:pr
 ```
 
-The skill summarises the real diff, fills the template from
+The skill first checks the issue for a pull request somebody else already
+opened, and defers to theirs rather than opening a second one. Then it
+summarises the real diff, fills the template from
 `.procoder/github/`, scrubs attribution, verifies the blast radius with
 `procoder index impact`, and shows you everything before `gh pr create`.
 

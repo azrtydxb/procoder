@@ -27,11 +27,10 @@ func launcherRoot(t *testing.T, platforms ...string) string {
 		t.Fatal(err)
 	}
 	for _, p := range platforms {
-		dir := filepath.Join(root, "dist", filepath.Dir(p))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		bin := filepath.Join(root, "dist", p)
+		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		bin := filepath.Join(root, "dist", p)
 		if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s' \"$0\"\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +99,11 @@ func TestLauncherResolvesWindowsShells(t *testing.T) {
 			t.Errorf("uname -s %s -m %s: launcher failed: %v (stderr: %s)", c.sysname, c.machine, err, stderr)
 			continue
 		}
-		if want := filepath.Join(root, "dist", c.want); out != want {
+		// ToSlash both sides: the launcher prints the path a POSIX shell
+		// built, and filepath.Join answers in the host's separator. They
+		// agree today only because the Windows case skips, and that skip is
+		// the only thing holding the comparison together.
+		if want := filepath.ToSlash(filepath.Join(root, "dist", c.want)); filepath.ToSlash(out) != want {
 			t.Errorf("uname -s %s -m %s: ran %s, want %s", c.sysname, c.machine, out, want)
 		}
 	}

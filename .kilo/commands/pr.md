@@ -14,10 +14,12 @@ Every procoder command below is the `procoder` binary on PATH.
    the branch clean.
 
 0b. If this branch closes a tracked issue, check that nobody else already
-has a pull request open for it (`gh pr list --search "<issue number>"`,
-and the issue's own timeline). A second PR for the same fix wastes the
-reviewer and, when the other one is a contributor's, costs the
-contributor. If one exists, review theirs instead of opening yours.
+has a pull request open for it:
+`gh pr list --state open --search "<issue number> -author:@me"`, and the
+issue's own timeline. A second PR for the same fix wastes the reviewer
+and, when the other one is a contributor's, costs the contributor —
+review theirs instead of opening yours. Your OWN open PR for this branch
+is not a reason to stop: push to it rather than opening a second one.
 
 1. Run `procoder git` and `procoder check`. Fix everything BLOCKING
    before going further — a PR that fails its own gate wastes the reviewer.
