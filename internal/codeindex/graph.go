@@ -184,6 +184,7 @@ func Unused(root string, out func(string)) int {
 	}
 	defs := map[string]def{}
 	refCount := map[string]int{}
+	testRefs := map[string]int{}
 	for _, doc := range idx.Documents {
 		// documents outside the repo (Go build-cache artifacts scip-go also
 		// visits) are not this repository's code
@@ -201,20 +202,42 @@ func Unused(root string, out func(string)) int {
 				}
 			} else {
 				refCount[occ.Symbol]++
+				if test {
+					testRefs[occ.Symbol]++
+				}
 			}
 		}
 	}
-	var names []string
+	var names, testOnly []string
 	for sym := range defs {
-		if refCount[sym] == 0 {
+		switch {
+		case refCount[sym] == 0:
 			names = append(names, sym)
+		case refCount[sym] == testRefs[sym]:
+			// Written, tested, wired nowhere. It reads as live code — the
+			// tests are green and the coverage is real — and only a reader
+			// asking "who calls this?" finds out that nobody does. Two
+			// functions of the Copilot ledger shipped this way and a bot
+			// reviewer caught them.
+			testOnly = append(testOnly, sym)
 		}
 	}
 	sort.Slice(names, func(i, j int) bool {
 		return defs[names[i]].file+fmt.Sprint(defs[names[i]].line) < defs[names[j]].file+fmt.Sprint(defs[names[j]].line)
 	})
+	sort.Slice(testOnly, func(i, j int) bool {
+		return defs[testOnly[i]].file+fmt.Sprint(defs[testOnly[i]].line) < defs[testOnly[j]].file+fmt.Sprint(defs[testOnly[j]].line)
+	})
+	for _, sym := range testOnly {
+		d := defs[sym]
+		out(fmt.Sprintf("%s:%d  %s  [referenced only by tests — surface wired nowhere]", d.file, d.line, shortSym(sym)))
+	}
 	if len(names) == 0 {
-		out("no unreferenced symbols in the precise tier")
+		if len(testOnly) == 0 {
+			out("no unreferenced symbols in the precise tier")
+		} else {
+			out(fmt.Sprintf("%d symbol(s) referenced only by their own tests (precise) — wire them or delete them", len(testOnly)))
+		}
 		return 0
 	}
 	for _, sym := range names {
@@ -229,7 +252,7 @@ func Unused(root string, out func(string)) int {
 		}
 		out(fmt.Sprintf("%s:%d  %s%s", d.file, d.line, tail, mark))
 	}
-	out(fmt.Sprintf("%d unreferenced symbol(s) (precise) — dead-code candidates; the agent judges, exported API included", len(names)))
+	out(fmt.Sprintf("%d unreferenced symbol(s), %d referenced only by tests (precise) — dead-code candidates; the agent judges, exported API included", len(names), len(testOnly)))
 	if n := staleNote(root); n != "" {
 		out(n)
 	}
