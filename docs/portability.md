@@ -93,6 +93,16 @@ The gate blocks the ones it recognises, and blocks them without a knob:
 the work is the author's, and a repository that wants the rule off
 already has `[git] commit_gate`.
 
+What it recognises is a named list of machine authors — Claude, Codex,
+Copilot, Cursor, Devin, Gemini, aider, and the robot emoji — matched on
+the trailer that names one, plus the "Generated with …" and vendor
+`noreply@` forms. Not every `Co-Authored-By:`: the header is a decade
+older than AI coders and is right for pair programming, a patch carried
+on someone's behalf, or a squash that credits everyone who touched the
+branch, so those keep passing. The finding names which identity it
+matched, so a wrong one can be argued with rather than worked around. A
+host outside the list is a silent miss and worth an issue.
+
 That makes the trailer a recurring wall rather than a one-time fix.
 Amending the message clears the finding; the host writes the trailer
 again on the next commit, because the setting that produced it never
