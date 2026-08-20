@@ -270,3 +270,34 @@ func TestTheBranchFooterIsSilentOutsideARepository(t *testing.T) {
 		t.Errorf("no repository, no branch line:\n%s", joined)
 	}
 }
+
+// TestTheFooterCountsAccentedPathsCorrectly pins the quoting bug the footer
+// shipped with: `git grep -l` quotes any path carrying a non-ASCII byte
+// (caf\303\251-story.md), that spelling exists nowhere on disk, and every
+// accented story therefore stat-ed as missing — a branch with an identical
+// tree was told the default branch held stories it could not see.
+func TestTheFooterCountsAccentedPathsCorrectly(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v\n%s", err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open\n")
+	writeItem(t, root, KindStory, "20260101-café",
+		"# Café\n\nStatus: open\nEpic: auth\nSprint: -\n\n## Description\n\nreal\n\n## Acceptance criteria\n\n- [ ] x\n\n## Evidence\n\n- y\n")
+	run("add", "-A")
+	run("commit", "-qm", "a story whose name needs quoting")
+	run("checkout", "-q", "-b", "feature")
+	run("commit", "-q", "--allow-empty", "-m", "an identical tree")
+
+	out, lines := collect()
+	Board(root, out)
+	last := (*lines)[len(*lines)-1]
+	if !strings.Contains(last, "nothing open on") {
+		t.Errorf("an identical tree hides nothing — got %q", last)
+	}
+}

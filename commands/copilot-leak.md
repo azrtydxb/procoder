@@ -9,7 +9,9 @@ Run:
     "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh" copilot-leak $ARGUMENTS
 
 (With no arguments it looks back 24 hours. `--since 6h` narrows the window to
-any duration; `--quiet` reports the count and never prompts.)
+any duration; `--quiet` reports the count and never prompts;
+`--from-copilot` reads the captured ledger back instead of going to look for
+more, and exits 1 while any finding is still unclassified.)
 
 The command reads this repository's Copilot auto-review issues through `gh`:
 the ones carrying the `auto-copilot` label, opened by a `copilot*[bot]`
@@ -18,7 +20,9 @@ that got past our own gates, which makes it a lesson, not just a fix.
 
 ## Read the exit, not the mood
 
-- Exit 0 with no findings means the window is genuinely empty.
+- Exit 0 with no findings means the window is genuinely empty — or that
+  this repository has no GitHub remote, in which case there were never any
+  auto-reviews to ask about.
 - Exit 2 means the answer was no — either the prompt was declined, or the
   window was never queried at all.
 

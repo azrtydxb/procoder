@@ -171,3 +171,21 @@ func TestCompleteSpecStillSayingDraftIsSaid(t *testing.T) {
 		t.Errorf("an advanced status must earn no note: %v", *lines2)
 	}
 }
+
+// The mirror of the note above, and the more misleading of the two: a spec
+// whose header claims complete while the checker refuses it sends a reader to
+// build from an unfinished design.
+func TestASpecClaimingCompleteWithGapsIsContradicted(t *testing.T) {
+	root := t.TempDir()
+	gapped := strings.Replace(completeSpec(), "Status: draft", "Status: complete", 1)
+	gapped = strings.Replace(gapped, "A real answer for Data.", "", 1)
+	writeSpec(t, root, "widget", gapped)
+
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 1 {
+		t.Fatalf("a gap is still a gap: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "says complete, and the gaps above say otherwise") {
+		t.Errorf("the contradiction must be named: %v", *lines)
+	}
+}

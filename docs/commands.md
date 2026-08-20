@@ -130,9 +130,8 @@ user stories**, with the story as the execution unit of spec-based work
   refused. The board marks open bugs with their severity.
 - `seed <spec> [--milestone <id>]` — decompose a COMPLETE spec into an
   epic plus one story per acceptance criterion. The epic records the
-  spec name and a fingerprint of its acceptance criteria — the
-  contract, so rewrapping prose never reads as drift; an incomplete
-  spec is refused
+  spec name and a fingerprint of its acceptance criteria — the contract,
+  so rewrapping prose never reads as drift; an incomplete spec is refused
   with the spec checker's gaps replayed.
 - `list` / `board` — the flat listing, and the tree with statuses,
   sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing` /
@@ -386,8 +385,10 @@ A captured finding becomes a GitHub issue and an entry in
 finding is not yet a lesson until a human names its class and its adaptation.
 `--from-copilot` reads that ledger back, listing each entry as learned or
 UNLEARNED, and exits 1 while any remain unclassified. `--quiet` reports the
-count without asking. Without `gh`, or outside a GitHub repository, it says
-what it could not check rather than reporting zero.
+count without asking. Without `gh`, unauthenticated, or given output it
+cannot parse, it reports NOT checked and exits 2 rather than reporting zero.
+A repository with no GitHub remote is a different case: there are no
+auto-reviews to ask about, so the empty answer is real and the exit is 0.
 
 #### `procoder principles`
 

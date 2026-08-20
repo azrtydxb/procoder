@@ -222,6 +222,12 @@ func checkOne(path string, out func(string)) int {
 	for _, g := range gaps {
 		out("  - " + g)
 	}
+	// The louder half of the same rot: a header claiming complete over a spec
+	// the checker is refusing sends a reader to build from an unfinished
+	// design, where a stale `draft` only understates a finished one.
+	if statusOf(text) == "complete" {
+		out("  - the Status line says complete, and the gaps above say otherwise")
+	}
 	return 1
 }
 

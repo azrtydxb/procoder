@@ -188,21 +188,32 @@ func branchNote(root string) string {
 	if def == here {
 		return "read from branch " + here
 	}
-	theirs, err := gitx.GrepOn(root, def, "^Status: open", filepath.ToSlash(filepath.Join(Dir, KindStory)))
+	// The remote-tracking ref, when there is one: the workflow this footer
+	// exists for is fetch-and-branch, never checking the default branch out,
+	// which leaves the local head behind and reading it would be the same
+	// lie in a new costume.
+	ref := def
+	if remote := "origin/" + def; gitx.HasRef(root, remote) {
+		ref = remote
+	}
+	theirs, err := gitx.GrepOn(root, ref, "^Status: open", filepath.ToSlash(filepath.Join(Dir, KindStory)))
 	if err != nil {
-		return "read from branch " + here + " — " + def + " NOT compared: " + err.Error()
+		return "read from branch " + here + " — " + ref + " NOT compared: " + err.Error()
 	}
 	unseen := 0
 	for _, rel := range theirs {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); os.IsNotExist(err) {
+		// Any stat failure counts as unseen: a path this checkout cannot
+		// look at is not one it can see, and under-counting here would put
+		// the footer back to reassuring the reader wrongly.
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
 			unseen++
 		}
 	}
 	if unseen == 0 {
-		return "read from branch " + here + " — nothing open on " + def + " that this branch cannot see"
+		return "read from branch " + here + " — nothing open on " + ref + " that this branch cannot see"
 	}
 	return fmt.Sprintf("read from branch %s — %s has %d open story(ies) this branch cannot see; merge %s to work on them",
-		here, def, unseen, def)
+		here, ref, unseen, def)
 }
 
 // kindWord is the word a human reads for an item: a story typed bug reads

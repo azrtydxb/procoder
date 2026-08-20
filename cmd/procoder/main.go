@@ -658,6 +658,9 @@ func copilotLeakCmd(args []string) int {
 				return 2
 			}
 			since, i = d, i+1
+		case args[i] == "--since":
+			printLine("copilot-leak: --since wants a duration like 6h, 90m, or 2d — none was given")
+			return 2
 		default:
 			printLine("copilot-leak: unknown argument " + args[i])
 			return 2
@@ -691,6 +694,11 @@ func copilotLeakCmd(args []string) int {
 		return 0
 	}
 	if !copilot.Prompt(os.Stdin, printLine, len(safe), since) {
+		if copilot.CanAsk(os.Stdin) {
+			printLine("copilot-leak: skipped — nothing was published and nothing was recorded")
+		} else {
+			printLine(fmt.Sprintf("copilot-leak: %d finding(s) since %s, and no terminal to ask on — publishing needs an explicit yes, so nothing was captured", len(safe), since))
+		}
 		return 2
 	}
 	issues, entries, notes := copilot.Capture(safe, root)
@@ -707,7 +715,7 @@ func copilotLeakCmd(args []string) int {
 // deserves the window they asked for rather than a lecture.
 func parseWindow(v string) (time.Duration, bool) {
 	if days, ok := strings.CutSuffix(v, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n >= 0 {
+		if n, err := strconv.Atoi(days); err == nil && n > 0 {
 			return time.Duration(n) * 24 * time.Hour, true
 		}
 	}

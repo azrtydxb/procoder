@@ -327,3 +327,30 @@ func TestANilReporterIsNotACrash(t *testing.T) {
 		t.Fatal("still NOT checked, just unreported")
 	}
 }
+
+// TestOurOwnIssuesAreNeverCapturedAgain pins the loop the feature shipped
+// with: Capture files each issue under AutoLabel, which is exactly what this
+// finder queries, so a second run inside the same window found run one's
+// issues and filed them again — three runs, four times the issues, and a
+// ledger to match. OwnLabel is the mark that breaks the cycle, and the
+// hand-filing template carries it too.
+// proved by: removed the ours() guard in Find — the procoder-filed issue
+// comes back as a fresh finding.
+func TestOurOwnIssuesAreNeverCapturedAgain(t *testing.T) {
+	mine := mk("pascal", "nil map write", "the map is written without a nil check", AutoLabel, OwnLabel)
+	got, ok, said, _ := find(t, 24*time.Hour, mine)
+	if !ok {
+		t.Fatalf("the question was answerable, got NOT checked: %s", said)
+	}
+	if len(got) != 0 {
+		t.Fatalf("an issue procoder filed is not a Copilot finding: %+v", got)
+	}
+
+	// The same issue without our mark is still a real finding — the guard is
+	// the label, not the shape.
+	theirs := mk("copilot[bot]", "nil map write", "the map is written without a nil check", AutoLabel)
+	got, ok, said, _ = find(t, 24*time.Hour, theirs)
+	if !ok || len(got) != 1 {
+		t.Fatalf("a genuine auto-review must still match: ok=%v got=%+v said=%s", ok, got, said)
+	}
+}

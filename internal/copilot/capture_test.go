@@ -112,8 +112,16 @@ func TestIssueFailureStillWritesTheLedger(t *testing.T) {
 	if written != 1 {
 		t.Fatalf("the ledger must still record the finding: %d entries", written)
 	}
-	if len(notes) != 1 || !strings.Contains(notes[0], "rate limit") {
+	// gh is broken for every call it makes here, labels included; what must
+	// never happen is a failure going unmentioned.
+	joined := strings.Join(notes, "\n")
+	if !strings.Contains(joined, "issue NOT created") || !strings.Contains(joined, "rate limit") {
 		t.Fatalf("the failure must be reported, never swallowed: %v", notes)
+	}
+	for _, n := range notes {
+		if !strings.Contains(n, "rate limit") {
+			t.Errorf("every note carries the reason git gave: %q", n)
+		}
 	}
 	if len(lessons.Parse(ledger(t, root))) != 1 {
 		t.Fatal("the entry must be readable by the lessons parser even when GitHub refused")
@@ -231,5 +239,60 @@ func TestWhatCaptureWritesTheLedgerReportReads(t *testing.T) {
 	}
 	if !strings.Contains(joined, "UNLEARNED") || !strings.Contains(joined, "1 finding(s), 1 unlearned") {
 		t.Errorf("the report must name the captured finding as unlearned:\n%s", joined)
+	}
+}
+
+// TestTheIssueAndTheLedgerStampTheSameInstant pins a split the two halves
+// shipped with: each derived "now" independently, and the issue printed local
+// time while the ledger printed UTC — a finding captured at 00:15 CEST was
+// filed as the 20th and ledgered as the 19th.
+func TestTheIssueAndTheLedgerStampTheSameInstant(t *testing.T) {
+	log := stubGh(t, 0, "")
+	root := t.TempDir()
+	f := finding()
+	f.Created = time.Date(2026, 8, 20, 0, 15, 0, 0, time.FixedZone("CEST", 2*60*60))
+
+	if _, written, notes := Capture([]Sanitised{f}, root); written != 1 {
+		t.Fatalf("capture wrote no entry: %v", notes)
+	}
+	argv, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	utc := f.Created.UTC() // 2026-08-19 22:15Z — the day both halves must agree on
+	if !strings.Contains(string(argv), utc.Format(time.RFC3339)) {
+		t.Errorf("the issue must stamp the instant in UTC, got: %s", argv)
+	}
+	if got := ledger(t, root); !strings.Contains(got, utc.Format("2006-01-02 15:04")) {
+		t.Errorf("the ledger must stamp the same instant, got: %s", got)
+	}
+}
+
+// TestTheLabelsAreCreatedBeforeTheFirstIssue pins what made the publish half
+// fail on every repository but this one: gh refuses `issue create --label`
+// outright when the label does not exist ("could not add label: not found"),
+// and nothing created auto-copilot or copilot-leak. They are created once,
+// lazily, and only when there is something safe to publish.
+func TestTheLabelsAreCreatedBeforeTheFirstIssue(t *testing.T) {
+	log := stubGh(t, 0, "")
+	root := t.TempDir()
+
+	Capture([]Sanitised{finding(), finding()}, root)
+	argv, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(argv)
+	for _, label := range []string{AutoLabel, OwnLabel} {
+		if !strings.Contains(got, "\n"+label+"\n") {
+			t.Errorf("label %s was never created: %s", label, got)
+		}
+	}
+	// Once for the run, not once per finding.
+	if n := strings.Count(got, "--force"); n != 2 {
+		t.Errorf("two labels, created once for the whole run, got %d --force calls", n)
+	}
+	if i, j := strings.Index(got, "--force"), strings.Index(got, "issue"); i > j {
+		t.Errorf("labels must exist before the first issue is filed: %s", got)
 	}
 }

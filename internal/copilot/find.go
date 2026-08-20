@@ -30,6 +30,12 @@ const findLimit = "60"
 // opens, and the label procoder puts back on the ones it creates.
 const AutoLabel = "auto-copilot"
 
+// OwnLabel marks the issues procoder itself filed. Capture puts AutoLabel on
+// them too — that is the family this finder queries — so without a mark of our
+// own, run two inside the same window finds run one's issues, files them
+// again, and every run doubles the last one's output.
+const OwnLabel = "copilot-leak"
+
 // reviewQuote is Copilot's review annotation block, the last resort when an
 // instance neither labels nor uses a recognisable bot account.
 const reviewQuote = "> **Copilot**"
@@ -97,6 +103,10 @@ func Find(root string, since time.Duration, out func(string)) ([]Finding, bool) 
 		return nil, true // no GitHub, no auto-reviews: nothing to ask, and nothing unknown
 	}
 	if since <= 0 {
+		// The caller validates the window; reaching here means it did not, and
+		// silently querying a different one than the caller prints is how a
+		// report comes to describe a window nobody asked for.
+		say("copilot-leak: a window of " + since.String() + " asks about nothing — using 24h")
 		since = 24 * time.Hour
 	}
 	cutoff := time.Now().Add(-since)
@@ -118,7 +128,7 @@ func Find(root string, since time.Duration, out func(string)) ([]Finding, bool) 
 
 	var finds []Finding
 	for _, is := range issues {
-		if !within(is, cutoff) || !fromCopilot(is) || !aboutCodeQuality(is) {
+		if ours(is) || !within(is, cutoff) || !fromCopilot(is) || !aboutCodeQuality(is) {
 			continue
 		}
 		finds = append(finds, Finding{
@@ -131,6 +141,18 @@ func Find(root string, since time.Duration, out func(string)) ([]Finding, bool) 
 		})
 	}
 	return finds, true
+}
+
+// ours reports whether procoder filed this issue: a capture of a capture
+// teaches nobody and multiplies. The hand-filing template carries the same
+// mark, so a leak filed by a person is not re-filed either.
+func ours(is ghIssue) bool {
+	for _, l := range is.Labels {
+		if strings.EqualFold(strings.TrimSpace(l.Name), OwnLabel) {
+			return true
+		}
+	}
+	return false
 }
 
 // fromCopilot is the three-way match from the spec: the label, the bot author,

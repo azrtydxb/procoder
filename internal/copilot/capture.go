@@ -33,6 +33,9 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 		bin = ""
 	}
 
+	// Lazily, and once: a run with nothing safe to publish must not touch
+	// GitHub at all.
+	labelled := false
 	for _, f := range finds {
 		if strings.TrimSpace(f.Body) == "" {
 			// sanitisation removed everything it was given; an empty issue
@@ -40,16 +43,23 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 			notes = append(notes, "skipped "+originOf(f)+" — nothing left after sanitisation, so there was nothing safe to publish")
 			continue
 		}
+		// One instant for both halves, in one zone: the issue said
+		// 2026-08-20T00:15+02:00 while the ledger said 2026-08-19 22:15 —
+		// the same finding filed on two different days.
+		when := f.Created.UTC()
+		if f.Created.IsZero() {
+			when = time.Now().UTC()
+		}
 		if bin != "" {
-			if err := createIssue(bin, root, f); err != nil {
+			if !labelled {
+				notes = append(notes, ensureLabels(bin, root)...)
+				labelled = true
+			}
+			if err := createIssue(bin, root, f, when); err != nil {
 				notes = append(notes, "issue NOT created for "+originOf(f)+" — "+err.Error()+"; the ledger still records it")
 			} else {
 				issuesCreated++
 			}
-		}
-		when := f.Created
-		if when.IsZero() {
-			when = time.Now()
 		}
 		head := strings.TrimSpace(f.Title)
 		if head == "" {
@@ -57,7 +67,7 @@ func Capture(finds []Sanitised, root string) (issuesCreated, lessonsWritten int,
 		}
 		if err := lessons.RecordCopilotEntry(root, head, originOf(f), f.Body, when); err != nil {
 			notes = append(notes, filepath.ToSlash(lessons.CopilotLeaksPath)+" NOT written for "+originOf(f)+
-				" — "+err.Error()+fmt.Sprintf("; %d issue(s) were still created", issuesCreated))
+				" — "+err.Error()+fmt.Sprintf("; %d issue(s) created so far", issuesCreated))
 			continue
 		}
 		lessonsWritten++
@@ -80,11 +90,44 @@ func firstLine(body string) string {
 	return strings.TrimSpace(line)
 }
 
+// ensureLabels creates the two labels every captured issue carries. gh
+// refuses `issue create --label` outright when a label does not exist in the
+// repository ("could not add label: not found"), so on a repository adopting
+// procoder the publish half fails for every finding until someone creates
+// them by hand. --force makes this idempotent: existing labels are updated,
+// not rejected. A failure here is reported, never fatal — the ledger is the
+// memory and it is written either way.
+func ensureLabels(bin, root string) []string {
+	var failed []string
+	var reason string
+	for _, label := range []string{AutoLabel, OwnLabel} {
+		ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
+		cmd := exec.CommandContext(ctx, bin, "label", "create", label, // nosemgrep -- gh resolved from PATH with fixed subcommands
+			"--description", "findings from Copilot auto-reviews, captured by procoder", "--force")
+		cmd.Dir = root
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		cancel()
+		if err != nil {
+			failed = append(failed, label)
+			reason = strings.TrimSpace(stderr.String())
+		}
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	// One note for both: a broken gh fails every label for the same reason,
+	// and repeating it buries the issue failure that follows.
+	return []string{"label(s) " + strings.Join(failed, ", ") + " NOT created — " + reason +
+		"; create them by hand if the issue(s) below are refused"}
+}
+
 // createIssue opens one issue from an already-sanitised finding. Both labels
 // are passed: `auto-copilot` is the family the finder queries, `copilot-leak`
 // marks the ones procoder itself opened, so a later run cannot mistake our own
 // issue for a fresh Copilot review and capture it again.
-func createIssue(bin, root string, f Sanitised) error {
+func createIssue(bin, root string, f Sanitised, when time.Time) error {
 	ctx, cancel := context.WithTimeout(context.Background(), ghTimeout)
 	defer cancel()
 	title := strings.TrimSpace(f.Title)
@@ -93,9 +136,9 @@ func createIssue(bin, root string, f Sanitised) error {
 	}
 	cmd := exec.CommandContext(ctx, bin, "issue", "create", // nosemgrep -- gh resolved from PATH with fixed subcommands
 		"--title", title,
-		"--body", issueBody(f),
-		"--label", "auto-copilot",
-		"--label", "copilot-leak")
+		"--body", issueBody(f, when),
+		"--label", AutoLabel,
+		"--label", OwnLabel)
 	cmd.Dir = root
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -112,7 +155,7 @@ func createIssue(bin, root string, f Sanitised) error {
 
 // issueBody is the sanitised text plus its provenance. Nothing is added that
 // the sanitiser has not already seen — the body must stay code-free.
-func issueBody(f Sanitised) string {
+func issueBody(f Sanitised, when time.Time) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(f.Body))
 	b.WriteString("\n\n---\n\n")
@@ -120,10 +163,6 @@ func issueBody(f Sanitised) string {
 	b.WriteString("- Original: " + originOf(f) + "\n")
 	if f.Line > 0 {
 		fmt.Fprintf(&b, "- Line: %d\n", f.Line)
-	}
-	when := f.Created
-	if when.IsZero() {
-		when = time.Now()
 	}
 	b.WriteString("- Captured: " + when.Format(time.RFC3339) + "\n")
 	return b.String()
