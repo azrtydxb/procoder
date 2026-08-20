@@ -2,6 +2,50 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.8 — 2026-08-20
+
+**Documentation now has a shape, not just a checklist.** The docs domain
+enforced that documentation exists — required files, badges, a README
+first screen, no broken links. It said nothing about what a page should
+be, so every page invented its own shape and drifted toward serving
+three readers at once.
+
+The shipped `.procoder/docs/RULES.md` now carries the
+[Divio documentation system](https://docs.divio.com/documentation-system/):
+four kinds of document, never mixed, the kind decided before the first
+line.
+
+| Kind         | Serves                        | Answers                 |
+| ------------ | ----------------------------- | ----------------------- |
+| Tutorial     | a newcomer learning           | "teach me"              |
+| How-to guide | a competent user working      | "how do I X?"           |
+| Reference    | someone looking a thing up    | "what are the options?" |
+| Explanation  | someone wanting to understand | "why is it like this?"  |
+
+Each has a characteristic failure, and the rules name them: a tutorial
+that stops to explain trade-offs loses the learner; a how-to that
+teaches from scratch wastes a reader who already knows; reference that
+argues cannot be trusted to describe; explanation carrying steps rots,
+because the steps then live in two places.
+
+Alongside it, the writing rules that follow: answer first, examples over
+prose about examples, real names rather than `foo`, sentences under
+fifteen words, scannable structure, the searchable synonym included, and
+an explicit "common pitfalls" list wherever a feature has a known
+misuse. `/procoder:docs` now applies all of it when it WRITES, where
+before it only checked what already existed.
+
+Every word of this is repo-overridable (D-OVERRIDE) — replace it with
+your own house style and your copy wins. None of it blocks a commit; it
+is guidance the agent follows, and the reasoning is recorded in
+ADR 0002 along with the mechanical enforcement that was considered and
+rejected.
+
+Procoder's own site does not fully comply yet: `workflow.md` and
+`quality-chain.md` each mix kinds, and `getting-started.md` must become
+a tutorial that runs clean end to end. Three tasks are open for that,
+and the ADR records the gap rather than leaving it quiet.
+
 ## 0.32.7 — 2026-08-20
 
 **The product is spelled Procoder**, taken from the wordmark. The logo

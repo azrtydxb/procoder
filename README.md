@@ -9,7 +9,7 @@ turns every escaped bug into a permanently closed class. The agent stays
 in control — nothing ever touches your code behind its back.
 
 ![CI](https://github.com/azrtydxb/procoder/actions/workflows/ci.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-0.32.7-7C3AED)
+![Version](https://img.shields.io/badge/version-0.32.8-7C3AED)
 ![License](https://img.shields.io/badge/license-Apache--2.0-7C3AED)
 ![Agents](https://img.shields.io/badge/works%20with-20%2B%20agents-7C3AED)
 

@@ -98,6 +98,16 @@ Documentation rules. Machine-read sections (one `- item` per line):
   stops telling blocks the gate — the mechanical floor against README
   rot)
 
+Everything under `## Guidance` is prose the agent follows when it writes,
+not something the binary parses. The shipped default carries the
+[Divio documentation system](https://docs.divio.com/documentation-system/) —
+four kinds of document (tutorial, how-to guide, reference, explanation),
+never mixed, the kind decided before the first line — plus the writing
+rules that follow from it: answer first, examples over prose about
+examples, real names rather than `foo`, short sentences, scannable
+structure, and an explicit "common pitfalls" list wherever a feature has a
+known misuse. Replace it with your own house style; the repo's copy wins.
+
 ### `.procoder/security/RULES.md`
 
 Security rules the agent follows: what blocks (secrets always; SAST ERROR;
