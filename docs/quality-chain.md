@@ -124,6 +124,27 @@ prints. One code path, so the three can never disagree and no argument
 about "it passes locally" is possible. Unchecked counts as failing.
 There is no side door.
 
+## What the documentation obligation asks, and of what
+
+A public-surface change with no documentation change is a question the
+gate refuses to leave silent: a symbol appeared or went, a CLI string
+moved, a configuration file changed, or a document names a file you
+touched. It clears two ways, both explicit — change a document, or
+record `docs: none — <reason>` in the commit message, where a reviewer
+sees it.
+
+The question is asked of the branch's work, not of whichever slice is
+uncommitted. Writing the doc in one commit and the code in the next is
+ordinary practice, so a document changed anywhere in the commits your
+branch carries answers it. On the default branch there is no such range
+and only the pending diff counts.
+
+The public surface itself is compared like with like: the previous
+revision of each file, read by the same parser that reads the current
+one. Two different definitions of "exported" produce phantom findings —
+a capitalised local constant is exported in Go and in no other language
+— and a phantom finding that blocks is worse than no finding at all.
+
 ## Why escapes have to close their class
 
 Before a PR exists, the pre-PR self-review reads the diff with fresh

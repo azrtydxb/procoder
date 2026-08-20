@@ -290,3 +290,73 @@ func TestUnwalkableTreeIsReportedNotSilentlyEmpty(t *testing.T) {
 		t.Fatal("an unwalkable tree must be reported, never read as a clean corpus")
 	}
 }
+
+// gitRun runs one git command in the fixture, failing the test if it cannot.
+func gitRun(t *testing.T, root string, args ...string) {
+	t.Helper()
+	full := append([]string{"-C", root, "-c", "user.email=t@example.com", "-c", "user.name=t"}, args...)
+	if out, err := exec.Command("git", full...).CombinedOutput(); err != nil {
+		t.Skipf("git %v unavailable (%v): %s", args, err, out)
+	}
+}
+
+// Writing the documentation in one commit and the code in the next is
+// ordinary practice. The obligation is asked of the branch's work, not of
+// whichever slice happens to be uncommitted, so a change that IS documented
+// must not demand a `docs: none` acknowledgment.
+// proved by: looked only at the passed change set — the second commit on a
+// branch whose first commit updated the doc is then blocked, which is the
+// bug this fixes.
+func TestADocChangedEarlierOnTheBranchAnswersTheObligation(t *testing.T) {
+	root := gitFixture(t)
+	gitRun(t, root, "checkout", "-qb", "feature")
+	write(t, root, "docs/guide.md", "# guide\n\nExisting is the entry point, and Added joins it.\n")
+	gitRun(t, root, "add", "-A")
+	gitRun(t, root, "commit", "-qm", "docs first")
+
+	// the code half, still uncommitted, exporting something new
+	changed := write(t, root, "lib.go", "package widget\n\nfunc Existing() {}\n\nfunc Added() {}\n")
+	if msgs := messages(t, root, []string{changed}, "", true); strings.Contains(msgs, "documentation obligation") {
+		t.Errorf("the doc changed earlier in this branch's work: %s", msgs)
+	}
+}
+
+// The branch scope widens where the question was answered; it does not stop
+// asking. A branch that touched no document still owes one.
+// proved by: cleared the obligation whenever a branch existed at all.
+func TestABranchWithNoDocChangeStillOwesTheAnswer(t *testing.T) {
+	root := gitFixture(t)
+	gitRun(t, root, "checkout", "-qb", "feature")
+	changed := write(t, root, "lib.go", "package widget\n\nfunc Existing() {}\n\nfunc Added() {}\n")
+	msgs := messages(t, root, []string{changed}, "", true)
+	if !strings.Contains(msgs, "documentation obligation") || !strings.Contains(msgs, "[BLOCK]") {
+		t.Errorf("an undocumented public-surface change must still block: %s", msgs)
+	}
+}
+
+// The public surface is compared like with like: the previous revision read
+// by the same parser as the current one. The index calls every capitalised
+// tag exported — Go's rule and nobody else's — so a JavaScript file with a
+// capitalised local constant reported that constant removed on every run, a
+// phantom trigger dragging a blocking obligation behind it.
+// proved by: compared the file's exports against capitalised index tags —
+// the untouched ROOT then reads as an exported symbol removed.
+func TestACapitalisedLocalIsNotAnExportedSymbol(t *testing.T) {
+	root := gitFixture(t)
+	gitRun(t, root, "checkout", "-qb", "feature")
+	write(t, root, "plugin.js", "const ROOT = \"/tmp\";\n\nexport const Plugin = async () => ({});\n")
+	gitRun(t, root, "add", "-A")
+	gitRun(t, root, "commit", "-qm", "add the plugin")
+
+	// the body changes; the exported surface does not
+	changed := write(t, root, "plugin.js", "const ROOT = \"/var\";\nconst SELF = 1;\n\nexport const Plugin = async () => ({ a: SELF });\n")
+	if msgs := messages(t, root, []string{changed}, "", true); strings.Contains(msgs, "exported symbol") {
+		t.Errorf("no export changed here: %s", msgs)
+	}
+
+	// and a real export still triggers
+	changed = write(t, root, "plugin.js", "const ROOT = \"/var\";\n\nexport const Plugin = async () => ({});\nexport function Extra() {}\n")
+	if msgs := messages(t, root, []string{changed}, "", true); !strings.Contains(msgs, "exported symbol Extra added") {
+		t.Errorf("a real new export must trigger: %s", msgs)
+	}
+}
