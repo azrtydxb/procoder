@@ -491,8 +491,15 @@ never the same as verified, and treating a missing file as permission would
 make deleting one small file the whole attack.
 
 `scripts/build-dist.sh` is what writes both the `dist/` binaries and that
-`SHA256SUMS`. It builds every platform with `CGO_ENABLED=0 -trimpath`, so
-the same Go toolchain produces the same bytes anywhere, and the test suite
+`SHA256SUMS`. It builds every platform with `CGO_ENABLED=0 -trimpath
+-buildvcs=false`, stamping the version it reads from
+`.claude-plugin/plugin.json` — the same manifest CI compares the binaries
+against. `-buildvcs=false` is what makes the output reproducible at all:
+without it Go records the commit hash, the commit time and whether the
+tree was dirty inside every binary, so the same source at two commits
+produces different bytes. The Go toolchain is part of the input too, and
+`go.mod` pins one. With both fixed, two builds of one tree produce
+identical digests, and the test suite
 checks the recorded digests against the committed binaries — a rebuild that
 skipped the script goes red there rather than after a tag is cut.
 

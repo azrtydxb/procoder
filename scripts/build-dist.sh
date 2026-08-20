@@ -18,6 +18,18 @@ cd "$(dirname "$0")/.."
 # committed files instead of taking the committer's word.
 export CGO_ENABLED=0
 
+# The version is part of the binary, not a label beside it: the release
+# stamps it through -ldflags, `procoder version` prints it, and CI checks
+# the committed binaries against the manifest. A rebuild that omitted it
+# would produce binaries reporting "dev" and fail that check — so the same
+# manifest CI reads is the one this script reads.
+version=$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')
+if [ -z "$version" ]; then
+	echo "cannot read the version from .claude-plugin/plugin.json — refusing to build unstamped binaries" >&2
+	exit 1
+fi
+echo "building procoder $version"
+
 # Go embeds its own version in every binary, so the toolchain is part of the
 # input. Printing it makes a byte difference between two rebuilds traceable
 # to a patch bump rather than to a mystery.
@@ -45,7 +57,15 @@ for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; d
 		ext=.exe
 	fi
 	mkdir -p "dist/$target"
-	GOOS="$os" GOARCH="$arch" go build -trimpath -o "dist/$target/procoder$ext" ./cmd/procoder
+	# -buildvcs=false is what makes this reproducible at all: without it Go
+	# stamps the commit hash, the commit time and whether the tree was dirty
+	# into the binary, so the same source at two commits produces different
+	# bytes and a hash comparison can never pass. -s -w strip the symbol and
+	# DWARF tables, matching how the published binaries have always been
+	# built and cutting roughly a third of the size.
+	GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false \
+		-ldflags "-s -w -X main.version=$version" \
+		-o "dist/$target/procoder$ext" ./cmd/procoder
 	# The names recorded here are the RELEASE ASSET names, not the dist/
 	# paths. This file is published beside the assets and read by
 	# self-upgrade, which knows a download only by the name it asked for; a

@@ -191,6 +191,17 @@ func checkOne(path string, out func(string)) int {
 	if n := len(openRe.FindAllString(text, -1)); n > 0 {
 		gaps = append(gaps, fmt.Sprintf("%d unresolved OPEN: question(s) — resolve each with the user and rewrite it as a decision", n))
 	}
+	// The section itself, not just the marker. Two specs in this repository
+	// carried seven undecided questions between them written as `- [O-1] …`
+	// and were reported COMPLETE, because the rule only recognised the
+	// `OPEN:` prefix — and `backlog seed` refuses anything that is not
+	// COMPLETE, so it would have seeded stories from a design nobody had
+	// finished. A question is unresolved because it is still in the
+	// section, whatever it is called.
+	if q := strings.TrimSpace(textutil.StripComments(textutil.Section(text, "Open questions"))); q != "" {
+		gaps = append(gaps, fmt.Sprintf("Open questions still has %d line(s) — resolve each with the user and rewrite it as a decision, or empty the section",
+			len(strings.Split(q, "\n"))))
+	}
 	criteria := textutil.Section(text, "Acceptance criteria")
 	boxes := checkboxRe.FindAllStringSubmatch(criteria, -1)
 	if strings.Contains(text, "## Acceptance criteria") && len(boxes) == 0 {
