@@ -64,7 +64,7 @@ for repo-wide sweeps.
 **What Procoder refused.** Serena's symbol-level editing tools —
 `replace_symbol_body`, `insert_after_symbol` and their siblings — write
 to your code. That is precisely the line
-[P-CONTROL](architecture.md#contract-1--p-control-the-agent-stays-in-control)
+[P-CONTROL](architecture.md#contract-1-p-control-the-agent-stays-in-control)
 draws: Procoder computes the change and hands it over; the agent
 reviews it and writes it. A rename you never saw is a change nobody
 reviewed.

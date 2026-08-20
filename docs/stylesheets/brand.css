@@ -115,3 +115,64 @@
   border-radius: 12px;
   margin: 0 0 1.5rem;
 }
+
+/* The command reference's on-page filter. The site search jumps you to
+   another page; this narrows the one you are on. */
+.procoder-filter {
+  margin: 1.25rem 0 2rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  background: var(--md-code-bg-color);
+}
+
+.procoder-filter label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-default-fg-color--light);
+}
+
+.procoder-filter input[type="search"] {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--md-default-fg-color);
+  background: var(--md-default-bg-color);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+}
+
+.procoder-filter input[type="search"]:focus {
+  outline: none;
+  border-color: var(--procoder-purple);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+}
+
+.procoder-filter__count {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.procoder-filter__count:empty {
+  display: none;
+}
+
+/* A command name is one token: never break `/procoder:agents` across
+   two lines. The description column takes the slack. */
+.md-typeset table:not([class]) td:first-child code,
+.md-typeset table:not([class]) th:first-child {
+  white-space: nowrap;
+}
+
+/* The `hidden` attribute is display:none in the UA stylesheet, and any
+   author rule setting `display` beats it — Material sets one on tables.
+   The filter relies on `hidden`, so make it win. */
+.md-typeset [hidden] {
+  display: none !important;
+}
