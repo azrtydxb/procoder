@@ -45,19 +45,14 @@ downstream reviewer's:
   /procoder:simplify the way the rubric is quoted: the five tags with
   their definitions, the one-line finding format
   `<file>:L<line>: <tag> <what>. <replacement>.`, the never-invent-a-
-  finding rule, and the exact null result `Lean already. Ship.` A lens
-  dispatched by name only comes back as prose with no replacements,
-  which is the hedging that format exists to prevent. Scope it to the
-  DIFF — the repo sweep belongs to /procoder:release.
-- Order the two reports: the simplify findings first, the correctness
-  verdict as the LAST line of the response, so the verdict is never
-  buried behind a score line.
+  finding rule, and the exact null result `Lean already. Ship.` Scope it
+  to the DIFF — the repo sweep belongs to /procoder:release.
+- Report the simplify findings first, the correctness verdict last.
 - Fix every Critical/Important finding (commit them), decide each cut —
   taking it or saying why not, P-CONTROL — re-run `procoder check`,
-  and only then continue. Cuts land before the PR opens: a change made
-  after a review invalidates the review. Downstream bot reviews are the
-  fallback net — anything they catch later becomes a lesson (see
-  /procoder:merge's reflection step).
+  and only then continue. Downstream bot reviews are the fallback net —
+  anything they catch later becomes a lesson (see /procoder:merge's
+  reflection step).
 
 3. Fill .procoder/github/PULL_REQUEST_TEMPLATE.md section by section from that
    diff. If the template is missing, get it via `procoder templates`,

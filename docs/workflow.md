@@ -127,8 +127,7 @@ The skill summarises the real diff, fills the template from
 Before any of that it dispatches a fresh-context reviewer over the diff
 with two lenses: the correctness rubric in `.procoder/github/REVIEW.md`,
 and the five simplification tags — what should not exist. Critical and
-Important findings are fixed, and cuts decided, before the PR opens: a
-change made after a review invalidates the review.
+Important findings are fixed, and cuts decided, before the PR opens.
 
 Keep the title at 72 characters or fewer — it becomes the squash-commit
 subject.
@@ -188,9 +187,8 @@ clean tree, the gate, and the suite — every failure listed at once. On
 success it prints the `git tag` command for you to run.
 
 The release flow also runs the simplification sweep over the whole
-repository, which is the one moment it has an owner: a tag ships the
-accumulated shape of the code, not just the last change. Per-PR the
-same review is scoped to the diff.
+repository: a tag ships the accumulated shape of the code, not just the
+last change.
 
 **It tags nothing itself.**
 

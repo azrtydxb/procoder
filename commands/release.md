@@ -12,8 +12,7 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    changelog has its entry, the working tree is clean, the gate is
    clean, and the suite is green under [test] policy.
 2. Before the first fix, run /procoder:simplify over the whole repo
-   (`repo`) — the whole-tree question has no other owner. Take the cuts
-   you agree with, say why not for the rest.
+   (`repo`): take the cuts you agree with, say why not for the rest.
 3. Fix everything the release controller listed — bump the files, write
    the changelog entry, commit — then rerun `launcher.sh release` until
    it answers ready.
