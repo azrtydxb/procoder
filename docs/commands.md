@@ -395,7 +395,8 @@ auto-reviews to ask about, so the empty answer is real and the exit is 0.
 Prints the engineering principles each session starts with (a SessionStart
 hook injects them): build-ladder first — reuse, stdlib, platform, then the
 minimum code that works — the delegation discipline (independent work
-fans out to parallel subagents under a clear contract, watched as it
+fans out to parallel subagents under a clear contract, nothing started
+that somebody else is already on, watched as it
 lands, nothing merged unjudged), and ADHD/ASD-friendly formatting for
 complex answers: a title and one-line summary, type-labeled problem
 cards, decisions in their own numbered list, noise filtered, and short

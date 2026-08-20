@@ -166,3 +166,24 @@ via the plugin automatically; for every other host, put the right
 `dist/<platform>/procoder` on PATH (or `go install`). The instruction
 tier degrades gracefully: without the binary the rules still shape
 behaviour, and the agent is told what to install.
+
+## Windows
+
+Windows reaches the binary through the same `hooks/launcher.sh` every
+other platform uses. Claude Code — and Codex CLI, which shares the hooks
+file — runs hook commands through Git Bash, where `uname -s` answers
+`MINGW64_NT-10.0-26200`; MSYS2 and Cygwin shells answer in the same
+family. The launcher matches `MINGW*`, `MSYS*` and `CYGWIN*` and
+resolves `dist/windows-amd64/procoder.exe`, so every hook and every
+slash command works with no manifest change and no per-host wiring.
+
+Copilot CLI is the exception on Windows only: `hooks/copilot-hooks.json`
+calls `hooks/launcher.sh` like everything else, and falls back to a
+PowerShell branch that names the `.exe` itself where no POSIX shell is
+available.
+
+Only `windows-amd64` ships. On ARM64 Windows, Git Bash reports the
+emulated `x86_64` and that binary runs. A POSIX shell reporting
+`aarch64`, or `launcher.cmd` seeing `PROCESSOR_ARCHITECTURE=ARM64`, is
+told there is no binary for `windows/arm64` rather than being handed the
+wrong one.

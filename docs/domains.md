@@ -248,8 +248,8 @@ setting that stops it at the source.
 
 Around the checks, the skills encode the workflow: a worktree per
 feature (a git practice the skills prescribe — Procoder creates and
-removes none of them itself), `/procoder:pr` (docs-impact question,
-pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
+removes none of them itself), `/procoder:pr` (defer to an existing PR,
+docs-impact question, pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
 polling, every review thread answered, the reflection step for anything
 that escaped, then merge and full cleanup).
 
