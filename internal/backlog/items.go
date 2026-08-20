@@ -39,7 +39,12 @@ var (
 	sprintRe    = regexp.MustCompile(`(?m)^Sprint:\s*(\S+)`)
 	typeRe      = regexp.MustCompile(`(?m)^Type:\s*(\S+)`)
 	severityRe  = regexp.MustCompile(`(?m)^Severity:\s*(\S+)`)
-	specRe      = regexp.MustCompile(`(?m)^Spec:\s*(\S+)\s*@\s*(\S+)`)
+	// The fingerprint half is optional to MATCH so that a Spec: line without
+	// one still registers as a spec reference. It is not optional to HAVE:
+	// an epic that names a spec but records no seeding is one the board must
+	// be able to say that about, and a line that simply failed to parse is
+	// invisible — the worst of the three states.
+	specRe      = regexp.MustCompile(`(?m)^Spec:\s*(\S+)(?:\s*@\s*(\S+))?`)
 	uncheckedRe = regexp.MustCompile(`(?m)^\s*- \[ \]`)
 	checkedRe   = regexp.MustCompile(`(?m)^\s*- \[[xX]\]`)
 	placeholder = regexp.MustCompile(`(?m)^\s*- \[.\]\s*\.\.\.`)

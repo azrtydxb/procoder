@@ -118,6 +118,26 @@ func TestListOrdersOpenBeforeDone(t *testing.T) {
 	}
 }
 
+// A Spec: line with no fingerprint at all is the same fact as one carrying a
+// value no fingerprint could produce, and it used to be worse: the header did
+// not parse, so the epic read as having no spec reference — no link on the
+// board and nothing to flag. Silence is the one answer a reader cannot act on.
+// proved by: required the `@ <print>` half to match — the epic then claims no
+// spec at all and the board says nothing about it.
+func TestAnEpicNamingASpecWithNoFingerprintIsNotSilent(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, "auth", "# auth\n\nthe spec\n")
+	writeItem(t, root, KindEpic, "auth", "# Auth\n\nStatus: open 2026-08-20\nSpec: auth\n")
+
+	var lines []string
+	if code := Board(root, func(s string) { lines = append(lines, s) }); code != 0 {
+		t.Fatalf("board exit code = %d, want 0", code)
+	}
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "⚠ spec not seeded") {
+		t.Errorf("an epic that names a spec but records no seeding must say so: %s", joined)
+	}
+}
+
 // An epic whose Spec: line carries something no fingerprint could produce was
 // never seeded from that spec — the binary prints the epic and the agent
 // writes it, so a placeholder can land where the digest belongs. That is a
