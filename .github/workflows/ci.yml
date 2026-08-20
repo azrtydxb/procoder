@@ -28,6 +28,22 @@ jobs:
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder
+      - name: the launcher resolves a binary in the shell this OS really uses
+        # The Go test proves the case mapping with POSIX stubs and skips on
+        # Windows, so without this step nothing exercises the path the
+        # Windows fix exists for: GitHub's windows-latest runs `shell: bash`
+        # as Git Bash, where uname reports MINGW64_NT and the launcher must
+        # find procoder.exe. Running it is the whole check — a launcher that
+        # cannot resolve the binary exits 1 with its own message.
+        shell: bash
+        run: |
+          # Resolution is the whole question: the launcher runs the COMMITTED
+          # dist binary, whose version is deliberately not the source's and
+          # is checked against the manifest by the next step. What must hold
+          # here is that this shell's uname resolves to a binary at all.
+          got=$(hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
+          test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
+          echo "launcher resolved procoder $got under $(uname -s)"
       - name: dist binary matches the manifest version
         # the committed release binaries are hand-built; a version bump
         # that forgot the rebuild must fail here, not ship stale
