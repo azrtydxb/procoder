@@ -15,6 +15,8 @@ staged). With `repo` (or a path) in the arguments, sweep that whole scope
 — use `procoder index unused` and `procoder maintain` as starting
 evidence, then read.
 
+The diff pass runs before every pull request; the repo sweep before a tag.
+
 Every finding is one line, with a mandatory replacement — a finding
 without a replacement is hedging, not reviewing:
 
