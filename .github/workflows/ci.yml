@@ -18,7 +18,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5 gitleaks:allow
+      # v6 is the first major that reads go.mod's toolchain directive; v5
+      # matched only the `go` line and installed the newest patch of it, so
+      # the pin in go.mod would have been ignored here. v6+ also exports
+      # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
+      # a different compiler than the one this step installed.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
         with:
           go-version-file: go.mod
       - name: gofmt is clean
@@ -52,10 +57,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5 gitleaks:allow
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
         with:
           go-version-file: go.mod
       - name: install the tools the gate needs
+        env:
+          # setup-go exports GOTOOLCHAIN=local so nothing drifts off the pin,
+          # but these are other people's modules: gopls@latest already
+          # declares go 1.26, and `local` makes that a hard install failure
+          # instead of a toolchain fetch. The pin governs what compiles
+          # procoder; it has no business governing the linters.
+          GOTOOLCHAIN: auto
         run: |
           go build -o /usr/local/bin/procoder ./cmd/procoder
           # the runner's azure apt mirrors die for minutes at a time (two gate
