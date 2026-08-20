@@ -6,22 +6,14 @@
 # architecture and execs it with everything passed through — argv, stdin,
 # stdout — so hooks.json and the skills only ever name this one path.
 set -u
+ext=""
 
 dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-# Windows hosts run this script through Git Bash, where uname -s answers
-# MINGW64_NT-10.0-26200 (MSYS2 and Cygwin shells answer in the same family).
-# Without these arms every hook and every command exited 1 on a fresh Windows
-# install, so the ext suffix travels with the OS: the shipped binary there is
-# procoder.exe.
-ext=''
 case "$(uname -s)" in
 Darwin) os=darwin ;;
 Linux) os=linux ;;
-MINGW* | MSYS* | CYGWIN*)
-	os=windows
-	ext=.exe
-	;;
+MINGW* | MSYS* | CYGWIN*) os=windows ext=".exe" ;;
 *)
 	echo "procoder: unsupported OS $(uname -s)" >&2
 	exit 1
