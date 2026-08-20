@@ -316,13 +316,19 @@ func Oversized(files []string, maxMB int) []Finding {
 // the tool is noise at best and a policy violation at worst, and it BLOCKS.
 var attribution = regexp.MustCompile(`(?im)^[ \t]*co-authored-by:.*\b(claude|anthropic)\b|generated with.*\bclaude\b|noreply@anthropic\.com|🤖`)
 
+// Where the per-host settings that stop the trailer at its source are written
+// down. The finding carries it because amending is only half the fix: the host
+// that added the trailer adds it again on the next commit, and a user who only
+// ever reads the gate's output would hit the same wall every time.
+const attributionRemedyURL = "https://procoder.azrty.com/portability/#the-trailer-your-host-adds"
+
 // Attribution finds AI-attribution lines in the given commit messages.
 func Attribution(messages []string) []Finding {
 	var out []Finding
 	for _, m := range messages {
 		if loc := attribution.FindString(m); loc != "" {
 			out = append(out, Finding{Blocking: true,
-				Message: fmt.Sprintf("commit message carries an AI-attribution line: %q — the work is the author's; remove it (git commit --amend / rebase)", strings.TrimSpace(firstLineOf(loc)))})
+				Message: fmt.Sprintf("commit message carries an AI-attribution line: %q — the work is the author's; remove it (git commit --amend / rebase). If the host added it, it will add it again on the next commit — turn it off at the source: %s", strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)})
 		}
 	}
 	return out

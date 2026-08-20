@@ -447,7 +447,11 @@ security rules, the Mermaid theme.
 
 #### `procoder scrub <file|->`
 
-Checks text for AI-attribution lines; exit 1 when any are found.
+Checks text for AI-attribution lines; exit 1 when any are found. When the
+line came from the host rather than from you, removing it is only half
+the fix — [the trailer your host
+adds](portability.md#the-trailer-your-host-adds) has the setting that
+stops it recurring.
 
 #### `procoder hook post-tool-use`
 

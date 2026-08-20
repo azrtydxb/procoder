@@ -13,7 +13,10 @@ back, and a file it could not check is never reported as clean.
 - `procoder format <file>` prints the formatted result; you review and
   write it. The binary never touches the file.
 - Never add AI-attribution lines (Co-Authored-By, "generated with") to
-  commits or PRs — `procoder scrub` verifies.
+  commits or PRs — `procoder scrub` verifies. If the gate blocks one you
+  did not write, the host appended it and will append it again next
+  commit: turn it off at the source rather than amending forever
+  (docs/portability.md, "The trailer your host adds").
 - Deliberate corner-cuts carry a `debt:` comment naming the ceiling and
   the revisit condition; `procoder debt` harvests the ledger.
 - Specs live in `.procoder/specs/`, plans in `.procoder/plans/`, tasks
