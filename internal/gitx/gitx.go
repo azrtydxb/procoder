@@ -314,7 +314,83 @@ func Oversized(files []string, maxMB int) []Finding {
 
 // AI attribution in commit messages. The work is the author's; a line crediting
 // the tool is noise at best and a policy violation at worst, and it BLOCKS.
-var attribution = regexp.MustCompile(`(?im)^[ \t]*co-authored-by:.*\b(claude|anthropic)\b|generated with.*\bclaude\b|noreply@anthropic\.com|🤖`)
+//
+// aiIdentity is one machine author the gate recognises: the name the finding
+// reports, the alternation that spots it inside a Co-Authored-By trailer, and
+// the shapes it takes outside one. Both the pattern and the wording come from
+// here, so a host is added in a single place.
+type aiIdentity struct {
+	name string
+	// inTrailer matches only on a co-author line, never on prose: the
+	// Co-Authored-By header predates AI coders by a decade and is correct for
+	// pair programming, patches carried on someone's behalf and squashed
+	// contributions. A gate that blocked every one of those is a gate its
+	// users learn to route around, so the header alone is never the signal —
+	// the identity named on it is.
+	inTrailer string
+	// anywhere matches the forms that are not trailers at all: a "generated
+	// with" sentence, a vendor's noreply address in a body, a robot emoji.
+	anywhere string
+}
+
+// aiIdentities is the whole rule. Vendor addresses are matched as the literal
+// noreply mailbox rather than by domain, because a human employed by an AI lab
+// co-authors commits from that same domain and is a person, not a tool.
+//
+// debt: a named list is stale the moment a host nobody has heard of ships a
+// trailer of its own, and every miss is silent — the user has the policy
+// without the enforcement, which is the failure this list exists to fix.
+// Revisit when a host outside it is reported writing one, or when keeping it
+// current stops being a matter of reading the host's own settings docs.
+var aiIdentities = []aiIdentity{
+	// Claude Code writes the trailer, the "Generated with" line and the
+	// session emoji; `attribution` in settings.json turns all three off.
+	// `anthropic` is deliberately NOT in the trailer pattern: it would match
+	// a person at that company co-authoring from their own address, which is
+	// the rule this list states — the vendor's noreply mailbox is the tool,
+	// the domain is an employer.
+	{name: "Claude", inTrailer: `claude`, anywhere: `generated with[^\n]*\bclaude\b|noreply@anthropic\.com`},
+	// Codex injects the trailer from an account-level policy, so a user who
+	// cannot administer the account meets it on every commit.
+	{name: "Codex", inTrailer: `codex|noreply@openai\.com`},
+	// VS Code's git extension, when git.addAICoAuthor is anything but "off".
+	{name: "Copilot", inTrailer: `copilot`, anywhere: `\bcopilot@github\.com\b`},
+	// Cursor's agent attributes with a "Made with Cursor" trailer rather than
+	// a co-author line; its cloud agent adds a co-author on top.
+	{name: "Cursor", inTrailer: `cursor`, anywhere: `made[ -]with:?[ \t]*cursor`},
+	// The bot handle, not the bare first name: "Devin" belongs to plenty of
+	// human co-authors and blocking them would teach users to distrust the gate.
+	{name: "Devin", inTrailer: `devin-ai-integration`},
+	{name: "Gemini", inTrailer: `gemini`},
+	{name: "aider", inTrailer: `aider|noreply@aider\.chat`},
+	// Not an identity but the sign of one: the emoji no human types into a
+	// commit subject.
+	{name: "a robot emoji", anywhere: `🤖`},
+}
+
+// pattern is the identity's two halves as one expression: case-insensitive,
+// multi-line, so the trailer half anchors per line instead of per message.
+func (a aiIdentity) pattern() string {
+	var alts []string
+	if a.inTrailer != "" {
+		// The trailing run to end-of-line is what makes the finding quote the
+		// whole trailer: without it the match stops mid-address and the reader
+		// is shown half the line they are being asked to delete.
+		alts = append(alts, `^[ \t]*co-authored-by:.*\b(?:`+a.inTrailer+`)\b[^\n]*`)
+	}
+	if a.anywhere != "" {
+		alts = append(alts, a.anywhere)
+	}
+	return `(?im)` + strings.Join(alts, "|")
+}
+
+var aiMatchers = func() []*regexp.Regexp {
+	out := make([]*regexp.Regexp, len(aiIdentities))
+	for i, a := range aiIdentities {
+		out[i] = regexp.MustCompile(a.pattern())
+	}
+	return out
+}()
 
 // Where the per-host settings that stop the trailer at its source are written
 // down. The finding carries it because amending is only half the fix: the host
@@ -326,12 +402,26 @@ const attributionRemedyURL = "https://procoder.azrty.com/portability/#the-traile
 func Attribution(messages []string) []Finding {
 	var out []Finding
 	for _, m := range messages {
-		if loc := attribution.FindString(m); loc != "" {
+		// The finding names the identity as well as the line, so someone who
+		// believes it is wrong can say which entry is wrong and argue with it,
+		// instead of reading a blocked commit as the gate being mysterious.
+		if name, loc := matchAIIdentity(m); loc != "" {
 			out = append(out, Finding{Blocking: true,
-				Message: fmt.Sprintf("commit message carries an AI-attribution line: %q — the work is the author's; remove it (git commit --amend / rebase). If the host added it, it will add it again on the next commit — turn it off at the source: %s", strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)})
+				Message: fmt.Sprintf("commit message carries an AI-attribution line crediting %s: %q — the work is the author's; remove it (git commit --amend / rebase). If the host added it, it will add it again on the next commit — turn it off at the source: %s", name, strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)})
 		}
 	}
 	return out
+}
+
+// matchAIIdentity reports the first recognised identity in the text and the
+// line that carried it.
+func matchAIIdentity(text string) (name, line string) {
+	for i, re := range aiMatchers {
+		if loc := re.FindString(text); loc != "" {
+			return aiIdentities[i].name, loc
+		}
+	}
+	return "", ""
 }
 
 // ScrubText applies the same attribution patterns to arbitrary text — the PR

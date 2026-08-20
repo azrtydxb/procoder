@@ -93,6 +93,16 @@ The gate blocks the ones it recognises, and blocks them without a knob:
 the work is the author's, and a repository that wants the rule off
 already has `[git] commit_gate`.
 
+What it recognises is a named list of machine authors — Claude, Codex,
+Copilot, Cursor, Devin, Gemini, aider, and the robot emoji — matched on
+the trailer that names one, plus the "Generated with …" and vendor
+`noreply@` forms. Not every `Co-Authored-By:`: the header is a decade
+older than AI coders and is right for pair programming, a patch carried
+on someone's behalf, or a squash that credits everyone who touched the
+branch, so those keep passing. The finding names which identity it
+matched, so a wrong one can be argued with rather than worked around. A
+host outside the list is a silent miss and worth an issue.
+
 That makes the trailer a recurring wall rather than a one-time fix.
 Amending the message clears the finding; the host writes the trailer
 again on the next commit, because the setting that produced it never
@@ -156,3 +166,24 @@ via the plugin automatically; for every other host, put the right
 `dist/<platform>/procoder` on PATH (or `go install`). The instruction
 tier degrades gracefully: without the binary the rules still shape
 behaviour, and the agent is told what to install.
+
+## Windows
+
+Windows reaches the binary through the same `hooks/launcher.sh` every
+other platform uses. Claude Code — and Codex CLI, which shares the hooks
+file — runs hook commands through Git Bash, where `uname -s` answers
+`MINGW64_NT-10.0-26200`; MSYS2 and Cygwin shells answer in the same
+family. The launcher matches `MINGW*`, `MSYS*` and `CYGWIN*` and
+resolves `dist/windows-amd64/procoder.exe`, so every hook and every
+slash command works with no manifest change and no per-host wiring.
+
+Copilot CLI is the exception on Windows only: `hooks/copilot-hooks.json`
+calls `hooks/launcher.sh` like everything else, and falls back to a
+PowerShell branch that names the `.exe` itself where no POSIX shell is
+available.
+
+Only `windows-amd64` ships. On ARM64 Windows, Git Bash reports the
+emulated `x86_64` and that binary runs. A POSIX shell reporting
+`aarch64`, or `launcher.cmd` seeing `PROCESSOR_ARCHITECTURE=ARM64`, is
+told there is no binary for `windows/arm64` rather than being handed the
+wrong one.

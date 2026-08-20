@@ -234,6 +234,12 @@ The finishing discipline — most of it rides the gate:
 | Agent-layer drift (rule copies vs `AGENTS.md`, manifest versions)                 | **blocks**                                        |
 | Commit subject shape (≤72, blank line before body); working on the default branch | reports (`[git] default_branch_policy` can block) |
 
+The attribution check reads a named list of machine authors — Claude,
+Codex, Copilot, Cursor, Devin, Gemini, aider, the robot emoji — and says
+in the finding which one it matched. A `Co-Authored-By:` naming a person
+is left alone; the header long predates AI coders and pair programming,
+carried patches and squashes all use it correctly.
+
 The attribution line is the one most likely to come back: the host adds
 it, so amending the commit clears the finding without changing what
 produced it. [The trailer your host
@@ -242,8 +248,8 @@ setting that stops it at the source.
 
 Around the checks, the skills encode the workflow: a worktree per
 feature (a git practice the skills prescribe — Procoder creates and
-removes none of them itself), `/procoder:pr` (docs-impact question,
-pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
+removes none of them itself), `/procoder:pr` (defer to an existing PR,
+docs-impact question, pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
 polling, every review thread answered, the reflection step for anything
 that escaped, then merge and full cleanup).
 
