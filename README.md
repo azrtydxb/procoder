@@ -24,7 +24,7 @@ in control — nothing ever touches your code behind its back.
 That's Claude Code; Procoder also ships adapters for **every agent** —
 Cursor, Windsurf, Cline, Kilo Code, Roo, Kiro, Codex CLI, Copilot CLI,
 Gemini, OpenCode, and anything that reads `AGENTS.md`. See
-[Every agent](https://azrtydxb.github.io/procoder/portability/).
+[Every agent](https://procoder.azrty.com/portability/).
 
 ## Before / after
 
@@ -147,7 +147,7 @@ means two sets of instructions competing for the same agent:
   not adopted: the binary computes the rename and hands you the diff.
 
 Full provenance map, including where the serena replacement stops:
-[Influences](https://azrtydxb.github.io/procoder/influences/).
+[Influences](https://procoder.azrty.com/influences/).
 
 ## Configuration
 
@@ -156,21 +156,21 @@ edited, and the repo's version always wins over the built-in default:
 `config.toml` (policies, thresholds), `PRINCIPLES.md`, the github
 templates, the docs/security rules, the review rubric, the lessons
 ledger. Full reference:
-[Configuration](https://azrtydxb.github.io/procoder/configuration/).
+[Configuration](https://procoder.azrty.com/configuration/).
 
 ## The docs
 
 The full story lives on the site, organised the way the
 [Divio documentation system](https://docs.divio.com/documentation-system/)
 splits it: the tutorial
-([Getting started](https://azrtydxb.github.io/procoder/getting-started/)),
+([Getting started](https://procoder.azrty.com/getting-started/)),
 the how-to guides
-([Ship a change](https://azrtydxb.github.io/procoder/workflow/)),
+([Ship a change](https://procoder.azrty.com/workflow/)),
 the reference
-([every command](https://azrtydxb.github.io/procoder/commands/)), and
+([every command](https://procoder.azrty.com/commands/)), and
 the explanation
-([the quality chain](https://azrtydxb.github.io/procoder/quality-chain/),
-[how it's built](https://azrtydxb.github.io/procoder/architecture/)).
+([the quality chain](https://procoder.azrty.com/quality-chain/),
+[how it's built](https://procoder.azrty.com/architecture/)).
 
 ## What the reports mean
 

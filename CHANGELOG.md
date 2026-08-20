@@ -118,7 +118,7 @@ into `architecture.md` had an anchor that no heading generated.
 
 Documentation, after reading it as a user rather than as its author.
 
-- **Serena joins the provenance map.** [Influences](https://azrtydxb.github.io/procoder/influences/)
+- **Serena joins the provenance map.** [Influences](https://procoder.azrty.com/influences/)
   covered superpowers and ponytail but not serena, whose navigation half
   Procoder took into the binary — `index find` / `refs` / `outline` /
   `callers` / `impls` / `rename`, plus `lint --types` and `.procoder/` as
