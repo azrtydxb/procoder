@@ -34,6 +34,32 @@ func CollectOfflineFor(root string, changed []string, commitMessage string, bloc
 
 // RunFor is Run with the commit message the acknowledgment line would live in
 // and the repository's docs policy, for the caller that has read config.
+// CollectSweep is the diff-independent half of the offline slice, for a
+// whole-tree sweep like `procoder audit`. Drift and the documentation
+// obligation both ask a question about a CHANGE — "does a doc mention the
+// file you just touched", "did this diff move public surface" — and a
+// sweep passes every file, so both answer about everything at once and
+// bury the real findings. A survey asks what is true, not what just moved.
+func CollectSweep(root string, files []string) []gitx.Finding {
+	var out []gitx.Finding
+	if _, err := markdownFiles(root); err != nil {
+		out = append(out, gitx.Finding{Blocking: true,
+			Message: "documentation survey NOT complete — the tree could not be walked: " + err.Error()})
+	}
+	for _, f := range files {
+		if IsMarkdownFile(f) {
+			out = append(out, CheckFile(root, f)...)
+		}
+	}
+	out = append(out, MissingAPIDocs(files)...)
+	return append(out, VersionSync(root)...)
+}
+
+// RunFor is `procoder docs`: the full documentation report over the whole
+// repository, plus the diff-scoped questions the caller has the answers
+// for — the commit message an acknowledgment would live in, and whether
+// the repository opted the obligation into blocking. external adds the
+// link and Pages checks, which are the only ones that touch the network.
 func RunFor(root string, changed []string, commitMessage string, external, block bool, stdout io.Writer) int {
 	rules := LoadRules(root)
 	md := MarkdownFiles(root)

@@ -83,6 +83,9 @@ type Inventory struct {
 	TfDirs      []string
 	K8sFiles    []string
 	ChartDirs   []string
+	// WalkErr records a survey that could not complete. "No infrastructure
+	// here" and "I could not look" must never read the same.
+	WalkErr error
 }
 
 // Empty reports whether there is any infrastructure to check at all.
@@ -100,8 +103,16 @@ func Detect(root string) Inventory {
 	tfDirs := map[string]bool{}
 	skip := map[string]bool{".git": true, "node_modules": true, "vendor": true,
 		"dist": true, ".claude": true, ".terraform": true}
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	inv.WalkErr = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		// one unreadable directory deeper in is skipped, not fatal — a
+		// survey that stops at the first bad entry answers less than one
+		// that continues. The ROOT is different: if that cannot be read
+		// there is no survey at all, and "no infra files" must never read
+		// the same as "could not look".
 		if err != nil {
+			if path == root {
+				return err
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -139,6 +150,10 @@ func Detect(root string) Inventory {
 // Check runs every applicable instrument over the inventory.
 func Check(root string) []gitx.Finding {
 	inv := Detect(root)
+	if inv.WalkErr != nil {
+		return []gitx.Finding{{Blocking: true,
+			Message: "infrastructure NOT surveyed — the tree could not be walked: " + inv.WalkErr.Error()}}
+	}
 	if inv.Empty() {
 		return nil
 	}

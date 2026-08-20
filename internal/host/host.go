@@ -14,10 +14,14 @@ import (
 type Host string
 
 const (
-	Claude  Host = "claude"
-	Codex   Host = "codex"
+	// Claude Code reads a hook's raw stdout.
+	Claude Host = "claude"
+	// Codex wants the hookSpecificOutput envelope plus a systemMessage.
+	Codex Host = "codex"
+	// Copilot wants a bare additionalContext object.
 	Copilot Host = "copilot"
-	Qoder   Host = "qoder"
+	// Qoder wants the hookSpecificOutput envelope without the systemMessage.
+	Qoder Host = "qoder"
 )
 
 // Detect sniffs the environment. Unknown environments answer Claude —

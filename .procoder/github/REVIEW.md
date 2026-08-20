@@ -25,6 +25,12 @@ Check every hunk for:
   can satisfy.
 - A benchmark that does not assert its work happened — an early return
   times at nanoseconds and reads as fast.
+- A check whose question is about a CHANGE ("does a doc mention what you
+  touched") reused over a whole-tree sweep, where it answers about
+  everything and buries the real findings.
+- A directory walk that swallows the ROOT's error: one unreadable
+  subdirectory is skippable, an unreadable root is no survey at all, and
+  "nothing there" must never read the same as "could not look".
 - Loops doing per-iteration work that belongs outside (regex compilation,
   allocations, file opens).
 - Temp files and permissions: CreateTemp over predictable names; modes no

@@ -116,7 +116,7 @@ func Run(root string, out func(string)) int {
 	cfg := config.Load(root)
 	// Collect is the gate's shared slice: git hygiene, templates, workflow
 	// lint, CI hygiene, infrastructure, and documentation in one pass
-	report("hygiene (git, workflows, CI, infra, docs)", gitcmd.Collect(root, cfg, files))
+	report("hygiene (git, workflows, CI, infra, docs)", gitcmd.CollectTree(root, cfg, files))
 	// the file set, not the directory: dir mode would read gitignored
 	// trees (node_modules/, target/, local caches) and stamp fingerprints
 	// with absolute paths — see SecretsTree

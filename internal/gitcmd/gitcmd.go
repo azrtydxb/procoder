@@ -86,10 +86,30 @@ func Collect(root string, cfg config.Config, changed []string) []gitx.Finding {
 	return CollectFor(root, cfg, changed, "")
 }
 
+// CollectTree is Collect for a whole-tree sweep: the same hygiene checks,
+// but the documentation half drops the two diff-scoped questions (see
+// docs.CollectSweep) that would otherwise answer about every file at once.
+func CollectTree(root string, cfg config.Config, files []string) []gitx.Finding {
+	out := collectHygiene(root, cfg, files)
+	out = append(out, docs.CollectSweep(root, files)...)
+	return append(out, templateFindings(root)...)
+}
+
 // CollectFor is Collect with the commit message the documentation
 // acknowledgment line would live in — the commit hook has it, a bare
 // `procoder check` does not, and the obligation says so either way.
 func CollectFor(root string, cfg config.Config, changed []string, commitMessage string) []gitx.Finding {
+	out := collectHygiene(root, cfg, changed)
+	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
+	// and CI can never disagree about documentation health either.
+	out = append(out, docs.CollectOfflineFor(root, changed, commitMessage, cfg.DocsBlock)...)
+	return append(out, templateFindings(root)...)
+}
+
+// collectHygiene is the part both the diff path and the whole-tree sweep
+// share: it asks only questions whose answer does not depend on something
+// having just changed.
+func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Finding {
 	var out []gitx.Finding
 	out = append(out, gitx.ConflictMarkers(changed)...)
 	out = append(out, gitx.JunkFiles(changed)...)
@@ -118,12 +138,14 @@ func CollectFor(root string, cfg config.Config, changed []string, commitMessage 
 	// Domain 8: infrastructure hygiene, only when infra files exist
 	out = append(out, infra.Check(root)...)
 
-	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
-	// and CI can never disagree about documentation health either.
-	out = append(out, docs.CollectOfflineFor(root, changed, commitMessage, cfg.DocsBlock)...)
+	return out
+}
 
-	// Missing templates are information, not a block: the fix is one
-	// `procoder templates` away and the finding says so.
+// templateFindings reports the .procoder/github templates a repo has not
+// written yet. Information, not a block: the fix is one `procoder
+// templates` away and the finding says so.
+func templateFindings(root string) []gitx.Finding {
+	var out []gitx.Finding
 	if _, err := os.Stat(filepath.Join(root, prTemplatePath)); err != nil {
 		out = append(out, gitx.Finding{Message: prTemplatePath + " is missing — run `procoder templates` and write it"})
 	}

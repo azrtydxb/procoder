@@ -31,6 +31,9 @@ var Actionlint = &tools.Tool{
 	},
 }
 
+// Gh is the GitHub CLI: doctor requires it where the repository pushes to
+// a GitHub remote, and the skills drive PR, merge and CI-run work through
+// it rather than reimplementing the API.
 var Gh = &tools.Tool{
 	Name:        "gh",
 	Install:     "brew install gh   (https://cli.github.com)",

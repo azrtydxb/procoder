@@ -465,5 +465,11 @@ func Refresh(root, file string) {
 	if os.WriteFile(tmp, []byte(buf.String()), 0o644) != nil {
 		return
 	}
-	os.Rename(tmp, filepath.Join(root, Dir, tagsFile))
+	if err := os.Rename(tmp, filepath.Join(root, Dir, tagsFile)); err != nil {
+		// The index is now stale and nobody can be told — Refresh is
+		// fire-and-forget from the write hook. What must not also happen is
+		// a .tmp accumulating beside it on every failed write; the next
+		// `index build` is the recovery, and staleNote already says so.
+		os.Remove(tmp)
+	}
 }

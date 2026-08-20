@@ -135,3 +135,21 @@ does. `procoder lessons` flags entries with no adaptation.
   that never created them timed a nil return at 2µs and looked fast.
   Every benchmark here now asserts the work happened before timing it
   (the guard in BenchmarkDriftOverATypicalCorpus)
+
+## 2026-08-20 audit — a whole-tree sweep asked diff-scoped questions
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "a check whose question is about a
+  CHANGE, reused over a whole-tree sweep"; docs.CollectSweep drops drift
+  and the obligation for audit, pinned by
+  TestSweepDropsTheDiffScopedDocumentationQuestions
+
+## 2026-08-20 audit — a swallowed walk error made "could not look" read as "nothing there"
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "a directory walk that swallows the
+  ROOT's error"; infra, docs and maintain distinguish an unreadable root
+  (no survey) from a skippable subdirectory, pinned by
+  TestUnwalkableTreeIsNotSurveyedRatherThanEmpty

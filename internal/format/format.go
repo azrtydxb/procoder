@@ -28,8 +28,14 @@ type Verdict int
 const (
 	// OutOfScope: no formatter claims this file type. Counted, not judged.
 	OutOfScope Verdict = iota
+	// Clean: the formatter ran and the file already matches its output.
 	Clean
+	// Unformatted: the formatter ran and disagrees; the formatted bytes are
+	// in hand for the agent to review and write.
 	Unformatted
+	// Unchecked: the formatter could not answer — missing, failed, or timed
+	// out. Counted as failing, never as clean: a gate that cannot look is a
+	// gate with a hole in it.
 	Unchecked
 )
 
