@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
+	"procoder/internal/gitx"
 	"procoder/internal/spec"
 )
 
@@ -155,7 +157,63 @@ func Board(root string, out func(string)) int {
 		summary += fmt.Sprintf(" · %d open bug(s)", openBugs)
 	}
 	out(summary)
+	if note := branchNote(root); note != "" {
+		out(note)
+	}
 	return 0
+}
+
+// branchNote says which branch the board just read, and what the default
+// branch holds that this one cannot see.
+//
+// The backlog is versioned like the code, so the board answers about the
+// checkout while being read as answering about the project: this repository's
+// own board reported "0 open · 78 done" on a feature branch while thirty-four
+// specced stories sat one branch away. Naming the branch is the cheap half of
+// the fix; counting what is invisible is the half that sends the reader
+// somewhere. Merging the two branches' items is NOT attempted — deciding
+// whose status wins when both carry a story is a design question, and a
+// number that points at the answer beats a merge that guesses at it.
+func branchNote(root string) string {
+	here := gitx.CurrentBranch(root)
+	if here == "" {
+		// Not a repository, or a detached HEAD: either way there is no branch
+		// to name and nothing to compare against.
+		return ""
+	}
+	def := gitx.DefaultBranch(root)
+	if def == "" {
+		return "read from branch " + here + " — the default branch is unknown, so nothing was compared"
+	}
+	if def == here {
+		return "read from branch " + here
+	}
+	// The remote-tracking ref, when there is one: the workflow this footer
+	// exists for is fetch-and-branch, never checking the default branch out,
+	// which leaves the local head behind and reading it would be the same
+	// lie in a new costume.
+	ref := def
+	if remote := "origin/" + def; gitx.HasRef(root, remote) {
+		ref = remote
+	}
+	theirs, err := gitx.GrepOn(root, ref, "^Status: open", filepath.ToSlash(filepath.Join(Dir, KindStory)))
+	if err != nil {
+		return "read from branch " + here + " — " + ref + " NOT compared: " + err.Error()
+	}
+	unseen := 0
+	for _, rel := range theirs {
+		// Any stat failure counts as unseen: a path this checkout cannot
+		// look at is not one it can see, and under-counting here would put
+		// the footer back to reassuring the reader wrongly.
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			unseen++
+		}
+	}
+	if unseen == 0 {
+		return "read from branch " + here + " — nothing open on " + ref + " that this branch cannot see"
+	}
+	return fmt.Sprintf("read from branch %s — %s has %d open story(ies) this branch cannot see; merge %s to work on them",
+		here, ref, unseen, def)
 }
 
 // kindWord is the word a human reads for an item: a story typed bug reads
@@ -192,7 +250,15 @@ func storyLine(s Item, note string) string {
 	if s.Sprint != "" && s.Sprint != "-" {
 		tag = "  → sprint " + s.Sprint
 	}
-	return fmt.Sprintf("    [%s] %s%s  %s%s%s", mark, bug, s.ID, s.Title, tag, note)
+	// A story missing the sections the close controller reads cannot be
+	// judged at all, and that used to surface one story at a time, at close.
+	// A done story is not warned about: whatever shape it closed in, the
+	// controller already accepted it.
+	shape := ""
+	if len(s.Missing) > 0 && !s.Done() && s.Status != "unreadable" {
+		shape = "  ⚠ not a story yet: no " + strings.Join(s.Missing, ", no ")
+	}
+	return fmt.Sprintf("    [%s] %s%s  %s%s%s%s", mark, bug, s.ID, s.Title, tag, note, shape)
 }
 
 // driftFlag compares an epic's recorded spec fingerprint against the spec

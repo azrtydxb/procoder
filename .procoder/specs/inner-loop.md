@@ -1,6 +1,6 @@
 # inner-loop
 
-Status: draft
+Status: complete
 
 ## Problem
 

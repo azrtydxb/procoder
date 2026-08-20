@@ -76,6 +76,14 @@ End with a verdict line: findings counted by severity, or exactly
 "Nothing found — open the PR."
 `
 
+// isUnlearned is the one definition of a lesson nobody has closed: no
+// adaptation at all, or the template's own placeholder still in its place.
+// Three reports ask this question — the ledger, the Copilot leak ledger, and
+// the gate's reminder — and they must never disagree about the answer.
+func isUnlearned(adaptation string) bool {
+	return adaptation == "" || strings.HasPrefix(adaptation, "<")
+}
+
 // Entry is one parsed lesson.
 type Entry struct {
 	Title      string
@@ -121,7 +129,7 @@ func Run(root string, out func(string)) int {
 	}
 	unlearned := 0
 	for _, e := range entries {
-		if e.Adaptation == "" || strings.HasPrefix(e.Adaptation, "<") {
+		if isUnlearned(e.Adaptation) {
 			unlearned++
 			out("  UNLEARNED  " + e.Title + " — no adaptation recorded; the class is still open")
 		} else {

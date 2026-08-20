@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: workflow-completeness
-Spec: gate-enforcement @ 98565eb898ab
+Spec: gate-enforcement @ f8fceed01a23
 
 ## Description
 

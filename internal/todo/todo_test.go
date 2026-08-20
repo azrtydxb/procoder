@@ -68,7 +68,7 @@ func TestCloseRefusesUntilComplete(t *testing.T) {
 			id := fmt.Sprintf("task-%d", i)
 			writeTask(t, root, id, c.content)
 			out, lines := collect()
-			if code := Close(root, id, gateClean, out); code != 1 {
+			if code := closeTask(root, id, gateClean, out); code != 1 {
 				t.Fatalf("exit %d, want 1 (refused); output: %v", code, *lines)
 			}
 			joined := strings.Join(*lines, "\n")
@@ -88,7 +88,7 @@ func TestCloseRefusesWhenGateDirty(t *testing.T) {
 	writeTask(t, root, "t", completeTask)
 	out, lines := collect()
 	gateRan := false
-	if code := Close(root, "t", func() bool { gateRan = true; return false }, out); code != 1 {
+	if code := closeTask(root, "t", func() bool { gateRan = true; return false }, out); code != 1 {
 		t.Fatalf("exit %d, want 1", code)
 	}
 	if !gateRan {
@@ -103,7 +103,7 @@ func TestCloseClosesWhenComplete(t *testing.T) {
 	root := t.TempDir()
 	writeTask(t, root, "t", completeTask)
 	out, _ := collect()
-	if code := Close(root, "t", func() bool { return true }, out); code != 0 {
+	if code := closeTask(root, "t", func() bool { return true }, out); code != 0 {
 		t.Fatalf("exit %d, want 0", code)
 	}
 	raw, _ := os.ReadFile(filepath.Join(root, Dir, "t.md"))
@@ -112,14 +112,14 @@ func TestCloseClosesWhenComplete(t *testing.T) {
 	}
 	// closing again is a no-op, not an error
 	out2, lines := collect()
-	if code := Close(root, "t", func() bool { return true }, out2); code != 0 {
+	if code := closeTask(root, "t", func() bool { return true }, out2); code != 0 {
 		t.Fatalf("re-close exit %d, want 0; %v", code, *lines)
 	}
 }
 
 func TestCloseMissingTask(t *testing.T) {
 	out, _ := collect()
-	if code := Close(t.TempDir(), "nope", func() bool { return true }, out); code != 2 {
+	if code := closeTask(t.TempDir(), "nope", func() bool { return true }, out); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
 }
@@ -132,7 +132,7 @@ func TestCloseRefusesTraversalIDs(t *testing.T) {
 	}
 	for _, id := range []string{"../escape", "..", "a/b", "../../etc/passwd"} {
 		out, _ := collect()
-		if code := Close(root, id, func() bool { return true }, out); code != 2 {
+		if code := closeTask(root, id, func() bool { return true }, out); code != 2 {
 			t.Errorf("id %q: exit %d, want 2 (refused)", id, code)
 		}
 	}
@@ -198,4 +198,11 @@ func TestCloseWithSuiteVerdict(t *testing.T) {
 	if code := CloseWith(root, "t", gate, green, out2); code != 0 {
 		t.Fatalf("a green suite must close: exit %d %v", code, *lines2)
 	}
+}
+
+// closeTask is CloseWith with no suite verdict, kept here because these tests
+// are its only callers — it was an exported wrapper on the package until the
+// dead-code tier said so.
+func closeTask(root, id string, gateClean func() bool, out func(string)) int {
+	return CloseWith(root, id, gateClean, nil, out)
 }

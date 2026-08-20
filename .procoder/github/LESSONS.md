@@ -226,3 +226,32 @@ does. `procoder lessons` flags entries with no adaptation.
   against the real changelog, the upload was assumed — the part that
   could not be tested locally is the part that broke.
 
+## 2026-08-20 PR#75 (Copilot) — the leak ledger report was written, tested, and reachable by nothing
+
+- Class: judgment
+- Missed by: maintain (dead-code tier)
+- Adaptation: codeindex.Unused now counts test references separately and
+  reports "referenced only by tests — surface wired nowhere" as its own
+  tier, pinned by TestUnusedSeparatesTestOnlySurfaceFromLiveCode; REVIEW.md
+  rubric line "a function whose only callers are its own tests is not wired";
+  the flag itself is wired as `copilot-leak --from-copilot` and pinned
+  against the usage text by TestCopilotLeakAcceptsEveryFlagTheUsageTextPromises
+
+## 2026-08-20 PR#75 (Copilot) — one ledger file, two owners, two entry shapes
+
+- Class: judgment
+- Missed by: rubric
+- Adaptation: REVIEW.md rubric line "one concept, one owner"; the reading
+  package owns the path and the writer calls it, with
+  TestWhatCaptureWritesTheLedgerReportReads carrying a captured finding
+  across the package seam
+
+## 2026-08-20 PR#75 (Copilot) — a label constant declared and then hardcoded beside itself
+
+- Class: taste
+- Missed by: rubric
+- Adaptation: covered by the same "one concept, one owner" rubric line;
+  createIssue passes AutoLabel and OwnLabel, and the second label exists
+  because capture was re-capturing its own issues — pinned by
+  TestOurOwnIssuesAreNeverCapturedAgain
+

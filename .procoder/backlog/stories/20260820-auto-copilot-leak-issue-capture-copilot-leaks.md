@@ -1,6 +1,6 @@
 # auto-copilot-leak: issue capture and COPILOT-LEAKS.md
 
-Status: open 2026-08-20
+Status: done 2026-08-20
 Epic: auto-copilot-leak
 Created: 2026-08-20
 Sprint: 006-auto-copilot-leak-capture-copilots-auto-review-findings-as
@@ -12,53 +12,17 @@ for each sanitised finding and append entries to a new COPILOT-LEAKS.md
 scratch ledger. No integration with lessons yet — that comes in a later
 story.
 
-## Steps
+## Acceptance criteria
 
-1. Create `internal/copilot/capture.go` (or extend `copilot.go`):
-   - Implement `Capture(finds []Sanitised, root string) (int, int, []string)`:
-     - For each sanitised finding, calls `gh issue create` with:
-       - Title: the sanitized title
-       - Label: `auto-copilot` via `--label auto-copilot`
-       - Body: sanitised body, plus a "Original issue" link and
-         timestamp as a separate paragraph
-       - Uses `--title` and `--body` flags for `gh issue create`
-     - For each finding, appends an entry to
-       `.procoder/github/COPILOT-LEAKS.md`:
-       ```markdown
-       ## <date> <original-url> — <title>
+- [x] Capture opens one GitHub issue per sanitised finding and records each in `.procoder/github/COPILOT-LEAKS.md` as UNLEARNED.
+- [x] The two halves are independent: a failed issue still writes the ledger, an unwritable ledger still creates the issues, and every failure is reported rather than swallowed.
+- [x] A finding that sanitises to nothing is skipped with a note instead of publishing an empty issue.
+- [x] The ledger is created with a self-explaining header on first write — deliberately with no example entry.
+- [x] An issue template for Copilot findings ships under `.github/ISSUE_TEMPLATE/` and is mirrored by `procoder templates`.
 
-       - Source: Copilot auto-review
-       - Original: <url>
-       - Sanitised:
-         <sanitised body text>
-       - Adaptation: <the concrete change that catches this class from now on>
-       ```
-     - Returns (issuesCreated, lessonsWritten, pathsChanged).
-   - Test: fixture with recorded `gh issue create --json` output.
-   - COPILOT-LEAKS.md path: `.procoder/github/COPILOT-LEAKS.md`.
-     Created if it does not exist, initialised with a header.
-2. Wire capture into the command handler in `main.go`:
-   - After `Prompt()` returns true, calls `Capture(sanitizedFinds, root)`.
-   - Prints summary: "Created N issue(s), recorded N lesson(s)".
-   - On issue creation failure: notes the failure but continues with
-     remaining findings (does not block on one failure).
-   - On COPILOT-LEAKS.md write failure: continues, prints warning.
-3. Create `.procoder/github/COPILOT-LEAKS.md` initial file with header
-   and one example entry (unindented, like LESSONS.md).
-4. Create `.github/ISSUE_TEMPLATE/copilot-leak.md`:
-   - Template for creating auto-copilot issues (used as the body
-     template for `gh issue create`).
+## Evidence
 
-## Files
-
-- `internal/copilot/capture.go` — Capture function
-- `internal/copilot/capture_test.go` — capture tests
-- `.procoder/github/COPILOT-LEAKS.md` — new scratch ledger
-- `.github/ISSUE_TEMPLATE/copilot-leak.md` — issue template master (will be mirrored to `.github/ISSUE_TEMPLATE/`)
-- `cmd/procoder/main.go` — wire Capture into command (edit)
-- `internal/gitcmd/gitcmd.go` — mirrorSync() gain for the issue template (edit)
-
-## Verification
-
-`go test ./internal/copilot/...`
-`procoder copilot-leak --quiet` runs without panic.
+- `go test ./internal/copilot/` green — TestCaptureOpensAnIssueAndRecordsAnUnlearnedEntry, TestIssueFailureStillWritesTheLedger, TestUnwritableLedgerStillCreatesTheIssues, TestEmptyBodyIsSkippedWithANote.
+- DEVIATION: the template shipped as `.github/ISSUE_TEMPLATE/copilot-leak.yml`, a GitHub issue form, not the specced `.md` body template — `createIssue` builds its own body, so the file's job is human filing.
+- DEVIATION: no seeded ledger file with an example entry. lessons.Parse reads every `## ` heading as an entry, so a committed example would make an empty ledger report a phantom unlearned lesson; the header is written on first capture instead.
+- `gh` is never invoked in tests — a stub on PATH records the argv, asserted against.

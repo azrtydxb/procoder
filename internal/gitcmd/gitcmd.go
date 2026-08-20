@@ -116,6 +116,9 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
 	out = append(out, gitx.OnDefaultBranch(root, cfg.BlockDefaultBranch)...)
 	out = append(out, gitx.IgnoreCoverage(root)...)
+	// The Copilot loop's offline half: what was captured and never closed.
+	// Reading a file, never the network — the gate runs on every commit.
+	out = append(out, lessons.LeakReminder(root)...)
 
 	msgs := gitx.UnpushedMessages(root)
 	out = append(out, gitx.Attribution(msgs)...)

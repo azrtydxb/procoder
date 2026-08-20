@@ -69,6 +69,13 @@ the finding leaves its class open:
   `launcher.sh lessons` — it flags any entry left unlearned, and an
   unlearned lesson is not done.
 - False positives get no ledger entry — reflect only on real escapes.
+- Then run `launcher.sh copilot-leak`. Copilot's auto-review sometimes
+  opens ISSUES rather than PR comments, and those escape the reading in
+  step 2 entirely: the finding gets fixed and nothing records that the
+  class happened. The command finds them, strips every trace of the
+  code from them, and asks before it files or records anything. This is
+  the only place a procoder command talks to GitHub about reviews — the
+  gate reads the resulting ledger offline and never queries.
 
 3. Re-run steps 1-2 after every push until: all checks green, reviewDecision
    is APPROVED (or no reviews are required), and no unaddressed comments

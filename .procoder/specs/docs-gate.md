@@ -1,6 +1,6 @@
 # docs-gate
 
-Status: draft
+Status: complete
 
 ## Problem
 

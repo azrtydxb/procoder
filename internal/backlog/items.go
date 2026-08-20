@@ -39,7 +39,12 @@ var (
 	sprintRe    = regexp.MustCompile(`(?m)^Sprint:\s*(\S+)`)
 	typeRe      = regexp.MustCompile(`(?m)^Type:\s*(\S+)`)
 	severityRe  = regexp.MustCompile(`(?m)^Severity:\s*(\S+)`)
-	specRe      = regexp.MustCompile(`(?m)^Spec:\s*(\S+)\s*@\s*(\S+)`)
+	// The fingerprint half is optional to MATCH so that a Spec: line without
+	// one still registers as a spec reference. It is not optional to HAVE:
+	// an epic that names a spec but records no seeding is one the board must
+	// be able to say that about, and a line that simply failed to parse is
+	// invisible — the worst of the three states.
+	specRe      = regexp.MustCompile(`(?m)^Spec:\s*(\S+)(?:\s*@\s*(\S+))?`)
 	uncheckedRe = regexp.MustCompile(`(?m)^\s*- \[ \]`)
 	checkedRe   = regexp.MustCompile(`(?m)^\s*- \[[xX]\]`)
 	placeholder = regexp.MustCompile(`(?m)^\s*- \[.\]\s*\.\.\.`)
@@ -50,15 +55,45 @@ type Item struct {
 	ID        string
 	Kind      string // one of the Kind* constants
 	Title     string
-	Status    string // open | done ... | active | closed ... | unreadable
-	Milestone string // epics: parent milestone slug, "" when none
-	Epic      string // stories: parent epic slug
-	Sprint    string // stories: sprint id, "-" or "" when in the backlog
-	Type      string // stories: "bug" from a Type: header; "" means feature
-	Severity  string // stories: s1..s4 from a Severity: header, "" when absent
-	SpecName  string // epics: source spec name, "" when none
-	SpecPrint string // epics: spec fingerprint recorded at seed time
+	Status    string   // open | done ... | active | closed ... | unreadable
+	Milestone string   // epics: parent milestone slug, "" when none
+	Epic      string   // stories: parent epic slug
+	Sprint    string   // stories: sprint id, "-" or "" when in the backlog
+	Type      string   // stories: "bug" from a Type: header; "" means feature
+	Severity  string   // stories: s1..s4 from a Severity: header, "" when absent
+	SpecName  string   // epics: source spec name, "" when none
+	SpecPrint string   // epics: spec fingerprint recorded at seed time
+	Missing   []string // stories: required sections the file does not carry
 	Path      string
+}
+
+// The three sections a story is judged by. They are constants because two
+// readers depend on them: CloseStoryWith reads each one by name, and the
+// board reports a story that carries none of them — renaming a section in
+// one place without the other would leave the board flagging stories the
+// controller is happy with, or the reverse.
+const (
+	sectionDescription = "Description"
+	sectionCriteria    = "Acceptance criteria"
+	sectionEvidence    = "Evidence"
+)
+
+// storySections is that list, in the order the controller reads them. A
+// story missing one cannot be judged at all — and until the board said so,
+// that surfaced only when someone tried to close it, one story at a time.
+var storySections = []string{sectionDescription, sectionCriteria, sectionEvidence}
+
+// missingSections names the required sections a story's file has no heading
+// for. A section that is present and empty is a different fact — the close
+// controller says so in its own words — so only absence is reported here.
+func missingSections(text string) []string {
+	var out []string
+	for _, s := range storySections {
+		if !strings.Contains(text, "## "+s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Done reports whether the item's status counts as finished. Anything the
@@ -106,6 +141,9 @@ func LoadAll(root string) ([]Item, error) {
 			text := string(raw)
 			if m := statusRe.FindStringSubmatch(text); m != nil {
 				it.Status = m[1]
+			}
+			if kind == KindStory {
+				it.Missing = missingSections(text)
 			}
 			if m := milestoneRe.FindStringSubmatch(text); m != nil {
 				it.Milestone = m[1]

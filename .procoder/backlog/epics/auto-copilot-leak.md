@@ -1,7 +1,7 @@
 # auto-copilot-leak
 
-Status: open 2026-08-20
-Spec: auto-copilot-leak @ 655b88b15429
+Status: done 2026-08-20
+Spec: auto-copilot-leak @ d6b63f371e99
 
 ## Description
 

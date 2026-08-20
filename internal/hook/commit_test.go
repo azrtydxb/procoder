@@ -41,8 +41,8 @@ func TestIsGitCommit(t *testing.T) {
 		{"", false},
 	}
 	for _, c := range cases {
-		if got := IsGitCommit(c.command); got != c.want {
-			t.Errorf("IsGitCommit(%q) = %v, want %v", c.command, got, c.want)
+		if got := parseCommand(c.command).isCommit; got != c.want {
+			t.Errorf("parseCommand(%q).isCommit = %v, want %v", c.command, got, c.want)
 		}
 	}
 }

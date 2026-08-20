@@ -18,8 +18,8 @@ import (
 // procoder's own inventory, not a rule any other repository is held to — no
 // check reads it.
 var Commands = []string{
-	"adr", "agents", "audit", "backlog", "bench", "check", "ci", "debt",
-	"deps", "docs", "doctor", "env",
+	"adr", "agents", "audit", "backlog", "bench", "check", "ci",
+	"copilot-leak", "debt", "deps", "docs", "doctor", "env",
 	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
 	"maintain", "plan", "principles", "release", "run", "scrub", "security", "spec",
 	"sprint", "status", "templates", "test", "todo", "version",

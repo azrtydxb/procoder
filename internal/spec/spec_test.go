@@ -145,3 +145,47 @@ func TestTemplateFailsItsOwnCheck(t *testing.T) {
 		t.Fatalf("an unfilled template must block, exit %d:\n%s", code, strings.Join(*lines, "\n"))
 	}
 }
+
+// TestCompleteSpecStillSayingDraftIsSaid pins the note that keeps the
+// Status header honest: the template ships `Status: draft` and nothing
+// advances it, so twelve delivered specs read as drafts. Complete plus
+// draft earns a note; complete plus any other status is silent; and the
+// note never changes the verdict.
+func TestCompleteSpecStillSayingDraftIsSaid(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, "widget", completeSpec())
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 0 {
+		t.Fatalf("a note is not a gap: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "Status line still says draft") {
+		t.Errorf("complete-but-draft must be said: %v", *lines)
+	}
+
+	writeSpec(t, root, "widget", strings.Replace(completeSpec(), "Status: draft", "Status: complete", 1))
+	out2, lines2 := collect()
+	if code := Check(root, "widget", out2); code != 0 {
+		t.Fatalf("exit %d %v", code, *lines2)
+	}
+	if strings.Contains(strings.Join(*lines2, "\n"), "Status line") {
+		t.Errorf("an advanced status must earn no note: %v", *lines2)
+	}
+}
+
+// The mirror of the note above, and the more misleading of the two: a spec
+// whose header claims complete while the checker refuses it sends a reader to
+// build from an unfinished design.
+func TestASpecClaimingCompleteWithGapsIsContradicted(t *testing.T) {
+	root := t.TempDir()
+	gapped := strings.Replace(completeSpec(), "Status: draft", "Status: complete", 1)
+	gapped = strings.Replace(gapped, "A real answer for Data.", "", 1)
+	writeSpec(t, root, "widget", gapped)
+
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 1 {
+		t.Fatalf("a gap is still a gap: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "says complete, and the gaps above say otherwise") {
+		t.Errorf("the contradiction must be named: %v", *lines)
+	}
+}

@@ -14,7 +14,8 @@ for standalone work not born from a spec.
 - `procoder backlog seed <spec> [--milestone <id>]` — decompose a
   COMPLETE spec into an epic plus one story per acceptance criterion.
   Everything is PRINTED for you to review and write; the epic records
-  the spec and a fingerprint, so the board can flag drift later.
+  the spec and a fingerprint of its acceptance criteria, so the board
+  can flag drift when the contract changes later.
 - `procoder backlog milestone <title>` /
   `procoder backlog epic <title> [--milestone <id>]` /
   `procoder backlog story <title> --epic <id>` — print the file for
@@ -26,7 +27,10 @@ for standalone work not born from a spec.
   s1/s2 jump the queue, and the regression test is not optional.
 - `procoder backlog board` — the tree: milestones → epics → stories
   with statuses, sprint tags, spec-drift flags, and orphans. Run this
-  to orient before pulling work.
+  to orient before pulling work. The last line names the branch it read
+  and counts the open stories the default branch holds that this
+  checkout cannot see — the backlog is versioned like the code, so
+  "nothing open" can mean "nothing open here".
 - `procoder backlog list` — the flat listing, open items first.
 - `procoder backlog close story <id>` — the quality controller:
   it REFUSES until the description is real, every acceptance criterion

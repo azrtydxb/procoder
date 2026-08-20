@@ -3,7 +3,7 @@
 Status: done 2026-08-19
 Created: 2026-08-19
 Milestone: daily-practices
-Spec: backlog-extensions @ 909e2954fd24
+Spec: backlog-extensions @ 1dc98a18944e
 
 ## Description
 

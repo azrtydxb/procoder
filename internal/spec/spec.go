@@ -100,6 +100,7 @@ var (
 	openRe     = regexp.MustCompile(`(?m)^\s*(?:- )?OPEN:`)
 	checkboxRe = regexp.MustCompile(`(?m)^\s*- \[[ xX]\]\s*(.+)$`)
 	vagueRe    = regexp.MustCompile(`(?i)\b(works well|user.?friendly|fast enough|good|nice|clean|properly|correctly|as expected|etc\.?)\s*$`)
+	statusRe   = regexp.MustCompile(`(?m)^Status:\s*(.+)$`)
 )
 
 // List names every spec in the repo.
@@ -158,6 +159,16 @@ func Check(root, name string, out func(string)) int {
 	return worst
 }
 
+// statusOf reads the spec's `Status:` header, lowercased, or "" when the
+// file carries none.
+func statusOf(text string) string {
+	m := statusRe.FindStringSubmatch(text)
+	if m == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(m[1]))
+}
+
 func checkOne(path string, out func(string)) int {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -197,12 +208,25 @@ func checkOne(path string, out func(string)) int {
 	}
 	if len(gaps) == 0 {
 		out("spec " + name + ": COMPLETE — sections answered, no open questions, criteria testable")
+		// The template ships `Status: draft` and nothing ever advances it, so
+		// finished specs read as drafts forever. Saying it here — where the
+		// verdict is already being printed — costs nothing and keeps the
+		// header honest; it is a note, not a gap, so the verdict stands.
+		if statusOf(text) == "draft" {
+			out("  note: the Status line still says draft — advance it to `Status: complete`")
+		}
 		out("  next: seed todos from the acceptance criteria (`procoder todo add`), one task per criterion group")
 		return 0
 	}
 	out("spec " + name + ": NOT ready — the quality controller found:")
 	for _, g := range gaps {
 		out("  - " + g)
+	}
+	// The louder half of the same rot: a header claiming complete over a spec
+	// the checker is refusing sends a reader to build from an unfinished
+	// design, where a stale `draft` only understates a finished one.
+	if statusOf(text) == "complete" {
+		out("  - the Status line says complete, and the gaps above say otherwise")
 	}
 	return 1
 }

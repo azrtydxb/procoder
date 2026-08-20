@@ -89,7 +89,12 @@ same rigor).
 reviewer-class findings before a PR exists; anything that still escapes
 becomes a **lessons** ledger entry whose adaptation (a linter rule, a
 rubric line, a pinning test) must land before the work counts as done.
-Downstream bot reviewers are the fallback net, not the net.
+Downstream bot reviewers are the fallback net, not the net — and what
+that net catches is not lost either: `procoder copilot-leak` collects
+GitHub Copilot's auto-review findings, strips every trace of your code
+from them, and — only after you say yes on a terminal — files them as
+issues and records them as unlearned until someone writes the
+adaptation that closes the class.
 
 **The test domain** — `procoder test` runs the repository's real suite
 with each ecosystem's canonical runner (go test, cargo test, the

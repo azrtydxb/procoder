@@ -1,6 +1,6 @@
 # gate-enforcement
 
-Status: draft
+Status: complete
 
 ## Problem
 

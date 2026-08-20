@@ -36,7 +36,14 @@ Check every hunk for:
 - Temp files and permissions: CreateTemp over predictable names; modes no
   wider than needed.
 - New surface wired everywhere it must appear: dispatch, usage text,
-  canonical lists, docs, tests that pin them together.
+  canonical lists, docs, tests that pin them together. A function whose
+  only callers are its own tests is not wired — green tests and real
+  coverage make it read as live code; `procoder maintain` names these
+  as "referenced only by tests".
+- One concept, one owner: a path, format, or constant that two packages
+  both declare will drift, and the drift is silent until one writes
+  where the other no longer reads. The package that READS the file owns
+  it, and a test carries a value across the seam.
 - Parsers and scanners against hostile shapes: empty input, binary input,
   the terminator variants, the case the happy path skips.
 - Test fixtures that trip our own scanners: assemble marker/secret-like

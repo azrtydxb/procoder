@@ -6,6 +6,7 @@ package gitx
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,13 @@ type Finding struct {
 	Message string
 	// Blocking findings fail the gate; the rest are information.
 	Blocking bool
+}
+
+// gitRaw is git without the whitespace trim: output whose separators are
+// bytes rather than lines cannot afford to have its edges tidied.
+func gitRaw(root string, args ...string) (string, error) {
+	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	return string(out), err
 }
 
 func git(root string, args ...string) (string, error) {
@@ -90,6 +98,42 @@ func DefaultBranch(root string) string {
 		}
 	}
 	return ""
+}
+
+// GrepOn lists the files on a ref whose content matches an extended regular
+// expression, as repo-relative paths. It is how a report asks what another
+// branch holds without checking it out; err is a git that could not answer,
+// which is never the same as a match of none.
+func GrepOn(root, ref, pattern, pathspec string) ([]string, error) {
+	// -z, not because of newlines in file names but because git quotes any
+	// path with a non-ASCII byte ("caf\303\251-story.md") unless told not
+	// to: the quoted form does not exist on disk, so a caller that stats
+	// what it reads here would call every accented path missing. -E keeps
+	// the pattern in the flavour a Go caller writes, not git's default BRE.
+	out, err := gitRaw(root, "grep", "-lzE", "-e", pattern, ref, "--", pathspec)
+	if err != nil {
+		// git grep exits 1 for no matches, which is an answer, not a failure.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var files []string
+	for _, rec := range strings.Split(out, "\x00") {
+		// "<ref>:<path>" — a ref name cannot contain a colon, so the first
+		// one ends the ref and a path may carry as many as it likes.
+		if _, path, found := strings.Cut(rec, ":"); found && path != "" {
+			files = append(files, path)
+		}
+	}
+	return files, nil
+}
+
+// HasRef reports whether a ref resolves in this repository.
+func HasRef(root, ref string) bool {
+	_, err := git(root, "rev-parse", "--verify", "--quiet", ref)
+	return err == nil
 }
 
 // UnpushedMessages returns the full message of every commit not yet on the

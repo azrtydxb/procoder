@@ -130,11 +130,18 @@ user stories**, with the story as the execution unit of spec-based work
   refused. The board marks open bugs with their severity.
 - `seed <spec> [--milestone <id>]` — decompose a COMPLETE spec into an
   epic plus one story per acceptance criterion. The epic records the
-  spec name and a content fingerprint; an incomplete spec is refused
+  spec name and a fingerprint of its acceptance criteria — the contract,
+  so rewrapping prose never reads as drift; an incomplete spec is refused
   with the spec checker's gaps replayed.
 - `list` / `board` — the flat listing, and the tree with statuses,
-  sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing`),
-  orphans, and a summary line.
+  sprint tags, spec-drift flags (`⚠ spec drift` / `⚠ spec missing` /
+  `⚠ spec not seeded`), orphans, and a summary line. An open story
+  missing a section the close controller reads is flagged there rather
+  than at close. The backlog is versioned like the code, so the board
+  answers about the current checkout: its last line names the branch it
+  read and counts the open stories the default branch holds that this
+  one cannot see. The two are never merged — whose status wins when
+  both branches carry a story is a decision, not a default.
 - `close story <id>...` — refuses until the description is real, every
   acceptance criterion is checked, evidence is recorded, and the gate
   is clean — todo-close rigor, applied to stories. Several ids share
@@ -320,7 +327,9 @@ interviews the gaps closed; the binary judges completeness.
 - `check [name|all]` — the quality controller: blocks while any required
   section is missing or empty, while any `OPEN:` question is unresolved,
   and while acceptance criteria are not testable checkboxes. A complete
-  spec seeds the todo list — one task per criterion group.
+  spec whose `Status:` line still says `draft` earns a note to advance it
+  to `complete` — a note, never a gap. A complete spec seeds the todo
+  list — one task per criterion group.
 
 #### `procoder plan <sub>`
 
@@ -361,6 +370,25 @@ a linter enabled, a line added to the pre-PR review rubric
 (`.procoder/github/REVIEW.md`), a controller tightened, a pinning test.
 Entries with no adaptation are flagged UNLEARNED and exit 1 — recorded is
 not learned. An unreadable ledger exits 2.
+
+#### `procoder copilot-leak [--since <dur>] [--quiet] [--from-copilot]`
+
+What GitHub Copilot's auto-review caught that this repository's gates did
+not. Findings are sanitised before anything is shown or sent — fenced and
+indented code stripped, secrets redacted, absolute paths made relative — so
+what leaves the machine is metadata about a failure, never the source that
+failed. Nothing is published without an explicit yes on a terminal; with no
+terminal to ask, it asks nothing and captures nothing.
+
+A captured finding becomes a GitHub issue and an entry in
+`.procoder/github/COPILOT-LEAKS.md`, deliberately not `LESSONS.md`: a raw
+finding is not yet a lesson until a human names its class and its adaptation.
+`--from-copilot` reads that ledger back, listing each entry as learned or
+UNLEARNED, and exits 1 while any remain unclassified. `--quiet` reports the
+count without asking. Without `gh`, unauthenticated, or given output it
+cannot parse, it reports NOT checked and exits 2 rather than reporting zero.
+A repository with no GitHub remote is a different case: there are no
+auto-reviews to ask about, so the empty answer is real and the exit is 0.
 
 #### `procoder principles`
 

@@ -1,6 +1,6 @@
 # test-domain
 
-Status: draft
+Status: complete
 
 ## Problem
 

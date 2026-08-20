@@ -84,7 +84,8 @@ out func(string)) int`; consumes `spec.Check(root, name, discard)` for
 completeness and `checkboxRe`-style parsing of the spec's Acceptance
 criteria section; produces epic + story file printouts using Task 1
 templates; fingerprint helper `func fingerprint(b []byte) string`
-(sha1, first 12 hex).
+(sha1 of the spec's acceptance criteria, first 12 hex — the contract,
+so prose edits never read as drift).
 
 - [ ] `Seed` refuses (exit 1) when `spec check` is not COMPLETE,
       replaying the checker's gap lines; refuses when the spec has zero
@@ -110,7 +111,7 @@ out func(string)) int`. main.go passes the same
 `func() bool { return gate.Run(nil, root, io.Discard) == 0 }` that todo
 close uses.
 
-- [ ] `CloseStory` mirrors `todo.Close` verbatim in rigor: empty
+- [ ] `CloseStoryWith` mirrors `todo.CloseWith` verbatim in rigor: empty
       description, placeholder criteria, no checked box, N unchecked
       boxes, empty evidence, dirty gate — ALL findings listed in one
       refusal; already-done exits 0; success rewrites

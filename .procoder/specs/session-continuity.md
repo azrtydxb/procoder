@@ -1,6 +1,6 @@
 # session-continuity
 
-Status: draft
+Status: complete
 
 ## Problem
 

@@ -16,16 +16,6 @@ import (
 	"procoder/internal/textutil"
 )
 
-// CloseStory is the quality controller for the execution unit: it verifies
-// and either closes the story (rewrites Status) or refuses with exactly
-// what is missing. gateClean runs `procoder check` on demand — the gate
-// result belongs in the verdict because "done" includes not having broken
-// anything. Mirrors todo.Close in full rigor; the two domains stay
-// independent.
-func CloseStory(root, id string, gateClean func() bool, out func(string)) int {
-	return CloseStoryWith(root, id, gateClean, nil, out)
-}
-
 // CloseStories closes several stories against ONE verification. The gate
 // and the suite judge the tree, not a story, so asking them once per story
 // re-runs the same answer N times — a sprint's worth of closes cost
@@ -94,11 +84,11 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		return 0
 	}
 	var missing []string
-	desc := textutil.Section(text, "Description")
+	desc := textutil.Section(text, sectionDescription)
 	if strings.TrimSpace(textutil.StripComments(desc)) == "" {
 		missing = append(missing, "Description is empty — a title is not a description")
 	}
-	criteria := textutil.Section(text, "Acceptance criteria")
+	criteria := textutil.Section(text, sectionCriteria)
 	if placeholder.MatchString(criteria) {
 		missing = append(missing, "Acceptance criteria still contain the placeholder — write real, testable criteria")
 	}
@@ -119,7 +109,7 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 			missing = append(missing, "a bug closes with a severity — add Severity: s1..s4")
 		}
 	}
-	evidence := textutil.Section(text, "Evidence")
+	evidence := textutil.Section(text, sectionEvidence)
 	if strings.TrimSpace(textutil.StripComments(evidence)) == "" {
 		missing = append(missing, "Evidence is empty — record the commands run and what their output proved")
 	}
@@ -275,8 +265,8 @@ func driftWarnings(root string, epic Item) []string {
 		return []string{"⚠ epic " + epic.SpecName + " records no seeding fingerprint (" + epic.SpecPrint +
 			") — it was written by hand, so nothing ties these stories to the spec; re-seed to restore the link (not blocking)"}
 	}
-	if fingerprint(b) != epic.SpecPrint {
-		return []string{"⚠ spec " + epic.SpecName + " changed since seeding — review the stories before trusting them (not blocking)"}
+	if now := fingerprint(b); now != epic.SpecPrint {
+		return []string{"⚠ spec " + epic.SpecName + " changed its acceptance criteria since seeding — review the stories before trusting them (not blocking); once reviewed, record `Spec: " + epic.SpecName + " @ " + now + "`"}
 	}
 	return nil
 }

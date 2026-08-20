@@ -274,3 +274,47 @@ garbage`)
 		t.Fatalf("want exactly the one tag, got %d: %s", n, out)
 	}
 }
+
+// A symbol whose only references come from its own test file is not live
+// code: it reads as covered and green while nothing in the product calls it.
+// Two functions of the Copilot leak ledger shipped exactly that way — written,
+// tested, wired nowhere — and a bot reviewer, not this tier, was what caught
+// them, because any reference at all used to count as use.
+// proved by: counted test references as ordinary ones — delta then vanishes
+// from the report and reads as live code.
+func TestUnusedSeparatesTestOnlySurfaceFromLiveCode(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	refs := "{\"documents\":[{\"relative_path\":\"a.go\",\"occurrences\":[" +
+		"{\"range\":[0,5,10],\"symbol\":\"x `pkg`/delta().\",\"symbol_roles\":1,\"enclosing_range\":[0,0,5,1]}," +
+		"{\"range\":[6,5,10],\"symbol\":\"x `pkg`/epsilon().\",\"symbol_roles\":1,\"enclosing_range\":[6,0,9,1]}," +
+		"{\"range\":[7,8,15],\"symbol\":\"x `pkg`/zeta().\",\"symbol_roles\":0}," +
+		"{\"range\":[11,5,9],\"symbol\":\"x `pkg`/zeta().\",\"symbol_roles\":1,\"enclosing_range\":[11,0,12,1]}" +
+		"]},{\"relative_path\":\"a_test.go\",\"occurrences\":[" +
+		"{\"range\":[3,2,7],\"symbol\":\"x `pkg`/delta().\",\"symbol_roles\":0}" +
+		"]}]}"
+	if err := os.WriteFile(filepath.Join(root, Dir, "refs.json"), []byte(refs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var lines []string
+	if code := Unused(root, func(s string) { lines = append(lines, s) }); code != 0 {
+		t.Fatalf("unused: %v", lines)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"delta", "referenced only by tests"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("a test-only symbol must be named as one (%q missing):\n%s", want, joined)
+		}
+	}
+	// epsilon has no reference at all — still the plain unreferenced tier.
+	if !strings.Contains(joined, "epsilon") {
+		t.Errorf("an unreferenced symbol is still reported:\n%s", joined)
+	}
+	// zeta is called from product code and is live.
+	if strings.Contains(joined, "zeta") {
+		t.Errorf("a symbol called from product code is not a candidate:\n%s", joined)
+	}
+}

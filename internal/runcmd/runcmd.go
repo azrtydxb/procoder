@@ -92,13 +92,6 @@ func Run(root string, exec bool, out func(string)) int {
 	return Report(cands, exec, out)
 }
 
-// Detect answers the repository's launch candidates, ranked most specific
-// first. Sources it could not read contribute nothing (Run says so).
-func Detect(root string) []Candidate {
-	cands, _ := detect(root)
-	return cands
-}
-
 func detect(root string) ([]Candidate, []string) {
 	var cands []Candidate
 	var notes []string
