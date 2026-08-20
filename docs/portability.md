@@ -18,13 +18,15 @@ lives in `AGENTS.md` and `commands/`; an adapter only points or copies.
 | Cursor                                   | `.cursor/rules/procoder.mdc`      | copy into your repo     |
 | Windsurf                                 | `.windsurf/rules/procoder.md`     | copy into your repo     |
 | Cline                                    | `.clinerules/procoder.md`         | copy into your repo     |
-| Kilo Code                                | `.kilocode/rules/procoder.md`     | copy into your repo     |
+| Kilo Code                                | `.kilo/rules/procoder.md`         | copy into your repo     |
+| Kilo Code (legacy path)                  | `.kilocode/rules/procoder.md`     | copy into your repo     |
 | Roo Code                                 | `.roo/rules/procoder.md`          | copy into your repo     |
 | Kiro                                     | `.kiro/steering/procoder.md`      | copy into your repo     |
 | Antigravity                              | `.agents/rules/procoder.md`       | copy into your repo     |
 | Qoder                                    | `.qoder/rules/procoder.md`        | copy into your repo     |
 | Copilot in editors                       | `.github/copilot-instructions.md` | copy into your repo     |
 | OpenAI Codex (repo docs)                 | `.codex/AGENTS.md`                | copy into your repo     |
+| Any skill-aware host                     | `skills/procoder/SKILL.md`        | copy into your repo     |
 
 Every copy is byte-pinned to `AGENTS.md` (host frontmatter aside) by the
 gate; edit the master, then `procoder agents` prints the refreshed copies.
@@ -60,6 +62,27 @@ bug — report it with the host name and the adapter file.
 
 Manifest versions are pinned to `.claude-plugin/plugin.json` by the gate,
 so a release can never leave one host stale.
+
+## The skill tier — one skill, every skill-aware host
+
+`skills/procoder/SKILL.md` is the AGENTS.md body under the Agent Skills
+envelope ([agentskills.io](https://agentskills.io/specification)). Hosts
+that scan a skills directory load it on demand instead of always-on:
+Kilo reads `.kilo/skills/`, `.claude/skills/`, and `.agents/skills/`, and
+the Kilo Marketplace indexes this path as the canonical source. It is
+pinned to `AGENTS.md` by the same drift check as every rule copy — the
+frontmatter is the only part that is its own.
+
+## Where the gate actually blocks
+
+The instruction tier asks; only a hook refuses. Today the commit gate
+blocks in Claude Code and Codex (`hooks/claude-hooks.json`), in Copilot
+CLI (`hooks/copilot-hooks.json`), and — through the shared JS shim — in
+OpenCode and Kilo, where `tool.execute.before` throws on a deny verdict.
+Every one of them reaches the same `procoder hook pre-tool-use` entry
+point, so there is one gate implementation and one verdict, whatever the
+host. A host without the binary is told the gate did NOT run rather than
+having its commits blocked.
 
 ## The everywhere-binary
 
