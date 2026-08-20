@@ -72,7 +72,7 @@ func Obligation(root string, changed []string, commitMessage string, block bool)
 		}
 		docChanged = true
 	}
-	if docChanged {
+	if docChanged || branchDocChanged(root, corpus) {
 		return nil // the question was asked and answered by editing a document
 	}
 	if reason := ackReason(commitMessage); reason != "" {
@@ -91,14 +91,55 @@ func Obligation(root string, changed []string, commitMessage string, block bool)
 		more = fmt.Sprintf(" (and %d more)", len(named)-maxTriggersNamed)
 		named = named[:maxTriggersNamed]
 	}
+	// Naming a remedy that cannot work here is worse than naming none: the
+	// user writes the acknowledgment exactly as printed, nothing changes,
+	// and the tool looks broken. So the remedy depends on whether a message
+	// reached this check at all.
+	remedy := fmt.Sprintf("update a doc, or record the decision with a `%s — <reason>` line in the commit message (`procoder docs --ack \"<reason>\"` prints it)", AckPrefix)
+	noMessage := strings.TrimSpace(commitMessage) == ""
+	if noMessage {
+		remedy = fmt.Sprintf("update a doc — no commit message reached this check, so a `%s — <reason>` line cannot be read here; it clears the obligation when the message is one the check sees (`git commit -m`, `-F <file>`, or `-F -` with a heredoc)", AckPrefix)
+	}
 	out = append(out, gitx.Finding{Blocking: block,
-		Message: fmt.Sprintf("documentation obligation: %s%s — no documentation file changed in this diff; update a doc, or record the decision with a `%s — <reason>` line in the commit message (`procoder docs --ack \"<reason>\"` prints it)",
-			strings.Join(named, "; "), more, AckPrefix)})
-	if strings.TrimSpace(commitMessage) == "" {
+		Message: fmt.Sprintf("documentation obligation: %s%s — no documentation file changed in this diff; %s",
+			strings.Join(named, "; "), more, remedy)})
+	if noMessage {
 		out = append(out, gitx.Finding{
 			Message: "acknowledgment path unavailable — no commit message at check time; the obligation stands until a doc changes or the check runs where the message exists"})
 	}
 	return out
+}
+
+// branchDocChanged reports whether a documentation file changed earlier in
+// this branch's work — the commits it carries that the default branch does
+// not. The gate judges what is about to be committed, which is right for
+// formatting and lint, but the documentation question is asked of the change
+// as a whole: writing the doc in one commit and the code in the next is
+// ordinary practice, and demanding a `docs: none` acknowledgment for work
+// that IS documented is the tool contradicting itself.
+//
+// On the default branch there is no such range and only the pending diff
+// counts. Any git failure means no evidence of an answer, never a claim of
+// one.
+func branchDocChanged(root string, corpus map[string]bool) bool {
+	base := gitx.DefaultBranch(root)
+	if base == "" || base == gitx.CurrentBranch(root) {
+		return false
+	}
+	out, err := exec.Command("git", "-C", root, "diff", "--name-only", base+"...HEAD").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		rel := strings.TrimSpace(line)
+		if rel == "" || strings.HasPrefix(rel, stateDir) {
+			continue
+		}
+		if IsMarkdownFile(rel) && corpus[rel] {
+			return true
+		}
+	}
+	return false
 }
 
 // ackReason returns the reason from a `docs: none — <reason>` line, or "" when
@@ -156,10 +197,16 @@ func mentionTriggers(root string, changed []string) []string {
 // back out of it rather than re-deriving the match.
 const driftPrefix = "mentions changed file "
 
-// surfaceTriggers computes the public-surface half: what the index knew the
-// changed files defined against what they define now. Returns the triggers and
-// the honesty notes — a repository with no index cannot have its public surface
-// computed, and says so instead of reading clean.
+// surfaceTriggers computes the public-surface half: what the changed files
+// defined before against what they define now. Returns the triggers and the
+// honesty notes — a repository where the comparison cannot be made says so
+// instead of reading clean.
+//
+// The "before" comes from git where git has it, read with the same parser as
+// the "now". Comparing two different definitions of exported surface produces
+// phantom findings: the index calls every capitalised tag exported, which is
+// the rule in Go and nowhere else, so a JavaScript `const ROOT` reads as an
+// exported symbol removed on every run. Like against like, or not at all.
 func surfaceTriggers(root string, code []string) (triggers []string, notes []gitx.Finding) {
 	var source []string
 	for _, rel := range code {
@@ -172,6 +219,18 @@ func surfaceTriggers(root string, code []string) (triggers []string, notes []git
 	}
 	triggers = append(triggers, literalTriggers(root, source)...)
 	if len(source) == 0 {
+		return triggers, notes
+	}
+	if hasGitHistory(root) {
+		for _, rel := range source {
+			path := filepath.Join(root, filepath.FromSlash(rel))
+			now := exportedSymbols(path)
+			// a file git does not know yet is new, and everything it exports
+			// is an addition — the same answer the index path gives
+			old, _ := gitShow(root, rel)
+			was := exportedSymbolsIn(old, languageOf(rel))
+			triggers = append(triggers, symbolTriggers(rel, now, was)...)
+		}
 		return triggers, notes
 	}
 	known, err := indexedSymbols(root)
@@ -194,12 +253,7 @@ func surfaceTriggers(root string, code []string) (triggers []string, notes []git
 			unindexed = append(unindexed, rel)
 			continue
 		}
-		for _, name := range sortedDiff(now, was) {
-			triggers = append(triggers, fmt.Sprintf("exported symbol %s added in %s", name, rel))
-		}
-		for _, name := range sortedDiff(was, now) {
-			triggers = append(triggers, fmt.Sprintf("exported symbol %s removed or renamed in %s", name, rel))
-		}
+		triggers = append(triggers, symbolTriggers(rel, now, was)...)
 	}
 	if len(unindexed) > 0 {
 		notes = append(notes, gitx.Finding{
@@ -207,6 +261,26 @@ func surfaceTriggers(root string, code []string) (triggers []string, notes []git
 				len(unindexed), strings.Join(firstFew(unindexed), ", "))})
 	}
 	return triggers, notes
+}
+
+// symbolTriggers states the difference between two public surfaces of one
+// file, in the order a reader wants it: what appeared, then what went.
+func symbolTriggers(rel string, now, was map[string]bool) []string {
+	var out []string
+	for _, name := range sortedDiff(now, was) {
+		out = append(out, fmt.Sprintf("exported symbol %s added in %s", name, rel))
+	}
+	for _, name := range sortedDiff(was, now) {
+		out = append(out, fmt.Sprintf("exported symbol %s removed or renamed in %s", name, rel))
+	}
+	return out
+}
+
+// hasGitHistory reports whether this repository has a commit to compare
+// against. Without one there is no "before", and the index is the only
+// witness left.
+func hasGitHistory(root string) bool {
+	return exec.Command("git", "-C", root, "rev-parse", "HEAD").Run() == nil
 }
 
 func firstFew(in []string) []string {
@@ -391,14 +465,20 @@ var (
 // module, or crate can reach. Deliberately syntactic — no toolchain, no
 // network, the same answer on every machine.
 func exportedSymbols(path string) map[string]bool {
-	out := map[string]bool{}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return out
+		return map[string]bool{}
 	}
-	lang := languageOf(filepath.ToSlash(path))
+	return exportedSymbolsIn(string(data), languageOf(filepath.ToSlash(path)))
+}
+
+// exportedSymbolsIn is the same reading applied to content the caller already
+// has — a previous revision out of git, which must be read by exactly the
+// parser that reads the current one for the difference to mean anything.
+func exportedSymbolsIn(body, lang string) map[string]bool {
+	out := map[string]bool{}
 	inGroup := false
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(body, "\n") {
 		switch lang {
 		case "go":
 			if inGroup {
