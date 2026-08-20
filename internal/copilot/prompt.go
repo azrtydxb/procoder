@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -17,7 +18,21 @@ func CanAsk(in *os.File) bool {
 		return false
 	}
 	info, err := in.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	// /dev/null is a character device too, so the mode test alone answers
+	// "there is a terminal" for the most common way of saying there is not:
+	// `procoder version --check < /dev/null` printed a prompt and read the
+	// EOF as a no. The outcome was safe; the reasoning was wrong, and the
+	// next caller to trust CanAsk would not be as lucky.
+	if null, err := os.Stat(os.DevNull); err == nil {
+		return !os.SameFile(info, null)
+	}
+	// Windows: os.Stat("NUL") fails, so SameFile cannot answer. The name is
+	// the only thing left to go on, and it is a reserved device name there —
+	// no real file can be called it.
+	return !strings.EqualFold(filepath.Base(in.Name()), os.DevNull)
 }
 
 // Prompt asks once whether to publish and record the findings, and answers no
@@ -42,6 +57,15 @@ func Prompt(in *os.File, out func(string), count int, since time.Duration) bool 
 
 	// a read error leaves line empty, which isYes rejects — input that ended
 	// before an answer is not an answer
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	return isYes(line)
+}
+
+// ReadYes reads one line of consent from an already-checked terminal. It is
+// exported for the other places that must ask before acting — the upgrade
+// among them — so the definition of a yes lives in one place: anything but a
+// bare y or yes is a no.
+func ReadYes(in *os.File) bool {
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	return isYes(line)
 }

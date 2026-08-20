@@ -1,6 +1,6 @@
 # Spec: Self-Update — Version Check & Upgrade
 
-Status: draft
+Status: complete
 
 ## Problem
 
@@ -118,8 +118,29 @@ and renamed over the old one only after it is complete ([N-04]).
 
 ## Open questions
 
-- [O-1] Should the version check only warn for patches (A.B.C → A.B.D) or also for minors (A.B.C → A.(B+1).C)?
-- [O-2] Should `procoder self-upgrade` work offline? (No — requires network)
-- [O-3] Should the version check be configurable? (e.g., `[version] check = "warn"` / "off" / "upgrade")
-- [O-4] How is a package-manager install detected, so the command can step
-  aside instead of overwriting a file Homebrew or apt believes it owns?
+<!-- none — decisions recorded below -->
+
+## Decisions
+
+- [D-1] The check warns for any newer release — patch, minor and major.
+  A major is exactly the change a user most needs to hear about, and
+  suppressing it to avoid noise hides the one upgrade that changes
+  behaviour. ([O-1] resolved.)
+- [D-2] `[version] check = "warn" | "off"` in `.procoder/config.toml`,
+  default `warn`, following D-OVERRIDE like every other domain policy. CI
+  and scripted runs set `off`; nothing else is configurable, because a
+  third value ("upgrade", meaning install without asking) would break the
+  consent rule this feature is built around. ([O-3] resolved.)
+- [D-3] The upgrade steps aside from package managers. The binary is
+  resolved the way hooks resolve it, and when its real path (symlinks
+  followed) sits under a manager's prefix — a Homebrew cellar or opt
+  directory, /usr/bin, /usr/local/bin owned by root, a scoop shims
+  directory — the command refuses and prints that manager's own upgrade
+  command. Overwriting a file a package database believes it owns leaves
+  the user with a version their manager will silently revert. The
+  detection is a heuristic and is documented as one: it errs toward
+  refusing, and `--force` is the escape hatch for a user who knows better.
+  ([O-4] resolved.)
+- [D-4] The upgrade requires the network and says so when it is absent; no
+  offline path exists, because there is nothing to install from. ([O-2]
+  resolved.)

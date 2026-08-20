@@ -15,6 +15,14 @@ import (
 // Config holds every knob the harness reads. Zero values are the defaults, so
 // a repository with no .procoder/ directory gets sensible behaviour.
 type Config struct {
+	// VersionCheckOff silences the session-start version check
+	// (`[version] check = "off"`). It is a knob for CI and scripted runs,
+	// where nobody is going to act on the warning and the second spent
+	// asking GitHub buys nothing. There is deliberately no third value: a
+	// setting that upgraded without asking would break the consent this
+	// feature is built on.
+	VersionCheckOff bool
+
 	// BlockDefaultBranch: work on the default branch blocks the gate instead
 	// of being reported. Off by default — solo repositories commit to main
 	// routinely, and teams usually enforce this server-side anyway.
@@ -101,6 +109,13 @@ func Load(root string) Config {
 		case "git.commit_gate":
 			if value == "block" || value == "report" || value == "off" {
 				cfg.CommitGate = value
+			}
+		case "version.check":
+			// Only the two documented values mean anything. A typo — "of",
+			// or the spec's own "warn" misspelt — must not silently leave
+			// the check in a state the writer did not choose.
+			if value == "off" || value == "warn" {
+				cfg.VersionCheckOff = value == "off"
 			}
 		case "docs.policy":
 			cfg.DocsBlock = value == "block"

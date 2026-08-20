@@ -224,6 +224,11 @@ jobs:
             find /tmp/assets -type f -exec ls -l {} + >&2
             exit 1
           fi
+          # After the count, so the check above keeps meaning "five binaries".
+          # self-upgrade verifies every download against this file and refuses
+          # to install without it: a release published without SHA256SUMS is a
+          # release nobody can upgrade to.
+          cp dist/SHA256SUMS /tmp/assets/SHA256SUMS
           find /tmp/assets -type f -exec ls -l {} +
       - name: publish the release with the platform binaries
         env:
@@ -237,7 +242,8 @@ jobs:
             /tmp/assets/procoder-darwin-amd64 \
             /tmp/assets/procoder-linux-amd64 \
             /tmp/assets/procoder-linux-arm64 \
-            /tmp/assets/procoder-windows-amd64.exe
+            /tmp/assets/procoder-windows-amd64.exe \
+            /tmp/assets/SHA256SUMS
 
   docs:
     # Build and publish the documentation site — domain 5's delivery leg.

@@ -60,6 +60,13 @@ funlen_statements = 50
 [debt]
 # Comment marker `procoder debt` harvests. Default shown.
 marker = "debt:"
+
+[version]
+# "warn" (default) reports a newer release at session start; "off" silences
+# it for CI and scripted runs. There is deliberately no third value: a
+# setting that upgraded without asking would remove the consent the
+# upgrade is built on.
+check = "warn"
 ```
 
 ## `.procoder/github/REVIEW.md` and `.procoder/github/LESSONS.md`

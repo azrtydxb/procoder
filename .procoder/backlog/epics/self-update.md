@@ -1,9 +1,9 @@
 # Self-Update: Version Check & Upgrade
 
-Status: open 2026-08-20
+Status: done 2026-08-20
 Created: 2026-08-20
 Milestone: self-update
-Spec: self-update
+Spec: self-update @ 6ea71b1dad70
 
 ## Description
 

@@ -2,10 +2,17 @@ package principles
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"procoder/internal/releases"
 	"procoder/internal/status"
 )
 
@@ -105,6 +112,17 @@ func TestPlainRunStaysPrinciplesOnly(t *testing.T) {
 // the repository the hook actually runs in.
 func TestSessionStartStaysInsideTheBudget(t *testing.T) {
 	hostEnv(t, "claude")
+	// The version check is the slowest thing the hook can do, and with
+	// Version left at dev it never runs at all — the budget guard would
+	// cover everything except the part most likely to blow it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+	}))
+	defer srv.Close()
+	prevHost, prevVer, prevErr := releases.APIHost, Version, Stderr
+	releases.APIHost, Version, Stderr = srv.URL, "1.0.0", io.Discard
+	defer func() { releases.APIHost, Version, Stderr = prevHost, prevVer, prevErr }()
+
 	start := time.Now()
 	RunHook("../..", func(string) {})
 	elapsed := time.Since(start)
@@ -112,4 +130,112 @@ func TestSessionStartStaysInsideTheBudget(t *testing.T) {
 		t.Fatalf("SessionStart took %s — the budget is %s", elapsed, status.Budget)
 	}
 	t.Logf("SessionStart took %s (budget %s)", elapsed, status.Budget)
+}
+
+// N-03: the version check must not hold a session start open. The hook
+// prints its payload and the warning arrives after it, or not at all — a
+// GitHub that never answers costs the timeout once, not the session.
+// proved by: awaited the check before hookText — a hanging GitHub then
+// blocks every session start behind it.
+func TestTheVersionCheckNeverHoldsTheSessionOpen(t *testing.T) {
+	// Long enough to outlast the one-second check by a wide margin, short
+	// enough that httptest's Close — which waits for the handler — does not
+	// make this test the slowest thing in the suite.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(3 * time.Second)
+	}))
+	defer slow.Close()
+	prevHost, prevVer := releases.APIHost, Version
+	releases.APIHost = slow.URL
+	Version = "0.0.1"
+	defer func() { releases.APIHost, Version = prevHost, prevVer }()
+
+	var buf bytes.Buffer
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
+
+	root := t.TempDir()
+	var lines []string
+	var firstOut time.Duration
+	start := time.Now()
+	if code := RunHook(root, func(s string) {
+		if len(lines) == 0 {
+			firstOut = time.Since(start)
+		}
+		lines = append(lines, s)
+	}); code != 0 {
+		t.Fatalf("the hook must answer: exit %d", code)
+	}
+	if len(lines) == 0 {
+		t.Fatal("the principles payload must be printed regardless")
+	}
+	// The property is not "the hook finishes eventually" — a fully
+	// synchronous hook finishes inside the check's own one-second cap, so a
+	// five-second bound passes on the very mutation this test exists to
+	// reject. What must hold is that the PAYLOAD is out before the check
+	// has had time to answer: the session is not waiting on GitHub.
+	if firstOut >= releases.Timeout {
+		t.Errorf("the payload waited %s for a check capped at %s — the session start was held behind GitHub",
+			firstOut, releases.Timeout)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a check that did not answer says nothing: %q", buf.String())
+	}
+}
+
+// R-07: the warning goes to stderr, never into a payload three of the four
+// hosts parse as JSON.
+func TestTheVersionWarningStaysOutOfTheHookPayload(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+	}))
+	defer srv.Close()
+	prevHost, prevVer := releases.APIHost, Version
+	releases.APIHost = srv.URL
+	Version = "1.0.0"
+	defer func() { releases.APIHost, Version = prevHost, prevVer }()
+
+	var buf bytes.Buffer
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
+
+	var lines []string
+	RunHook(t.TempDir(), func(s string) { lines = append(lines, s) })
+	if !strings.Contains(buf.String(), "9.9.9") {
+		t.Errorf("the warning must reach stderr: %q", buf.String())
+	}
+	if strings.Contains(strings.Join(lines, "\n"), "9.9.9") {
+		t.Error("the warning must never land in the hook's stdout payload")
+	}
+}
+
+// [version] check = "off" asks GitHub nothing at all.
+func TestTheConfigKnobSilencesTheCheckEntirely(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("check = off must not query GitHub")
+	}))
+	defer srv.Close()
+	prevHost, prevVer := releases.APIHost, Version
+	releases.APIHost = srv.URL
+	Version = "1.0.0"
+	defer func() { releases.APIHost, Version = prevHost, prevVer }()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"),
+		[]byte("[version]\ncheck = \"off\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	prevErr := Stderr
+	Stderr = &buf
+	defer func() { Stderr = prevErr }()
+	RunHook(root, func(string) {})
+	if buf.Len() != 0 {
+		t.Errorf("check = off says nothing: %q", buf.String())
+	}
 }

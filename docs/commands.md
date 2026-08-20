@@ -459,6 +459,47 @@ The write hook's entry point — reads a PostToolUse payload on stdin and
 answers with findings for the file just written. Wired by the plugin;
 rarely invoked by hand.
 
-#### `procoder version`
+#### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
-Prints the version.
+Bare `version` prints one line and asks nobody anything.
+
+`--check` asks GitHub for the newest release, compares it against this
+build, and says which is which. Every newer release earns the warning —
+patch, minor and major alike, because a major is exactly the upgrade whose
+behaviour changes. A check that could not run reports NOT known and exits
+2: an unanswered check never means "you are current". A build with no
+version stamped has nothing to compare and says so. `[version] check =
+"off"` in `.procoder/config.toml` silences the session-start check for CI
+and scripted runs; there is no third value, because a setting that
+upgraded without asking would remove the consent this is built on.
+
+`self-upgrade` installs the newest release over the running binary, and
+only after an explicit yes on a terminal — no terminal is a question nobody
+answered, not a yes. It refuses to move backwards, so a maintainer on an
+unreleased branch is never told to install an older tag. The download lands
+beside the binary and the rename is the last step, so a failed download
+leaves the working binary exactly where it was.
+
+Every download is verified before it is installed. The asset is fetched
+from GitHub over https and from nowhere else — the URL comes out of the
+release payload, and a redirect that leaves those hosts is refused — and
+its sha256 is compared against the `SHA256SUMS` file the release publishes
+beside the binaries. A mismatch refuses the install, deletes the download
+and leaves the working binary untouched. A release that publishes no
+`SHA256SUMS` at all is refused too, rather than warned about: unknown is
+never the same as verified, and treating a missing file as permission would
+make deleting one small file the whole attack.
+
+`scripts/build-dist.sh` is what writes both the `dist/` binaries and that
+`SHA256SUMS`. It builds every platform with `CGO_ENABLED=0 -trimpath`, so
+the same Go toolchain produces the same bytes anywhere, and the test suite
+checks the recorded digests against the committed binaries — a rebuild that
+skipped the script goes red there rather than after a tag is cut.
+
+Where the binary belongs to a package manager — a Homebrew cellar, a snap,
+a nix store path, `/usr/bin`, a scoop shims directory — the upgrade refuses
+and prints that manager's own upgrade command instead, because overwriting
+a file a package database believes it owns is a change the manager will
+silently revert. The detection is a path heuristic and errs toward
+refusing; `--force` is the way past it when the install really is yours.
+
