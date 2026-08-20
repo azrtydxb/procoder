@@ -34,8 +34,8 @@ tells you which tools this repository wants and how to install them.
 procoder governs its own repository. Before opening a PR:
 
 ```sh
-go run ./cmd/procoder check    # formatting over your changed files
-go run ./cmd/procoder git      # hygiene: markers, junk, message shape
+go run ./cmd/procoder check    # the full commit gate over your changed files
+go run ./cmd/procoder git      # the pre-finish status: branch, hygiene, templates
 go test ./...
 ```
 
