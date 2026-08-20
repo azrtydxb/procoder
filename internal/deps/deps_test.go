@@ -162,7 +162,7 @@ func TestRunCargoOutdatedMissing(t *testing.T) {
 		t.Skip("stub PATH script is a shell script")
 	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"fixture\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"fixture\"\n\n[dependencies]\nserde = \"1.0\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stub := t.TempDir()
@@ -288,6 +288,10 @@ func stubPATH(t *testing.T, stubs map[string]string) string {
 	return dir
 }
 
+// A fixture about license READING needs a repository that has licenses
+// to read: a manifest with no requires now reports no surface at all.
+const goModWithRequire = "module x\n\ngo 1.23\n\nrequire github.com/fatih/color v1.16.0\n"
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -303,7 +307,7 @@ func writeFile(t *testing.T, path, body string) {
 func TestRunGoToolchainAbsentIsInformational(t *testing.T) {
 	stubPATH(t, nil)
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "go.mod"), "module x\n")
+	writeFile(t, filepath.Join(dir, "go.mod"), goModWithRequire)
 
 	var lines []string
 	code := Run(dir, func(s string) { lines = append(lines, s) })
@@ -488,7 +492,7 @@ func TestReportGoLicensesKeepsRowsDespiteNonzeroExit(t *testing.T) {
 		"go-licenses": "cat <<'OUT'\n" + csv + "OUT\necho 'error: cannot determine license for example.com/x' >&2\nexit 1\n",
 	})
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "go.mod"), "module x\n")
+	writeFile(t, filepath.Join(dir, "go.mod"), goModWithRequire)
 
 	var lines []string
 	code := Run(dir, func(s string) { lines = append(lines, s) })
@@ -524,5 +528,148 @@ func TestEmitPrintsExactlyThirtyWithoutATail(t *testing.T) {
 		if strings.Contains(l, "more") {
 			t.Fatalf("nothing was elided, so there is no tail line: %q", l)
 		}
+	}
+}
+
+// ---------- nothing to check is not the same as unchecked ----------
+
+// The honesty rule protects work that exists and was not done. A repo
+// with no third-party dependencies has no license surface at all, and
+// reporting it as NOT checked teaches the reader to skim a line that
+// matters elsewhere.
+// proved by: made hasGoDeps always answer (true, true) — a dependency-free
+// go.mod then reports NOT checked again.
+func TestGoWithNoRequiresHasNoLicenseSurface(t *testing.T) {
+	stubPATH(t, nil)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module x\n\ngo 1.23\n")
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (go): no dependencies") {
+		t.Errorf("want the no-dependencies line in:\n%s", joined)
+	}
+	if strings.Contains(joined, "licenses (go): NOT checked") {
+		t.Errorf("nothing to check must not read as unchecked:\n%s", joined)
+	}
+}
+
+// The other half of the same rule: dependencies that exist and no tool
+// to read them is exactly what NOT checked is for.
+// proved by: made hasGoDeps always answer (false, true) — a repo with
+// real requires then claims it has no dependencies.
+func TestGoWithRequiresAndNoToolStaysUnchecked(t *testing.T) {
+	stubPATH(t, nil)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"),
+		"module x\n\ngo 1.23\n\nrequire (\n\tgithub.com/fatih/color v1.16.0\n)\n")
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (go): NOT checked — go-licenses is not installed") {
+		t.Errorf("real dependencies with no tool are unchecked:\n%s", joined)
+	}
+}
+
+// proved by: made hasJSDeps ignore devDependencies — a repo whose only
+// dependencies are dev ones then reports no license surface.
+func TestJSDevDependenciesAreALicenseSurface(t *testing.T) {
+	stubPATH(t, map[string]string{"npm": "exit 0\n"})
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"name":"x","devDependencies":{"vitest":"^2.0.0"}}`)
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (js): NOT checked — no canonical no-install tool") {
+		t.Errorf("dev dependencies ship licenses too:\n%s", joined)
+	}
+}
+
+// proved by: made hasJSDeps answer (false, true) on a parse error — a
+// malformed manifest then reports "no dependencies" on no evidence.
+func TestJSUnreadableManifestStaysUnchecked(t *testing.T) {
+	stubPATH(t, map[string]string{"npm": "exit 0\n"})
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"name":`)
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (js): NOT checked") {
+		t.Errorf("an unreadable manifest is no evidence of anything:\n%s", joined)
+	}
+}
+
+// A manifest procoder read as empty while the native tool is listing
+// outdated packages means procoder read it wrong. The tool's rows win.
+// proved by: dropped the outdated-rows term from the predicate — the
+// report then contradicts itself in the same breath.
+func TestOutdatedRowsOverrideAnEmptyManifest(t *testing.T) {
+	report := `{"left-pad":{"current":"1.0.0","wanted":"1.3.0","latest":"1.3.0"}}`
+	stubPATH(t, map[string]string{"npm": "cat <<'OUT'\n" + report + "\nOUT\nexit 1\n"})
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"name":"x"}`)
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "licenses (js): no dependencies") {
+		t.Errorf("one dependency is behind, so there are dependencies:\n%s", joined)
+	}
+}
+
+// pyproject is the one Python packaging style procoder reads; the
+// [project] table's own keys (name, version) are not dependencies.
+// proved by: made hasTOMLDeps ignore the `dependencies` array key — a
+// project with a real dependency list then reports no license surface.
+func TestPyprojectDependencyArrayIsALicenseSurface(t *testing.T) {
+	stubPATH(t, nil)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pyproject.toml"),
+		"[project]\nname = \"x\"\nversion = \"0.1.0\"\ndependencies = [\"requests>=2\"]\n")
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (python): NOT checked") {
+		t.Errorf("a declared dependency is a license surface:\n%s", joined)
+	}
+}
+
+// proved by: made hasTOMLDeps treat any [project] key as a dependency —
+// a metadata-only pyproject then reports a surface that is not there.
+func TestPyprojectWithoutDependenciesHasNoLicenseSurface(t *testing.T) {
+	stubPATH(t, nil)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pyproject.toml"),
+		"[project]\nname = \"x\"\nversion = \"0.1.0\"\nrequires-python = \">=3.9\"\n")
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (python): no dependencies to report") {
+		t.Errorf("metadata is not a dependency:\n%s", joined)
+	}
+}
+
+// requirements.txt, Pipfile and a setup.py that computes install_requires
+// at runtime cannot be read off the text — procoder declines to answer
+// rather than guess "none".
+// proved by: dropped the other-manifest guard from hasPythonDeps — a
+// repo whose dependencies live in requirements.txt then reports none.
+func TestOtherPythonPackagingStaysUnchecked(t *testing.T) {
+	stubPATH(t, nil)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pyproject.toml"), "[project]\nname = \"x\"\n")
+	writeFile(t, filepath.Join(dir, "requirements.txt"), "requests>=2\n")
+
+	var lines []string
+	Run(dir, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "licenses (python): NOT checked") {
+		t.Errorf("a packaging style procoder does not parse is unknown, not empty:\n%s", joined)
 	}
 }

@@ -2,6 +2,36 @@
 
 Every release, in words a user can read. Newest first.
 
+## 0.32.5 — 2026-08-20
+
+**`procoder deps` no longer reports an empty shelf as an unread one.**
+The honesty rule — a thing that was not checked is never reported as
+clean — is what makes the tool worth reading, and it was firing in a
+case it was never meant for. A repository with no third-party
+dependencies has no license surface at all, so
+`licenses (go): NOT checked — go-licenses is not installed` pointed the
+reader at a gap that did not exist. A reader who learns to skim that
+line will skim it in a repository where it means something.
+
+The report now separates the two:
+
+- **Nothing to check** — the manifest declares no third-party
+  dependencies — reads `licenses (<eco>): no dependencies to report`.
+- **Something unchecked** — dependencies exist and no tool read them —
+  keeps the NOT-checked line and its install hint, exactly as before.
+
+Where procoder cannot tell, it says NOT checked. Go reads `require`
+directives (block and single-line, indirect included); js reads
+`dependencies`, `devDependencies`, `peerDependencies` and
+`optionalDependencies`; Rust reads the dependency tables in
+`Cargo.toml`. Python answers only for a pyproject-only repository — a
+`requirements.txt`, a `Pipfile`, or a `setup.py` computing its
+`install_requires` at runtime cannot be read off the text, so procoder
+declines to answer rather than guess "none". A manifest it cannot parse
+answers the same way. And a dependency the native tool reports as
+behind is a dependency whatever procoder made of the manifest text, so
+the report can no longer contradict itself in the same breath.
+
 ## 0.32.4 — 2026-08-20
 
 A test sweep across the codebase, driven by mutation rather than by
