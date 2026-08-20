@@ -76,6 +76,10 @@ func PreToolUse(stdin io.Reader, stdout io.Writer) int {
 		return 0 // no repository to gate; git will have its own opinion
 	}
 
+	if c.message == "" && c.messageFile != "" {
+		c.message = readMessageFile(commitDir(p.Cwd, c.dir), c.messageFile)
+	}
+
 	code, findings, timedOut := runGate(root, c.message)
 	switch {
 	case timedOut:
@@ -148,6 +152,28 @@ func blockingLines(output string) []string {
 // working directory, moved by any `cd` or `git -C` the command itself carries,
 // then walked up to the repository root git would use.
 func commitRoot(payloadCwd, dirHint string) string {
+	return tools.RepoRoot(commitDir(payloadCwd, dirHint))
+}
+
+// readMessageFile reads the message `git commit -F <file>` would read, from
+// the directory the command runs in. A file that cannot be read leaves the
+// message empty, which the documentation obligation reports as the
+// acknowledgment path being unavailable rather than as no acknowledgment.
+func readMessageFile(dir, file string) string {
+	path := file
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// commitDir is the working directory the commit runs in: the payload's, moved
+// by any `cd` or `git -C` the command carries.
+func commitDir(payloadCwd, dirHint string) string {
 	base := payloadCwd
 	if base == "" {
 		if wd, err := os.Getwd(); err == nil {
@@ -164,7 +190,7 @@ func commitRoot(payloadCwd, dirHint string) string {
 	if base == "" {
 		return "."
 	}
-	return tools.RepoRoot(base)
+	return base
 }
 
 func allow(stdout io.Writer, reason string) int { return decide(stdout, "allow", reason) }
@@ -202,10 +228,11 @@ func decide(stdout io.Writer, verdict, reason string) int {
 func IsGitCommit(command string) bool { return parseCommand(command).isCommit }
 
 type commitCommand struct {
-	isCommit bool
-	noVerify bool
-	dir      string // -C <dir> or a leading `cd <dir>`, whichever the command used
-	message  string // -m/--message, so a documentation acknowledgment can clear its obligation here
+	isCommit    bool
+	noVerify    bool
+	dir         string // -C <dir> or a leading `cd <dir>`, whichever the command used
+	message     string // -m/--message, so a documentation acknowledgment can clear its obligation here
+	messageFile string // -F/--file, read at check time; "" when the commit carries none
 }
 
 // gitValueFlags are the git-level flags that swallow the next word, so the
@@ -269,11 +296,74 @@ func parseCommand(command string) commitCommand {
 			}
 			if v, ok := strings.CutPrefix(t.word, "--message="); ok {
 				res.message += v + "\n"
+				continue
 			}
+			// -F/--file is the other way a message arrives, and the one an
+			// agent reaches for when the message has a preformatted body.
+			// `-F -` reads stdin, which here is the heredoc the command
+			// itself carries.
+			if (t.word == "-F" || t.word == "--file") && j+1 < len(rest) {
+				res.messageFile = rest[j+1].word
+				j++
+				continue
+			}
+			if v, ok := cutFlagValue(t.word, "--file=", "-F"); ok {
+				res.messageFile = v
+			}
+		}
+		if res.messageFile == "-" {
+			// stdin: the heredoc body is the message, and it is right here
+			// in the command line. A message piped from another process is
+			// not knowable at this point and stays unavailable, said.
+			res.messageFile = ""
+			res.message = heredocBody(command)
 		}
 		return res
 	}
 	return res
+}
+
+// cutFlagValue reads a flag's attached value: `--file=msg.txt` for the long
+// form, `-Fmsg.txt` for the short one git's parser also accepts. A bare `-F`
+// carries no value and is left to the two-word branch above.
+func cutFlagValue(word, long, short string) (string, bool) {
+	if v, ok := strings.CutPrefix(word, long); ok && v != "" {
+		return v, true
+	}
+	if v, ok := strings.CutPrefix(word, short); ok && v != "" {
+		return v, true
+	}
+	return "", false
+}
+
+// heredocBody returns the body of the first heredoc in the command — what
+// `git commit -F -` would read on stdin. `<<EOF`, `<<-EOF`, and the quoted
+// delimiters that turn off expansion all land here; the terminator is a line
+// that is exactly the delimiter, as the shell reads it.
+func heredocBody(command string) string {
+	i := strings.Index(command, "<<")
+	if i < 0 {
+		return ""
+	}
+	rest := strings.TrimPrefix(command[i+2:], "-")
+	nl := strings.Index(rest, "\n")
+	if nl < 0 {
+		return ""
+	}
+	delim := strings.Trim(strings.TrimSpace(rest[:nl]), "\"'")
+	if delim == "" {
+		return ""
+	}
+	var body []string
+	for _, line := range strings.Split(rest[nl+1:], "\n") {
+		if strings.TrimSpace(line) == delim {
+			return strings.Join(body, "\n")
+		}
+		body = append(body, line)
+	}
+	// no terminator in what we were handed: an unterminated heredoc is not a
+	// message we can vouch for
+	return ""
 }
 
 // isGitWord accepts `git` and an explicit path to it (`/usr/bin/git`), but
@@ -355,10 +445,23 @@ func tokenize(command string) []token {
 	for i := 0; i < len(command); i++ {
 		ch := command[i]
 		switch ch {
+		case '$':
+			// $'…' and $"…" quote exactly like '…' and "…" for this purpose
+			if i+1 < len(command) && (command[i+1] == '\'' || command[i+1] == '"') {
+				continue
+			}
+			cur.WriteByte(ch)
+			has = true
 		case '\'', '"':
 			q := ch
 			has, quoted = true, true
 			for i++; i < len(command) && command[i] != q; i++ {
+				// a backslash escape inside double quotes keeps the next
+				// byte in the word: `-m "he said \"no\""` is one argument,
+				// and reading it as two loses everything after it
+				if command[i] == '\\' && q == '"' && i+1 < len(command) {
+					i++
+				}
 				cur.WriteByte(command[i])
 			}
 		case '\\':
