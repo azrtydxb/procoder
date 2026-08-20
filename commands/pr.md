@@ -14,13 +14,15 @@ The launcher for every procoder command below is:
    default-branch checkout — if this work isn't in one yet, note it and keep
    the branch clean.
 
-0b. If this branch closes a tracked issue, check that nobody else already
-has a pull request open for it:
-`gh pr list --state open --search "<issue number> -author:@me"`, and the
-issue's own timeline. A second PR for the same fix wastes the reviewer
-and, when the other one is a contributor's, costs the contributor —
-review theirs instead of opening yours. Your OWN open PR for this branch
-is not a reason to stop: push to it rather than opening a second one.
+0b. If this branch closes a tracked issue, check whether a pull request is
+already open for it: `gh pr list --state open --search "<issue number>"`,
+and the issue's own timeline. Compare each result's head branch against
+this one. The only PR that is not a reason to stop is the one whose head
+IS this branch — push to that rather than opening a second one. Anything
+else, including your own older branch and an agent working under the same
+account, is somebody already on it: review theirs instead. A second PR
+for the same fix wastes the reviewer and, when the other one is a
+contributor's, costs the contributor.
 
 1. Run `launcher.sh git` and `launcher.sh check`. Fix everything BLOCKING
    before going further — a PR that fails its own gate wastes the reviewer.

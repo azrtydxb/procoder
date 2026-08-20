@@ -68,13 +68,35 @@ func runLauncher(t *testing.T, root, sysname, machine string) (string, string, e
 //
 // proved by: deleting the `MINGW* | MSYS* | CYGWIN*)` arm from
 // hooks/launcher.sh, or dropping the `$ext` suffix from the bin= line.
+// ARM64 Windows is the case the portability page makes a promise about:
+// only windows-amd64 ships, so a shell reporting aarch64 must be told there
+// is no binary rather than handed one for another architecture. The fixture
+// deliberately mirrors the shipped dist/ tree — stubbing a windows-arm64
+// binary would test a repository that does not exist and would let a
+// regression in this promise through.
+// proved by: mapped the ARM64 arm to os=linux ext="" — the launcher then
+// execs dist/linux-amd64/procoder and this test reports the wrong binary
+// instead of the refusal.
+func TestLauncherRefusesArm64Windows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub binaries are POSIX shell scripts")
+	}
+	root := launcherRoot(t, "windows-amd64/procoder.exe")
+	out, stderr, err := runLauncher(t, root, "MINGW64_NT-10.0-26200", "aarch64")
+	if err == nil {
+		t.Fatalf("no windows-arm64 binary ships; the launcher ran %s instead of refusing", out)
+	}
+	if !strings.Contains(stderr, "no binary for windows/arm64") {
+		t.Errorf("the refusal must name the platform it has nothing for, got: %s", stderr)
+	}
+}
+
 func TestLauncherResolvesWindowsShells(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stub binaries are POSIX shell scripts")
 	}
 	root := launcherRoot(t,
 		"windows-amd64/procoder.exe",
-		"windows-arm64/procoder.exe",
 		"darwin-arm64/procoder",
 		"linux-amd64/procoder",
 	)
@@ -87,7 +109,6 @@ func TestLauncherResolvesWindowsShells(t *testing.T) {
 		{"MINGW32_NT-6.2", "x86_64", "windows-amd64/procoder.exe"},
 		{"MSYS_NT-10.0", "x86_64", "windows-amd64/procoder.exe"},
 		{"CYGWIN_NT-10.0", "x86_64", "windows-amd64/procoder.exe"},
-		{"MINGW64_NT-10.0-26200", "aarch64", "windows-arm64/procoder.exe"},
 		// The platforms that already worked must keep working — and must keep
 		// resolving the suffix-less name.
 		{"Darwin", "arm64", "darwin-arm64/procoder"},

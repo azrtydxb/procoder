@@ -167,8 +167,10 @@ family. The launcher matches `MINGW*`, `MSYS*` and `CYGWIN*` and
 resolves `dist/windows-amd64/procoder.exe`, so every hook and every
 slash command works with no manifest change and no per-host wiring.
 
-Copilot CLI does not go through the launcher: `hooks/copilot-hooks.json`
-carries a PowerShell branch that names the `.exe` itself.
+Copilot CLI is the exception on Windows only: `hooks/copilot-hooks.json`
+calls `hooks/launcher.sh` like everything else, and falls back to a
+PowerShell branch that names the `.exe` itself where no POSIX shell is
+available.
 
 Only `windows-amd64` ships. On ARM64 Windows, Git Bash reports the
 emulated `x86_64` and that binary runs. A POSIX shell reporting
