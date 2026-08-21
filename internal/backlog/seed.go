@@ -97,6 +97,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 	out(epic)
 
 	date := time.Now().UTC().Format("20060102")
+	taken := map[string]bool{}
 	for i, c := range crits {
 		slug := textutil.Slug(c)
 		if slug == "" {
@@ -104,6 +105,17 @@ func Seed(root, specName, milestone string, out func(string)) int {
 			// index keeps its file name unique and non-empty.
 			slug = fmt.Sprintf("criterion-%d", i+1)
 		}
+		// Two criteria can slug alike — "reads foo.bar" and "reads foo-bar"
+		// differ by punctuation the file name does not keep. Emitting the
+		// same path twice tells the agent to write one story over the
+		// other, and a criterion disappears from the backlog with nothing
+		// on screen to say it did. Suffixing keeps every criterion, which
+		// refusing here would not.
+		base := slug
+		for n := 2; taken[slug]; n++ {
+			slug = fmt.Sprintf("%s-%d", base, n)
+		}
+		taken[slug] = true
 		rel := filepath.ToSlash(filepath.Join(Dir, KindStory, date+"-"+slug+".md"))
 		story := fmt.Sprintf(storyTemplate, c, now, specName)
 		// The seeded criterion replaces the template placeholder: the story

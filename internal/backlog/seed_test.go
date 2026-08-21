@@ -248,3 +248,40 @@ func TestFingerprintTracksCriteriaNotProse(t *testing.T) {
 		}
 	}
 }
+
+// Two criteria can slug alike — punctuation is a boundary in a file name,
+// so "reads foo.bar" and "reads foo-bar" arrive at the same id. Emitting
+// that path twice tells the agent to write one story over the other, and a
+// criterion vanishes from the backlog with nothing on screen to say so.
+// proved by: dropped the `taken` suffixing — both criteria then print the
+// same "write this to" path and the second story overwrites the first.
+func TestTwoCriteriaThatSlugAlikeGetSeparateStories(t *testing.T) {
+	root := t.TempDir()
+	writeSpec(t, root, "widget", completeSpec("widget",
+		"- [ ] the loader reads foo.bar and reports it\n- [ ] the loader reads foo-bar and reports it"))
+	mustBeComplete(t, root, "widget")
+
+	out, lines := collect()
+	if code := Seed(root, "widget", "", out); code != 0 {
+		t.Fatalf("a complete spec must seed, got %d: %v", code, *lines)
+	}
+	paths := map[string]int{}
+	for _, line := range *lines {
+		if rest, ok := strings.CutPrefix(line, "== write this to "); ok {
+			paths[strings.TrimSuffix(rest, ":")]++
+		}
+	}
+	stories := 0
+	for path, n := range paths {
+		if !strings.Contains(path, "/"+KindStory+"/") {
+			continue
+		}
+		stories++
+		if n > 1 {
+			t.Errorf("%s is written %d times — one story overwrites the other", path, n)
+		}
+	}
+	if stories != 2 {
+		t.Errorf("two criteria must yield two story files, got %d: %v", stories, paths)
+	}
+}
