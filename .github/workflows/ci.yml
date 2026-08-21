@@ -187,7 +187,11 @@ jobs:
           # ruff: the Hermes adapter (__init__.py) makes this a Python-bearing
           # repo, so doctor requires the Python formatter too
           pip install "semgrep==${SEMGREP}" "ruff==${RUFF}" "mkdocs-material==${MKDOCS_MATERIAL}"
-          npm install -g "prettier@${PRETTIER}" "@mermaid-js/mermaid-cli@${MERMAID_CLI}"
+          # eslint: this repository ships three JS host adapters, and until
+          # a linter that could not run started failing the gate, none of
+          # them had ever been linted here — the gate reported clean over
+          # them because eslint was simply absent.
+          npm install -g "prettier@${PRETTIER}" "eslint@${ESLINT}" "@mermaid-js/mermaid-cli@${MERMAID_CLI}"
       - name: put the go tool directory on PATH
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
       - name: puppeteer config for mmdc on a runner

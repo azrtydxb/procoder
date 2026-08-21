@@ -101,11 +101,30 @@ func TestMissingLinterReadsAsNotCheckedNeverClean(t *testing.T) {
 	}
 }
 
-func TestConfiglessTSIsOutOfScopeButJSGetsTheBaseline(t *testing.T) {
+// TypeScript with no eslint config used to be declared out of scope, on
+// the reasoning that eslint core carries no TS parser and installing one
+// would be imposing. The result was that the most common TypeScript setup
+// there is — a tsconfig and no eslint config — got no linting and a green
+// gate. The parser is a tool, so it is installed like one, and its absence
+// is NOT checked rather than silence.
+// proved by: restored the "out of scope" branch for .ts — configless
+// TypeScript reports one non-blocking line and the gate passes over code
+// nothing read.
+func TestConfiglessTSIsLintedOrLoudlyNotChecked(t *testing.T) {
 	root := t.TempDir()
 	got := Files(root, []string{filepath.Join(root, "a.ts")}, false)
-	if len(got) != 1 || !strings.Contains(got[0].Message, "out of scope") {
-		t.Fatalf("configless TS must be labeled out of scope: %+v", got)
+	if len(got) == 0 {
+		t.Fatal("configless TypeScript must never pass silently")
+	}
+	for _, f := range got {
+		if strings.Contains(f.Message, "out of scope") {
+			t.Errorf("TypeScript is not out of scope any more: %q", f.Message)
+		}
+	}
+	// Whatever could not run has to block: that is the difference between
+	// "checked and clean" and "nothing looked at it".
+	if !got[0].Blocking && strings.Contains(got[0].Message, "NOT checked") {
+		t.Errorf("a check that did not happen must block: %+v", got[0])
 	}
 
 	if tools.Resolve(Eslint, "") == "" {

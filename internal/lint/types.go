@@ -104,7 +104,7 @@ func typeCheckTS(root string, files []string, block bool) []gitx.Finding {
 		raw, err := execute(dir, bin, []string{"--noEmit", "--pretty", "false"})
 		findings := parseTsc(raw, dir, root, block)
 		if len(findings) == 0 && err != nil {
-			out = append(out, gitx.Finding{File: fs[0],
+			out = append(out, gitx.Finding{Blocking: true, File: fs[0],
 				Message: fmt.Sprintf("NOT checked — tsc failed: %s (lint --types)", textutil.FirstLine(raw+err.Error()))})
 			continue
 		}
@@ -166,7 +166,7 @@ func typeCheckPy(root string, files []string, block bool) []gitx.Finding {
 		// pyright exits 1 when it reported errors; anything else with no
 		// parsed diagnostics is a failed run
 		if !errors.As(err, &exit) || exit.ExitCode() != 1 || raw == "" {
-			return []gitx.Finding{{File: files[0],
+			return []gitx.Finding{{Blocking: true, File: files[0],
 				Message: fmt.Sprintf("NOT checked — pyright failed: %s (lint --types)", textutil.FirstLine(raw+err.Error()))}}
 		}
 	}

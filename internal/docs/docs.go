@@ -823,7 +823,8 @@ func localPageExists(root, rel string) bool {
 // Network + gh, so it runs with --external, and only for GitHub repos.
 func PagesHealth(root string) []gitx.Finding {
 	if tools.Resolve(actions.Gh, root) == "" {
-		return []gitx.Finding{{Message: "GitHub Pages NOT checked — gh is not installed; run `procoder init`"}}
+		return []gitx.Finding{{Blocking: true,
+			Message: "GitHub Pages NOT checked — gh is not installed; run `procoder init`"}}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()

@@ -146,11 +146,18 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 			if !strings.HasSuffix(f, ".pb.go") {
 				byExt["go"] = append(byExt["go"], f)
 			}
-		case ".py":
+		case ".py", ".pyi":
+			// .pyi is a stub file and ruff lints it; it was formatted and
+			// never linted, which is the same silence by omission as the
+			// TypeScript module extensions below.
 			byExt["py"] = append(byExt["py"], f)
 		case ".sh", ".bash":
 			byExt["sh"] = append(byExt["sh"], f)
-		case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
+		case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts":
+			// .mts and .cts are TypeScript's module variants. They were
+			// formatted and never linted while .mjs and .cjs were — not a
+			// decision anybody made, just an extension list written once
+			// and never revisited.
 			byExt["js"] = append(byExt["js"], f)
 		case ".kt", ".kts":
 			byExt["kt"] = append(byExt["kt"], f)
@@ -164,6 +171,8 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 			byExt["java"] = append(byExt["java"], f)
 		case ".php":
 			byExt["php"] = append(byExt["php"], f)
+		case ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp":
+			byExt["c"] = append(byExt["c"], f)
 		}
 	}
 	var out []gitx.Finding
@@ -197,6 +206,12 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 	if fs := byExt["php"]; len(fs) > 0 {
 		out = append(out, lintPHP(root, fs, block)...)
 	}
+	if fs := byExt["c"]; len(fs) > 0 {
+		out = append(out, lintCFamily(root, fs, block)...)
+	}
+	// Languages procoder formats and has no linter for say so, once per
+	// language, rather than passing silently.
+	out = append(out, lintUnlinted(files, block)...)
 	return out
 }
 
@@ -204,7 +219,7 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 // per-file mode) and keeps the findings landing in the changed files.
 func lintRust(root string, files []string, block bool) []gitx.Finding {
 	if !fileExists(filepath.Join(root, "Cargo.toml")) {
-		return []gitx.Finding{{File: files[0],
+		return []gitx.Finding{{Blocking: true, File: files[0],
 			Message: "NOT checked — clippy needs Cargo.toml at the repository root (a crate in a subdirectory is a known ceiling for now) (lint)"}}
 	}
 	bin := tools.Resolve(Cargo, root)
@@ -392,15 +407,17 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 	// baseline; TypeScript needs a parser eslint core does not carry, and
 	// installing one would be imposing — TS is out of scope until the
 	// project carries a config, whether or not eslint itself is installed.
-	var jsFiles []string
+	var jsFiles, tsFiles []string
 	for _, f := range uncovered {
 		switch strings.ToLower(filepath.Ext(f)) {
-		case ".ts", ".tsx":
-			out = append(out, gitx.Finding{File: f,
-				Message: "eslint: TypeScript needs a project eslint config (a TS parser is not built in) — out of scope until the project carries one (lint)"})
+		case ".ts", ".tsx", ".mts", ".cts":
+			tsFiles = append(tsFiles, f)
 		default:
 			jsFiles = append(jsFiles, f)
 		}
+	}
+	if len(tsFiles) > 0 {
+		out = append(out, lintTSBaseline(root, tsFiles, block)...)
 	}
 	if len(jsFiles) == 0 {
 		return out
@@ -481,7 +498,7 @@ func parseEslintJSON(raw string, runErr error, file, label string, block bool) [
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
-		return []gitx.Finding{{File: file,
+		return []gitx.Finding{{Blocking: true, File: file,
 			Message: fmt.Sprintf("NOT checked — eslint output unreadable: %s (lint)", textutil.FirstLine(raw+errStr(runErr)))}}
 	}
 	var out []gitx.Finding
@@ -498,7 +515,7 @@ func parseEslintJSON(raw string, runErr error, file, label string, block bool) [
 	if len(out) == 0 && runErr != nil {
 		var exit *exec.ExitError
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1) {
-			return []gitx.Finding{{File: file,
+			return []gitx.Finding{{Blocking: true, File: file,
 				Message: fmt.Sprintf("NOT checked — eslint failed: %s (lint)", textutil.FirstLine(errStr(runErr)))}}
 		}
 	}
@@ -588,7 +605,7 @@ func finishParse(raw string, runErr error, file string, tool string, block bool)
 		// exit code 1 with no parseable findings can still be a legitimate
 		// "no findings" for some tools, but anything else is a failure
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && raw != "") {
-			return []gitx.Finding{{File: file,
+			return []gitx.Finding{{Blocking: true, File: file,
 				Message: fmt.Sprintf("NOT checked — %s failed: %s (lint)", tool, textutil.FirstLine(raw+runErr.Error()))}}
 		}
 	}
@@ -622,8 +639,14 @@ func CacheDir(root string) string {
 	return filepath.Join(os.TempDir(), "procoder-cache-"+hex.EncodeToString(sum[:6]))
 }
 
+// notChecked is a check that did NOT happen. It blocks, and the blocking is
+// not governed by [lint] policy: that setting decides whether a linter's
+// JUDGEMENTS stop a commit, and "the linter never ran" is not a judgement.
+// Domain 1 has always blocked on a missing gitleaks; domain 2 printed the
+// same sentence as info and let the gate pass, which made an empty machine
+// indistinguishable from clean code.
 func notChecked(file, tool string) []gitx.Finding {
-	return []gitx.Finding{{File: file,
+	return []gitx.Finding{{Blocking: true, File: file,
 		Message: fmt.Sprintf("NOT checked — %s is not installed; run `procoder init` (lint)", tool)}}
 }
 

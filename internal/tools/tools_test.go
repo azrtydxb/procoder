@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -236,10 +237,41 @@ func TestHasProjectConfigWalksUpToAnAncestor(t *testing.T) {
 // No config anywhere up to the filesystem root: out of scope, said and
 // counted — never silently reported clean.
 // proved by: returning true instead of false when the walk reaches the root.
+// HasProjectConfig still answers for any tool that names a required config.
+// clang-format no longer does — it takes a fallback style instead — so the
+// mechanism is exercised against a tool declared here rather than against
+// whichever real tool happens to need a config this month.
 func TestHasProjectConfigIsFalseWhenNothingAboveTheFileHasIt(t *testing.T) {
+	needy := &Tool{Name: "needy", NeedsProjectConfig: ".needyrc"}
 	dir := t.TempDir()
-	if HasProjectConfig(clangFormat, filepath.Join(dir, "a.c")) {
-		t.Error("no .clang-format anywhere above the file, yet the file was called in scope")
+	if HasProjectConfig(needy, filepath.Join(dir, "a.x")) {
+		t.Error("no .needyrc anywhere above the file, yet the file was called in scope")
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".needyrc"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !HasProjectConfig(needy, filepath.Join(dir, "a.x")) {
+		t.Error("the config is right there and the file was called out of scope")
+	}
+}
+
+// clang-format must NOT require a project config: requiring one is what
+// made every unconfigured C and C++ file skip the gate.
+// proved by: put NeedsProjectConfig back on clang-format — this fails, and
+// so does the formatting test that expects the file to be formatted.
+func TestClangFormatNeedsNoProjectConfig(t *testing.T) {
+	if clangFormat.NeedsProjectConfig != "" {
+		t.Errorf("clang-format must format without a config, needs %q", clangFormat.NeedsProjectConfig)
+	}
+	args := clangFormat.Args("/x/a.c")
+	var fallback bool
+	for _, a := range args {
+		if strings.HasPrefix(a, "--fallback-style=") {
+			fallback = true
+		}
+	}
+	if !fallback {
+		t.Errorf("without a config the baseline style must be named: %v", args)
 	}
 }
 

@@ -57,12 +57,18 @@ type Tool struct {
 	// something (rubocop detects offenses it corrected) — exit 1 WITH
 	// stdout is the answer, not a failure.
 	ExitOneIsAnswer bool
-	// ConfigMissing replaces the generic "no <file> in the project" sentence
-	// when NeedsProjectConfig names something a person would not recognise
-	// as config. A missing .clang-format explains itself; a missing
-	// node_modules/@prettier/plugin-php/package.json does not, and the
-	// reader needs the line that installs it rather than a path.
-	ConfigMissing string
+	// Resolved overrides how presence is decided, for a "tool" that is a
+	// library rather than a binary. typescript-eslint ships no executable —
+	// it is imported by an eslint config — so looking for it on PATH would
+	// report it missing on every machine that has it.
+	Resolved func(root string) string
+	// Missing reports why this tool cannot run for a given file, or "" when
+	// it can. It exists for a tool whose availability is not answered by a
+	// binary on PATH: prettier can be installed and still be unable to read
+	// PHP, because the plugin that parses PHP is a separate package. That
+	// is a MISSING TOOL and reports as unchecked, which fails the gate —
+	// not a missing style config, which would be out of scope and green.
+	Missing func(file string) string
 }
 
 // ByExtension maps a file extension (lowercase, with dot) to its formatter.
@@ -125,11 +131,24 @@ var (
 		},
 	}
 	clangFormat = &Tool{
-		Name:               "clang-format",
-		Args:               func(f string) []string { return []string{"--style=file", f} },
-		NeedsProjectConfig: ".clang-format",
-		Install:            "brew install clang-format   (or: apt install clang-format)",
-		VersionArgs:        []string{"--version"},
+		Name: "clang-format",
+		// --style=file uses the project's .clang-format wherever one is
+		// found; --fallback-style names what happens when none is. Together
+		// they are D-OVERRIDE in one flag pair: the repo's style wins, and
+		// a repo without one is still formatted.
+		//
+		// This used to require a .clang-format and report the file out of
+		// scope without one, so that procoder would not impose LLVM's
+		// taste. That was right about not writing a config into someone's
+		// repository and wrong about the alternative being to check
+		// nothing: out of scope passes the gate, so every C and C++ project
+		// without a style file was formatted by nothing and told it was
+		// fine. A named fallback puts nothing on disk.
+		Args: func(f string) []string {
+			return []string{"--style=file", "--fallback-style=LLVM", f}
+		},
+		Install:     "brew install clang-format   (or: apt install clang-format)",
+		VersionArgs: []string{"--version"},
 		InstallVia: []InstallCandidate{
 			{Manager: "brew", Args: []string{"install", "clang-format"}},
 			{Manager: "apt-get", Args: []string{"install", "-y", "clang-format"}},
@@ -197,12 +216,21 @@ var (
 		Args: func(f string) []string {
 			return []string{"--plugin=" + phpPluginPath(f), f}
 		},
-		NeedsProjectConfig: "node_modules/@prettier/plugin-php/src/index.mjs",
-		ConfigMissing:      "PHP formatting needs the prettier PHP plugin in the project — npm i -D prettier @prettier/plugin-php",
-		Install:            "npm i -D prettier @prettier/plugin-php",
-		VersionArgs:        []string{"--version"},
+		Missing: func(f string) string {
+			if phpPluginPath(f) == "" {
+				return "the prettier PHP plugin is not installed — npm i -D prettier @prettier/plugin-php"
+			}
+			return ""
+		},
+		Install:     "npm i -D prettier @prettier/plugin-php",
+		VersionArgs: []string{"--version"},
+		// Project-local, not global. phpPluginPath resolves the plugin by
+		// walking up from the file into the project's node_modules, which
+		// a global install never reaches — so `init --yes` would install
+		// prettier, report success, and every PHP file would still be
+		// UNCHECKED with the same install line it had just run.
 		InstallVia: []InstallCandidate{
-			{Manager: "npm", Args: []string{"install", "-g", "prettier", "@prettier/plugin-php"}},
+			{Manager: "npm", Args: []string{"install", "-D", "prettier", "@prettier/plugin-php"}},
 		},
 	}
 	rubocopFmt = &Tool{
@@ -276,6 +304,9 @@ func ForFile(path string) *Tool {
 // (the version a JS project pinned is the version its config was written
 // against), then PATH. Empty string means not installed.
 func Resolve(t *Tool, repoRoot string) string {
+	if t.Resolved != nil {
+		return t.Resolved(repoRoot)
+	}
 	if repoRoot != "" {
 		// A project-local tool is the right one: it is the version the
 		// project pinned, and it is what the project's own scripts run.
@@ -296,9 +327,13 @@ func Resolve(t *Tool, repoRoot string) string {
 	if err != nil {
 		// the conventional install dirs `go install` and tarball installs
 		// use are often missing from PATH; a tool sitting there is installed
+		dirs := kegDirs()
 		if home, herr := os.UserHomeDir(); herr == nil {
-			for _, dir := range []string{filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
-				filepath.Join(home, ".dotnet", "tools")} {
+			dirs = append(dirs, filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
+				filepath.Join(home, ".dotnet", "tools"))
+		}
+		{
+			for _, dir := range dirs {
 				for _, name := range candidateNames(t.Name) {
 					cand := filepath.Join(dir, name)
 					if runnable(cand) && (t.Probe == nil || t.Probe(cand)) {
@@ -323,6 +358,23 @@ func Resolve(t *Tool, repoRoot string) string {
 		}
 	}
 	return ""
+}
+
+// kegDirs are install locations a package manager deliberately keeps OFF
+// PATH. Homebrew's llvm formula is keg-only — `brew install llvm` succeeds
+// and clang-tidy is still not runnable by name — so without these, `init`
+// would install the tool, the resurvey would still report it missing, and
+// C/C++ would stay blocked with a remedy that had already been carried
+// out. That is worse than the original silence: a wall with no door.
+func kegDirs() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{
+		"/opt/homebrew/opt/llvm/bin", // Homebrew on Apple silicon
+		"/usr/local/opt/llvm/bin",    // Homebrew on Intel macOS
+		"/usr/lib/llvm/bin",          // some Linux distributions
+	}
 }
 
 // candidateNames covers Windows, where the executable carries an extension

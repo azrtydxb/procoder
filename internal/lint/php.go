@@ -122,7 +122,7 @@ func lintPHPBaseline(root string, files []string, block bool) []gitx.Finding {
 		// The baseline could not be written, so the analysis procoder
 		// promised did not happen. Falling silently back to the syntax
 		// floor would report a thinner check as if it were the full one.
-		out := []gitx.Finding{{File: files[0],
+		out := []gitx.Finding{{Blocking: true, File: files[0],
 			Message: fmt.Sprintf("NOT checked — could not write the phpstan baseline: %v (lint)", err)}}
 		return append(out, lintPHPSyntax(root, files, block)...)
 	}
@@ -163,7 +163,7 @@ func runPhpstan(root, config string, files []string, block bool) []gitx.Finding 
 	raw, err := execute(root, bin, args)
 	out := parsePhpstan(raw, block)
 	if len(out) == 0 && err != nil && !strings.Contains(raw, "No errors") {
-		return []gitx.Finding{{File: files[0],
+		return []gitx.Finding{{Blocking: true, File: files[0],
 			Message: fmt.Sprintf("NOT checked — phpstan failed: %s (lint)", textutil.FirstLine(raw+err.Error()))}}
 	}
 	return out
@@ -230,7 +230,7 @@ func parsePHPSyntax(raw, file string, block bool) []gitx.Finding {
 	}
 	// php exited non-zero and said something this does not recognise.
 	// Unknown is not clean.
-	return []gitx.Finding{{File: file,
+	return []gitx.Finding{{Blocking: true, File: file,
 		Message: fmt.Sprintf("NOT checked — php -l failed: %s (lint)", textutil.FirstLine(raw))}}
 }
 
