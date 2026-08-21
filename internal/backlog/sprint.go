@@ -319,12 +319,18 @@ func SprintClose(root string, out func(string)) int {
 	text += "\n## Result\n\n" +
 		fmt.Sprintf("committed: %d\n", len(done)+len(carried)) +
 		"done: " + countWithIDs(done) + "\n" +
-		"carried: " + countWithIDs(carried) + "\n" +
-		// the retro scaffold: filling it is the price of the next sprint
-		"\n## Retro\n\n" +
-		"<!-- What slowed us down this sprint. -->\n\n" +
-		"<!-- What we change next sprint because of it. -->\n\n" +
-		"<!-- One adaptation from this sprint worth keeping. -->\n"
+		"carried: " + countWithIDs(carried) + "\n"
+	// The retro scaffold, only where the template did not already supply
+	// one. Appending it unconditionally gave every sprint two ## Retro
+	// headings — and if the person had already written their retro in the
+	// first, the empty second one sat underneath it, so the next sprint's
+	// check could read either.
+	if !retroRe.MatchString(text) {
+		text += "\n## Retro\n\n" +
+			"<!-- What slowed us down this sprint. -->\n\n" +
+			"<!-- What we change next sprint because of it. -->\n\n" +
+			"<!-- One adaptation from this sprint worth keeping. -->\n"
+	}
 	if err := os.WriteFile(active.Path, []byte(text), 0o644); err != nil {
 		out("cannot update the sprint file: " + err.Error())
 		return 2

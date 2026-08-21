@@ -64,4 +64,3 @@ committed: 11
 done: 11 (20260821-a-c-file-in-a-repository-with-no-clang-format-is-formatted, 20260821-a-c-file-reaches-clang-tidy-and-a-real-finding-is-reported, 20260821-a-file-type-procoder-does-not-claim-is-still-out-of-scope, 20260821-a-language-procoder-formats-but-cannot-lint-reports-not, 20260821-a-php-file-with-no-prettier-plugin-is-unchecked-with-the, 20260821-a-repository-carrying-its-own-clang-format-is-formatted-by, 20260821-a-ts-file-in-a-repository-with-no-eslint-config-is-linted, 20260821-mts-and-cts-files-reach-the-same-linter-as-ts-and-pyi, 20260821-no-domain-anywhere-in-the-tree-reports-a-check-that-did-not, 20260821-procoder-doctor-lists-every-new-default-tool-with-its, 20260821-with-no-linter-installed-procoder-check-over-a-file-of-that)
 carried: 0
 
-## Retro
