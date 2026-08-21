@@ -9,7 +9,7 @@
   },
   "pi": {
     "extensions": [
-      "./pi-extension/index.js"
+      "./pi-extension/index.mjs"
     ],
     "skills": [
       "./commands"
