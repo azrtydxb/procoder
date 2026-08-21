@@ -22,6 +22,10 @@ func CollectOfflineFor(root string, changed []string, commitMessage string, bloc
 	}
 	out = append(out, Drift(root, changed)...)
 	out = append(out, MissingAPIDocs(changed)...)
+	// Before the obligation, and independent of it: the obligation asks
+	// whether a doc CHANGED, and emptying one is a change. Without this,
+	// destroying a page satisfies the very check meant to protect it.
+	out = append(out, EmptyDocs(root, changed)...)
 	out = append(out, VersionSync(root)...)
 	out = append(out, Obligation(root, changed, commitMessage, block)...)
 	// SurfaceCoverage is deliberately NOT here: it answers "what is
@@ -52,6 +56,7 @@ func CollectSweep(root string, files []string) []gitx.Finding {
 		}
 	}
 	out = append(out, MissingAPIDocs(files)...)
+	out = append(out, EmptyDocs(root, files)...)
 	return append(out, VersionSync(root)...)
 }
 

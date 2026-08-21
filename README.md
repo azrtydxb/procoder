@@ -66,9 +66,9 @@ Two modes, one principle:
 ## What's inside
 
 **The commit gate** (`procoder check`) — formatting across the popular
-languages (Go, Python, JS/TS/HTML/CSS, Rust, C/C++, Java, Kotlin, Swift,
-Ruby, Dart, C#, shell — one canonical formatter each, the project's
-config always wins), git hygiene (conflict markers, junk, oversized
+languages (Go, Python, JS/TS/HTML/CSS, PHP, Rust, C/C++, Java, Kotlin,
+Swift, Ruby, Dart, C#, shell — one canonical formatter each, the
+project's config always wins), git hygiene (conflict markers, junk, oversized
 files, AI-attribution lines), secrets, lint, ci and infra hygiene, and
 documentation health, all through one code path so `check`, `git`, and
 CI can never disagree.
