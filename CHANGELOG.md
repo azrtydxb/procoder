@@ -31,6 +31,53 @@ Rules that earn their place:
 - Name outside contributors. They are why the thing got fixed.
 -->
 
+## 1.2.0 — 2026-08-21
+
+_A green gate now means the code was checked rather than that the machine
+was empty, and PHP is a language Procoder speaks._
+
+**Changed — a check that could not run stops the commit.**
+([#114](https://github.com/azrtydxb/procoder/pull/114)) A missing linter
+used to print `NOT checked` as information and let the gate exit 0, so an
+empty machine was indistinguishable from clean code. Domain 1 had always
+blocked on a missing gitleaks; every domain does now — lint, formatting,
+infrastructure, docs, workflows. A formatter that wants a config it cannot
+find is unchecked rather than out of scope, because out of scope passes.
+
+This will fail repositories that were passing on a toolchain that was
+never there. That is the point, and every refusal names the tool and the
+command that installs it: `procoder init` installs what `procoder doctor`
+lists. A file type Procoder does not claim — a text file, an image — is
+still out of scope, still silent, still green.
+
+`[lint] policy` is unchanged: it governs whether a linter's findings block
+a commit. Whether the linter ran at all was never a matter of policy.
+
+**Added — PHP.**
+([#112](https://github.com/azrtydxb/procoder/pull/112)) `.php` files are
+formatted through prettier's PHP plugin, linted by whichever of phpstan
+and phpcs the project configured, and phpunit is detected and run by
+`procoder test` with its counts and `--name` filtering. A project that
+configured no linter gets Procoder's phpstan baseline rather than a
+syntax check; a project that configured one keeps it. Coverage reports
+NOT measured rather than a number nobody measured.
+
+**Added — Procoder brings a linter when the project brought none.**
+([#113](https://github.com/azrtydxb/procoder/pull/113)) TypeScript with
+no eslint config is linted against typescript-eslint's recommended set,
+where it used to be declared out of scope because a parser would have had
+to be installed — the most common TypeScript setup there is got no
+linting and a green gate. C and C++ reach clang-tidy, and clang-format no
+longer needs a project style file to format anything. Every baseline is
+written to a temp file or named on the command line; nothing is written
+into your repository, and a project config always wins.
+
+**Fixed — five file types were formatted and never linted.**
+([#114](https://github.com/azrtydxb/procoder/pull/114)) `.mts` and `.cts`
+went unlinted while `.mjs` and `.cjs` were checked, and `.pyi` was
+formatted and never read by ruff. C# and Dart have no linter yet and now
+say so rather than passing quietly.
+
 ## 1.1.1 — 2026-08-21
 
 _The pi adapter installs at all, generated ids stop welding words
