@@ -46,7 +46,8 @@ CI.
 - The asked-for checks run at the commit gate: SAST, dependency
   vulnerabilities, complexity, debt rot, environment drift, agents drift,
   and the test suite.
-- Each check carries a time budget, configurable under `[timeouts]`.
+- Each check runs to completion. Slowness is answered by giving a check
+  less to do, never by cutting it off partway.
 - Checks are scoped to the change where the tool allows it, and say so
   where it does not.
 - `procoder status` names any check the gate deferred, so nobody reads a
@@ -66,15 +67,16 @@ CI.
 
 - **No silent green.** A check the gate skipped must not look like one
   that passed.
-- **No wall without a door.** A budget exceeded is a refusal, so it must
-  name the setting that raises it.
+- **The same commit gets the same verdict everywhere.** A check whose
+  answer depends on how fast the machine is, is not a check.
 - The gate must stay usable on a large repository: whole-repo scans at
   every commit are not acceptable where the tool can take a file list.
 - No new dependency, and no check that cannot be turned into a finding.
 
 ## Interfaces
 
-- `.procoder/config.toml` gains `[timeouts]` with one key per check.
+- No new configuration. Nothing here is a knob, because nothing here is
+  a preference.
 - No new command. `procoder check`, the hooks and CI keep their shapes.
 - `procoder status` gains a line naming deferred checks when there are
   any.
@@ -87,8 +89,9 @@ CI.
 
 - A check whose tool is absent: the existing NOT-checked path, which
   already names the install command.
-- A check that exceeds its budget: NOT checked, blocking, naming the
-  `[timeouts]` key that raises it.
+- A wedged tool that never returns: the existing hang guards stop it and
+  report NOT checked, blocking. That is a broken tool, not a slow one,
+  and it is rare enough to be news when it happens.
 - A repository with no test setup: the test leg reports what it always
   reported — no recognized setup — rather than failing the commit.
 - A commit touching no code, only prose: the code-scoped checks report
@@ -99,12 +102,14 @@ CI.
 ## Failure modes
 
 - Adding minutes to every commit would get the gate turned off, which
-  costs more than the checks are worth. Every check is budgeted and
-  change-scoped where possible.
-- A budget quietly skipping a check would recreate the exact silence
-  this work exists to remove.
-- Wiring the test suite into the gate without a budget would make a slow
-  suite indistinguishable from a hung commit.
+  costs more than the checks are worth. The answer is scope: a check that
+  reads the changed files rather than the tree is fast because it is
+  doing less, not because it stopped early.
+- A cutoff would recreate the silence this work exists to remove, in a
+  worse form: intermittent, machine-dependent, and impossible to
+  reproduce from the output.
+- A slow suite is indistinguishable from a hung commit unless the gate
+  says what it is running. Each check names itself as it starts.
 
 ## Acceptance criteria
 
@@ -121,10 +126,12 @@ CI.
       the sentence already in docs/commands.md true.
 - [ ] A failing test suite blocks the commit where the repository set
       the test policy to block, and reports without blocking otherwise.
-- [ ] A check that exceeds its budget reports NOT checked, blocks, and
-      names the `[timeouts]` key that raises it.
-- [ ] Raising a budget in `[timeouts]` lets a slow check finish, asserted
-      against a deliberately slow stub.
+- [ ] A check that is slow still completes and still reports its findings,
+      asserted against a deliberately slow stub — the gate waits rather
+      than reporting a verdict it did not reach.
+- [ ] The same commit produces the same findings on a fast and a slow
+      run, asserted by running the gate twice against stubs of different
+      speeds and comparing the output.
 - [ ] `procoder status` names every check the gate deferred, and says
       nothing when none were.
 - [ ] A repository with no test setup, no manifests and no rule files
@@ -136,16 +143,30 @@ CI.
 
 ## Decisions
 
-- **D-1: the heavy checks run at the commit gate, budgeted.** Findings
-  are cheapest to act on while the change is in hand. The objection to
-  putting them there is time, and time is answerable with a budget; the
-  objection to leaving them out is that most people never run them at
-  all, which is not answerable.
-- **D-2: a budget exceeded is NOT checked, and blocks.** It is the same
-  rule as a missing tool, for the same reason: a check that did not
-  happen must not read as one that passed. It is not a wall, because the
-  refusal names the `[timeouts]` key that raises the budget — a door the
-  reader can open in one edit.
+- **D-1: the heavy checks run at the commit gate, to completion.**
+  Findings are cheapest to act on while the change is in hand. The
+  objection to putting them there is time, and the answer to time is
+  scope — give the check less to do — never a cutoff.
+- **D-2: no time budgets. A check runs until it answers.** An earlier
+  draft of this spec gave each check a budget and made exceeding it a
+  blocking NOT-checked with a config key to raise it. That was wrong, and
+  it contradicts everything the gate has been built on. A budget makes
+  the verdict depend on the machine: the same commit passes on a fast
+  laptop and blocks on a slow one, the same change behaves differently in
+  CI than on a developer's machine, and a finding that appears
+  intermittently is one people learn to re-run rather than read. The gate
+  exists to answer a question about the code; an answer that varies with
+  hardware is not an answer about the code.
+
+  A budget also has the wrong failure shape. Raising it is always easier
+  than fixing what is slow, so the knob would drift upward until the
+  checks never completed and nobody noticed — the silence this work
+  exists to remove, arriving by a different road.
+
+  The existing hang guards stay, and they are not budgets: they are
+  generous, they exist to stop a WEDGED process rather than a slow one,
+  and reaching one is news rather than routine.
+
 - **D-3: the gate blocks on agents drift, because the documentation
   already says it does.** Of the two halves, the documented behaviour is
   the right one: rule files that have drifted mean other hosts read stale
