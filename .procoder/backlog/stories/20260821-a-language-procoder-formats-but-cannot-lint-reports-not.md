@@ -1,23 +1,21 @@
 # A language procoder formats but cannot lint reports NOT checked, blocking, naming the language — never nothing.
 
-Status: open
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: no-silent-green
 Sprint: 009-no-silent-green-every-gate-says-when-it-did-not-run
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+C# and Dart are formatted and have no linter. Done means the gate says so rather than counting the file as clean.
 
 ## Acceptance criteria
 
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] A language procoder formats but cannot lint reports NOT checked, blocking, naming the language — never nothing.
+- [x] A language procoder formats but cannot lint reports NOT checked, blocking, naming the language — never nothing.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+`go test ./internal/lint/ -run TestEveryFormattedExtensionReachesALinterOrSaysItDoesNot` covers .cs and .dart. Run end to end — `procoder lint A.cs` prints `BLOCK A.cs NOT linted — C#: procoder has no linter for it yet` and the run reports 1 blocking.
