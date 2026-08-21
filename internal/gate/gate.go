@@ -18,6 +18,7 @@ import (
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/security"
+	"procoder/internal/testrun"
 )
 
 // Run checks the given paths, or the repository's changed files when none are
@@ -100,6 +101,13 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	// commit that edits a comment would pay nearly a second to be told the
 	// same thing it was told last time.
 	hygiene = append(hygiene, security.DepsChanged(root, paths)...)
+	// The suite, narrowed to the packages this commit touches: the whole
+	// suite cold is a minute on this repository and one package is a
+	// second. A failing test blocks where the repository asked; a suite
+	// that could not run blocks regardless, because the policy governs
+	// whether a FAILING test stops a commit and "no answer" is not a
+	// verdict it has an opinion about.
+	hygiene = append(hygiene, testrun.GateCheck(root, paths, cfg.TestBlock)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "
