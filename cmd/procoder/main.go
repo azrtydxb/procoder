@@ -500,6 +500,8 @@ func run(args []string) int {
 		return sprintCmd(args[1:])
 	case "check":
 		return gate.Run(args[1:], doctor.Root(), os.Stdout)
+	case "config":
+		return config.Report(doctor.Root(), os.Stdout)
 	case "doctor":
 		return doctor.Run(doctor.Root(), os.Stdout)
 	case "init":

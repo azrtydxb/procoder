@@ -6,8 +6,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -65,22 +67,54 @@ type Config struct {
 	// being reported. Off by default — procoder never blocks a repository
 	// by surprise on upgrade.
 	DocsBlock bool
+	// SastBlocksAt is the lowest semgrep severity that stops a commit.
+	// ERROR by default: the level the tool itself reserves for findings it
+	// is confident about.
+	SastBlocksAt string
+	// Settings is every effective value and where it came from — the data
+	// behind `procoder config`. A reader of an unfamiliar repository has to
+	// be able to ask which defaults are still in force.
+	Settings []Setting
+	// Problems are settings the file names that could not be used. They
+	// block: a config that silently falls back lets a team believe a
+	// setting is in force when it never was.
+	Problems []Problem
 }
 
 // Defaults per the design contract.
 const defaultMaxFileMB = 5
 
+// defaultSastBlocksAt is the severity semgrep reserves for findings it is
+// confident about. Lower it and more blocks; raise it and less does.
+const defaultSastBlocksAt = "ERROR"
+
 // Load reads .procoder/config.toml under root. A missing file is the normal
 // case and returns defaults; an unreadable line is skipped rather than
 // guessed at.
 func Load(root string) Config {
-	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:", CommitGate: "block"}
+	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:", CommitGate: "block",
+		SastBlocksAt: defaultSastBlocksAt}
+	defaults := map[string]string{
+		"git.commit_gate": "block",
+		"git.max_file_mb": strconv.Itoa(defaultMaxFileMB),
+		"version.check":   "warn",
+		"sprint.retro":    "on",
+		// 10, not 0: zero is the field's unset value and bench turns it
+		// into 10 downstream. Calling 10 a relaxation from 0 would print a
+		// warning at every repository that set the default explicitly, and
+		// a false relaxation line teaches the reader to skim the real ones.
+		"bench.threshold":         "10",
+		"security.sast_blocks_at": defaultSastBlocksAt,
+	}
 	raw, err := os.ReadFile(filepath.Join(root, ".procoder", "config.toml"))
 	if err != nil {
+		cfg.Settings = defaultSettings(defaults)
 		return cfg
 	}
+	seen := map[string]Setting{}
 	section := ""
-	for _, line := range strings.Split(string(raw), "\n") {
+	for n, line := range strings.Split(string(raw), "\n") {
+		lineNo := n + 1
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -91,6 +125,11 @@ func Load(root string) Config {
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if !ok {
+			// A line that is neither a section nor an assignment was meant
+			// to be something. Reporting it is the difference between a
+			// typo the writer can see and a setting they think is on.
+			cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+				Reason: "not a section header or a key = value assignment"})
 			continue
 		}
 		key = section + "." + strings.TrimSpace(key)
@@ -142,10 +181,76 @@ func Load(root string) Config {
 		case "git.max_file_mb":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				cfg.MaxFileMB = n
+			} else {
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: "git.max_file_mb wants a positive whole number"})
+			}
+		case "security.sast_blocks_at":
+			if KnownSeverity(value) {
+				cfg.SastBlocksAt = value
+			} else {
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: "not a severity semgrep reports (INFO, WARNING, ERROR)"})
+			}
+		default:
+			// A key procoder does not know is a key that does nothing, and
+			// a writer who mistypes `policy` believes their policy is set.
+			cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+				Reason: "no setting by this name — it has no effect"})
+			continue
+		}
+		seen[key] = Setting{Key: key, Value: value,
+			Source: fmt.Sprintf(".procoder/config.toml:%d", lineNo)}
+	}
+	cfg.Settings = mergeSettings(defaults, seen)
+	return cfg
+}
+
+// defaultSettings is the effective set for a repository with no config.
+func defaultSettings(defaults map[string]string) []Setting {
+	return mergeSettings(defaults, nil)
+}
+
+// mergeSettings lists every setting that has a default, plus anything the
+// file set, marking the ones whose value is weaker than the default.
+func mergeSettings(defaults map[string]string, seen map[string]Setting) []Setting {
+	keys := map[string]bool{}
+	for k := range defaults {
+		keys[k] = true
+	}
+	for k := range seen {
+		keys[k] = true
+	}
+	names := make([]string, 0, len(keys))
+	for k := range keys {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+
+	out := make([]Setting, 0, len(names))
+	for _, k := range names {
+		def := defaults[k]
+		s, ok := seen[k]
+		if !ok {
+			s = Setting{Key: k, Value: def, Source: "default"}
+		}
+		s.Default = def
+		if ok && def != "" {
+			if weaker, why := isRelaxed(k, s.Value, def); weaker {
+				s.Relaxed, s.Why = true, why
 			}
 		}
+		out = append(out, s)
 	}
-	return cfg
+	return out
+}
+
+func isRelaxed(key, value, def string) (bool, string) {
+	f, ok := relaxations[key]
+	if !ok {
+		return false, ""
+	}
+	return f(value, def)
 }
 
 // parseList reads the one list shape the config uses: ["a", "b"]. The
