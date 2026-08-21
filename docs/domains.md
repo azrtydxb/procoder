@@ -163,8 +163,7 @@ audit sweep carries those findings.
 
 Every write is checked against the ecosystem's canonical formatter —
 gofmt, ruff format, prettier (JS/TS/JSON/CSS/HTML/Markdown/YAML),
-rustfmt, clang-format (config required — Procoder has no style opinion
-of its own), shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
+rustfmt, clang-format, shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
 rubocop (Ruby), dart format, csharpier (C#), and prettier with
 `@prettier/plugin-php` for PHP. clang-format needs no project config: a
 repo `.clang-format` wins, and without one Procoder names a fallback style

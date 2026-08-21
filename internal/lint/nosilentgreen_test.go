@@ -53,8 +53,19 @@ func TestEveryFormattedExtensionReachesALinterOrSaysItDoesNot(t *testing.T) {
 			t.Errorf("%s reaches no linter and reports nothing — a silent pass", name)
 			continue
 		}
-		if !got[0].Blocking {
-			t.Errorf("%s: a check that did not happen must block: %q", name, got[0].Message)
+		// Two acceptable outcomes, and nothing else: a linter ran and had
+		// something to say about this deliberately invalid fixture, or it
+		// could not run and said THAT, blocking. What must never happen is
+		// silence. The distinction is not asserted per extension because
+		// which one you get depends on what is installed on the machine
+		// running the suite — clang-tidy resolves from Homebrew's keg even
+		// with PATH emptied, so C and C++ really are analysed here.
+		for _, f := range got {
+			if strings.Contains(f.Message, "NOT checked") || strings.Contains(f.Message, "NOT linted") {
+				if !f.Blocking {
+					t.Errorf("%s: a check that did not happen must block: %q", name, f.Message)
+				}
+			}
 		}
 	}
 }

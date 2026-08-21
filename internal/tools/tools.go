@@ -224,8 +224,13 @@ var (
 		},
 		Install:     "npm i -D prettier @prettier/plugin-php",
 		VersionArgs: []string{"--version"},
+		// Project-local, not global. phpPluginPath resolves the plugin by
+		// walking up from the file into the project's node_modules, which
+		// a global install never reaches — so `init --yes` would install
+		// prettier, report success, and every PHP file would still be
+		// UNCHECKED with the same install line it had just run.
 		InstallVia: []InstallCandidate{
-			{Manager: "npm", Args: []string{"install", "-g", "prettier", "@prettier/plugin-php"}},
+			{Manager: "npm", Args: []string{"install", "-D", "prettier", "@prettier/plugin-php"}},
 		},
 	}
 	rubocopFmt = &Tool{
@@ -322,9 +327,13 @@ func Resolve(t *Tool, repoRoot string) string {
 	if err != nil {
 		// the conventional install dirs `go install` and tarball installs
 		// use are often missing from PATH; a tool sitting there is installed
+		dirs := kegDirs()
 		if home, herr := os.UserHomeDir(); herr == nil {
-			for _, dir := range []string{filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
-				filepath.Join(home, ".dotnet", "tools")} {
+			dirs = append(dirs, filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
+				filepath.Join(home, ".dotnet", "tools"))
+		}
+		{
+			for _, dir := range dirs {
 				for _, name := range candidateNames(t.Name) {
 					cand := filepath.Join(dir, name)
 					if runnable(cand) && (t.Probe == nil || t.Probe(cand)) {
@@ -349,6 +358,23 @@ func Resolve(t *Tool, repoRoot string) string {
 		}
 	}
 	return ""
+}
+
+// kegDirs are install locations a package manager deliberately keeps OFF
+// PATH. Homebrew's llvm formula is keg-only — `brew install llvm` succeeds
+// and clang-tidy is still not runnable by name — so without these, `init`
+// would install the tool, the resurvey would still report it missing, and
+// C/C++ would stay blocked with a remedy that had already been carried
+// out. That is worse than the original silence: a wall with no door.
+func kegDirs() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{
+		"/opt/homebrew/opt/llvm/bin", // Homebrew on Apple silicon
+		"/usr/local/opt/llvm/bin",    // Homebrew on Intel macOS
+		"/usr/lib/llvm/bin",          // some Linux distributions
+	}
 }
 
 // candidateNames covers Windows, where the executable carries an extension
