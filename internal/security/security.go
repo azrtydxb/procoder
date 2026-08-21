@@ -244,7 +244,55 @@ func severityAtLeast(found, bar string) bool {
 	return f >= b
 }
 
-func Sast(root string) []gitx.Finding {
+func Sast(root string) []gitx.Finding { return sast(root) }
+
+// SastChanged is the commit gate's SAST leg: the same scan, given the
+// files the commit contains instead of the whole tree.
+//
+// The scan itself is the same whole-tree scan `security --deep` runs, and
+// the SCOPING is applied to its findings rather than to its targets.
+//
+// That is not the obvious way round, and the obvious way is wrong.
+// Handing semgrep an explicit list of files makes it scan files it
+// otherwise skips — its own default selection is bypassed by naming a
+// target — so the gate reported a finding in a _test.go file that
+// `security --deep` had never once mentioned. A developer blocked by a
+// finding CI does not have is worse than a slower gate.
+//
+// The cost of doing it this way is about three seconds on this
+// repository: measured, the whole tree is 9s against 6.1s for two named
+// files. Little of that is scanning. semgrep's time goes on `--config
+// auto` loading rules, which is fixed — a single one-line file still
+// costs 4.7s — so naming fewer targets was never what made this
+// affordable. What makes it affordable is that a commit is not a
+// keystroke.
+func SastChanged(root string, files []string) []gitx.Finding {
+	changed := map[string]bool{}
+	for _, f := range files {
+		// Boundary-aware: a directory legitimately named "..foo" is inside
+		// the repository, and a prefix test would read it as an escape and
+		// drop the file from the commit's set — quietly not blocking on a
+		// finding that belongs to it.
+		if rel, err := filepath.Rel(root, f); err == nil && !escapes(rel) {
+			changed[filepath.ToSlash(rel)] = true
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	var out []gitx.Finding
+	for _, f := range sast(root) {
+		// A finding that could not be placed — a scan that did not run,
+		// unreadable output — has no path and belongs to the commit
+		// whatever it touched.
+		if f.File == "" || changed[filepath.ToSlash(f.File)] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func sast(root string) []gitx.Finding {
 	blocksAt := config.Load(root).SastBlocksAt
 	bin := tools.Resolve(Semgrep, root)
 	if bin == "" {
@@ -253,6 +301,10 @@ func Sast(root string) []gitx.Finding {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), deepTimeout)
 	defer cancel()
+	// The tree, always. Naming targets is what made semgrep scan files its
+	// own default selection skips, and now that nothing does it there is
+	// no argv built from file names — so no filename can be read as a
+	// flag, and there is no separator to remember.
 	cmd := exec.CommandContext(ctx, bin, "scan", "--config", "auto", "--json", "--quiet", ".") // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	var buf, errb bytes.Buffer
@@ -445,4 +497,10 @@ func firstLine(s string) string {
 		return "no output"
 	}
 	return s
+}
+
+// escapes reports whether a repo-relative path leaves the repository.
+// ".." and "../x" do; "..foo/x" does not.
+func escapes(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.HasPrefix(rel, "../")
 }
