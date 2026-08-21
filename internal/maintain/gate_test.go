@@ -5,7 +5,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"procoder/internal/gitx"
 )
+
+// unrun reports whether a finding is the leg saying it could not run,
+// rather than a judgement about the code. There are two spellings — the
+// per-leg "NOT checked" line and the summary "did NOT run" — and a test
+// that knows only one passes where golangci-lint is installed and fails
+// where it is not, which is the machine-dependent verdict this sprint
+// exists to remove, arriving through the test suite.
+func unrun(f gitx.Finding) bool {
+	return strings.Contains(f.Message, "NOT checked") || strings.Contains(f.Message, "did NOT run")
+}
 
 // Complexity reaches the commit gate, narrowed to the files the commit
 // carries — it used to run only when somebody typed `procoder maintain`.
@@ -31,7 +43,7 @@ func TestComplexityIsReportedAtTheGateAndBlocksOnlyOnRequest(t *testing.T) {
 		t.Skip("no complexity findings here — golangci-lint may be absent")
 	}
 	for _, f := range got {
-		if strings.Contains(f.Message, "NOT checked") {
+		if unrun(f) {
 			t.Skip("the complexity checker could not run: ", f.Message)
 		}
 		if f.Blocking {
@@ -44,7 +56,7 @@ func TestComplexityIsReportedAtTheGateAndBlocksOnlyOnRequest(t *testing.T) {
 
 	// The repository can ask for them to block.
 	for _, f := range ComplexityChanged(root, []string{target}, true) {
-		if strings.Contains(f.Message, "NOT checked") {
+		if unrun(f) {
 			continue
 		}
 		if !f.Blocking {
@@ -68,7 +80,7 @@ func TestAnUnrelatedCommitCarriesNoComplexityFindings(t *testing.T) {
 		t.Skip("fixture file missing: ", err)
 	}
 	for _, f := range ComplexityChanged(root, []string{quiet}, false) {
-		if strings.Contains(f.Message, "NOT checked") {
+		if unrun(f) {
 			continue
 		}
 		if !strings.HasSuffix(f.File, "textutil.go") {
