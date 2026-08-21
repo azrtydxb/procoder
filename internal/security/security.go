@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/config"
 	"procoder/internal/gitx"
 	"procoder/internal/tools"
 )
@@ -227,7 +228,24 @@ func SecretsChangedFiles(root string, files []string) []gitx.Finding {
 
 // Sast runs semgrep with the community rulesets over the repository.
 // ERROR severity blocks; WARNING and INFO report.
+// severityAtLeast reports whether a finding's severity is at or above the
+// bar. An unknown severity from the tool never blocks silently: it is
+// ranked below everything, so it still reports and a human still reads it.
+func severityAtLeast(found, bar string) bool {
+	rank := map[string]int{"INFO": 0, "WARNING": 1, "ERROR": 2}
+	f, ok := rank[found]
+	if !ok {
+		return false
+	}
+	b, ok := rank[bar]
+	if !ok {
+		b = rank["ERROR"]
+	}
+	return f >= b
+}
+
 func Sast(root string) []gitx.Finding {
+	blocksAt := config.Load(root).SastBlocksAt
 	bin := tools.Resolve(Semgrep, root)
 	if bin == "" {
 		return []gitx.Finding{{Blocking: true,
@@ -264,7 +282,13 @@ func Sast(root string) []gitx.Finding {
 	}
 	var out []gitx.Finding
 	for _, r := range rep.Results {
-		blocking := r.Extra.Severity == "ERROR"
+		// The bar is the repository's, not procoder's. ERROR by default —
+		// the level semgrep reserves for findings it is confident about —
+		// and a team that wants WARNING to stop a commit says so in
+		// [security] sast_blocks_at. Lowering it is a strengthening and
+		// prints nothing; raising it is a relaxation and prints on every
+		// gate run.
+		blocking := severityAtLeast(r.Extra.Severity, blocksAt)
 		msg := r.Extra.Message
 		if len(msg) > 200 {
 			msg = msg[:200]

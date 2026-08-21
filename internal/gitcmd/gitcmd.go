@@ -111,7 +111,11 @@ func CollectFor(root string, cfg config.Config, changed []string, commitMessage 
 // share: it asks only questions whose answer does not depend on something
 // having just changed.
 func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Finding {
-	var out []gitx.Finding
+	// The configuration's own contribution, first: a setting that could not
+	// be applied blocks, and a setting deliberately loosened prints on
+	// every run. It rides here so `check`, `git` and CI cannot disagree
+	// about the config any more than they can about the code.
+	out := cfg.Findings()
 	out = append(out, gitx.ConflictMarkers(changed)...)
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)

@@ -190,3 +190,26 @@ where the code is:
   `procoder bench` compares against. Committed rather than derived: it
   is a deliberate decision, written only by `bench --save`, and a
   baseline recorded on another GOOS/GOARCH compares with a warning.
+
+## `[security]`
+
+| key              | values                     | default | meaning                                         |
+| ---------------- | -------------------------- | ------- | ----------------------------------------------- |
+| `sast_blocks_at` | `INFO`, `WARNING`, `ERROR` | `ERROR` | the lowest semgrep severity that stops a commit |
+
+`ERROR` is the level semgrep reserves for findings it is confident about.
+Lowering the bar to `WARNING` makes more findings block — a strengthening,
+and silent. Raising it makes fewer block, which is a relaxation and prints
+on every gate run.
+
+## Seeing the effective configuration
+
+`procoder config` prints every setting, its value, and where that value
+came from — `default`, or the config file and line. A setting weaker than
+its default is marked, so a reader of an unfamiliar repository can tell at
+a glance which of Procoder's defaults are still in force.
+
+A setting Procoder cannot apply — a mistyped key, a value of the wrong
+kind — is **not** silently ignored. It is reported with its line number
+and it blocks, because a config that quietly reverts to defaults lets a
+team believe a setting is in force when it never was.

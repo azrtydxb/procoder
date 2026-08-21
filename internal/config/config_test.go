@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,14 @@ default_branch_policy = "report"
 	cfg := Load(dir)
 	if cfg.MaxFileMB != 5 || cfg.BlockDefaultBranch {
 		t.Fatalf("got %+v", cfg)
+	}
+	// Skipped, and no longer silently: a value procoder could not use is
+	// reported, or the writer believes a limit is in force that is not.
+	if len(cfg.Problems) != 1 {
+		t.Fatalf("the unusable value must be reported: %+v", cfg.Problems)
+	}
+	if !strings.Contains(cfg.Problems[0].Reason, "whole number") {
+		t.Errorf("the reason must say what was wanted: %q", cfg.Problems[0].Reason)
 	}
 }
 
