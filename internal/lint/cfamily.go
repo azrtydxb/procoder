@@ -64,8 +64,11 @@ func lintCFamily(root string, files []string, block bool) []gitx.Finding {
 		args := []string{"--quiet"}
 		// The project's own .clang-tidy wins wherever it has one; the
 		// curated set is only for a project that chose nothing.
+		// A project .clang-tidy wins outright — that is the tool's own
+		// config and D-OVERRIDE. Otherwise the repository's `## checks`
+		// list, if it wrote one, and procoder's curated families if not.
 		if hasAny(root, f, []string{".clang-tidy"}) == "" {
-			args = append(args, "--checks="+clangTidyBaseline)
+			args = append(args, "--checks="+checkSet(root))
 		}
 		args = append(args, f, "--", cFamilyStandard(f))
 		raw, err := execute(root, bin, args)
