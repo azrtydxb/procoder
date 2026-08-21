@@ -48,8 +48,18 @@ func check(root string, c Copy, want string) (verdict, error) {
 // A repository with no AGENTS.md ships no agent layer and gets nothing.
 func AgentsDrift(root string) []gitx.Finding {
 	master, err := os.ReadFile(filepath.Join(root, Master))
-	if err != nil {
+	switch {
+	case err != nil && os.IsNotExist(err):
+		// No agent layer at all: this repository never opted in, and it is
+		// asked nothing.
 		return nil
+	case err != nil:
+		// Present but unreadable is not the same as absent. Returning
+		// nothing here would disable the entire drift check on a
+		// permission or IO error — unknown reported as clean, which is the
+		// one verdict this gate must never produce.
+		return []gitx.Finding{{Blocking: true, File: Master,
+			Message: fmt.Sprintf("%s is unreadable (%v) — no rule file could be checked against it (agents)", Master, err)}}
 	}
 	want := normalize(stripFrontmatter(string(master)))
 	var out []gitx.Finding

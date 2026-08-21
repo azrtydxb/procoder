@@ -55,10 +55,48 @@ func TestDriftedRuleFilesBlock(t *testing.T) {
 			if !strings.Contains(f.Message, "drifted") {
 				t.Errorf("a file with different content has drifted, not gone: %q", f.Message)
 			}
+			// The blocking assertion belongs here too, not only on the
+			// missing case: drift is the reason this function exists, and
+			// a regression making it advisory would otherwise pass.
+			if !f.Blocking {
+				t.Errorf("a drifted rule file must block: %q", f.Message)
+			}
 		}
 	}
 	if !found {
 		t.Errorf("%s must still be reported", c.Path)
+	}
+}
+
+// An AGENTS.md that exists and cannot be read is not a repository without
+// an agent layer. Returning nothing there would disable the whole drift
+// check on a permission or IO error — unknown reported as clean, the one
+// verdict this gate must never produce.
+// proved by: returned nil for any read error again — an unreadable
+// AGENTS.md silently switches the check off and every host passes.
+func TestAnUnreadableMasterIsNotAnAbsentAgentLayer(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, Master)
+	if err := os.WriteFile(path, []byte("# Rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Skip("cannot make a file unreadable here: ", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything, so this cannot be exercised")
+	}
+
+	got := AgentsDrift(root)
+	if len(got) != 1 {
+		t.Fatalf("an unreadable master must be reported once, got %+v", got)
+	}
+	if !got[0].Blocking {
+		t.Error("a check that could not run must block")
+	}
+	if !strings.Contains(got[0].Message, "unreadable") {
+		t.Errorf("the reason must say what happened: %q", got[0].Message)
 	}
 }
 
