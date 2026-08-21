@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -496,4 +497,45 @@ func firstLine(s string) string {
 		return "no output"
 	}
 	return s
+}
+
+// DepsChanged is the commit gate's dependency-vulnerability leg: the same
+// scan, run only when the commit touches something that could change the
+// dependency graph.
+//
+// The scan answers about the manifests, not about the files around them,
+// so re-running it on a commit that edits a comment would report the same
+// vulnerabilities forever at a cost of nearly a second each time. A commit
+// that changes a manifest is exactly the moment the answer can change.
+//
+// All manifests are scanned, not only the one that changed: a lockfile
+// edit moves versions the other manifests resolve against, and a scan of
+// half a graph is a scan nobody can trust.
+func DepsChanged(root string, files []string) []gitx.Finding {
+	if !touchesManifest(root, files) {
+		return nil
+	}
+	return Deps(root)
+}
+
+// touchesManifest reports whether any changed file is a dependency
+// manifest osv-scanner reads, or the package.json whose absent lockfile
+// Deps reports on.
+func touchesManifest(root string, files []string) bool {
+	watched := map[string]bool{"package.json": true}
+	for _, m := range DepManifests {
+		watched[m] = true
+	}
+	for _, f := range files {
+		rel, ok := gitx.RepoRel(root, f)
+		if !ok {
+			continue
+		}
+		// By base name: a manifest in a subdirectory is still a manifest,
+		// and a monorepo keeps one per package.
+		if watched[path.Base(rel)] {
+			return true
+		}
+	}
+	return false
 }

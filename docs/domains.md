@@ -45,6 +45,13 @@ runs; the narrowing is applied to its findings, not to its targets —
 naming files explicitly makes semgrep scan ones its own default selection
 skips, which would block a developer on a finding CI never reports.
 
+Known dependency vulnerabilities are checked at the gate too, but only
+when the commit touches a manifest — the scan answers about the manifests,
+so running it on a commit that edits a comment would report the same
+vulnerabilities forever at nearly a second each time. All manifests are
+scanned when one changes: a lockfile edit moves the versions the others
+resolve against.
+
 It costs seconds rather than milliseconds: semgrep's time goes on loading
 rules, which is fixed, so a one-line file is barely cheaper than the whole
 tree. It is there because a commit is not a keystroke and a finding caught
