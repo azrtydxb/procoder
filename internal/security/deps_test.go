@@ -102,3 +102,69 @@ func TestAManifestTriggersHoweverThePathArrived(t *testing.T) {
 		t.Error("a nested relative manifest must trigger")
 	}
 }
+
+// A monorepo keeps one manifest per package. Scanning only the ones at
+// the repository root reported clean over every package beneath it — in
+// `security --deep` as well as at the gate — and once the gate began
+// triggering on a nested manifest, a commit paid for a scan that could
+// not look at the file that triggered it.
+// proved by: restored the root-only os.Stat loop — services/api/go.mod
+// and web/app/package-lock.json vanish from the scan, and a monorepo
+// commits dependency changes unscanned while being charged for the scan.
+func TestManifestsAreFoundBeneathTheRootToo(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{
+		"go.mod",
+		filepath.FromSlash("services/api/go.mod"),
+		filepath.FromSlash("web/app/package-lock.json"),
+		// Not ours: a vendored copy and an installed package carry their
+		// own manifests, and reporting on them means reporting code
+		// nobody here can change.
+		filepath.FromSlash("node_modules/evil/package-lock.json"),
+		filepath.FromSlash("vendor/x/go.mod"),
+	} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, p), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := manifestsIn(root)
+	want := []string{"go.mod", "services/api/go.mod", "web/app/package-lock.json"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("manifests found:\n got %v\nwant %v", got, want)
+	}
+}
+
+// The same gap one level down: a nested package.json declaring
+// dependencies with no lockfile beside it is an unscannable package, and
+// checking only the repository root reports the first and stays silent
+// about the rest.
+// proved by: called hasNpmDepsWithoutLockfile(root) directly again — the
+// nested package is not reported and its dependencies go unscanned with
+// nothing said.
+func TestEveryPackageWithoutALockfileIsNamed(t *testing.T) {
+	root := t.TempDir()
+	write := func(p, body string) {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const withDeps = `{"dependencies":{"left-pad":"1.0.0"}}`
+	write("package.json", withDeps)
+	write(filepath.FromSlash("web/app/package.json"), withDeps)
+	// This one has its lockfile, so it is scannable and not a gap.
+	write(filepath.FromSlash("web/ok/package.json"), withDeps)
+	write(filepath.FromSlash("web/ok/package-lock.json"), "{}")
+
+	got := npmGaps(root)
+	want := []string{"package.json", "web/app/package.json"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("packages with no lockfile:\n got %v\nwant %v", got, want)
+	}
+}
