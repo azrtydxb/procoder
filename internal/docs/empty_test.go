@@ -19,7 +19,10 @@ import (
 // file CHANGED in the diff, and emptying one is a change. Destroying the
 // page satisfied the check meant to protect it.
 // proved by: dropped EmptyDocs from CollectOfflineFor — an emptied doc
-// passes the gate again, which is how 551 lines reached a release.
+// passes the gate again, which is how 551 lines reached a release. The
+// extension and path legs are proved the same way: matching only ".md"
+// lets an emptied .markdown through, and using filepath.Base prints a
+// restore command that finds nothing.
 func TestAnEmptiedDocumentationFileBlocks(t *testing.T) {
 	root := t.TempDir()
 	empty := filepath.Join(root, "commands.md")
@@ -37,6 +40,33 @@ func TestAnEmptiedDocumentationFileBlocks(t *testing.T) {
 	// back.
 	if !strings.Contains(got[0].Message, "git checkout") {
 		t.Errorf("the refusal must say how to restore it: %q", got[0].Message)
+	}
+
+	// The remedy has to work as printed. `git checkout <ref> -- commands.md`
+	// finds nothing when the file is docs/commands.md, and a refusal whose
+	// command does not work is worse than one that offers none — that was
+	// the shape of two other bugs in this release.
+	nested := filepath.Join(root, "docs")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deep := filepath.Join(nested, "commands.md")
+	if err := os.WriteFile(deep, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got = EmptyDocs(root, []string{deep})
+	if len(got) != 1 || !strings.Contains(got[0].Message, "docs/commands.md") {
+		t.Errorf("the restore command must name the path from the repo root: %+v", got)
+	}
+
+	// .markdown is Markdown to this package, so a guard that only knows
+	// .md is one a rename steps around.
+	alt := filepath.Join(root, "guide.markdown")
+	if err := os.WriteFile(alt, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if len(EmptyDocs(root, []string{alt})) != 1 {
+		t.Error("an emptied .markdown file must block too")
 	}
 
 	// Whitespace only is the shape the clobber actually leaves behind when
