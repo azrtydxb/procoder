@@ -26,6 +26,15 @@ import (
 // Blocking only where the repository asked. `[test] policy = "block"` has
 // always meant the close controllers; it means the gate too now.
 func GateCheck(root string, files []string, block bool) []gitx.Finding {
+	// Only the ecosystems whose runners take a target list — Go and
+	// pytest — are tested at the gate. The others run whole-project, and
+	// running one of those here would mean a JavaScript commit paying for
+	// the entire Go suite before its results were filtered away.
+	//
+	// So a commit that touches only Rust, PHP, Java or JavaScript is not
+	// tested here. That is a real limit, and it is deferred rather than
+	// hidden: CI runs every suite over the whole tree, and `procoder
+	// status` names what the gate did not run.
 	pkgs := changedPackages(root, files)
 	if len(pkgs) == 0 {
 		return nil
@@ -67,37 +76,58 @@ func findingFor(r Result, block bool) *gitx.Finding {
 		return &gitx.Finding{Blocking: block,
 			Message: fmt.Sprintf("%s tests: %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))}
 	case NotRun:
+		if r.NoSuite {
+			// Nothing to run is not a check that failed to answer. A
+			// repository with a package.json and no test script has no JS
+			// suite, and saying so on every commit would block them all.
+			return nil
+		}
 		return &gitx.Finding{Blocking: true,
 			Message: fmt.Sprintf("%s tests NOT run — %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))}
 	}
 	return nil
 }
 
-// changedPackages maps the commit's files to the directories that hold
-// them, which is what the runners take as targets. Deduplicated and
-// ordered so the same commit produces the same argv twice running.
+// changedPackages maps the commit's files to the directories the runners
+// take as targets.
+//
+// One ecosystem's directories at a time, never a mixture. Run hands the
+// same list to every runner it detects, and the list means different
+// things to each: a Python directory reaches `go test` as a package that
+// does not exist, which fails as "# ." and reads as a failing suite. This
+// repository has a stray __init__.py at its root, so a Go commit was
+// enough to produce exactly that.
+//
+// When a commit spans both, no list is passed and every runner keeps its
+// native whole-project granularity — slower, and correct, which is the
+// right way round.
 func changedPackages(root string, files []string) []string {
+	dirs := map[string][]string{}
 	seen := map[string]bool{}
-	var out []string
 	for _, f := range files {
 		rel, ok := gitx.RepoRel(root, f)
 		if !ok {
 			continue
 		}
-		dir := path.Dir(rel)
-		if dir == "." {
-			dir = "."
-		}
-		if seen[dir] {
+		eco, ok := pathScoped[strings.ToLower(path.Ext(rel))]
+		if !ok {
 			continue
 		}
-		seen[dir] = true
-		out = append(out, dir)
+		dir := path.Dir(rel)
+		key := eco + "\x00" + dir
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		dirs[eco] = append(dirs[eco], dir)
 	}
-	// A commit of only deleted files leaves directories that no longer
-	// exist; the runners report that honestly rather than being guessed at
-	// here.
-	return out
+	if len(dirs) != 1 {
+		return nil
+	}
+	for _, d := range dirs {
+		return d
+	}
+	return nil
 }
 
 // TrimmedDetail keeps a runner's one-liner short enough to read in a gate
@@ -133,3 +163,11 @@ func ecosystemsOf(files []string) map[string]bool {
 	}
 	return out
 }
+
+// pathScoped are the file types whose runners accept a target list. Run
+// narrows only the Go package list and the pytest targets; handing any
+// other directory over would put it in an argv that cannot take it.
+// pathScoped are the file types whose runners accept a target list, and
+// which runner each belongs to. Run narrows only the Go package list and
+// the pytest targets; every other runner ignores the list.
+var pathScoped = map[string]string{".go": "go", ".py": "python", ".pyi": "python"}

@@ -66,6 +66,45 @@ func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
 	if len(rel) != 1 || rel[0] != "internal/textutil" {
 		t.Errorf("relative form must name the same package: %v", rel)
 	}
+
+	// Only files whose runner READS a target list. Run's contract narrows
+	// the Go package list and the pytest targets and nothing else, so a
+	// directory of .js or .md files handed over lands in an argv that
+	// cannot take it — `go test ./.kilo/plugin` fails as a broken
+	// invocation and reads as a failing suite.
+	if got := changedPackages(root, []string{
+		filepath.Join(root, ".kilo", "plugin", "procoder.js"),
+		filepath.Join(root, ".agents", "rules", "procoder.md"),
+	}); len(got) != 0 {
+		t.Errorf("only path-reading runners get targets: %v", got)
+	}
+}
+
+// One ecosystem's directories at a time, never a mixture. Run hands the
+// same list to every runner it detects and the list means different
+// things to each, so a Python directory reaches `go test` as a package
+// that does not exist. This repository has a stray __init__.py at its
+// root, so a Go commit was enough to produce exactly that: "# .".
+// proved by: returned the union instead of one ecosystem's directories —
+// a commit spanning both hands "." to `go test` and the gate reports a
+// failing suite that never ran.
+func TestATargetListNeverMixesEcosystems(t *testing.T) {
+	root := t.TempDir()
+	goOnly := changedPackages(root, []string{
+		filepath.Join(root, "a", "x.go"), filepath.Join(root, "b", "y.go")})
+	if len(goOnly) != 2 {
+		t.Errorf("a Go commit narrows to its packages: %v", goOnly)
+	}
+	pyOnly := changedPackages(root, []string{filepath.Join(root, "c", "x.py")})
+	if len(pyOnly) != 1 {
+		t.Errorf("a Python commit narrows to its directories: %v", pyOnly)
+	}
+	// Both: no list at all, and every runner keeps its native
+	// whole-project granularity — slower, and correct.
+	if both := changedPackages(root, []string{
+		filepath.Join(root, "a", "x.go"), filepath.Join(root, "c", "y.py")}); both != nil {
+		t.Errorf("a commit spanning both ecosystems passes no targets: %v", both)
+	}
 }
 
 // A suite that could not run blocks whatever the policy says. The policy

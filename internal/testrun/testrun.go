@@ -40,6 +40,10 @@ type Result struct {
 	Passed    int    // parsed where the runner's output allows, else 0
 	Failed    int
 	Coverage  float64 // percent; <0 means not measured
+	// NoSuite distinguishes "there is nothing to run here" from "the run
+	// could not happen". Both print as NOT run; only the second is a check
+	// that failed to answer.
+	NoSuite bool
 	// Filtered records whether a --name pattern actually reached this
 	// runner. False with a non-empty name means the runner ran the WHOLE
 	// suite: the Detail says "NOT filtered" and never wears a filtered
@@ -330,7 +334,7 @@ func runJS(root string, name string) Result {
 	r := Result{Ecosystem: "js", Coverage: -1}
 	script := testScript(root)
 	if script == "" {
-		return notRun(r, "package.json has no test script")
+		return noSuite(r, "package.json has no test script")
 	}
 	mgr := "npm"
 	switch {
@@ -533,6 +537,18 @@ func execute(root, bin string, args []string) (string, error, bool) {
 	cmd.Stderr = &buf
 	err := cmd.Run()
 	return buf.String(), err, ctx.Err() == context.DeadlineExceeded
+}
+
+// noSuite is "this ecosystem has nothing to run here" — a repository with
+// a package.json and no test script has not failed a check, it has no JS
+// suite. The distinction matters at the commit gate, which blocks on a
+// check that could not run: without it, every commit in a repository like
+// this one is refused because a runner it never asked for reported an
+// absence.
+func noSuite(r Result, why string) Result {
+	r = notRun(r, why)
+	r.NoSuite = true
+	return r
 }
 
 func notRun(r Result, why string) Result {
