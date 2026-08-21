@@ -1,0 +1,146 @@
+package ask
+
+import (
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"procoder/internal/answers"
+	"sort"
+	"strings"
+	"time"
+)
+
+// QuestionsFile is what a human reads when there was no terminal to ask on.
+// The answers file is answers.File — the store is its own package, read by
+// `spec` as well as by this one.
+const QuestionsFile = "QA.md"
+
+// answerRe-free parsing on purpose: the format is headings and a prefix, and
+// a regexp here would be a second definition of a shape the writer already
+// owns.
+// Answers is the recorded decisions. A key nobody asks about any more is
+// kept, not pruned: the question may come back, and discarding it would ask a
+// person something they already settled.
+type Answers = answers.Store
+
+// Path is where one of the two files lives.
+func Path(root, name string) string { return filepath.Join(root, filepath.FromSlash(Dir), name) }
+
+// Unanswered is the questions still waiting on a person.
+func Unanswered(qs []Question, answers Answers) []Question {
+	var out []Question
+	for _, q := range qs {
+		if _, done := answers[q.Key()]; !done {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+// WriteQuestions records what is still open, for a human to answer and hand
+// back through `ask --file`. The Key travels with each question because it is
+// what ties the answer to the question: an answer file that lost it would be
+// prose nobody could file.
+func WriteQuestions(root string, qs []Question, now time.Time) error {
+	var b strings.Builder
+	b.WriteString("# Questions procoder cannot answer for you\n\n")
+	b.WriteString("Written " + now.UTC().Format("2006-01-02 15:04") + " UTC.\n\n")
+	b.WriteString("Answer each one by writing a line beginning `Answer: ` under it, then\n")
+	b.WriteString("hand the file back with `procoder ask --file " + path.Join(Dir, QuestionsFile) + "`.\n")
+	b.WriteString("Leave the `Key:` lines alone — they are what ties an answer to its question.\n")
+	for i, q := range qs {
+		fmt.Fprintf(&b, "\n%sQ%d: %s\n\n", answers.HeadingPrefix, i+1, q.Label())
+		b.WriteString(answers.KeyPrefix + q.Key() + "\n")
+		b.WriteString("Question: " + q.Text + "\n")
+		b.WriteString(answers.AnswerPrefix + "\n")
+	}
+	return write(Path(root, QuestionsFile), b.String())
+}
+
+// WriteAnswers records the decisions. Questions are carried alongside their
+// answers so the file reads as a record rather than a list of hashes.
+func WriteAnswers(root string, qs []Question, store Answers, now time.Time) error {
+	known := map[string]Question{}
+	for _, q := range qs {
+		known[q.Key()] = q
+	}
+	var b strings.Builder
+	b.WriteString("# What a human decided\n\n")
+	b.WriteString("Written " + now.UTC().Format("2006-01-02 15:04") + " UTC. procoder reads this\n")
+	b.WriteString("file to avoid asking a question twice; edit an answer here to change what\n")
+	b.WriteString("it believes. Reword the question and it will be asked again.\n")
+	keys := make([]string, 0, len(store))
+	for k := range store {
+		keys = append(keys, k)
+	}
+	// Stable output: a file that reorders itself on every write is a diff
+	// nobody can read.
+	sort.Strings(keys)
+	for _, key := range keys {
+		entry := store[key]
+		heading, question := "(no longer asked)", entry.Question
+		if q, ok := known[key]; ok {
+			heading, question = q.Label(), q.Text
+		}
+		fmt.Fprintf(&b, "\n%s%s\n\n", answers.HeadingPrefix, heading)
+		b.WriteString(answers.KeyPrefix + key + "\n")
+		if question != "" {
+			// Carried from the record when the question is no longer live:
+			// rebuilding this file from the questions of the moment used to
+			// destroy the text of anything since reworded, leaving an answer
+			// nobody could interpret.
+			b.WriteString(answers.QuestionPrefix + question + "\n")
+		}
+		b.WriteString(answers.AnswerPrefix + entry.Answer + "\n")
+	}
+	return write(Path(root, answers.File), b.String())
+}
+
+// write replaces a file only once the new content is safely on disk. The
+// answers file is the durable record of decisions nobody can reconstruct, and
+// os.WriteFile truncates before it writes: a failure halfway leaves an empty
+// record where the decisions were.
+func write(dest, body string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".procoder-ask-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer func() { _ = os.Remove(name) }()
+	if _, err := tmp.WriteString(body); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	// The checked close: a write that fails on close is a failed write, and
+	// renaming it over the record would install the failure.
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(name, dest)
+}
+
+// Same reports whether the store already on disk matches this one, so a run
+// with nothing new to say leaves the file — and its timestamp — alone.
+func Same(root string, store Answers) bool {
+	existing, err := answers.Load(root)
+	if err != nil || len(existing) != len(store) {
+		return false
+	}
+	for k, v := range store {
+		if existing[k] != v {
+			return false
+		}
+	}
+	return true
+}

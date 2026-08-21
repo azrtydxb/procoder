@@ -61,6 +61,11 @@ funlen_statements = 50
 # Comment marker `procoder debt` harvests. Default shown.
 marker = "debt:"
 
+[ask]
+# Pending questions: "report" (default) lists them and leaves the gate's
+# verdict alone; "block" refuses the commit until a human has answered.
+policy = "report"
+
 [version]
 # "warn" (default) reports a newer release at session start; "off" silences
 # it for CI and scripted runs. There is deliberately no third value: a

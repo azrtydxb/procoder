@@ -41,12 +41,20 @@ func git(root string, args ...string) (string, error) {
 // ChangedFiles is the set a commit is about to contain: modified, added,
 // renamed, untracked — deleted files are not checkable. Paths are absolute.
 func ChangedFiles(root string) ([]string, error) {
-	out, err := git(root, "status", "--porcelain")
+	// gitRaw, not git: porcelain encodes the status in the first two
+	// COLUMNS, and a worktree-modified file's line begins with a space.
+	// Trimming the whole output ate that space on the first line only, so
+	// the first changed file came back with its first character missing —
+	// `cmd/procoder/main.go` as `md/procoder/main.go`. Everything
+	// downstream then looked at a path that does not exist: the gate
+	// skipped it, and golangci-lint answered "directory not found", which
+	// procoder reported as NOT checked rather than as a bug in itself.
+	out, err := gitRaw(root, "status", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if len(line) < 4 || strings.Contains(line[:2], "D") {
 			continue
 		}

@@ -32,7 +32,8 @@ bounded changes to a flow that already exists skip the spec file
 entirely.
 
 The skill runs the controller for you, and it blocks while a section is
-empty, an `OPEN:` question is unresolved, or an acceptance criterion is
+empty, a question in Open questions is unanswered (answer it with
+`procoder ask`, or rewrite it as a decision), or an acceptance criterion is
 untestable.
 
 ## 2. Write the plan
@@ -177,6 +178,19 @@ The story close refuses without checked criteria, recorded evidence, and
 a clean gate. The sprint close refuses while a committed story is
 neither done nor carried back with a reason, then scaffolds the retro.
 That retro is the price of the next `sprint open`.
+
+## 10b. Answer what procoder cannot
+
+```
+procoder ask
+```
+
+Some findings are requests for judgement rather than defects. `ask` collects
+them, puts them to you, and records what you said so the next session starts
+from your decision. Without a terminal it writes the questions to
+`.procoder/ask/QA.md` and the agent relays them — it must not answer them
+itself, because an invented answer is indistinguishable from a decision once
+it is written down.
 
 ## 11. Release
 

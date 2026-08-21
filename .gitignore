@@ -9,3 +9,4 @@ docs/changelog.md
 *.test
 .procoder/index/
 .procoder/state/
+.procoder/ask/QA.md

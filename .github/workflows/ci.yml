@@ -18,6 +18,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 gitleaks:allow
+        with:
+          # The reproducibility check below rebuilds dist/ at the commit that
+          # last touched it, which a depth-1 checkout does not contain.
+          fetch-depth: 0
       # v6 is the first major that reads go.mod's toolchain directive; v5
       # matched only the `go` line and installed the newest patch of it, so
       # the pin in go.mod would have been ignored here. v6+ also exports
@@ -48,26 +52,41 @@ jobs:
           got=$(hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
           test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
           echo "launcher resolved procoder $got under $(uname -s)"
-      - name: the committed binaries rebuild from this source
+      - name: the committed binaries rebuild from their source
         # The version-string check this replaces proved a binary printed the
-        # expected string. It did not prove the binary came from this tree —
-        # and the plugin auto-executes these on every session start, every
-        # Bash call and every Write. Rebuilding and comparing digests is the
-        # difference between trusting the committer and checking.
+        # expected string. It did not prove the binary came from the tree it
+        # claims — and the plugin auto-executes these on every session start,
+        # every Bash call and every Write. Rebuilding and comparing digests is
+        # the difference between trusting the committer and checking.
+        #
+        # The rebuild happens at the commit that last touched dist/, not at
+        # HEAD. dist/ is refreshed at release, so between releases it lags
+        # main by design: comparing it against HEAD would demand 35MB of
+        # rebuilt binaries in every feature branch and would turn a real
+        # check into a chore people learn to re-run without reading. What
+        # matters is that the committed digests are reproducible from the
+        # source they were built from, and that is what this checks.
         #
         # Linux only: one cross-compiling host covers all five targets, and
         # running it on three would compare the same bytes three times.
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          before=$(cat dist/SHA256SUMS)
-          ./scripts/build-dist.sh >/dev/null
-          if ! diff <(echo "$before") dist/SHA256SUMS; then
-            echo "dist/ does not rebuild from this source — run scripts/build-dist.sh and commit the result" >&2
-            git --no-pager diff --stat dist/ >&2
+          commit=$(git log -1 --format=%H -- dist/)
+          if [ -z "$commit" ]; then
+            echo "no commit in history touches dist/ — cannot verify the binaries" >&2
             exit 1
           fi
-          echo "all five binaries rebuild byte-for-byte from this tree"
+          echo "dist/ was last built at $commit"
+          tree=$(mktemp -d)
+          git worktree add --detach "$tree" "$commit" >/dev/null
+          recorded=$(git show "$commit:dist/SHA256SUMS")
+          (cd "$tree" && ./scripts/build-dist.sh >/dev/null)
+          if ! diff <(echo "$recorded") "$tree/dist/SHA256SUMS"; then
+            echo "dist/ does not rebuild from $commit — run scripts/build-dist.sh and commit the result" >&2
+            exit 1
+          fi
+          echo "all five binaries rebuild byte-for-byte from $commit"
 
   gate:
     # procoder's own gate over its own tree: the dogfood job. Formatting

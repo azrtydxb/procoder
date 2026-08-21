@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/answers"
 	"regexp"
 	"sort"
 	"strings"
@@ -152,11 +153,97 @@ func Check(root, name string, out func(string)) int {
 	}
 	worst := 0
 	for _, f := range files {
-		if code := checkOne(f, out); code > worst {
+		if code := checkOne(root, f, out); code > worst {
 			worst = code
 		}
 	}
 	return worst
+}
+
+// OpenQuestions is the questions a spec still carries: the lines of real
+// content in its Open questions section, with a question wrapped over several
+// lines read as the one question it is. It lives here because this package
+// decides what a spec is; `ask` offers these to a human and `checkOne` judges
+// them, and one reading keeps the two from disagreeing.
+func OpenQuestions(path string) []string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	body := textutil.StripComments(textutil.Section(string(raw), "Open questions"))
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if continuesPrevious(t) && len(out) > 0 {
+			out[len(out)-1] += " " + t
+			continue
+		}
+		// The bullet is punctuation, not part of the question: keeping it
+		// would put "- " inside the key, so changing a dash to an asterisk
+		// would silently discard the answer. A leading "[O-3] " label is the
+		// same kind of noise — specs number their open questions, and
+		// deleting question two renumbers every question below it, which
+		// would orphan every answer already given to them.
+		out = append(out, strings.TrimSpace(questionLabel.ReplaceAllString(
+			strings.TrimPrefix(strings.TrimPrefix(t, "- "), "* "), "")))
+	}
+	return out
+}
+
+// questionLabel matches the "[O-3] " a spec puts in front of an open
+// question. Only that shape: letters, a dash, digits. A question that opens
+// with real bracketed prose — "[Windows] does the launcher…" — keeps it,
+// because there the bracket is the question.
+var questionLabel = regexp.MustCompile(`^\[[A-Za-z]+-\d+\]\s*`)
+
+// continuesPrevious reports whether a line is the rest of the question above
+// it rather than a new one. Counting lines instead made a four-question
+// section ask six times, each fragment carrying its own key, so answering the
+// whole thing still left two halves of a sentence outstanding.
+func continuesPrevious(line string) bool {
+	if strings.HasPrefix(line, "OPEN:") || strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+		return false
+	}
+	// A line that ends in a question mark is a question, bullet or not.
+	// Without this, a section written as plain lines collapsed into one
+	// question with one key, and answering it retired every question in it.
+	if strings.HasSuffix(line, "?") {
+		return false
+	}
+	if head, _, ok := strings.Cut(line, "."); ok && head != "" && strings.Trim(head, "0123456789") == "" {
+		return false // "1. …" numbered question
+	}
+	return true
+}
+
+// openQuestions splits a spec's remaining questions into the ones nobody has
+// answered and the count that a human already decided through `procoder ask`.
+// The reading of the section itself is OpenQuestions above, which the ask
+// package calls too, so the collector that offers a question and the checker
+// that judges it can never disagree about what is still being asked.
+func openQuestions(root, path string) (unanswered []string, answered int) {
+	questions := OpenQuestions(path)
+	if len(questions) == 0 {
+		return nil, 0
+	}
+	name := strings.TrimSuffix(filepath.Base(path), ".md")
+	recorded, err := answers.Load(root)
+	if err != nil {
+		// Unknown is not answered: an unreadable answers file must not
+		// quietly bless a spec nobody has decided.
+		return questions, 0
+	}
+	for _, q := range questions {
+		if _, ok := recorded[answers.Key("spec", name, q)]; ok {
+			answered++
+			continue
+		}
+		unanswered = append(unanswered, q)
+	}
+	return unanswered, answered
 }
 
 // statusOf reads the spec's `Status:` header, lowercased, or "" when the
@@ -169,7 +256,7 @@ func statusOf(text string) string {
 	return strings.ToLower(strings.TrimSpace(m[1]))
 }
 
-func checkOne(path string, out func(string)) int {
+func checkOne(root, path string, out func(string)) int {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
@@ -177,7 +264,7 @@ func checkOne(path string, out func(string)) int {
 	}
 	text := string(raw)
 	name := strings.TrimSuffix(filepath.Base(path), ".md")
-	var gaps []string
+	var gaps, notes []string
 	for _, s := range Sections {
 		body := textutil.Section(text, s)
 		if body == "" && !strings.Contains(text, "## "+s) {
@@ -198,9 +285,16 @@ func checkOne(path string, out func(string)) int {
 	// COMPLETE, so it would have seeded stories from a design nobody had
 	// finished. A question is unresolved because it is still in the
 	// section, whatever it is called.
-	if q := strings.TrimSpace(textutil.StripComments(textutil.Section(text, "Open questions"))); q != "" {
-		gaps = append(gaps, fmt.Sprintf("Open questions still has %d line(s) — resolve each with the user and rewrite it as a decision, or empty the section",
-			len(strings.Split(q, "\n"))))
+	if open, answered := openQuestions(root, path); len(open) > 0 {
+		gaps = append(gaps, fmt.Sprintf("Open questions still has %d unanswered question(s) — put them to the user (`procoder ask`) or rewrite each as a decision",
+			len(open)))
+	} else if answered > 0 {
+		// D-5: a question a human has decided is decided, even while the
+		// prose still lists it. The verdict moves; the silence does not —
+		// a reader who is told a section full of questions is finished
+		// would be misled, so the note says where the decisions live.
+		notes = append(notes, fmt.Sprintf("  note: %d question(s) here are answered in %s — rewriting them as decisions is tidier, and no longer required to pass",
+			answered, filepath.ToSlash(filepath.Join(answers.Dir, answers.File))))
 	}
 	criteria := textutil.Section(text, "Acceptance criteria")
 	boxes := checkboxRe.FindAllStringSubmatch(criteria, -1)
@@ -223,6 +317,9 @@ func checkOne(path string, out func(string)) int {
 		// finished specs read as drafts forever. Saying it here — where the
 		// verdict is already being printed — costs nothing and keeps the
 		// header honest; it is a note, not a gap, so the verdict stands.
+		for _, n := range notes {
+			out(n)
+		}
 		if statusOf(text) == "draft" {
 			out("  note: the Status line still says draft — advance it to `Status: complete`")
 		}
@@ -241,6 +338,11 @@ func checkOne(path string, out func(string)) int {
 	}
 	return 1
 }
+
+// Files is every spec in the repository, by path. Exported so the ask
+// domain reads the same set the checker judges — two listings would
+// eventually disagree about what a spec is.
+func Files(root string) []string { return specFiles(root) }
 
 func specFiles(root string) []string {
 	entries, err := os.ReadDir(filepath.Join(root, Dir))

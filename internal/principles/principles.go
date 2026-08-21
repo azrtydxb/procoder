@@ -67,6 +67,20 @@ Rules:
   revisit — ` + "`procoder debt`" + ` harvests these into a ledger, and
   markers with no revisit trigger are flagged as rot.
 
+Questions are not yours to answer:
+
+- Some findings are requests for judgement, not defects — an undecided
+  spec question, a documentation gap that may be deliberate, a flag on
+  something that may be a test credential, a lint finding that may be a
+  false positive. ` + "`procoder ask`" + ` collects them.
+- When you are handed one, STOP and put it to the user in your own
+  words. Do not answer it yourself and do not infer the answer from the
+  repository: an invented answer is indistinguishable from a decision
+  once it is written down, and the user never learns they were never
+  asked.
+- Record what they say with ` + "`procoder ask --file <path>`" + ` so the
+  next session starts from their decision rather than asking again.
+
 Delegation — you are a lead, not a lone hand:
 
 - Independent work runs in parallel: fan out subagents for searches,

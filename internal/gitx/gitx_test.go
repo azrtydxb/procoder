@@ -354,3 +354,52 @@ func TestAReasonMayStartWithAnyCharacter(t *testing.T) {
 		}
 	}
 }
+
+// The first line of `git status --porcelain` for a worktree-modified file
+// begins with a space, and trimming the whole output ate it — so the FIRST
+// changed file came back missing its first character. `cmd/procoder/main.go`
+// arrived as `md/procoder/main.go`, the gate looked at a path that does not
+// exist, and golangci-lint answered "directory not found", which procoder
+// reported as NOT checked rather than as a bug in itself. Every domain that
+// takes a changed-file list was affected, and only for the first entry, which
+// is why it survived so long.
+// proved by: restored strings.TrimSpace over the whole output — the first
+// path loses its leading character and this test names the difference.
+func TestChangedFilesKeepsTheFirstPathWhole(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git unavailable: %v\n%s", err, out)
+		}
+	}
+	run("init", "-q")
+	for _, name := range []string{"cmd/main.go", "internal/thing.go"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), []byte("package x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run("add", "-A")
+	run("commit", "-qm", "one")
+	// Modified in the worktree and NOT staged: the status line that starts
+	// with a space, which is the ordinary state of a file somebody is editing.
+	if err := os.WriteFile(filepath.Join(root, "cmd/main.go"), []byte("package x // edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ChangedFiles(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "cmd/main.go")
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("ChangedFiles = %q, want exactly [%s]", got, want)
+	}
+	if _, err := os.Stat(got[0]); err != nil {
+		t.Errorf("the path returned must be one that exists: %v", err)
+	}
+}

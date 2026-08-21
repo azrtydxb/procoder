@@ -1,6 +1,6 @@
 # Spec: Interactive Q&A — `ask` Feature
 
-Status: draft
+Status: complete
 
 ## Problem
 
@@ -43,15 +43,15 @@ We need a structured Q&A flow where procoder actually asks the human, collects a
   two surfaces.
 - Question generation itself: each domain already knows what it cannot
   decide; `ask` collects and normalises, it does not invent questions.
-- Answer persistence across runs — [O-2] asks whether that is even wanted,
-  and [N-04] currently says a re-run refreshes.
+- Answering the same question twice. Answers persist and are keyed to the
+  question that earned them ([D-2]).
 
 ## Constraints
 
 - [N-01] Each domain collects questions in its own format; `ask` normalises them into a uniform `Question{Source, ID, Text, Default}` struct
 - [N-02] The interaction is non-blocking for the AI coder: if the coder cannot interact (no terminal), questions are written to file with clear instructions
 - [N-03] The Q&A file format must be parseable by both humans and the AI coder (Markdown format with clear structure)
-- [N-04] Re-running `procoder ask` clears previous answers and refreshes questions
+- [N-04] Re-running `procoder ask` keeps answers already given and asks only what is new or changed ([D-2])
 
 ## Interfaces
 
@@ -99,17 +99,80 @@ real, and the answer does not need the credential to be legible.
 
 ## Acceptance criteria
 
-- [ ] C-01: `procoder ask` collects at least one question from each domain that generates them — verified by: Run on a repo with known questions per domain; verify output includes all
-- [ ] C-02: Interactive path reads from stdin only when a TTY is available — verified by: Run with `/dev/null` input; must write to file, not hang
-- [ ] C-03: File path is written to a stable location — verified by: Check `.procoder/ask/QA.md` and `.procoder/ask/answers.md` exist after run
-- [ ] C-04: `--file` flag reads answers from specified file — verified by: Write test answers file; run `ask --file`; verify questions are answered
-- [ ] C-05: Hook output contains a `[q-a]` section with explicit ask instructions — verified by: Run hook; verify output contains `== q&a` and "do NOT guess" text
-- [ ] C-06: Spec's `check` incorporates answers from `answers.md` when re-running — verified by: Write answer in `answers.md`; run check; verify OPEN: questions are accepted
-- [ ] C-07: Non-interactive execution exits 1 (questions unanswered) — verified by: Run without TTY; verify exit code is 1, exit 0 only when all answered
-- [ ] C-08: Prodigy gate passes with answered questions — verified by: Run `procoder check` after `procoder ask`; must pass when all answers provided
+- [ ] C-01: `procoder ask` on a fixture carrying one question per generating
+      domain — an unresolved spec question, an uncleared documentation
+      obligation, a flagged secret, a blocking lint finding — prints all
+      four, each naming its source, and a flagged secret's value appears
+      nowhere in the output or in either file.
+- [ ] C-02: With a terminal it asks one question at a time; with
+      `/dev/null` or a pipe on stdin it asks nothing, writes
+      `.procoder/ask/QA.md`, names the file and the `--file` route, and
+      does not hang.
+- [ ] C-03: `.procoder/ask/QA.md` and `.procoder/ask/answers.md` are
+      written at those paths, and a second run with no new questions
+      rewrites neither.
+- [ ] C-04: `procoder ask --file <path>` records the answers in that file
+      against the questions they belong to, and refuses a file it cannot
+      parse rather than recording a partial reading.
+- [ ] C-05: An answer persists: a question already answered is not asked
+      again on the next run, and the same question with its text changed IS
+      asked again — verified by a test that answers, re-runs, edits the
+      question, and re-runs.
+- [ ] C-06: The PostToolUse hook's `additionalContext` carries the pending
+      questions and the instruction not to guess, and carries nothing when
+      none are pending.
+- [ ] C-07: `procoder ask` exits 1 while any question is unanswered and 0
+      when all are, so a caller can tell the two apart.
+- [ ] C-08: `[ask] policy = "block"` makes pending questions block
+      `procoder check`; the default `report` lists them and leaves the
+      gate's verdict unchanged — both verified by test.
+- [ ] C-09: A spec question that has been ANSWERED in `answers.md` no
+      longer blocks `spec check`: the spec reports COMPLETE with a note
+      that the section still lists questions a human has decided. A
+      question with no answer blocks exactly as it does today, and an
+      answer whose question text has since changed does not count —
+      verified by a test covering all three.
 
 ## Open questions
 
-- [O-1] Should `procoder ask` be a subcommand of `ask` or a standalone command at the top level? (Top-level: simpler, matches existing commands like `check`, `lint`)
-- [O-2] Should answers persist across runs, or every run re-asks all questions?
-- [O-3] Should the AI coder be able to submit answers inline in its response, or must it use a separate command?
+<!-- none — decisions recorded below -->
+
+## Decisions
+
+- [D-1] `procoder ask` is a top-level command, not a subcommand group. One
+  verb, one job, beside `check`, `lint` and `test` — and the Interfaces
+  section already assumed it. Variants ride on flags. ([O-1] resolved.)
+- [D-2] Answers persist in `.procoder/ask/answers.md`, keyed by a
+  fingerprint of the question text. An unchanged question is never asked
+  twice; a question whose text changed is asked again, because the old
+  answer was to a different question. This is the same mechanism that
+  stopped spec drift crying wolf: hash the thing that matters, not the
+  prose around it. It replaces [N-04], which said a re-run clears
+  everything — that would have made the feature unusable at every session
+  start. ([O-2] resolved.)
+- [D-3] Without a terminal, the coder relays the questions to the human,
+  writes the human's answers into a file, and runs `procoder ask --file
+<path>`; the binary parses and records them. One route in, and the file
+  is evidence of what was decided. The coder can fabricate that file — so
+  can it fabricate anything it types — and this is the same trust boundary
+  every other procoder input sits on, made visible rather than hidden.
+  ([O-3] resolved.)
+- [D-5] An answer recorded through `ask` resolves a spec's open question
+  for `spec check`: an answered question no longer blocks, and the verdict
+  is COMPLETE. This softens the rule that a question blocks while it sits
+  in the section, and it is worth naming what that rule was protecting so
+  the softening does not go further than intended: `backlog seed` gates on
+  COMPLETE, so a spec must not be seedable while its design is undecided.
+  Answered is decided — the decision simply lives in `answers.md` rather
+  than in prose. What must NOT follow is the checker going quiet: an
+  UNANSWERED question blocks exactly as before, an answer keyed to a
+  question whose text has since changed does not count, and a spec that
+  passes on answers says so out loud, so a reader is never told a section
+  full of questions is finished. Rewriting them into the spec stays the
+  tidier end state; it stops being the price of a green check.
+
+- [D-4] `[ask] policy = "report" | "block"` in `.procoder/config.toml`,
+  default `report`. A pending question is a request for judgement, not a
+  defect, and blocking a commit on one stops work the human may not be
+  awake to unblock. A repository that wants the hard stop sets `block`,
+  following every other domain policy here.

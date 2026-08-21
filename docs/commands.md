@@ -325,7 +325,9 @@ interviews the gaps closed; the binary judges completeness.
   Acceptance criteria, Open questions) for the agent to write.
 - `list` — every spec in the repo.
 - `check [name|all]` — the quality controller: blocks while any required
-  section is missing or empty, while any `OPEN:` question is unresolved,
+  section is missing or empty, while any question in Open questions is
+  still unanswered — whatever it is called, `OPEN:` or otherwise; an
+  answer recorded through `procoder ask` counts as the decision —
   and while acceptance criteria are not testable checkboxes. A complete
   spec whose `Status:` line still says `draft` earns a note to advance it
   to `complete` — a note, never a gap. A complete spec seeds the todo
@@ -352,6 +354,42 @@ corner cut on purpose carries a comment with the configured marker
 (default `debt:`, `[debt] marker` in config.toml) naming the ceiling and
 the condition to revisit. Markers with no revisit trigger are flagged —
 those are the ones that silently rot. Read-only, never blocking.
+
+#### `procoder ask [--file <path>]`
+
+The questions no domain can answer for itself, put to a person: a spec's
+undecided questions, a documentation gap that may be deliberate, a flag on
+something that may be a test credential, a lint finding that may be a false
+positive. It decides nothing — that is the point.
+
+With a terminal it asks one at a time; an empty answer is a skip, not a
+decision. Without one — a hook, a pipe, CI — it asks nothing, writes
+`.procoder/ask/QA.md` with one section per question, and names the way back
+in. The agent relays the questions to the user, writes their answers into
+that file, and hands it over with `--file`, which records them against the
+questions they belong to and refuses a file it cannot read rather than
+recording half of it.
+
+Answers persist in `.procoder/ask/answers.md`, keyed by a fingerprint of the
+question text. An unchanged question is never asked twice; a question whose
+wording changed is asked again, because the old answer belonged to a
+different question. Exit 1 means something is still unanswered, 0 means
+nothing is.
+
+A flagged secret's value never appears in the question, the files, or the
+terminal: what a human is asked is whether the flag is real, and answering
+that does not need the credential.
+
+`[ask] policy = "block"` in `.procoder/config.toml` makes pending questions
+block the gate. The default, `report`, lists them and leaves the verdict
+alone — a question is a request for judgement, not a defect, and failing a
+commit on one stops work the person who could unblock it may not be awake
+for.
+
+An answered spec question no longer blocks `spec check`: the answer is the
+decision, even while the section still lists it, and the verdict says where
+the decisions live so nobody reads that section as finished. An unanswered
+one blocks exactly as before.
 
 #### `procoder agents`
 

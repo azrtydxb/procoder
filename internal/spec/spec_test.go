@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"procoder/internal/answers"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,4 +226,93 @@ func TestOpenQuestionsAreUnresolvedWhateverTheyAreCalled(t *testing.T) {
 	if code := Check(root, "widget", out); code != 0 {
 		t.Errorf("an empty section is a resolved one: exit %d %v", code, *lines)
 	}
+}
+
+// D-5 and C-09: a question a human has decided no longer blocks, while an
+// unanswered one still does and a stale answer counts for nothing. The
+// verdict moves; the silence does not — a reader is told where the decisions
+// live rather than shown a section of questions and called finished.
+// proved by: ignored the answers store again — the answered spec then still
+// reports NOT ready and the human's decision buys nothing.
+func TestAnAnsweredQuestionNoLongerBlocks(t *testing.T) {
+	root := t.TempDir()
+	question := "which database?"
+	spec := strings.Replace(completeSpec(), "## Open questions\n\n", "## Open questions\n\n- "+question+"\n\n", 1)
+	writeSpec(t, root, "widget", spec)
+
+	// Unanswered: blocked, exactly as before.
+	out, lines := collect()
+	if code := Check(root, "widget", out); code != 1 {
+		t.Fatalf("an undecided question still blocks: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "unanswered") {
+		t.Errorf("the refusal must say they are unanswered: %v", *lines)
+	}
+
+	// Answered: COMPLETE, and it says where the decision lives.
+	writeAnswer(t, root, "spec", "widget", question, "postgres, for the constraints")
+	out2, lines2 := collect()
+	if code := Check(root, "widget", out2); code != 0 {
+		t.Fatalf("an answered question no longer blocks: exit %d %v", code, *lines2)
+	}
+	joined := strings.Join(*lines2, "\n")
+	if !strings.Contains(joined, "COMPLETE") {
+		t.Errorf("the verdict moves: %v", *lines2)
+	}
+	if !strings.Contains(joined, "answered in .procoder/ask/answers.md") {
+		t.Errorf("and says where the decisions are, so nobody reads the section as finished: %v", *lines2)
+	}
+
+	// Reworded: the answer was to a different question, so it blocks again.
+	writeSpec(t, root, "widget", strings.Replace(spec, question, "which database, and why?", 1))
+	out3, lines3 := collect()
+	if code := Check(root, "widget", out3); code != 1 {
+		t.Fatalf("a stale answer counts for nothing: exit %d %v", code, *lines3)
+	}
+}
+
+// writeAnswer records one decision the way `procoder ask` would.
+func writeAnswer(t *testing.T, root, source, origin, question, answer string) {
+	t.Helper()
+	dir := filepath.Join(root, ".procoder", "ask")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# answers\n\n## " + origin + "\n\n" +
+		"Key: " + answers.Key(source, origin, question) + "\n" +
+		"Answer: " + answer + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "answers.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A spec numbers its open questions, and deleting question two renumbers
+// every question below it. The number is not the question, so it must not
+// reach the key an answer is filed under — otherwise a renumber orphans
+// every decision already made, and the spec goes back to asking things a
+// human has already settled.
+// proved by: dropped the questionLabel strip — the answer recorded against
+// "[O-2] …" then no longer matches the same question renumbered to [O-1],
+// and the spec reports it unanswered again.
+func TestARenumberedQuestionKeepsItsAnswer(t *testing.T) {
+	if got := OpenQuestions(writeQuestions(t, "- [O-2] which database?")); len(got) != 1 || got[0] != "which database?" {
+		t.Errorf("the label is not part of the question: %q", got)
+	}
+	// The bracket is only noise when it is a label. A question that opens
+	// with real bracketed prose keeps it.
+	kept := "[Windows] does the launcher find bash?"
+	if got := OpenQuestions(writeQuestions(t, "- "+kept)); len(got) != 1 || got[0] != kept {
+		t.Errorf("bracketed prose is part of the question: %q", got)
+	}
+}
+
+// writeQuestions puts one Open questions section on disk and returns its path.
+func writeQuestions(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "widget.md")
+	spec := strings.Replace(completeSpec(), "## Open questions\n\n", "## Open questions\n\n"+body+"\n\n", 1)
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

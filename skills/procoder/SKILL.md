@@ -49,8 +49,9 @@ Non-trivial work starts above the code, and each link refuses to advance
 until its own gap is closed.
 
 - `procoder spec <sub>` — `template <name> | list | check` in
-  `.procoder/specs/`. Check blocks while a section is empty, an `OPEN:`
-  question is unresolved, or a criterion is untestable.
+  `.procoder/specs/`. Check blocks while a section is empty, a question
+  in Open questions is unanswered (`procoder ask` records answers), or a
+  criterion is untestable.
 - `procoder plan <sub>` — `template | list | check` in
   `.procoder/plans/`. Check blocks on placeholders and on tasks without
   files or steps. Write the plan for a stranger; never say "same as
@@ -107,6 +108,10 @@ text).
   has not governed before.
 - `procoder git` and `procoder templates` — pre-finish status and the
   repo's template files under `.procoder/`.
+- `procoder ask` — the questions no domain can answer for itself. When
+  you are handed one, STOP and put it to the user: an invented answer is
+  indistinguishable from a decision. Record theirs with
+  `procoder ask --file <path>`.
 - `procoder agents` — the per-host rule files derived from this file.
   Regenerate after editing it; drift blocks the gate.
 - `procoder lessons` — the ledger of what escaped the gates. A lesson
