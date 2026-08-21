@@ -153,12 +153,31 @@ their language. People have asked for it.
   php-cs-fixer, phpcbf and pint all either write in place or emit a diff,
   and working around that would mean temp files, which the formatter
   registry exists to avoid.
-- **D-2: the linter is whichever the project configured, with `php -l` as
-  the floor.** phpstan when a phpstan config is present, phpcs when a phpcs
-  config is present, both when both. With neither, `php -l` reports real
-  syntax errors and nothing else. This follows the eslint and clang-format
-  precedent already in the registry: the project's own config always wins,
-  and procoder never imposes a standard nobody chose.
+- **D-2: the linter is whichever the project configured; with none,
+  procoder brings its own.** phpstan when a phpstan config is present,
+  phpcs when a phpcs config is present, both when both. The project's own
+  config always wins (D-OVERRIDE).
+- **D-5 (revises D-2): an unconfigured project gets procoder's phpstan
+  baseline, not a syntax floor.** D-2 originally stopped at `php -l` when
+  nothing was configured, on the reasoning that procoder imposes no
+  standard. That reasoning was right about style and wrong about bugs: a
+  wrong return type and a call to a function that does not exist are not
+  matters of taste, and leaving them unreported meant most PHP
+  repositories — the ones with no linter configured on the day procoder
+  arrives — got a gate that only checked whether the file parsed. procoder
+  now supplies a curated phpstan config, written to a temp file so nothing
+  lands in the repository, exactly as it already does for Go's golangci
+  baseline and Java's bundled google_checks. `php -l` remains as the floor
+  for when phpstan itself is absent, alongside a NOT-checked line naming
+  it so `procoder init` installs it.
+- **D-6: the baseline is phpstan at level 5, and phpstan rather than
+  phpcs.** phpcs is a style checker and formatting is already prettier's
+  job here, so a phpcs default would put two tools in charge of the same
+  thing. The level was measured, not chosen: against ordinary untyped
+  legacy PHP, levels 0 through 5 report nothing while level 6 demands a
+  typehint on every parameter and produced four findings on fourteen
+  lines. A default that shouts at every existing codebase is a default
+  people turn off.
 - **D-3: phpunit ships in the same change as format and lint.** PHP
   support that stops at the gate leaves `procoder test` telling a PHP team
   it has no recognized test setup, which is the same wrong answer in a

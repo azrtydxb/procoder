@@ -75,9 +75,58 @@ func lintPHP(root string, files []string, block bool) []gitx.Finding {
 		out = append(out, run(root, Phpcs, append([]string{"--report=emacs", "--no-colors"}, files...), files, block)...)
 	}
 	if stan == "" && cs == "" {
-		out = append(out, lintPHPSyntax(root, files, block)...)
+		out = append(out, lintPHPBaseline(root, files, block)...)
 	}
 	return out
+}
+
+// phpstanBaseline is procoder's curated default for a PHP project that
+// carries no linter config of its own — the same bargain Go gets from the
+// golangci baseline: a real linter rather than nothing, written to a temp
+// file so the repository is never touched, and overridden the moment the
+// project adds its own config.
+//
+// Level 5 is the level, chosen by measuring rather than by taste. Against
+// ordinary untyped legacy PHP — no declare, no typehints, associative
+// arrays everywhere — levels 0 through 5 report nothing, while level 6
+// demands a typehint on every parameter and produced four findings on a
+// fourteen-line file. A default that shouts at every existing PHP codebase
+// on the day it is installed is a default people turn off. Level 5 still
+// catches the things that are bugs in any style: a function that returns
+// the wrong type, a call to something that does not exist.
+const phpstanBaseline = `parameters:
+    level: 5
+`
+
+// lintPHPBaseline lints a project that configured nothing, with procoder's
+// own default. When phpstan is absent it says so — the tool is named so
+// `procoder init` installs it — and still runs `php -l`, because a syntax
+// error caught by the binary already on the machine is worth more than a
+// silence explained by a footnote.
+func lintPHPBaseline(root string, files []string, block bool) []gitx.Finding {
+	if tools.Resolve(Phpstan, root) == "" {
+		out := notChecked(files[0], Phpstan.Name)
+		return append(out, lintPHPSyntax(root, files, block)...)
+	}
+	cfg, err := os.CreateTemp("", "procoder-phpstan-*.neon")
+	if err == nil {
+		_, err = cfg.WriteString(phpstanBaseline)
+		// a failed Close can mean the write never reached disk; treat it as
+		// a write failure rather than a success
+		if cerr := cfg.Close(); err == nil {
+			err = cerr
+		}
+		defer func() { _ = os.Remove(cfg.Name()) }()
+	}
+	if err != nil {
+		// The baseline could not be written, so the analysis procoder
+		// promised did not happen. Falling silently back to the syntax
+		// floor would report a thinner check as if it were the full one.
+		out := []gitx.Finding{{File: files[0],
+			Message: fmt.Sprintf("NOT checked — could not write the phpstan baseline: %v (lint)", err)}}
+		return append(out, lintPHPSyntax(root, files, block)...)
+	}
+	return runPhpstan(root, cfg.Name(), files, block)
 }
 
 // hasAny walks up from the file to the repository root looking for any of

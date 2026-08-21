@@ -146,10 +146,73 @@ func TestWithoutPHPTheFloorSaysNotChecked(t *testing.T) {
 	// anything without ever going red.
 	t.Setenv("PATH", t.TempDir())
 	got := lintPHP(root, []string{file}, true)
-	if len(got) != 1 {
-		t.Fatalf("want one NOT-checked finding, got %+v", got)
+	if len(got) == 0 {
+		t.Fatal("a file nothing could check must never be silently clean")
 	}
-	if !strings.Contains(got[0].Message, "NOT checked") || !strings.Contains(got[0].Message, "php") {
-		t.Errorf("the refusal must say it did not check, and name php: %q", got[0].Message)
+	// The count is deliberately not asserted: with no config procoder also
+	// reports its default linter missing, and pinning the number here would
+	// make this test fail every time the set of things it reports changes,
+	// for a reason that has nothing to do with what it is guarding.
+	var named bool
+	for _, f := range got {
+		if strings.Contains(f.Message, "NOT checked") && strings.Contains(f.Message, "php") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the refusal must say it did not check, and name php: %+v", got)
+	}
+}
+
+// A PHP project that configured nothing must still be linted. Before this
+// it fell to `php -l`, which reports syntax errors and nothing else — so a
+// wrong return type or a call to a function that does not exist passed the
+// gate on every unconfigured PHP repository, which is most of them on the
+// day procoder arrives.
+// proved by: pointed the no-config branch back at lintPHPSyntax — the
+// baseline never runs, and a project with no config gets a syntax check
+// wearing the name of a linter.
+func TestAnUnconfiguredProjectStillGetsARealLinter(t *testing.T) {
+	// phpstan absent is the case this can assert without the tool: the
+	// refusal must name phpstan, so `procoder init` knows what to install,
+	// AND still run the syntax floor rather than leaving the file unread.
+	root := t.TempDir()
+	file := filepath.Join(root, "a.php")
+	if err := os.WriteFile(file, []byte("<?php\nfunction f( {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir()) // neither phpstan nor php can answer
+	got := lintPHP(root, []string{file}, true)
+	if len(got) == 0 {
+		t.Fatal("an unconfigured project must not be silently clean")
+	}
+	var named bool
+	for _, f := range got {
+		if strings.Contains(f.Message, "phpstan") && strings.Contains(f.Message, "NOT checked") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the missing default linter must be named so init can install it: %+v", got)
+	}
+}
+
+// The baseline is level 5, and the level is the whole decision: it must
+// catch what is a bug in any style without demanding a typed codebase.
+// Level 6 requires a typehint on every parameter, which shouts at every
+// existing PHP project on the day procoder is installed — and a default
+// people turn off protects nobody.
+// proved by: set the baseline to level 6 — this test names it, and the
+// measurement behind it (four findings on fourteen lines of ordinary
+// untyped PHP, where level 5 reports none) is in the comment above it.
+func TestTheBaselineLevelIsTheMeasuredOne(t *testing.T) {
+	if !strings.Contains(phpstanBaseline, "level: 5") {
+		t.Errorf("the curated baseline must be level 5:\n%s", phpstanBaseline)
+	}
+	// It is a config procoder writes to a temp file, never into the repo:
+	// a baseline that appeared as phpstan.neon in someone's tree would be
+	// procoder imposing a config it promised not to impose.
+	if strings.Contains(phpstanBaseline, "paths:") {
+		t.Error("the baseline must not pin paths — the files come from the command line")
 	}
 }
