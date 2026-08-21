@@ -1,5 +1,5 @@
 name: procoder
-version: 1.1.0
+version: 1.1.1
 description: A harness that gives AI coders the tools and skills to work like a senior developer
 entry: __init__.py
 provides_hooks:
