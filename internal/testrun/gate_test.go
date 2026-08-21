@@ -48,7 +48,7 @@ func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
 	// second time and the test measures its own path arithmetic. The same
 	// fixture mistake this repository has now made three times.
 	root := t.TempDir()
-	got := changedPackages(root, []string{
+	got, _ := changedPackages(root, []string{
 		filepath.Join(root, "internal", "textutil", "a.go"),
 		filepath.Join(root, "internal", "textutil", "b.go"),
 		filepath.Join(root, "cmd", "procoder", "main.go"),
@@ -62,7 +62,7 @@ func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
 
 	// A path arriving relative names the same package as one arriving
 	// absolute — the rule gitx.RepoRel exists to hold.
-	rel := changedPackages(root, []string{filepath.FromSlash("internal/textutil/a.go")})
+	rel, _ := changedPackages(root, []string{filepath.FromSlash("internal/textutil/a.go")})
 	if len(rel) != 1 || rel[0] != "internal/textutil" {
 		t.Errorf("relative form must name the same package: %v", rel)
 	}
@@ -72,11 +72,18 @@ func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
 	// directory of .js or .md files handed over lands in an argv that
 	// cannot take it — `go test ./.kilo/plugin` fails as a broken
 	// invocation and reads as a failing suite.
-	if got := changedPackages(root, []string{
+	got, run := changedPackages(root, []string{
 		filepath.Join(root, ".kilo", "plugin", "procoder.js"),
 		filepath.Join(root, ".agents", "rules", "procoder.md"),
-	}); len(got) != 0 {
+	})
+	if len(got) != 0 {
 		t.Errorf("only path-reading runners get targets: %v", got)
+	}
+	// And no suite runs: the alternative is a JavaScript commit paying for
+	// the whole Go suite before its results are filtered away. The limit
+	// is deferred to CI, not hidden.
+	if run {
+		t.Error("a commit with no path-scoped file runs no suite at the gate")
 	}
 }
 
@@ -90,20 +97,27 @@ func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
 // failing suite that never ran.
 func TestATargetListNeverMixesEcosystems(t *testing.T) {
 	root := t.TempDir()
-	goOnly := changedPackages(root, []string{
+	goOnly, _ := changedPackages(root, []string{
 		filepath.Join(root, "a", "x.go"), filepath.Join(root, "b", "y.go")})
 	if len(goOnly) != 2 {
 		t.Errorf("a Go commit narrows to its packages: %v", goOnly)
 	}
-	pyOnly := changedPackages(root, []string{filepath.Join(root, "c", "x.py")})
+	pyOnly, _ := changedPackages(root, []string{filepath.Join(root, "c", "x.py")})
 	if len(pyOnly) != 1 {
 		t.Errorf("a Python commit narrows to its directories: %v", pyOnly)
 	}
 	// Both: no list at all, and every runner keeps its native
 	// whole-project granularity — slower, and correct.
-	if both := changedPackages(root, []string{
-		filepath.Join(root, "a", "x.go"), filepath.Join(root, "c", "y.py")}); both != nil {
+	both, runBoth := changedPackages(root, []string{
+		filepath.Join(root, "a", "x.go"), filepath.Join(root, "c", "y.py")})
+	if both != nil {
 		t.Errorf("a commit spanning both ecosystems passes no targets: %v", both)
+	}
+	// An empty list and "do not run" are different answers, and returning
+	// only the list conflated them: the mixed commit — the one most worth
+	// testing — ran no suite at all while this test still passed.
+	if !runBoth {
+		t.Error("a commit spanning both ecosystems still runs its suites, whole-project")
 	}
 }
 
@@ -115,13 +129,20 @@ func TestATargetListNeverMixesEcosystems(t *testing.T) {
 // report never learns its runner is missing, and reads a green gate as a
 // passing suite.
 func TestASuiteThatCouldNotRunBlocksWhateverThePolicySays(t *testing.T) {
-	notRun := findingFor(Result{Ecosystem: "go", Verdict: NotRun,
-		Detail: "the go toolchain is not installed"}, false)
-	if notRun == nil || !notRun.Blocking {
-		t.Fatalf("a suite that could not run must block even under report: %+v", notRun)
+	// Built by the same function production uses, because the bug this
+	// guards against lives in the seam between the two: notRun writes
+	// "NOT run — " into Detail, and a fixture that spells Detail by hand
+	// cannot see the gate saying it a second time.
+	could := notRun(Result{Ecosystem: "go"}, "the go toolchain is not installed")
+	f := findingFor(could, false)
+	if f == nil || !f.Blocking {
+		t.Fatalf("a suite that could not run must block even under report: %+v", f)
 	}
-	if !strings.Contains(notRun.Message, "NOT run") {
-		t.Errorf("the refusal must say the suite did not run: %q", notRun.Message)
+	if strings.Count(f.Message, "NOT run") != 1 {
+		t.Errorf("the refusal says the suite did not run once, not twice: %q", f.Message)
+	}
+	if !strings.Contains(f.Message, "the go toolchain is not installed") {
+		t.Errorf("the refusal must carry the reason: %q", f.Message)
 	}
 
 	failed := findingFor(Result{Ecosystem: "go", Verdict: Fail, Detail: "1 failing"}, false)
@@ -136,5 +157,35 @@ func TestASuiteThatCouldNotRunBlocksWhateverThePolicySays(t *testing.T) {
 	// be noise the reader learns to skip.
 	if got := findingFor(Result{Ecosystem: "go", Verdict: Pass, Detail: "pass (12 tests)"}, true); got != nil {
 		t.Errorf("a passing suite is silent, got %+v", got)
+	}
+}
+
+// A dependency bump carries no source file and is exactly the change a
+// suite is best at catching. go.mod names Go without holding a line of
+// it, and narrowing to the directory the manifest sits in would test one
+// package and call the whole dependency proven — so it gets the whole
+// project.
+// proved by: dropped the manifest lookups — a go.mod-only commit
+// implicates nothing, runs no suite, and reports a green gate.
+func TestADependencyBumpRunsTheSuiteItCouldBreak(t *testing.T) {
+	root := t.TempDir()
+	bump := []string{filepath.Join(root, "go.mod"), filepath.Join(root, "go.sum")}
+
+	if eco := ecosystemsOf(bump); !eco["go"] {
+		t.Errorf("a go.mod change implicates Go: %v", eco)
+	}
+	pkgs, run := changedPackages(root, bump)
+	if !run {
+		t.Fatal("a dependency bump runs the suite")
+	}
+	if pkgs != nil {
+		t.Errorf("and runs it whole-project, not narrowed to the manifest's directory: %v", pkgs)
+	}
+
+	// A manifest for a runner the gate does not narrow stays deferred:
+	// picking it up would put the gate back to running a whole suite it
+	// has already decided CI owns.
+	if _, run := changedPackages(root, []string{filepath.Join(root, "package.json")}); run {
+		t.Error("a package.json bump is CI's, not the gate's")
 	}
 }

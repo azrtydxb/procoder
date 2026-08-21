@@ -35,8 +35,8 @@ func GateCheck(root string, files []string, block bool) []gitx.Finding {
 	// tested here. That is a real limit, and it is deferred rather than
 	// hidden: CI runs every suite over the whole tree, and `procoder
 	// status` names what the gate did not run.
-	pkgs := changedPackages(root, files)
-	if len(pkgs) == 0 {
+	pkgs, run := changedPackages(root, files)
+	if !run {
 		return nil
 	}
 	want := ecosystemsOf(files)
@@ -83,7 +83,11 @@ func findingFor(r Result, block bool) *gitx.Finding {
 			return nil
 		}
 		return &gitx.Finding{Blocking: true,
-			Message: fmt.Sprintf("%s tests NOT run — %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))}
+			// notRun is the only thing that sets this verdict and it
+			// writes "NOT run — <why>" into Detail itself, so saying it
+			// again here is how CI came to print "js tests NOT run — NOT
+			// run — package.json has no test script".
+			Message: fmt.Sprintf("%s tests %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))}
 	}
 	return nil
 }
@@ -101,12 +105,20 @@ func findingFor(r Result, block bool) *gitx.Finding {
 // When a commit spans both, no list is passed and every runner keeps its
 // native whole-project granularity — slower, and correct, which is the
 // right way round.
-func changedPackages(root string, files []string) []string {
+func changedPackages(root string, files []string) (pkgs []string, run bool) {
 	dirs := map[string][]string{}
 	seen := map[string]bool{}
+	whole := false
 	for _, f := range files {
 		rel, ok := gitx.RepoRel(root, f)
 		if !ok {
+			continue
+		}
+		if _, ok := manifests[strings.ToLower(path.Base(rel))]; ok {
+			// A manifest names no package. Narrowing to the directory it
+			// sits in would test one package and call the dependency
+			// proven, so this commit gets the whole project.
+			whole = true
 			continue
 		}
 		eco, ok := pathScoped[strings.ToLower(path.Ext(rel))]
@@ -121,13 +133,25 @@ func changedPackages(root string, files []string) []string {
 		seen[key] = true
 		dirs[eco] = append(dirs[eco], dir)
 	}
-	if len(dirs) != 1 {
-		return nil
+	if whole {
+		return nil, true
 	}
-	for _, d := range dirs {
-		return d
+	switch len(dirs) {
+	case 0:
+		// Nothing a runner would narrow by. Either the commit is docs, or
+		// it is in an ecosystem whose runner has no target list — and the
+		// caller's comment says why that one is left to CI.
+		return nil, false
+	case 1:
+		for _, d := range dirs {
+			return d, true
+		}
 	}
-	return nil
+	// More than one ecosystem in a single commit. Run hands the same list
+	// to every runner it starts, so a list holding both Go packages and
+	// pytest directories makes each of them choke on the other's. No list,
+	// then: every runner whole-project. Slower, and an answer.
+	return nil, true
 }
 
 // TrimmedDetail keeps a runner's one-liner short enough to read in a gate
@@ -157,16 +181,31 @@ func ecosystemsOf(files []string) map[string]bool {
 	}
 	out := map[string]bool{}
 	for _, f := range files {
-		if eco, ok := byExt[strings.ToLower(path.Ext(path.Clean(strings.ReplaceAll(f, "\\", "/"))))]; ok {
+		clean := path.Clean(strings.ReplaceAll(f, "\\", "/"))
+		if eco, ok := byExt[strings.ToLower(path.Ext(clean))]; ok {
+			out[eco] = true
+		}
+		// A dependency bump carries no source file, and it is the change a
+		// suite is best at catching. go.mod says "Go" as loudly as a .go
+		// file does.
+		if eco, ok := manifests[strings.ToLower(path.Base(clean))]; ok {
 			out[eco] = true
 		}
 	}
 	return out
 }
 
-// pathScoped are the file types whose runners accept a target list. Run
-// narrows only the Go package list and the pytest targets; handing any
-// other directory over would put it in an argv that cannot take it.
+// manifests name an ecosystem without carrying a line of its source. The
+// list is deliberately the path-scoped ones only: a manifest for any
+// other runner would put the gate back to running a whole suite it has
+// already decided to leave to CI.
+var manifests = map[string]string{
+	"go.mod": "go", "go.sum": "go",
+	"requirements.txt": "python", "pyproject.toml": "python",
+	"setup.py": "python", "setup.cfg": "python",
+	"pipfile": "python", "pipfile.lock": "python", "poetry.lock": "python",
+}
+
 // pathScoped are the file types whose runners accept a target list, and
 // which runner each belongs to. Run narrows only the Go package list and
 // the pytest targets; every other runner ignores the list.
