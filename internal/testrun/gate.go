@@ -3,6 +3,7 @@ package testrun
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"procoder/internal/gitx"
@@ -210,3 +211,51 @@ var manifests = map[string]string{
 // which runner each belongs to. Run narrows only the Go package list and
 // the pytest targets; every other runner ignores the list.
 var pathScoped = map[string]string{".go": "go", ".py": "python", ".pyi": "python"}
+
+// Deferred names the suites this repository has that the commit gate will
+// not run, in reading order. Empty when there are none.
+//
+// The gate narrows only the runners that accept a target list, so every
+// other suite is CI's. That is a defensible trade and a silent one: a
+// reader watching a JavaScript commit pass the gate has no way to know
+// its suite never ran. This is what `procoder status` says out loud so
+// the silence is not mistaken for a pass.
+//
+// Detection is stats and one small file read, because the report that
+// calls this runs at session start under a hard budget.
+func Deferred(root string) []string {
+	var out []string
+	if exists(root, "Cargo.toml") {
+		out = append(out, "rust")
+	}
+	// A package.json with no test script has no suite to defer. Saying
+	// "js" there would invent a check that does not exist.
+	if testScript(root) != "" {
+		out = append(out, "js")
+	}
+	if exists(root, "build.gradle") || exists(root, "build.gradle.kts") || exists(root, "pom.xml") {
+		out = append(out, "java")
+	}
+	if phpunitDetected(root) {
+		out = append(out, "php")
+	}
+	return out
+}
+
+// Narrowed names the ecosystems the gate can run, derived from the table
+// that decides it rather than restated beside it. The report says which
+// suites it defers and which it does not, and a hand-written list there
+// would keep saying "go and pytest" the day a third runner learns to
+// take a target list.
+func Narrowed() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, eco := range pathScoped {
+		if !seen[eco] {
+			seen[eco] = true
+			out = append(out, eco)
+		}
+	}
+	sort.Strings(out)
+	return out
+}

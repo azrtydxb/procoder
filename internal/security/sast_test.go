@@ -1,10 +1,14 @@
 package security
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 // stubSemgrep puts a fake semgrep on PATH that prints the given JSON. A
@@ -14,11 +18,23 @@ import (
 // that has not installed it, and the test job has not.
 func stubSemgrep(t *testing.T, out string) {
 	t.Helper()
+	stubSemgrepAfter(t, out, 0)
+}
+
+// stubSemgrepAfter is stubSemgrep with a deliberate delay before the
+// answer, for the tests that assert a slow check is still a completed
+// one.
+func stubSemgrepAfter(t *testing.T, out string, seconds int) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stub is a POSIX shell script")
 	}
 	bin := t.TempDir()
-	script := "#!/bin/sh\ncat <<'JSON'\n" + out + "\nJSON\n"
+	sleep := ""
+	if seconds > 0 {
+		sleep = fmt.Sprintf("sleep %d\n", seconds)
+	}
+	script := "#!/bin/sh\n" + sleep + "cat <<'JSON'\n" + out + "\nJSON\n"
 	if err := os.WriteFile(filepath.Join(bin, "semgrep"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,5 +153,68 @@ func TestAFindingIsMatchedHoweverThePathArrived(t *testing.T) {
 	// Relative, as a person types them.
 	if got := SastChanged(root, []string{filepath.FromSlash("..foo/a.py")}); len(got) != 1 {
 		t.Errorf("relative path: the same file must match: %+v", got)
+	}
+}
+
+// A slow check still completes and still reports what it found. There is
+// no budget on the heavy legs: cutting one off partway and printing the
+// findings it happened to reach would make the verdict a fact about the
+// machine rather than about the code, and the fast machine and the slow
+// one would disagree about whether a commit is safe.
+//
+// The ceiling that does exist is a hung-process net, not a budget: when
+// it fires the finding says SAST was NOT run, and blocks. Silence is
+// never the answer.
+// proved by: wrapped the scan in a 1-second context and returned the
+// findings gathered so far — the slow run reports clean and the commit
+// lands with the finding still in the file.
+func TestASlowCheckStillCompletes(t *testing.T) {
+	stubSemgrepAfter(t, oneError, 2)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "bad.py"), []byte("x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	got := SastChanged(root, []string{filepath.Join(root, "bad.py")})
+	waited := time.Since(start)
+
+	if len(got) != 1 {
+		t.Fatalf("a slow scanner's findings are still the answer: %v", got)
+	}
+	if !strings.Contains(got[0].Message, "shell=True") {
+		t.Errorf("the finding must survive the wait intact: %q", got[0].Message)
+	}
+	// The gate waited rather than reporting a verdict it had not reached.
+	if waited < 2*time.Second {
+		t.Errorf("the gate returned before the check answered, in %s", waited)
+	}
+}
+
+// The same commit produces the same findings however fast the machine
+// is. This is the property a budget would take away, and it is asserted
+// by comparing two runs that differ only in how long the scanner took.
+// proved by: gave the scan a 1-second ceiling that returns what it has —
+// the two runs disagree, and which one a developer gets depends on their
+// laptop.
+func TestFastAndSlowRunsAgree(t *testing.T) {
+	scan := func(seconds int) []string {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "bad.py"), []byte("x = 1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stubSemgrepAfter(t, oneError, seconds)
+		var out []string
+		for _, f := range SastChanged(root, []string{filepath.Join(root, "bad.py")}) {
+			out = append(out, fmt.Sprintf("%v|%s", f.Blocking, f.Message))
+		}
+		return out
+	}
+	fast, slow := scan(0), scan(2)
+	if len(fast) == 0 {
+		t.Fatal("the fixture must produce a finding, or the comparison proves nothing")
+	}
+	if !reflect.DeepEqual(fast, slow) {
+		t.Errorf("the verdict must not depend on the machine:\n fast: %v\n slow: %v", fast, slow)
 	}
 }

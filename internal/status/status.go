@@ -21,6 +21,7 @@ import (
 	"procoder/internal/codeindex"
 	"procoder/internal/gitx"
 	"procoder/internal/lessons"
+	"procoder/internal/testrun"
 	"procoder/internal/todo"
 )
 
@@ -58,6 +59,9 @@ func Report(root string) []string {
 	// the file-backed lines are computed while git runs: they read small
 	// local files, and doing them here keeps the total inside the budget
 	project := append(sprintLines(root), taskLine(root), lessonLine(root))
+	if d := deferredLine(root); d != "" {
+		project = append(project, d)
+	}
 
 	var lines []string
 	head, timedOut := "", false
@@ -353,4 +357,21 @@ func indexLine(root, head string, timedOut bool) string {
 		return base + " — current"
 	}
 	return base + " — STALE, HEAD is " + head + "; run `procoder index build`"
+}
+
+// deferredLine names the suites the commit gate will not run here, and
+// says nothing when there are none — a line on every session in a
+// single-language repository is noise the reader learns to skip.
+//
+// The gate narrows only the runners that take a target list; the rest are
+// CI's. Without this line that trade is invisible: a JavaScript commit
+// passes the gate having never run its suite, and a green gate reads as a
+// suite that passed.
+func deferredLine(root string) string {
+	d := testrun.Deferred(root)
+	if len(d) == 0 {
+		return ""
+	}
+	return "gate defers to CI: " + strings.Join(d, ", ") + " suite(s) — the gate runs " +
+		strings.Join(testrun.Narrowed(), ", ")
 }
