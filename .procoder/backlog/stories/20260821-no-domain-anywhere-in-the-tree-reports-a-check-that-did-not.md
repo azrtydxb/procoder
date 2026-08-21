@@ -1,0 +1,23 @@
+# No domain anywhere in the tree reports a check that did not run as merely informational — asserted by an audit over the source, so a domain that does not exist yet is covered too.
+
+Status: open
+Created: 2026-08-21
+Epic: no-silent-green
+Sprint: 009-no-silent-green-every-gate-says-when-it-did-not-run
+
+## Description
+
+<!-- The user story: who needs what, and why. What "done" looks like in
+     the reader's terms — a title is not a description. -->
+
+## Acceptance criteria
+
+<!-- Each criterion is testable. Check a box ONLY when it is verifiably
+     true — the closer will ask for the evidence. -->
+
+- [ ] No domain anywhere in the tree reports a check that did not run as merely informational — asserted by an audit over the source, so a domain that does not exist yet is covered too.
+
+## Evidence
+
+<!-- Filled at close time: the commands run and what their output proved,
+     one line per criterion. Empty evidence keeps the story open. -->

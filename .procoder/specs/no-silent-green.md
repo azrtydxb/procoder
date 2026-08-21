@@ -124,6 +124,9 @@ TypeScript twins do not, which is not a decision anybody made.
       passes, asserted so the change cannot swallow every unknown file.
 - [ ] `procoder doctor` lists every new default tool with its install line,
       and `procoder init` plans to install them.
+- [ ] No domain anywhere in the tree reports a check that did not run as
+      merely informational — asserted by an audit over the source, so a
+      domain that does not exist yet is covered too.
 
 ## Open questions
 
@@ -148,6 +151,11 @@ TypeScript twins do not, which is not a decision anybody made.
 - **D-4: TypeScript gets a baseline through typescript-eslint.** The parser
   is a tool procoder installs and doctor names, exactly like every other
   tool, rather than a reason to check nothing.
+- **D-6: the rule is audited over the source, not the behaviour.** The
+  failure worth preventing is a domain nobody has written yet reporting a
+  missing tool as info. No behavioural test can cover a branch that does
+  not exist, so the audit reads every Finding literal in the tree and
+  fails naming the file and line of any unrun check that does not block.
 - **D-5: C/C++ gets clang-tidy with a curated check set.** Verified to run
   on a single file with no compilation database. The set is the analyser
   and bug-prone families — the classes that are bugs in any codebase — not

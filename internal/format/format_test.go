@@ -122,3 +122,31 @@ func TestCommitTemplateWhitespaceIsFunctionalNotUnformatted(t *testing.T) {
 		t.Fatalf("reason %q does not explain the whitespace is functional", res.Reason)
 	}
 }
+
+// D-OVERRIDE, on the tool that used to demand a config: a repository with
+// its own .clang-format is formatted by that file, and the baseline
+// fallback is not consulted. The fallback exists so an unconfigured repo
+// is still checked, not so procoder's taste beats the project's.
+// proved by: dropped --style=file from clang-format's args, leaving only
+// the fallback — the project's 20-column limit is ignored, the output
+// stays on one line, and this test names it.
+func TestARepositoryClangFormatWinsOverTheBaseline(t *testing.T) {
+	if _, err := exec.LookPath("clang-format"); err != nil {
+		t.Skip("clang-format not installed: ", err)
+	}
+	dir := t.TempDir()
+	// A style nothing would produce by default: a 20-column limit forces
+	// the one-line function below to wrap, so the verdict distinguishes
+	// "the project's file was read" from "a builtin style was used".
+	write(t, dir, ".clang-format", "BasedOnStyle: LLVM\nColumnLimit: 20\n")
+	p := write(t, dir, "a.c", "int main(int argc, char **argv, char **envp) { return argc; }\n")
+
+	res := Check(p)
+	if res.Verdict != Unformatted {
+		t.Fatalf("the project's 20-column style must find this line too long, got %v (%s)", res.Verdict, res.Reason)
+	}
+	if !strings.Contains(string(res.Formatted), "\n") ||
+		len(strings.Split(strings.TrimSpace(string(res.Formatted)), "\n")) < 3 {
+		t.Errorf("the project's column limit must have wrapped the line:\n%s", res.Formatted)
+	}
+}
