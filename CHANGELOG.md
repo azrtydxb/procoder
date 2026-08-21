@@ -31,6 +31,66 @@ Rules that earn their place:
 - Name outside contributors. They are why the thing got fixed.
 -->
 
+## 1.4.0 — 2026-08-22
+
+_The checks that waited to be asked now run themselves — at the commit
+for the change, in CI for the tree._
+
+**Added — the commit gate answers the questions you used to have to ask
+it.** ([#130](https://github.com/azrtydxb/procoder/pull/130),
+[#133](https://github.com/azrtydxb/procoder/pull/133),
+[#134](https://github.com/azrtydxb/procoder/pull/134),
+[#135](https://github.com/azrtydxb/procoder/pull/135),
+[#136](https://github.com/azrtydxb/procoder/pull/136),
+[#138](https://github.com/azrtydxb/procoder/pull/138)) Static analysis
+runs over the files a commit carries and blocks at the severity the
+repository set. A function past the complexity limit is named as it is
+written, not months later. A commit that touches a dependency manifest is
+checked against known vulnerabilities. The test suite runs for the
+packages the commit touches. Rule files that have drifted from AGENTS.md
+block — which `docs/commands.md` had claimed for some time without it
+being true. And a `debt:` marker with no revisit condition is called out
+while the reason for the shortcut is still in your head.
+
+These were all real commands before. They ran only when somebody
+remembered to type them, which meant they protected the people who
+already knew they existed.
+
+**Added — CI answers about the tree.**
+([#132](https://github.com/azrtydxb/procoder/pull/132)) `maintain`,
+`debt` and `deps` run over the whole repository in CI and fail the job on
+what they find. The gate answers about the change and CI answers about
+the tree; asking either to do both makes it worse at the one it had.
+
+**Fixed — `procoder debt` could not fail.**
+([#138](https://github.com/azrtydxb/procoder/pull/138)) It printed the
+count of markers that silently rot and exited 0 regardless, so any CI
+step running it could only ever pass. It exits 1 on rot now.
+
+**Fixed — `procoder maintain` reported clean when it had not run.**
+([#132](https://github.com/azrtydxb/procoder/pull/132)) A missing tool
+produced no findings, and no findings read as nothing wrong. It now
+exits non-zero and says which check could not run.
+
+**Added — the state of play names what the gate did not run.**
+([#137](https://github.com/azrtydxb/procoder/pull/137)) The gate narrows
+to the runners it can scope, so a Rust, PHP, Java or JavaScript suite is
+CI's. That was a reasonable trade and an invisible one: a JavaScript
+commit passed a green gate having never run its suite. `procoder status`
+says so now, and says nothing when there is nothing to say.
+
+**Changed — no budget on the heavy checks.** A slow scan finishes and
+reports what it found rather than being cut off and reported anyway. A
+verdict that depends on how fast your laptop is, is not a verdict about
+your code. The ceiling that remains is a hung-process net: when it fires
+it says the check was NOT run, and blocks.
+
+**Fixed — closing a sprint no longer adds a second retro section.**
+([#139](https://github.com/azrtydxb/procoder/pull/139)) The template
+ships one and the closer appended another, so a retro you had already
+written ended up above an empty scaffold — and the check that holds the
+next sprint open until it is filled had two sections to choose between.
+
 ## 1.3.0 — 2026-08-21
 
 _The decisions Procoder used to make on your behalf are yours to make,
