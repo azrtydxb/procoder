@@ -47,7 +47,17 @@ jobs:
         # gitignored, and doctor skips it.
         if: runner.os == 'Linux'
         run: |
-          npm install --no-save --no-fund --no-audit prettier @prettier/plugin-php
+          # Pinned from the same file the gate reads. Unpinned, an upstream
+          # release overnight could change what this asserts or break the
+          # job, which is the exact thing tool-versions.env exists to stop —
+          # and it says so in its own opening paragraph.
+          # eval rather than `. <(...)`: sourcing a process substitution
+          # silently sets nothing under bash 3.2, so the pins would expand
+          # empty and npm would install "prettier@" — a form that fails
+          # loudly, but only after the reason for it has been hidden.
+          eval "$(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)"
+          npm install --no-save --no-fund --no-audit \
+            "prettier@${PRETTIER}" "@prettier/plugin-php@${PRETTIER_PLUGIN_PHP}"
           # Read by the test: where the plugin is promised, skipping is a
           # failure. Otherwise a broken install would restore the silent
           # skip and the suite would stay green over the guard it disabled.
