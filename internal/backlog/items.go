@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/templates"
 	"procoder/internal/textutil"
 )
 
@@ -260,7 +261,15 @@ func Story(root, title, epic string, out func(string)) int {
 		slug = time.Now().UTC().Format("20060102") + "-" + slug
 	}
 	return printItem(root, KindStory, slug, title, func(now string) string {
-		return fmt.Sprintf(storyTemplate, title, now, epic)
+		body, _, problem := templates.Resolve(root, "story", storyTemplate)
+		if problem != nil {
+			// An emptied template is not a reason to print nothing, but it
+			// must not pass unsaid either: the repository gets procoder's
+			// shape and is told why, loudly enough to notice before every
+			// story afterwards is wrong too.
+			out(problem.Message)
+		}
+		return fmt.Sprintf(body, title, now, epic)
 	}, out)
 }
 

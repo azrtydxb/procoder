@@ -216,3 +216,42 @@ func TestTheBaselineLevelIsTheMeasuredOne(t *testing.T) {
 		t.Error("the baseline must not pin paths — the files come from the command line")
 	}
 }
+
+// A `## checks` list in the repository's lint rules replaces procoder's
+// curated set; a rules file with no such section keeps it. Absent means
+// default, which is the rule the rest of .procoder/ lives by.
+// proved by: made checkSet join the repository's list onto the baseline
+// instead of replacing it — a repository that narrowed its checks still
+// gets every finding it excluded.
+func TestACheckListReplacesTheBaseline(t *testing.T) {
+	root := t.TempDir()
+	if got := checkSet(root); got != clangTidyBaseline {
+		t.Errorf("no rules file means the baseline, got %q", got)
+	}
+
+	dir := filepath.Join(root, ".procoder", "lint")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A rules file with prose but no checks section keeps the default: a
+	// missing section must not read as "no checks at all".
+	if err := os.WriteFile(filepath.Join(dir, "RULES.md"),
+		[]byte("# Lint rules\n\nSome prose.\n\n## something else\n\n- ignored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkSet(root); got != clangTidyBaseline {
+		t.Errorf("a rules file without a checks section keeps the baseline, got %q", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "RULES.md"),
+		[]byte("# Lint rules\n\n## checks\n\n- `readability-*`\n- `bugprone-*`\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := checkSet(root)
+	if got != "readability-*,bugprone-*" {
+		t.Errorf("the repository's list must replace the baseline, got %q", got)
+	}
+	if strings.Contains(got, "cert-") {
+		t.Error("replace means replace — a family the repository left out must not survive")
+	}
+}

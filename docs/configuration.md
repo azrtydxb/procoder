@@ -237,3 +237,35 @@ Naming a tool Procoder does not ship is reported with the list of what it
 does ship, and blocks. The file is still formatted by the default: a
 mistyped tool name is a reason to tell somebody, never a reason to stop
 reading their code.
+
+## `.procoder/templates/`
+
+The nine templates that drive the quality chain — spec, plan, ADR, todo,
+milestone, epic, story, sprint, bug — plus a changelog template, are the
+repository's to replace. Put a file at `.procoder/templates/<name>.md` and
+it wins; leave it out and Procoder's own is used.
+
+An **empty** template file is an error, not a fallback. It blocks, and
+Procoder uses its own template for that run while saying so. The reason is
+specific: `procoder format` prints a single header line for a file that is
+already formatted and nothing after it, so a pipeline that strips the
+header and writes the rest empties the file on the success path. Falling
+back quietly would mean a team discovers their customised template is gone
+when their next story comes out in Procoder's shape instead of theirs.
+
+## `.procoder/lint/RULES.md`
+
+The lint domain reads rules the same way `docs` and `security` do: prose
+for the agent, with list sections a machine reads. A section that is
+present replaces the default; a section that is absent keeps it.
+
+```markdown
+## checks
+
+- `readability-*`
+- `bugprone-*`
+```
+
+That list replaces Procoder's curated clang-tidy families. Replace means
+replace — a family left out does not survive. A project `.clang-tidy`
+still wins over both: that is the tool's own configuration.
