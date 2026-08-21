@@ -14,6 +14,15 @@ import (
 	"time"
 )
 
+// testTimeout is what these tests give a stub on localhost. The production
+// Timeout is one second because it runs at session start against the real
+// GitHub, where a slow answer costs the user a second of every session —
+// but handing that same second to an httptest server turns an unrelated CI
+// runner hiccup into a red build. This is generous on purpose: no test here
+// is asserting how long a request takes. The one that does —
+// TestTheTimeoutIsEnforced — passes its own 50ms and does not use this.
+const testTimeout = 30 * time.Second
+
 // stub stands in for GitHub. Every test that would otherwise reach the
 // network points APIHost here: a suite that depends on api.github.com fails
 // on a plane, in CI without egress, and whenever somebody is rate limited.
@@ -47,7 +56,7 @@ func releaseJSON(t *testing.T, tag string, assets ...string) string {
 
 func TestLatestReadsTheTagAndItsAssets(t *testing.T) {
 	stub(t, http.StatusOK, releaseJSON(t, "v1.2.3", "procoder-linux-amd64", AssetName()))
-	rel, err := Latest(Timeout)
+	rel, err := Latest(testTimeout)
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
 	}
@@ -77,12 +86,12 @@ func TestAnUnanswerableCheckIsNeverUpToDate(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			stub(t, c.status, c.body)
-			if _, err := Latest(Timeout); err == nil {
+			if _, err := Latest(testTimeout); err == nil {
 				t.Fatal("a check that could not run must return an error, not an empty answer")
 			} else if !strings.Contains(err.Error(), c.wants) {
 				t.Errorf("the reason must say what happened: %v", err)
 			}
-			if _, warn, err := Check("1.0.0", Timeout); err == nil || warn {
+			if _, warn, err := Check("1.0.0", testTimeout); err == nil || warn {
 				t.Errorf("Check must surface the failure and never warn on it: warn=%v err=%v", warn, err)
 			}
 		})
@@ -122,7 +131,7 @@ func TestADevBuildDoesNotEvenAsk(t *testing.T) {
 	APIHost = srv.URL
 	defer func() { APIHost = prev }()
 
-	latest, warn, err := Check(Dev, Timeout)
+	latest, warn, err := Check(Dev, testTimeout)
 	if latest != "" || warn || err != nil {
 		t.Errorf("dev = (%q, %v, %v), want the quiet answer", latest, warn, err)
 	}
@@ -130,13 +139,13 @@ func TestADevBuildDoesNotEvenAsk(t *testing.T) {
 
 func TestCheckWarnsOnlyWhenBehind(t *testing.T) {
 	stub(t, http.StatusOK, releaseJSON(t, "v2.0.0"))
-	if _, warn, err := Check("1.9.9", Timeout); err != nil || !warn {
+	if _, warn, err := Check("1.9.9", testTimeout); err != nil || !warn {
 		t.Errorf("behind must warn: warn=%v err=%v", warn, err)
 	}
-	if _, warn, err := Check("2.0.0", Timeout); err != nil || warn {
+	if _, warn, err := Check("2.0.0", testTimeout); err != nil || warn {
 		t.Errorf("current must stay quiet: warn=%v err=%v", warn, err)
 	}
-	if _, warn, err := Check("2.1.0", Timeout); err != nil || warn {
+	if _, warn, err := Check("2.1.0", testTimeout); err != nil || warn {
 		t.Errorf("ahead of the newest release is not behind it: warn=%v err=%v", warn, err)
 	}
 }
@@ -186,12 +195,12 @@ func TestWarningLineNamesBothVersions(t *testing.T) {
 func TestATagThatCannotBeComparedIsNotAnUpToDateAnswer(t *testing.T) {
 	for _, tag := range []string{"nightly-2026-08-21", "latest", "release-2026.08"} {
 		stub(t, http.StatusOK, `{"tag_name":"`+tag+`"}`)
-		if _, err := Latest(Timeout); err == nil {
+		if _, err := Latest(testTimeout); err == nil {
 			t.Errorf("tag %q cannot be compared and must not be returned as an answer", tag)
 		} else if !strings.Contains(err.Error(), tag) {
 			t.Errorf("the reason must name the tag it could not read: %v", err)
 		}
-		_, warn, err := Check("1.0.0", Timeout)
+		_, warn, err := Check("1.0.0", testTimeout)
 		if err == nil {
 			t.Errorf("Check must surface it: tag %q", tag)
 		}
@@ -266,7 +275,7 @@ func TestTheRequestNamesProcoder(t *testing.T) {
 	APIHost, Running = srv.URL, "1.2.3"
 	defer func() { APIHost, Running = prevHost, prevRunning }()
 
-	if _, err := Latest(Timeout); err != nil {
+	if _, err := Latest(testTimeout); err != nil {
 		t.Fatal(err)
 	}
 	if got != "procoder/1.2.3" {
