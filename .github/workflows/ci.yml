@@ -34,6 +34,19 @@ jobs:
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./cmd/... ./internal/...
+      - name: the prettier PHP plugin, so the P-CONTROL test runs instead of skipping
+        # TestFormattingPHPNeverTouchesTheFile asserts the one thing PHP's
+        # usual formatters cannot honour — printing without writing the file
+        # — and it needs a real plugin to assert it against a real
+        # formatter. Without this it skipped on every runner, which is a
+        # guard that proves nothing while looking like one that does.
+        #
+        # Linux only: the assertion is about procoder's behaviour, not the
+        # platform's, so running it on three would prove the same thing
+        # three times and pay npm's install on each. node_modules is
+        # gitignored, and doctor skips it.
+        if: runner.os == 'Linux'
+        run: npm install --no-save --no-fund --no-audit prettier @prettier/plugin-php
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder

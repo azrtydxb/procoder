@@ -92,9 +92,11 @@ func TestThePluginIsNamedByAbsolutePath(t *testing.T) {
 }
 
 // P-CONTROL, asserted on the one language whose usual formatters cannot
-// honour it: the file's bytes are the same after a format as before. This
-// runs only where the real plugin is installed, because a stub plugin
-// would prove that a fake formatter does not write, which proves nothing.
+// honour it: the file's bytes are the same after a format as before. It
+// needs the real plugin, because a stub would prove only that a fake
+// formatter does not write, which proves nothing — so CI installs it on
+// the Linux runner rather than letting this skip everywhere. A guard that
+// can only skip looks like coverage and is not.
 // proved by: made Check write the formatted result back — the digest moves
 // and this test names it. (php-cs-fixer and pint do exactly that, which is
 // why neither is the formatter here.)
