@@ -3,6 +3,7 @@ package portability
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,6 +76,13 @@ func TestDriftedRuleFilesBlock(t *testing.T) {
 // proved by: returned nil for any read error again — an unreadable
 // AGENTS.md silently switches the check off and every host passes.
 func TestAnUnreadableMasterIsNotAnAbsentAgentLayer(t *testing.T) {
+	// chmod 000 does not make a file unreadable on Windows, so the file
+	// stays readable there, the drift check runs normally, and this test
+	// would be asserting the opposite of what it is named for. The same
+	// guard the adr sweep already uses, for the same reason.
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 000 does not make a file unreadable on Windows")
+	}
 	root := t.TempDir()
 	path := filepath.Join(root, Master)
 	if err := os.WriteFile(path, []byte("# Rules\n"), 0o644); err != nil {
