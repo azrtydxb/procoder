@@ -33,20 +33,28 @@ comments or `.gitleaksignore`, each a reviewed decision — the flow is in
 ## 2. Best practices (lint)
 
 The canonical linter per ecosystem, under the project's own config —
-Procoder imposes nothing where the repo has spoken.
+Procoder imposes nothing where the repo has spoken — but it never checks
+nothing. A linter that could not run is BLOCKING, in every domain: a green
+gate has to mean the code was checked, not that the machine was empty.
+`[lint] policy` governs whether a linter's findings block; whether the
+linter ran at all is not a matter of policy.
+
+C# and Dart are formatted and have no linter yet. They say so, blocking,
+rather than passing silently.
 
 | Ecosystem | Tool           | Baseline when the repo has no config                                                                                                                          |
 | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                              |
 | Python    | ruff check     | ruff's defaults                                                                                                                                               |
 | Shell     | shellcheck     | shellcheck's defaults                                                                                                                                         |
-| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed)                                         |
+| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; TypeScript with no project config gets Procoder's baseline through typescript-eslint (recommended set)            |
 | Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                           |
 | Kotlin    | ktlint         | ktlint's defaults                                                                                                                                             |
 | Swift     | swiftlint      | swiftlint's defaults                                                                                                                                          |
 | Ruby      | rubocop        | rubocop's defaults                                                                                                                                            |
 | Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                                       |
 | PHP       | phpstan, phpcs | Procoder's curated phpstan baseline (level 5) when the repo configures neither; a repo `phpstan.neon` or `phpcs.xml` wins, and both run when both are present |
+| C/C++     | clang-tidy     | Procoder's curated set — the analyser, bugprone and cert families; a repo `.clang-tidy` wins. Style is clang-format's job, not this one                       |
 
 Report by default; `[lint] policy = "block"` in config.toml makes
 findings block. Lint is judgment where formatting was not — the findings
@@ -158,8 +166,11 @@ gofmt, ruff format, prettier (JS/TS/JSON/CSS/HTML/Markdown/YAML),
 rustfmt, clang-format (config required — Procoder has no style opinion
 of its own), shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
 rubocop (Ruby), dart format, csharpier (C#), and prettier with
-`@prettier/plugin-php` for PHP (the plugin must be in the project;
-without it `.php` is out of scope, said and counted). Three verdicts, never
+`@prettier/plugin-php` for PHP. clang-format needs no project config: a
+repo `.clang-format` wins, and without one Procoder names a fallback style
+on the command line rather than skipping the file. A tool that cannot run —
+prettier without the PHP plugin, say — is **unchecked**, which fails the
+gate, never out of scope, which passes it. Three verdicts, never
 collapsed: **clean**, **unformatted** (the agent receives the formatted
 result in-turn and writes it itself), **unchecked** (tool missing or
 failed — fails the gate). The file is never touched behind the agent's

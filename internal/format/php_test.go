@@ -44,24 +44,21 @@ func TestPHPFilesReachAFormatter(t *testing.T) {
 	}
 }
 
-// Without the plugin in the project, PHP formatting cannot run — and the
-// reader needs the line that installs it, not a path into node_modules.
-// proved by: dropped ConfigMissing — the reason becomes "no
-// node_modules/@prettier/plugin-php/src/index.mjs in the project", which
-// tells a reader what is absent and not one word about what to do.
-func TestWithoutThePluginPHPIsOutOfScopeWithTheInstallLine(t *testing.T) {
+// Without the plugin, PHP formatting cannot run. That is a MISSING TOOL,
+// so the verdict is unchecked — which fails the gate — and not out of
+// scope, which passes it. The plugin is the thing that parses PHP; nothing
+// about its absence is a style opinion, and modelling it as one meant a
+// PHP repository without it was formatted by nothing and called fine.
+// proved by: returned OutOfScope here again — a PHP project with no plugin
+// then passes `procoder check` with the file counted under "skipped".
+func TestWithoutThePluginPHPIsUncheckedWithTheInstallLine(t *testing.T) {
 	root := writePHPProject(t, false)
 	got := Check(filepath.Join(root, "a.php"))
-	if got.Verdict != OutOfScope {
-		t.Fatalf("without the plugin PHP must be out of scope, got verdict %v (%s)", got.Verdict, got.Reason)
+	if got.Verdict != Unchecked {
+		t.Fatalf("without the plugin PHP must be unchecked, got verdict %v (%s)", got.Verdict, got.Reason)
 	}
 	if !strings.Contains(got.Reason, "npm i -D") {
 		t.Errorf("the reason must carry the install line: %q", got.Reason)
-	}
-	// Out of scope is not clean: the gate counts it separately, and that
-	// distinction is the whole point of the third verdict.
-	if got.Verdict == Clean {
-		t.Error("a file procoder could not format must never be reported clean")
 	}
 }
 

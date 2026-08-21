@@ -79,13 +79,18 @@ func Check(file string) Result {
 			Reason: fmt.Sprintf("cannot read the file: %v", err)}
 	}
 
-	if !tools.HasProjectConfig(tool, file) {
-		reason := fmt.Sprintf("no %s in the project — procoder imposes no style of its own",
-			tool.NeedsProjectConfig)
-		if tool.ConfigMissing != "" {
-			reason = tool.ConfigMissing
+	// A tool that cannot run has NOT checked the file. That is unchecked,
+	// which fails the gate — never out of scope, which passes it. Out of
+	// scope is reserved for a file type procoder does not claim at all.
+	if tool.Missing != nil {
+		if why := tool.Missing(file); why != "" {
+			return Result{File: file, Verdict: Unchecked, Tool: tool.Name, Reason: why}
 		}
-		return Result{File: file, Verdict: OutOfScope, Tool: tool.Name, Reason: reason}
+	}
+	if !tools.HasProjectConfig(tool, file) {
+		return Result{File: file, Verdict: Unchecked, Tool: tool.Name,
+			Reason: fmt.Sprintf("no %s in the project, and %s cannot run without one",
+				tool.NeedsProjectConfig, tool.Name)}
 	}
 
 	bin := tools.Resolve(tool, tools.RepoRoot(mustDir(file)))

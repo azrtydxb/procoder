@@ -102,6 +102,17 @@ func init() {
 		if lint.HasEslintConfig(root) {
 			out = append(out, lint.Eslint)
 		}
+		// TypeScript is linted against procoder's baseline when the project
+		// configured nothing, and that baseline needs the parser eslint core
+		// does not carry. Required wherever TypeScript is, so the refusal
+		// this produces when it is absent has a remedy init can run.
+		if exts[".ts"] || exts[".tsx"] || exts[".mts"] || exts[".cts"] {
+			out = append(out, lint.Eslint, lint.TypescriptEslint)
+		}
+		// C and C++ were formatted and linted by nothing at all.
+		if exts[".c"] || exts[".h"] || exts[".cpp"] || exts[".cc"] || exts[".cxx"] || exts[".hpp"] {
+			out = append(out, lint.ClangTidy)
+		}
 		// the wider language matrix: each linter only where its files exist
 		// (the FORMATTERS for these languages ride doctor's extension
 		// survey automatically via the formatter registry)

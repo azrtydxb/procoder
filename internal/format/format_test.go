@@ -80,15 +80,27 @@ func TestMissingToolIsUncheckedNeverClean(t *testing.T) {
 
 // clang-format without a project .clang-format must NOT impose LLVM style —
 // the file is out of scope with the reason said.
-func TestCWithoutProjectConfigIsOutOfScope(t *testing.T) {
-	dir := t.TempDir()
-	p := write(t, dir, "a.c", "int main(){return 0;}\n")
-	res := Check(p)
-	if res.Verdict != OutOfScope {
-		t.Fatalf("verdict = %v, want OutOfScope (reason %q)", res.Verdict, res.Reason)
+// C without a .clang-format used to be out of scope, which the gate counts
+// as skipped and passes. So every C and C++ project that had not written a
+// style file was formatted by nothing and told it was fine. clang-format
+// takes a fallback style on the command line, which imposes nothing on
+// disk, so there was never a reason to check nothing.
+// proved by: restored NeedsProjectConfig on clang-format — the file goes
+// back to OutOfScope and this test names the verdict.
+func TestCWithoutProjectConfigIsStillFormatted(t *testing.T) {
+	if _, err := exec.LookPath("clang-format"); err != nil {
+		t.Skip("clang-format not installed: ", err)
 	}
-	if !strings.Contains(res.Reason, ".clang-format") {
-		t.Fatalf("reason %q does not name the missing config", res.Reason)
+	dir := t.TempDir()
+	p := write(t, dir, "a.c", "int  main( ){return 0;}\n")
+	res := Check(p)
+	if res.Verdict == OutOfScope {
+		t.Fatalf("a C file must be formatted against the baseline, not skipped (reason %q)", res.Reason)
+	}
+	// It is unformatted here, and the formatted bytes come with the verdict
+	// so the agent has something to write.
+	if res.Verdict == Unformatted && len(res.Formatted) == 0 {
+		t.Error("an unformatted verdict must carry the formatted result")
 	}
 }
 
