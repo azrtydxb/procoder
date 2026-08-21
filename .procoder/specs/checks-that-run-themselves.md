@@ -26,10 +26,10 @@ Two of those are worse than merely absent. `docs/commands.md` says the
 gate blocks on `agents` drift; it does not, and the only match for
 `agents` anywhere near the gate is prose inside a template — so other
 hosts can read rule files that have drifted from AGENTS.md while the
-documentation promises otherwise. And `[test] policy = "block"` reads
-like it governs commits; it governs closing a todo or a story
-(cmd/procoder/main.go). A commit never runs the suite, in the gate or in
-CI.
+documentation promises otherwise. The test suite is a plainer gap: nothing claims otherwise —
+docs/configuration.md says the policy governs the close controllers, and
+names them — but a commit never runs the suite, in the gate or in CI, so
+the only thing standing between a red suite and a push is remembering.
 
 ## Users
 
