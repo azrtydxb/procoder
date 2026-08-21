@@ -2,6 +2,33 @@
 
 Every release, in words a user can read. Newest first.
 
+## 1.1.1 — 2026-08-21
+
+**`procoder ask` puts the open questions to a human instead of letting
+the coder guess.** A spec's undecided questions and the gate's own
+findings are collected into `.procoder/ask/QA.md`, answered in
+`answers.md`, and an answered question stops blocking the spec
+controller. A flagged secret's value never travels — not into a
+question, not into the terminal, not into a hook payload.
+
+**pi could not install procoder at all.** The pi extension was a
+CommonJS module and pi validates the export shape at install time, so
+`omp plugin install` failed outright while the portability docs listed
+pi as supported. Nothing local caught it: Node hands a CommonJS export
+back as `default` on import, so every load test passed. The adapter is
+an ES module now, and the check reads adapter source rather than
+importing it. Reported by @striderZA, who supplied the diagnosis and
+the fix.
+
+**Generated ids no longer weld words together.** Dropping a dot left
+`answers.md` filed as "answersmd" — a story unfindable by the name of
+the file it is about — and collapsed `v1.2.3` and `v12.3` onto one id,
+which surfaced as a refusal with no visible cause. Punctuation
+separates now, accented letters fold to their letters (`café` → `cafe`)
+rather than vanishing, and two criteria that still land on the same id
+get two stories instead of one written over the other. Names already on
+disk are untouched.
+
 ## 1.1.0 — 2026-08-21
 
 **procoder now knows when it is out of date, and verifies what it
