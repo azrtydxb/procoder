@@ -303,7 +303,7 @@ jobs:
       - name: the changelog is one file, served twice
         run: cp CHANGELOG.md docs/changelog.md
       - run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3 gitleaks:allow
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v3 gitleaks:allow
         with:
           path: site
       - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4 gitleaks:allow
