@@ -362,3 +362,37 @@ func TestSprintOpenRetroGateOnSprintPredatingTheScaffold(t *testing.T) {
 		t.Fatalf("refusal must name the sprint file: %v", *lines)
 	}
 }
+
+// The sprint template already ships a ## Retro section, so appending one
+// on close gave every sprint two of them. Worse than untidy: a retro the
+// person had already written sat above an empty scaffold, and the next
+// sprint's refusal had two sections to choose between.
+// proved by: appended the scaffold unconditionally — the closed file
+// carries two ## Retro headings and the written retro is no longer the
+// only one.
+func TestCloseDoesNotAddASecondRetro(t *testing.T) {
+	root := t.TempDir()
+	const written = "Blocked three days on a flaky fixture."
+	sp := writeItem(t, root, KindSprint, "001-mvp",
+		"# mvp\n\nStatus: active\n\n## Retro\n\n"+written+"\n")
+
+	out, lines := collect()
+	if code := SprintClose(root, out); code != 0 {
+		t.Fatalf("close: exit %d %v", code, *lines)
+	}
+	raw, err := os.ReadFile(sp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if n := strings.Count(text, "## Retro"); n != 1 {
+		t.Errorf("one Retro section, got %d:\n%s", n, text)
+	}
+	// And the one that survives is the one with the writing in it.
+	if !strings.Contains(text, written) {
+		t.Errorf("the written retro must survive the close:\n%s", text)
+	}
+	if strings.Contains(text, "What slowed us down") {
+		t.Errorf("no empty scaffold beneath a filled retro:\n%s", text)
+	}
+}

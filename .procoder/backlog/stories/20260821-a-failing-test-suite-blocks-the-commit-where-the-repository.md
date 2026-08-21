@@ -1,14 +1,19 @@
 # A failing test suite blocks the commit where the repository set the test policy to block, and reports without blocking otherwise.
 
-Status: done
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+`[test] policy` has always governed whether a failing suite stops the
+close controllers. It should mean the same thing at the commit.
+
+Done means a failing suite blocks where the repository asked for block
+and reports otherwise — and a suite that could NOT run blocks either way,
+because the policy governs whether a FAILING test stops a commit and "no
+answer" is not a verdict it has an opinion about.
 
 ## Acceptance criteria
 

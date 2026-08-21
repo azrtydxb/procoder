@@ -1,14 +1,19 @@
 # A commit touching a file with a SAST finding is blocked by the gate at the configured severity, where previously only CI saw it.
 
-Status: done
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+A security finding caught in CI is caught after the code has left the
+machine, been pushed, and started a review. Caught at the commit it is
+still a thought the author is having.
+
+Done means a commit touching a file with a finding at or above the
+configured severity is blocked, where previously only CI saw it. The
+severity bar is the repository's to set — `[security] sast_blocks_at`.
 
 ## Acceptance criteria
 

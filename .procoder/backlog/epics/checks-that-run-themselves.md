@@ -1,6 +1,6 @@
 # checks-that-run-themselves
 
-Status: open
+Status: done 2026-08-21
 Created: 2026-08-21
 Spec: checks-that-run-themselves @ b903540aae01
 

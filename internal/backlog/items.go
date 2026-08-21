@@ -34,7 +34,10 @@ const (
 )
 
 var (
-	statusRe    = regexp.MustCompile(`(?m)^Status:\s*(.+?)\s*$`)
+	statusRe = regexp.MustCompile(`(?m)^Status:\s*(.+?)\s*$`)
+	// The retro heading, so a close does not append a second one beneath
+	// the template's.
+	retroRe     = regexp.MustCompile(`(?m)^##\s+Retro\s*$`)
 	milestoneRe = regexp.MustCompile(`(?m)^Milestone:\s*(\S+)`)
 	epicRe      = regexp.MustCompile(`(?m)^Epic:\s*(\S+)`)
 	sprintRe    = regexp.MustCompile(`(?m)^Sprint:\s*(\S+)`)
