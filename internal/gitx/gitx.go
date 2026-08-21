@@ -486,3 +486,29 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// RepoRel makes a path repo-relative, whether it arrived absolute or
+// already relative to the repository root.
+//
+// filepath.Rel refuses to compare an absolute base with a relative
+// target, so a caller that hands it whatever it was given silently drops
+// every relative path. That is how `procoder check somefile.py` stopped
+// being scanned while `procoder check` on the same file — which resolves
+// to an absolute path through git — was scanned normally: the same file,
+// two verdicts, decided by how it was named.
+//
+// The second return is false when the path genuinely leaves the
+// repository. A directory named "..foo" is inside it.
+func RepoRel(root, path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}

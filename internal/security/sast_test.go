@@ -117,33 +117,25 @@ func TestNoChangedFilesMeansNoScan(t *testing.T) {
 	}
 }
 
-// A directory legitimately named "..foo" is inside the repository. A
-// prefix test for ".." reads it as an escape and drops the file from the
-// commit's set — so a finding that belongs to the change quietly stops
-// blocking it, which is the failure this whole filter exists to avoid,
-// arriving through a string comparison.
-// proved by: replaced escapes with strings.HasPrefix(rel, "..") — the
-// file under ..foo/ is treated as outside the repository and its finding
-// no longer reaches the commit.
-func TestADirectoryNamedLikeAnEscapeIsStillInsideTheRepo(t *testing.T) {
-	for path, want := range map[string]bool{
-		"..":            true,
-		"../outside.py": true,
-		"..foo/a.py":    false,
-		"a.py":          false,
-		"sub/dir/a.py":  false,
-	} {
-		if got := escapes(filepath.FromSlash(path)); got != want {
-			t.Errorf("escapes(%q) = %v, want %v", path, got, want)
-		}
-	}
-
-	// And end to end: a finding under ..foo/ belongs to a commit that
-	// touched it.
+// A directory legitimately named "..foo" is inside the repository, and a
+// path is the same file however it arrived — absolute from git, or
+// relative because a person typed it. Both are gitx.RepoRel's job now;
+// what is asserted here is that this leg uses it, because the failure is
+// silent: the file drops out of the commit's set and its finding simply
+// never blocks.
+// proved by: went back to filepath.Rel on the raw path — the relative
+// form yields nothing and `procoder check bad.py` stops being scanned
+// while `procoder check` on the same file still is.
+func TestAFindingIsMatchedHoweverThePathArrived(t *testing.T) {
 	stubSemgrep(t, `{"results":[{"path":"..foo/a.py","start":{"line":1},"check_id":"x","extra":{"severity":"ERROR","message":"inside"}}]}`)
 	root := t.TempDir()
-	got := SastChanged(root, []string{filepath.Join(root, "..foo", "a.py")})
-	if len(got) != 1 {
-		t.Errorf("a file under ..foo/ is in the repository: %+v", got)
+
+	// Absolute, as git hands them over.
+	if got := SastChanged(root, []string{filepath.Join(root, "..foo", "a.py")}); len(got) != 1 {
+		t.Errorf("absolute path: a file under ..foo/ is in the repository: %+v", got)
+	}
+	// Relative, as a person types them.
+	if got := SastChanged(root, []string{filepath.FromSlash("..foo/a.py")}); len(got) != 1 {
+		t.Errorf("relative path: the same file must match: %+v", got)
 	}
 }

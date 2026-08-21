@@ -19,6 +19,7 @@ import (
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
+	"procoder/internal/gitx"
 	"procoder/internal/lint"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
@@ -189,10 +190,17 @@ func runTool(root, bin string, args []string, label string, out func(string)) (f
 		n, _ := strconv.Atoi(m[2])
 		file := m[1]
 		// golangci renders paths relative to its config file (the temp dir
-		// here) — normalise back to repo-relative
-		if strings.HasPrefix(file, "..") {
+		// here) — normalise back to repo-relative.
+		//
+		// The test is boundary-aware, not a ".." prefix: a repository
+		// directory named "..foo" starts with those two characters
+		// without being a step upward, and re-basing it against the temp
+		// dir leaves a path the gate cannot match against the commit's
+		// files — so the finding is silently dropped from exactly the
+		// edge case the gate's own path handling was fixed for.
+		if escapesUp(file) {
 			if abs, err := filepath.Abs(filepath.Join(os.TempDir(), file)); err == nil {
-				if rel, err2 := filepath.Rel(root, abs); err2 == nil && !strings.HasPrefix(rel, "..") {
+				if rel, ok := gitx.RepoRel(root, abs); ok {
 					file = rel
 				}
 			}
@@ -246,4 +254,11 @@ func hasFiles(root, ext string) bool {
 		return true
 	}
 	return found
+}
+
+// escapesUp reports whether a path starts by stepping out of its
+// directory. "../x" does; "..foo/x" does not.
+func escapesUp(p string) bool {
+	return p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) ||
+		strings.HasPrefix(p, "../")
 }
