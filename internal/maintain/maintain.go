@@ -52,23 +52,41 @@ func Run(root string, out func(string)) int {
 	count += unusedLines
 
 	cfg := config.Load(root)
+	// notChecked counts the legs that could NOT run — a missing tool, not
+	// a judgement about the code. The findings here are all judgement
+	// calls and none of them block, but "the complexity checker was not
+	// installed" is not a finding at all: it is the absence of one, and
+	// reporting it while exiting 0 is how a repository can run `maintain`
+	// forever and be told nothing is wrong by a check that never ran.
+	notChecked := 0
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-		count += complexityGo(root, cfg, out)
+		n, missed := complexityGo(root, cfg, out)
+		count += n
+		notChecked += missed
 	}
 	if hasFiles(root, ".py") {
-		count += complexityPy(root, out)
+		n, missed := complexityPy(root, out)
+		count += n
+		notChecked += missed
 	}
 	out(fmt.Sprintf("procoder maintain: %d line(s) of findings — all judgment calls, none blocking", count))
+	if notChecked > 0 {
+		out(fmt.Sprintf("%d check(s) did NOT run — run `procoder init` and try again", notChecked))
+		return 1
+	}
 	return 0
 }
 
 // complexityGo runs golangci-lint with ONLY the complexity rules, isolated
 // from the repo's config so nothing is required or overridden.
-func complexityGo(root string, cfg config.Config, out func(string)) int {
+// complexityGo returns the number of findings and the number of checks
+// that could NOT run. The two are different answers and the caller needs
+// both: findings are judgement, an absent tool is silence.
+func complexityGo(root string, cfg config.Config, out func(string)) (findings, notChecked int) {
 	bin := tools.Resolve(lint.GolangciLint, root)
 	if bin == "" {
 		out("  complexity  NOT checked — golangci-lint is not installed; run `procoder init`")
-		return 1
+		return 0, 1
 	}
 	// an isolated config carries the thresholds: golangci's CLI cannot set
 	// linter settings, and the defaults (gocyclo 30) report almost nothing.
@@ -77,7 +95,7 @@ func complexityGo(root string, cfg config.Config, out func(string)) int {
 	cfgFile, err := os.CreateTemp("", "procoder-maintain-*.yml")
 	if err != nil {
 		out("  complexity  NOT checked — cannot write the isolated config")
-		return 1
+		return 0, 1
 	}
 	cfgPath := cfgFile.Name()
 	// a temp file that will not delete is nothing the report can act on
@@ -90,7 +108,7 @@ func complexityGo(root string, cfg config.Config, out func(string)) int {
 	}
 	if werr != nil {
 		out("  complexity  NOT checked — cannot write the isolated config")
-		return 1
+		return 0, 1
 	}
 	return runTool(root, bin, []string{"run", "--config", cfgPath,
 		"--output.text.path=stdout", "--show-stats=false", "./..."}, "complexity", out)
@@ -137,16 +155,18 @@ issues:
 }
 
 // complexityPy runs ruff with only the McCabe complexity rule.
-func complexityPy(root string, out func(string)) int {
+func complexityPy(root string, out func(string)) (findings, notChecked int) {
 	bin := tools.Resolve(lint.Ruff, root)
 	if bin == "" {
 		out("  complexity  NOT checked — ruff is not installed; run `procoder init`")
-		return 1
+		return 0, 1
 	}
 	return runTool(root, bin, []string{"check", "--select", "C901", "--output-format=concise", "."}, "complexity", out)
 }
 
-func runTool(root, bin string, args []string, label string, out func(string)) int {
+// runTool returns findings and, separately, whether the check ran at all.
+// A timeout is not zero findings; it is no answer.
+func runTool(root, bin string, args []string, label string, out func(string)) (findings, notChecked int) {
 	ctx, cancel := context.WithTimeout(context.Background(), maintainTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
@@ -158,7 +178,7 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 	runErr := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
 		out(fmt.Sprintf("  %s  NOT checked — %s gave no answer in %s", label, filepath.Base(bin), maintainTimeout))
-		return 1
+		return 0, 1
 	}
 	count := 0
 	for _, line := range strings.Split(buf.String(), "\n") {
@@ -186,10 +206,10 @@ func runTool(root, bin string, args []string, label string, out func(string)) in
 		var exit *exec.ExitError
 		if !(errors.As(runErr, &exit) && exit.ExitCode() == 1 && buf.Len() > 0) {
 			out(fmt.Sprintf("  %s  NOT checked — %s failed: %s", label, filepath.Base(bin), textutil.FirstLine(buf.String()+runErr.Error())))
-			return 1
+			return 1, 0
 		}
 	}
-	return count
+	return count, 0
 }
 
 func hasFiles(root, ext string) bool {

@@ -277,6 +277,12 @@ repository.
 
 #### `procoder maintain`
 
+`maintain` is report-only about its findings: complexity and dead code are
+judgement calls and nothing blocks on them. A check that could not run is
+not a finding, though — a missing golangci-lint exits non-zero, because a
+report that never read the code must not look like a clean one. CI runs
+this over the whole tree.
+
 Dead-code candidates from the index's precise tier, cyclomatic complexity
 and function length from isolated linter runs. Nothing blocks; thresholds
 are the repo's to set (`[maintain]` in config.toml).

@@ -236,6 +236,19 @@ jobs:
         run: procoder docs --external
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: the whole-tree pass — maintain, debt, deps
+        # The gate answers about the change; these answer about the
+        # repository. Dependency freshness, the debt ledger and complexity
+        # across a codebase are properties of the tree, and asking them of
+        # every commit would either report the same finding forever or
+        # rescan everything each time somebody edits a line.
+        #
+        # Until now they ran nowhere unless a person typed them, which
+        # meant they protected whoever already knew they existed.
+        run: |
+          procoder maintain
+          procoder debt
+          procoder deps
 
   release:
     # A tag is the release. Twenty-seven tags were pushed before this job
