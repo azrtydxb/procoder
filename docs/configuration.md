@@ -22,9 +22,15 @@ commit_gate = "block"
 policy = "report"
 
 [test]
-# The suite verdict in the close controllers: "report" (default) or
-# "block" — under "block", `todo close` and `backlog close story` refuse
-# while `procoder test` is red or cannot be verified at all.
+# The suite verdict: "report" (default) or "block". Under "block",
+# `todo close`, `backlog close story` and the commit gate refuse while
+# the suite is red. At the gate the run is narrowed to the packages the
+# commit touches and to the ecosystems it is written in — the whole
+# suite cold is a minute on a repository this size, one package a second.
+#
+# A suite that could NOT run blocks under either setting: this governs
+# whether a failing test stops a commit, and "no answer" is not a
+# verdict it has an opinion about.
 policy = "report"
 
 [maintain]

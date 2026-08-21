@@ -277,3 +277,8 @@ does. `procoder lessons` flags entries with no adaptation.
   instruction text a stray hyphen is a plausible token rather than an
   obvious typo, which is why it survived a human-shaped review
 
+## 2026-08-21 PR#134,#136 (CI, windows-latest) — a rooted literal used as a test repository root
+
+- Class: portability
+- Missed by: the local suite — macOS and Linux call `/repo` absolute, Windows does not
+- Adaptation: `TestNoTestUsesARootedLiteralAsARepositoryRoot` in internal/audit reads the tree for `"/repo"`-shaped roots; `gitx.RepoRel` joins a non-absolute path onto the root, so the fixture was silently measuring its own path arithmetic rather than the function
