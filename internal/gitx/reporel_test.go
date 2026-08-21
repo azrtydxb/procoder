@@ -14,7 +14,11 @@ import (
 // proved by: called filepath.Rel without joining first — the relative
 // form returns not-ok and the file falls out of the commit's set.
 func TestAPathIsTheSameFileHoweverItArrives(t *testing.T) {
-	root := filepath.FromSlash("/repo")
+	// t.TempDir rather than a literal like "/repo": on Windows a rooted
+	// path with no volume is not absolute, so the fixture itself would be
+	// joined onto the root a second time and the test would be measuring
+	// its own path arithmetic.
+	root := t.TempDir()
 	abs, ok := RepoRel(root, filepath.Join(root, "cmd", "main.go"))
 	if !ok || abs != "cmd/main.go" {
 		t.Errorf("absolute form: got %q ok=%v", abs, ok)
