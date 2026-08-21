@@ -83,6 +83,12 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	hygiene = append(hygiene, lint.Files(root, paths, cfg.LintBlock)...)
 	// Domain 1: a secret in a changed file blocks, always
 	hygiene = append(hygiene, security.SecretsChangedFiles(root, paths)...)
+	// Domain 1, the SAST leg: findings on the files this commit carries.
+	// It costs seconds rather than milliseconds — semgrep's rule loading
+	// is a fixed cost that scoping cannot remove — and it is here because
+	// a commit is not a keystroke, and a finding caught now is caught
+	// before it leaves the machine.
+	hygiene = append(hygiene, security.SastChanged(root, paths)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "

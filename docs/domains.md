@@ -39,6 +39,13 @@ gate has to mean the code was checked, not that the machine was empty.
 `[lint] policy` governs whether a linter's findings block; whether the
 linter ran at all is not a matter of policy.
 
+The commit gate runs SAST over the files the commit carries. It costs
+seconds rather than milliseconds — semgrep's time goes on loading rules,
+which is fixed, so scanning one file is barely cheaper than scanning the
+tree — and it is there because a commit is not a keystroke and a finding
+caught now never leaves the machine. A finding in a file the commit did
+not touch does not block it; CI still scans everything.
+
 C# and Dart are formatted and have no linter yet. They say so, blocking,
 rather than passing silently.
 
