@@ -27,6 +27,13 @@ policy = "report"
 # while `procoder test` is red or cannot be verified at all.
 policy = "report"
 
+[maintain]
+# Complexity findings in the gate: "report" (default) or "block".
+# Off by default — they are judgement calls, and a threshold that blocks
+# by surprise stops people committing to the very file that needs the
+# refactor.
+policy = "report"
+
 [docs]
 # The documentation obligation in the gate: "report" (default) or
 # "block". Off by default — procoder never blocks a repo by surprise.

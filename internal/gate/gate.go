@@ -16,6 +16,7 @@ import (
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
 	"procoder/internal/lint"
+	"procoder/internal/maintain"
 	"procoder/internal/security"
 )
 
@@ -89,6 +90,11 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	// a commit is not a keystroke, and a finding caught now is caught
 	// before it leaves the machine.
 	hygiene = append(hygiene, security.SastChanged(root, paths)...)
+	// Complexity on the files this commit carries. Reported unless the
+	// repository asked for block: these are judgement calls, and a
+	// threshold that blocks by surprise stops work on exactly the files
+	// that need the refactor.
+	hygiene = append(hygiene, maintain.ComplexityChanged(root, paths, cfg.MaintainBlock)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "

@@ -69,6 +69,11 @@ type Config struct {
 	// being reported. Off by default — procoder never blocks a repository
 	// by surprise on upgrade.
 	DocsBlock bool
+	// MaintainBlock: complexity findings block the gate instead of being
+	// reported. Off by default — they are judgement calls, and a threshold
+	// that blocks by surprise stops people committing to the very files
+	// that need the refactor.
+	MaintainBlock bool
 	// SastBlocksAt is the lowest semgrep severity that stops a commit.
 	// ERROR by default: the level the tool itself reserves for findings it
 	// is confident about.
@@ -198,6 +203,8 @@ func Load(root string) Config {
 			cfg.DocsBlock = value == "block"
 		case "ci.pin_actions_policy":
 			cfg.PinActions = value == "block"
+		case "maintain.policy":
+			cfg.MaintainBlock = value == "block"
 		case "maintain.gocyclo":
 			cfg.Gocyclo = atoiOr(value, 0)
 		case "maintain.funlen_lines":

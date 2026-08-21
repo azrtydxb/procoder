@@ -269,12 +269,11 @@ func Sast(root string) []gitx.Finding { return sast(root) }
 func SastChanged(root string, files []string) []gitx.Finding {
 	changed := map[string]bool{}
 	for _, f := range files {
-		// Boundary-aware: a directory legitimately named "..foo" is inside
-		// the repository, and a prefix test would read it as an escape and
-		// drop the file from the commit's set — quietly not blocking on a
-		// finding that belongs to it.
-		if rel, err := filepath.Rel(root, f); err == nil && !escapes(rel) {
-			changed[filepath.ToSlash(rel)] = true
+		// gitx.RepoRel takes the path however it arrived — absolute from
+		// git, or relative because a person typed it — so the same file
+		// cannot get two verdicts depending on how it was named.
+		if rel, ok := gitx.RepoRel(root, f); ok {
+			changed[rel] = true
 		}
 	}
 	if len(changed) == 0 {
@@ -497,10 +496,4 @@ func firstLine(s string) string {
 		return "no output"
 	}
 	return s
-}
-
-// escapes reports whether a repo-relative path leaves the repository.
-// ".." and "../x" do; "..foo/x" does not.
-func escapes(rel string) bool {
-	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.HasPrefix(rel, "../")
 }
