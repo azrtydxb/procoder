@@ -285,3 +285,34 @@ func writeAnswer(t *testing.T, root, source, origin, question, answer string) {
 		t.Fatal(err)
 	}
 }
+
+// A spec numbers its open questions, and deleting question two renumbers
+// every question below it. The number is not the question, so it must not
+// reach the key an answer is filed under — otherwise a renumber orphans
+// every decision already made, and the spec goes back to asking things a
+// human has already settled.
+// proved by: dropped the questionLabel strip — the answer recorded against
+// "[O-2] …" then no longer matches the same question renumbered to [O-1],
+// and the spec reports it unanswered again.
+func TestARenumberedQuestionKeepsItsAnswer(t *testing.T) {
+	if got := OpenQuestions(writeQuestions(t, "- [O-2] which database?")); len(got) != 1 || got[0] != "which database?" {
+		t.Errorf("the label is not part of the question: %q", got)
+	}
+	// The bracket is only noise when it is a label. A question that opens
+	// with real bracketed prose keeps it.
+	kept := "[Windows] does the launcher find bash?"
+	if got := OpenQuestions(writeQuestions(t, "- "+kept)); len(got) != 1 || got[0] != kept {
+		t.Errorf("bracketed prose is part of the question: %q", got)
+	}
+}
+
+// writeQuestions puts one Open questions section on disk and returns its path.
+func writeQuestions(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "widget.md")
+	spec := strings.Replace(completeSpec(), "## Open questions\n\n", "## Open questions\n\n"+body+"\n\n", 1)
+	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

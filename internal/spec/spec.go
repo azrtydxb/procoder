@@ -183,11 +183,21 @@ func OpenQuestions(path string) []string {
 		}
 		// The bullet is punctuation, not part of the question: keeping it
 		// would put "- " inside the key, so changing a dash to an asterisk
-		// would silently discard the answer.
-		out = append(out, strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(t, "- "), "* ")))
+		// would silently discard the answer. A leading "[O-3] " label is the
+		// same kind of noise — specs number their open questions, and
+		// deleting question two renumbers every question below it, which
+		// would orphan every answer already given to them.
+		out = append(out, strings.TrimSpace(questionLabel.ReplaceAllString(
+			strings.TrimPrefix(strings.TrimPrefix(t, "- "), "* "), "")))
 	}
 	return out
 }
+
+// questionLabel matches the "[O-3] " a spec puts in front of an open
+// question. Only that shape: letters, a dash, digits. A question that opens
+// with real bracketed prose — "[Windows] does the launcher…" — keeps it,
+// because there the bracket is the question.
+var questionLabel = regexp.MustCompile(`^\[[A-Za-z]+-\d+\]\s*`)
 
 // continuesPrevious reports whether a line is the rest of the question above
 // it rather than a new one. Counting lines instead made a four-question
@@ -211,9 +221,9 @@ func continuesPrevious(line string) bool {
 
 // openQuestions splits a spec's remaining questions into the ones nobody has
 // answered and the count that a human already decided through `procoder ask`.
-// The reading of the section itself comes from the ask package, so the
-// collector that offers a question and the checker that judges it can never
-// disagree about what is still being asked.
+// The reading of the section itself is OpenQuestions above, which the ask
+// package calls too, so the collector that offers a question and the checker
+// that judges it can never disagree about what is still being asked.
 func openQuestions(root, path string) (unanswered []string, answered int) {
 	questions := OpenQuestions(path)
 	if len(questions) == 0 {

@@ -5,18 +5,16 @@
 package hook
 
 import (
-	"fmt"
-
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
-	"procoder/internal/ask"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"path/filepath"
-
 	"procoder/internal/actions"
+	"procoder/internal/ask"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
 	"procoder/internal/docs"
