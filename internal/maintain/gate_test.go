@@ -93,3 +93,26 @@ func TestAnUnrelatedCommitCarriesNoComplexityFindings(t *testing.T) {
 		t.Errorf("no changed files means no complexity report: %+v", got)
 	}
 }
+
+// A repository directory named "..foo" starts with two dots without
+// stepping upward. runTool re-bases paths that golangci printed relative
+// to its temp config, and a plain ".." prefix test catches "..foo" too —
+// leaving a temp-dir-relative path the gate cannot match against the
+// commit's files, so the finding is dropped in silence. That is the same
+// edge case the gate's own path handling was fixed for, surviving on the
+// side that produces the paths rather than the side that reads them.
+// proved by: restored strings.HasPrefix(p, "..") in escapesUp — "..foo/a.go"
+// is re-based against the temp directory and no longer matches.
+func TestADirectoryNamedLikeAStepUpIsNotOne(t *testing.T) {
+	for path, want := range map[string]bool{
+		"..":                             true,
+		filepath.FromSlash("../x.go"):    true,
+		filepath.FromSlash("..foo/x.go"): false,
+		filepath.FromSlash("a/b.go"):     false,
+		"":                               false,
+	} {
+		if got := escapesUp(path); got != want {
+			t.Errorf("escapesUp(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
