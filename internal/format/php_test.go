@@ -92,9 +92,11 @@ func TestThePluginIsNamedByAbsolutePath(t *testing.T) {
 }
 
 // P-CONTROL, asserted on the one language whose usual formatters cannot
-// honour it: the file's bytes are the same after a format as before. This
-// runs only where the real plugin is installed, because a stub plugin
-// would prove that a fake formatter does not write, which proves nothing.
+// honour it: the file's bytes are the same after a format as before. It
+// needs the real plugin, because a stub would prove only that a fake
+// formatter does not write, which proves nothing — so CI installs it on
+// the Linux runner rather than letting this skip everywhere. A guard that
+// can only skip looks like coverage and is not.
 // proved by: made Check write the formatted result back — the digest moves
 // and this test names it. (php-cs-fixer and pint do exactly that, which is
 // why neither is the formatter here.)
@@ -130,6 +132,13 @@ func realPHPProject(t *testing.T) string {
 	root := tools.RepoRoot(mustDir("."))
 	plugin := filepath.Join(root, "node_modules", "@prettier", "plugin-php", "src", "index.mjs")
 	if _, err := os.Stat(plugin); err != nil {
+		// Where the plugin is promised, a skip is a failure. CI installs it
+		// and sets this, so "the suite was green" cannot quietly mean "the
+		// one test of P-CONTROL for PHP skipped again" — which is how this
+		// guard spent its whole life until now.
+		if os.Getenv("PROCODER_PHP_PLUGIN_REQUIRED") != "" {
+			t.Fatalf("the plugin was installed for this run and is not here: %v", err)
+		}
 		t.Skip("the prettier PHP plugin is not installed here: ", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "messy.php"),

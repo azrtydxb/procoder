@@ -34,6 +34,34 @@ jobs:
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./cmd/... ./internal/...
+      - name: the prettier PHP plugin, so the P-CONTROL test runs instead of skipping
+        # TestFormattingPHPNeverTouchesTheFile asserts the one thing PHP's
+        # usual formatters cannot honour — printing without writing the file
+        # — and it needs a real plugin to assert it against a real
+        # formatter. Without this it skipped on every runner, which is a
+        # guard that proves nothing while looking like one that does.
+        #
+        # Linux only: the assertion is about procoder's behaviour, not the
+        # platform's, so running it on three would prove the same thing
+        # three times and pay npm's install on each. node_modules is
+        # gitignored, and doctor skips it.
+        if: runner.os == 'Linux'
+        run: |
+          # Pinned from the same file the gate reads. Unpinned, an upstream
+          # release overnight could change what this asserts or break the
+          # job, which is the exact thing tool-versions.env exists to stop —
+          # and it says so in its own opening paragraph.
+          # eval rather than `. <(...)`: sourcing a process substitution
+          # silently sets nothing under bash 3.2, so the pins would expand
+          # empty and npm would install "prettier@" — a form that fails
+          # loudly, but only after the reason for it has been hidden.
+          eval "$(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)"
+          npm install --no-save --no-fund --no-audit \
+            "prettier@${PRETTIER}" "@prettier/plugin-php@${PRETTIER_PLUGIN_PHP}"
+          # Read by the test: where the plugin is promised, skipping is a
+          # failure. Otherwise a broken install would restore the silent
+          # skip and the suite would stay green over the guard it disabled.
+          echo "PROCODER_PHP_PLUGIN_REQUIRED=1" >> "$GITHUB_ENV"
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder
