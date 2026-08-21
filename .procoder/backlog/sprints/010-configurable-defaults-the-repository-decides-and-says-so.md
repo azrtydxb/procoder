@@ -60,11 +60,3 @@ left the spec's D-6 asserting a conclusion whose working was gone.
 committed: 12
 done: 12 (20260821-a-checks-list-in-a-domain-s-rules-md-replaces-that-domain-s, 20260821-a-config-toml-that-cannot-be-parsed-reports-the-failure, 20260821-a-repository-lowering-any-default-gets-a-line-in-the-gate, 20260821-a-repository-setting-tools-php-pint-is-formatted-by-pint, 20260821-a-repository-upgrading-with-no-config-changes-produces-byte, 20260821-a-tools-entry-naming-a-tool-procoder-does-not-ship-is, 20260821-an-empty-template-file-blocks-rather-than-falling-back-to, 20260821-procoder-config-prints-every-effective-setting-with-its, 20260821-procoder-templates-story-md-replaces-the-embedded-story, 20260821-raising-a-default-prints-no-such-line-strengthening-is-not, 20260821-security-sast-blocks-at-warning-makes-a-warning-finding, 20260821-setting-a-severity-procoder-does-not-recognise-names-it-and)
 carried: 0
-
-## Retro
-
-<!-- What slowed us down this sprint. -->
-
-<!-- What we change next sprint because of it. -->
-
-<!-- One adaptation from this sprint worth keeping. -->

@@ -17,7 +17,11 @@ on the menu should find this file.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [x] A repository setting `[tools] php = "pint"` is formatted by pint, and `procoder doctor` lists pint rather than prettier.
+- [x] The criterion below was proven impossible and the story is closed as
+      superseded; the spec records why as D-6, and the work it asked for is
+      delivered under the biome criterion.
+      ~~A repository setting `[tools] php = "pint"` is formatted by pint,
+      and `procoder doctor` lists pint rather than prettier.~~
 
 ## Evidence
 
