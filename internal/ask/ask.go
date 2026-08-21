@@ -22,7 +22,7 @@ import (
 )
 
 // Dir holds the two files, beside the other state this repository keeps.
-const Dir = ".procoder/ask"
+const Dir = answers.Dir
 
 // Question is one thing a human has to decide. Origin is where it came from —
 // a spec name, a file path — so an answer can be traced back to what asked.
@@ -50,18 +50,23 @@ func (q Question) Label() string {
 // contribute nothing rather than failing the collection: a lint tool that is
 // not installed is not a question, and losing the other three because of it
 // would be the worst outcome.
-func Collect(root string) []Question {
-	changed, err := gitx.ChangedFiles(root)
-	if err != nil {
-		changed = nil
-	}
+func Collect(root string) ([]Question, []string) {
+	var notes []string
 	var qs []Question
 	qs = append(qs, specQuestions(root)...)
-	qs = append(qs, findingQuestions("docs", docs.Obligation(root, changed, "", false),
+	changed, err := gitx.ChangedFiles(root)
+	if err != nil {
+		// Three of the four domains work from the changed set. Losing them
+		// silently would print "nothing to decide" while three collectors
+		// were never run — a claim about a question nobody asked.
+		notes = append(notes, "changed files NOT read ("+err.Error()+") — the docs, security and lint questions were not collected")
+		return qs, notes
+	}
+	qs = append(qs, findingQuestions(root, "docs", docs.Obligation(root, changed, "", false),
 		"is this documentation gap real, or does the change genuinely need no doc?")...)
-	qs = append(qs, findingQuestions("security", security.SecretsChangedFiles(root, changed),
+	qs = append(qs, findingQuestions(root, "security", security.SecretsChangedFiles(root, changed),
 		"is this a real credential, or a test value that only looks like one?")...)
-	qs = append(qs, findingQuestions("lint", lint.Files(root, changed, false),
+	qs = append(qs, findingQuestions(root, "lint", lint.Files(root, changed, false),
 		"is this finding worth fixing here, or a false positive to be explained?")...)
 	sort.SliceStable(qs, func(i, j int) bool {
 		if qs[i].Source != qs[j].Source {
@@ -69,7 +74,7 @@ func Collect(root string) []Question {
 		}
 		return qs[i].Origin+qs[i].Text < qs[j].Origin+qs[j].Text
 	})
-	return qs
+	return qs, notes
 }
 
 // specQuestions reads what each spec still has undecided. It takes the WHOLE
@@ -95,14 +100,24 @@ func specQuestions(root string) []Question {
 // A security finding's message is deliberately NOT trusted to be free of the
 // value it flagged: only the location is carried through. The question is
 // whether the flag is real, and answering it does not need the credential.
-func findingQuestions(source string, findings []gitx.Finding, question string) []Question {
+func findingQuestions(root, source string, findings []gitx.Finding, question string) []Question {
 	var qs []Question
 	for _, f := range findings {
+		if f.File == "" {
+			// A finding about the machinery rather than about the code — the
+			// docs domain's "acknowledgment path unavailable" note is one —
+			// is not a question a human can answer. Raising it would ask for
+			// something no action can supply: the clearing route is a line in
+			// a commit message this collector never sees.
+			continue
+		}
+		// Relative, always: the key is hashed from the origin, and an
+		// absolute path binds every answer to one machine's checkout. A
+		// teammate, CI, or the same person after moving the clone would be
+		// asked everything again.
 		where := filepath.ToSlash(f.File)
-		if where == "" {
-			// A finding about the repository rather than a file still needs
-			// an origin a reader can act on.
-			where = "(repository)"
+		if rel, err := filepath.Rel(root, f.File); err == nil && !strings.HasPrefix(rel, "..") {
+			where = filepath.ToSlash(rel)
 		}
 		if f.Line > 0 {
 			where = fmt.Sprintf("%s:%d", where, f.Line)

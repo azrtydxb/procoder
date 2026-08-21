@@ -325,7 +325,9 @@ interviews the gaps closed; the binary judges completeness.
   Acceptance criteria, Open questions) for the agent to write.
 - `list` — every spec in the repo.
 - `check [name|all]` — the quality controller: blocks while any required
-  section is missing or empty, while any `OPEN:` question is unresolved,
+  section is missing or empty, while any question in Open questions is
+  still unanswered — whatever it is called, `OPEN:` or otherwise; an
+  answer recorded through `procoder ask` counts as the decision —
   and while acceptance criteria are not testable checkboxes. A complete
   spec whose `Status:` line still says `draft` earns a note to advance it
   to `complete` — a note, never a gap. A complete spec seeds the todo

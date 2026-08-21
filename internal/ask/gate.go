@@ -2,8 +2,9 @@ package ask
 
 import (
 	"fmt"
-	"path/filepath"
+	"path"
 
+	"procoder/internal/answers"
 	"procoder/internal/config"
 	"procoder/internal/gitx"
 )
@@ -22,11 +23,20 @@ import (
 // something it does not know.
 func GateFindings(root string) []gitx.Finding {
 	pending, err := Pending(root)
-	if err != nil || len(pending) == 0 {
+	if err != nil {
+		// A record that cannot be read is not an empty one. Collapsing the
+		// two would make the gate say there is nothing to decide because it
+		// could not look — the exact silence this domain exists to end.
+		return []gitx.Finding{{
+			File:    path.Join(Dir, answers.File),
+			Message: "questions NOT collected — " + err.Error() + " (ask)",
+		}}
+	}
+	if len(pending) == 0 {
 		return nil
 	}
 	block := config.Load(root).AskBlock
-	qa := filepath.ToSlash(filepath.Join(Dir, QuestionsFile))
+	qa := path.Join(Dir, QuestionsFile)
 	out := []gitx.Finding{{
 		File:     qa,
 		Blocking: block,

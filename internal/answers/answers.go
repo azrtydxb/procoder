@@ -26,13 +26,24 @@ const (
 // The shape of the file: a heading per decision, a key that ties it to the
 // question, and the answer itself.
 const (
-	HeadingPrefix = "## "
-	KeyPrefix     = "Key: "
-	AnswerPrefix  = "Answer: "
+	HeadingPrefix  = "## "
+	KeyPrefix      = "Key: "
+	QuestionPrefix = "Question: "
+	AnswerPrefix   = "Answer: "
 )
 
-// Store maps a question's key to what the human decided.
-type Store map[string]string
+// Entry is one recorded decision: what was asked, and what the human said.
+// The question travels with the answer because this file is the durable
+// record — rebuilding it from whatever questions happen to be live would
+// destroy the text of any question since reworded, which is exactly when a
+// reader most needs to see what was actually answered.
+type Entry struct {
+	Question string
+	Answer   string
+}
+
+// Store maps a question's key to the decision recorded against it.
+type Store map[string]Entry
 
 // Key identifies a question across runs by hashing what was ASKED. An answer
 // therefore survives a re-run and stops counting the moment the question is
@@ -68,19 +79,21 @@ func Load(root string) (Store, error) {
 // anything.
 func Parse(text string) Store {
 	out := Store{}
-	key := ""
+	key, question := "", ""
 	for _, line := range strings.Split(text, "\n") {
 		t := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(t, HeadingPrefix):
-			key = ""
+			key, question = "", ""
 		case strings.HasPrefix(t, KeyPrefix):
 			key = strings.TrimSpace(strings.TrimPrefix(t, KeyPrefix))
+		case strings.HasPrefix(t, QuestionPrefix):
+			question = strings.TrimSpace(strings.TrimPrefix(t, QuestionPrefix))
 		case strings.HasPrefix(t, AnswerPrefix) && key != "":
 			if a := strings.TrimSpace(strings.TrimPrefix(t, AnswerPrefix)); a != "" {
-				out[key] = a
+				out[key] = Entry{Question: question, Answer: a}
 			}
-			key = ""
+			key, question = "", ""
 		}
 	}
 	return out

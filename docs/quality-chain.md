@@ -64,7 +64,7 @@ spec payments: NOT ready — the quality controller found:
   - section missing: Data
   - section missing: Edge cases
   - section missing: Failure modes
-  - 1 unresolved OPEN: question(s) — resolve each with the user and rewrite it as a decision
+  - Open questions still has 1 unanswered question(s) — put them to the user (`procoder ask`) or rewrite each as a decision
   - untestable criterion: the UI is user-friendly — say what a reviewer would observe, not how it should feel
 ```
 

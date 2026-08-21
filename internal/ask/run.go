@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,33 +21,43 @@ import (
 // It never answers anything itself. That is the whole point: an invented
 // answer is indistinguishable from a decision once it is written down.
 func Run(root string, in *os.File, out func(string)) int {
-	answers, err := LoadAnswers(root)
+	store, err := answers.Load(root)
 	if err != nil {
 		out("answers NOT read — " + err.Error())
 		out("refusing to ask again over a file that may already hold decisions")
 		return 2
 	}
-	qs := Collect(root)
-	pending := Unanswered(qs, answers)
+	qs, notes := Collect(root)
+	for _, n := range notes {
+		out(n)
+	}
+	pending := Unanswered(qs, store)
 	if len(pending) == 0 {
 		if len(qs) == 0 {
 			out("nothing to decide — no domain has a question open")
 		} else {
 			out(fmt.Sprintf("all %d question(s) already answered — %s holds the decisions",
-				len(qs), filepath.ToSlash(filepath.Join(Dir, AnswersFile))))
+				len(qs), path.Join(Dir, answers.File)))
 		}
 		return 0
 	}
 	if !copilot.CanAsk(in) {
-		return writeForLater(root, qs, pending, answers, out)
+		return writeForLater(root, qs, pending, store, out)
 	}
-	answered := askEach(in, out, pending, answers)
-	if err := WriteAnswers(root, qs, answers, time.Now()); err != nil {
+	answered := askEach(in, out, pending, store)
+	if answered == 0 {
+		// Every question skipped: nothing was decided, so nothing is
+		// rewritten. A file whose timestamp moves without its content is a
+		// dirty tree for no reason.
+		out(fmt.Sprintf("nothing answered — %d question(s) still open", len(pending)))
+		return 1
+	}
+	if err := WriteAnswers(root, qs, store, time.Now()); err != nil {
 		out("answers NOT recorded — " + err.Error())
 		return 2
 	}
 	out(fmt.Sprintf("%d answered, %d still open — recorded in %s",
-		answered, len(pending)-answered, filepath.ToSlash(filepath.Join(Dir, AnswersFile))))
+		answered, len(pending)-answered, path.Join(Dir, answers.File)))
 	if answered < len(pending) {
 		return 1
 	}
@@ -56,16 +67,18 @@ func Run(root string, in *os.File, out func(string)) int {
 // writeForLater is the no-terminal path: nobody is there to ask, so the
 // questions go to a file with the route back in. Silence here would leave the
 // coder to guess, which is the failure this package exists to prevent.
-func writeForLater(root string, qs, pending []Question, answers Answers, out func(string)) int {
+func writeForLater(root string, qs, pending []Question, store Answers, out func(string)) int {
 	if err := WriteQuestions(root, pending, time.Now()); err != nil {
 		out("questions NOT written — " + err.Error())
 		return 2
 	}
-	if err := WriteAnswers(root, qs, answers, time.Now()); err != nil {
-		out("answers NOT written — " + err.Error())
-		return 2
+	if !Same(root, store) {
+		if err := WriteAnswers(root, qs, store, time.Now()); err != nil {
+			out("answers NOT written — " + err.Error())
+			return 2
+		}
 	}
-	qa := filepath.ToSlash(filepath.Join(Dir, QuestionsFile))
+	qa := path.Join(Dir, QuestionsFile)
 	out(fmt.Sprintf("%d question(s) need a human, and there is no terminal to ask on.", len(pending)))
 	out("They are written to " + qa + ", one section each.")
 	out("Put them to the user, write their answers into that file under the matching")
@@ -77,7 +90,7 @@ func writeForLater(root string, qs, pending []Question, answers Answers, out fun
 // askEach puts one question at a time. An empty answer is a skip, not a
 // decision — a blank line is somebody deferring, and recording it as an
 // answer would silence the question forever.
-func askEach(in *os.File, out func(string), pending []Question, answers Answers) int {
+func askEach(in *os.File, out func(string), pending []Question, store Answers) int {
 	reader := bufio.NewReader(in)
 	answered := 0
 	for i, q := range pending {
@@ -85,10 +98,17 @@ func askEach(in *os.File, out func(string), pending []Question, answers Answers)
 		out(fmt.Sprintf("(%d/%d) %s", i+1, len(pending), q.Label()))
 		out(q.Text)
 		out("answer, or empty to skip:")
-		line, _ := reader.ReadString('\n')
-		if answer := strings.TrimSpace(line); answer != "" {
-			answers[q.Key()] = answer
+		line, err := reader.ReadString('\n')
+		answer := strings.TrimSpace(line)
+		if answer != "" {
+			store[q.Key()] = answers.Entry{Question: q.Text, Answer: answer}
 			answered++
+		}
+		if err != nil && answer == "" {
+			// Input ended. Counting the rest as skips would report that a
+			// person deferred questions they were never shown.
+			out(fmt.Sprintf("input ended — %d question(s) were never asked", len(pending)-i))
+			break
 		}
 	}
 	return answered
@@ -98,30 +118,33 @@ func askEach(in *os.File, out func(string), pending []Question, answers Answers)
 // when there was no terminal to ask on. The file is parsed whole before
 // anything is recorded: a partial reading of somebody's decisions is worse
 // than refusing the file.
-func FromFile(root, path string, out func(string)) int {
-	raw, err := os.ReadFile(path)
+func FromFile(root, file string, out func(string)) int {
+	raw, err := os.ReadFile(file)
 	if err != nil {
-		out("cannot read " + filepath.ToSlash(path) + " — " + err.Error())
+		out("cannot read " + filepath.ToSlash(file) + " — " + err.Error())
 		return 2
 	}
 	given := answers.Parse(string(raw))
 	if len(given) == 0 {
-		out("no answers found in " + filepath.ToSlash(path) + " — each one is a `Key:` line and an `Answer:` line beneath it")
+		out("no answers found in " + filepath.ToSlash(file) + " — each one is a `Key:` line and an `Answer:` line beneath it")
 		out("nothing was recorded")
 		return 2
 	}
-	answers, err := LoadAnswers(root)
+	store, err := answers.Load(root)
 	if err != nil {
 		out("answers NOT read — " + err.Error())
 		return 2
 	}
-	qs := Collect(root)
+	qs, notes := Collect(root)
+	for _, n := range notes {
+		out(n)
+	}
 	known := map[string]bool{}
 	for _, q := range qs {
 		known[q.Key()] = true
 	}
 	recorded, unknown := 0, 0
-	for key, answer := range given {
+	for key, entry := range given {
 		if !known[key] {
 			// An answer to a question nobody is asking is kept rather than
 			// dropped: the question may return, and a human's decision is
@@ -129,18 +152,18 @@ func FromFile(root, path string, out func(string)) int {
 			// does not look like success.
 			unknown++
 		}
-		answers[key] = answer
+		store[key] = entry
 		recorded++
 	}
-	if err := WriteAnswers(root, qs, answers, time.Now()); err != nil {
+	if err := WriteAnswers(root, qs, store, time.Now()); err != nil {
 		out("answers NOT recorded — " + err.Error())
 		return 2
 	}
-	out(fmt.Sprintf("%d answer(s) recorded in %s", recorded, filepath.ToSlash(filepath.Join(Dir, AnswersFile))))
+	out(fmt.Sprintf("%d answer(s) recorded in %s", recorded, path.Join(Dir, answers.File)))
 	if unknown > 0 {
 		out(fmt.Sprintf("%d of them answer a question no domain is asking — kept, in case it comes back", unknown))
 	}
-	if left := Unanswered(qs, answers); len(left) > 0 {
+	if left := Unanswered(qs, store); len(left) > 0 {
 		out(fmt.Sprintf("%d question(s) still open", len(left)))
 		return 1
 	}
@@ -151,9 +174,10 @@ func FromFile(root, path string, out func(string)) int {
 // a person. An unreadable answers file yields no questions and an error —
 // unknown is never the same as nothing to ask.
 func Pending(root string) ([]Question, error) {
-	answers, err := LoadAnswers(root)
+	store, err := answers.Load(root)
 	if err != nil {
 		return nil, err
 	}
-	return Unanswered(Collect(root), answers), nil
+	qs, _ := Collect(root)
+	return Unanswered(qs, store), nil
 }

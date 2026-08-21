@@ -62,7 +62,12 @@ const maxInlineBytes = 48 * 1024
 // relay, and told the route a human answer comes back through.
 func askPart(root string) string {
 	pending, err := ask.Pending(root)
-	if err != nil || len(pending) == 0 {
+	if err != nil {
+		// Not silence: the coder is about to carry on without knowing there
+		// are questions nobody can read.
+		return "== q&a: questions NOT collected — " + err.Error() + "\nDo not treat this as 'nothing to ask'."
+	}
+	if len(pending) == 0 {
 		return ""
 	}
 	var b strings.Builder

@@ -153,7 +153,7 @@ func Check(root, name string, out func(string)) int {
 	}
 	worst := 0
 	for _, f := range files {
-		if code := checkOne(f, out); code > worst {
+		if code := checkOne(root, f, out); code > worst {
 			worst = code
 		}
 	}
@@ -197,8 +197,13 @@ func continuesPrevious(line string) bool {
 	if strings.HasPrefix(line, "OPEN:") || strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
 		return false
 	}
-	if head, _, ok := strings.Cut(line, "."); ok && head != "" &&
-		strings.IndexFunc(head, func(r rune) bool { return r < '0' || r > '9' }) < 0 {
+	// A line that ends in a question mark is a question, bullet or not.
+	// Without this, a section written as plain lines collapsed into one
+	// question with one key, and answering it retired every question in it.
+	if strings.HasSuffix(line, "?") {
+		return false
+	}
+	if head, _, ok := strings.Cut(line, "."); ok && head != "" && strings.Trim(head, "0123456789") == "" {
 		return false // "1. …" numbered question
 	}
 	return true
@@ -209,13 +214,12 @@ func continuesPrevious(line string) bool {
 // The reading of the section itself comes from the ask package, so the
 // collector that offers a question and the checker that judges it can never
 // disagree about what is still being asked.
-func openQuestions(path string) (unanswered []string, answered int) {
+func openQuestions(root, path string) (unanswered []string, answered int) {
 	questions := OpenQuestions(path)
 	if len(questions) == 0 {
 		return nil, 0
 	}
 	name := strings.TrimSuffix(filepath.Base(path), ".md")
-	root := filepath.Dir(filepath.Dir(filepath.Dir(path))) // <root>/.procoder/specs/x.md
 	recorded, err := answers.Load(root)
 	if err != nil {
 		// Unknown is not answered: an unreadable answers file must not
@@ -242,7 +246,7 @@ func statusOf(text string) string {
 	return strings.ToLower(strings.TrimSpace(m[1]))
 }
 
-func checkOne(path string, out func(string)) int {
+func checkOne(root, path string, out func(string)) int {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
@@ -271,7 +275,7 @@ func checkOne(path string, out func(string)) int {
 	// COMPLETE, so it would have seeded stories from a design nobody had
 	// finished. A question is unresolved because it is still in the
 	// section, whatever it is called.
-	if open, answered := openQuestions(path); len(open) > 0 {
+	if open, answered := openQuestions(root, path); len(open) > 0 {
 		gaps = append(gaps, fmt.Sprintf("Open questions still has %d unanswered question(s) — put them to the user (`procoder ask`) or rewrite each as a decision",
 			len(open)))
 	} else if answered > 0 {

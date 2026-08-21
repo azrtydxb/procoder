@@ -309,7 +309,7 @@ const usage = `usage: procoder <command> [args]
                        tasks, unlearned lessons, index freshness
   spec <sub> [arg]     spec-first design under .procoder/specs/:
                        template <name> | list | check [name|all] — check
-                       blocks while sections are missing, OPEN: questions
+                       blocks while sections are missing, questions
                        remain, or acceptance criteria are untestable
   templates            print the default content for any missing template
                        under .procoder/github/ — the agent reviews and writes it
@@ -691,17 +691,16 @@ func testCmd(args []string) int {
 // human said, and hands the file over.
 func askCmd(args []string) int {
 	root := doctor.Root()
-	for i := 0; i < len(args); i++ {
+	if len(args) > 0 {
 		switch {
-		case args[i] == "--file" && i+1 < len(args):
-			return ask.FromFile(root, args[i+1], printLine)
-		case args[i] == "--file":
+		case args[0] == "--file" && len(args) > 1:
+			return ask.FromFile(root, args[1], printLine)
+		case args[0] == "--file":
 			printLine("ask: --file wants the path of the file holding the answers")
-			return 2
 		default:
-			printLine("ask: unknown argument " + args[i])
-			return 2
+			printLine("ask: unknown argument " + args[0])
 		}
+		return 2
 	}
 	return ask.Run(root, os.Stdin, printLine)
 }

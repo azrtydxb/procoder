@@ -3,6 +3,7 @@ package ask
 import (
 	"os"
 	"path/filepath"
+	"procoder/internal/answers"
 	"strings"
 	"testing"
 	"time"
@@ -41,8 +42,8 @@ func TestTheAskPolicyDecidesWhetherQuestionsBlock(t *testing.T) {
 	}
 
 	// Answered: nothing left to report either way.
-	qs := Collect(root)
-	if err := WriteAnswers(root, qs, Answers{qs[0].Key(): "intentional, it is a fixture"}, time.Now()); err != nil {
+	qs, _ := Collect(root)
+	if err := WriteAnswers(root, qs, Answers{qs[0].Key(): answers.Entry{Question: qs[0].Text, Answer: "intentional, it is a fixture"}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if got := GateFindings(root); len(got) != 0 {
@@ -50,17 +51,27 @@ func TestTheAskPolicyDecidesWhetherQuestionsBlock(t *testing.T) {
 	}
 }
 
-// The gate must not claim silence it has not earned: a collection that could
-// not run reports nothing rather than "no questions".
-// proved by: returned a clean verdict on the error path — the gate then says
-// there is nothing to decide because it could not look.
+// The gate must not claim silence it has not earned. This test was vacuous
+// when it was written: it asserted the gate reports NOTHING on the error
+// path, which was the shipped behaviour, so the mutation its own comment
+// named could never turn it red. A pre-PR review applied that mutation and
+// watched it stay green.
+// proved by: returning nil on the error path again — the gate then says
+// there is nothing to decide because it could not look, and this fails.
 func TestAnUnreadableRecordIsNotAnEmptyGateVerdict(t *testing.T) {
 	root := repo(t, "anything?")
 	if err := os.MkdirAll(Path(root, "answers.md"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := GateFindings(root); len(got) != 0 {
-		t.Errorf("nothing is reported when nothing could be read: %+v", got)
+	got := GateFindings(root)
+	if len(got) != 1 {
+		t.Fatalf("a record that cannot be read is one finding, not silence: %+v", got)
+	}
+	if !strings.Contains(got[0].Message, "NOT collected") {
+		t.Errorf("and it says so: %+v", got[0])
+	}
+	if got[0].Blocking {
+		t.Errorf("an unreadable record is a report, not a refusal: %+v", got[0])
 	}
 	// and the command itself refuses loudly, which is where the user learns
 	out, lines := collect(t)

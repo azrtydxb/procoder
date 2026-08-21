@@ -41,21 +41,21 @@ func collect(t *testing.T) (func(string), *[]string) {
 // question then reads as answered and the human is never asked again.
 func TestAnAnswerSurvivesUntilTheQuestionChanges(t *testing.T) {
 	root := repo(t, "should the cache be per-user?")
-	qs := Collect(root)
+	qs, _ := Collect(root)
 	if len(qs) != 1 {
 		t.Fatalf("one question, got %d: %+v", len(qs), qs)
 	}
-	store := Answers{qs[0].Key(): "per-user, keyed by account id"}
+	store := Answers{qs[0].Key(): answers.Entry{Question: qs[0].Text, Answer: "per-user, keyed by account id"}}
 	if err := WriteAnswers(root, qs, store, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
 	// Same question: not asked again.
-	loaded, err := LoadAnswers(root)
+	loaded, err := answers.Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if left := Unanswered(Collect(root), loaded); len(left) != 0 {
+	if left := unansweredIn(root, loaded); len(left) != 0 {
 		t.Errorf("an answered question must not be asked twice: %+v", left)
 	}
 
@@ -64,8 +64,8 @@ func TestAnAnswerSurvivesUntilTheQuestionChanges(t *testing.T) {
 	if err := WriteAnswers(reworded, qs, store, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	loaded, _ = LoadAnswers(reworded)
-	if left := Unanswered(Collect(reworded), loaded); len(left) != 1 {
+	loaded, _ = answers.Load(reworded)
+	if left := unansweredIn(reworded, loaded); len(left) != 1 {
 		t.Errorf("a changed question is unanswered again, got %d: %+v", len(left), left)
 	}
 }
@@ -107,7 +107,7 @@ func TestWithNoTerminalItWritesTheFileAndSaysSo(t *testing.T) {
 // then looks like a decision that landed.
 func TestTheFileRouteRecordsAnswersAndRefusesNonsense(t *testing.T) {
 	root := repo(t, "which database?")
-	qs := Collect(root)
+	qs, _ := Collect(root)
 	path := filepath.Join(root, "reply.md")
 	body := "## Q1\n\n" + answers.KeyPrefix + qs[0].Key() + "\n" + answers.AnswerPrefix + "postgres, for the constraints\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -118,8 +118,8 @@ func TestTheFileRouteRecordsAnswersAndRefusesNonsense(t *testing.T) {
 	if code := FromFile(root, path, out); code != 0 {
 		t.Fatalf("every question answered exits 0, got %d: %v", code, *lines)
 	}
-	loaded, _ := LoadAnswers(root)
-	if loaded[qs[0].Key()] != "postgres, for the constraints" {
+	loaded, _ := answers.Load(root)
+	if loaded[qs[0].Key()].Answer != "postgres, for the constraints" {
 		t.Errorf("the answer must be recorded against its question: %+v", loaded)
 	}
 
@@ -150,7 +150,7 @@ func TestAWrappedQuestionIsOneQuestion(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".procoder", "specs", "widget.md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	qs := Collect(root)
+	qs, _ := Collect(root)
 	if len(qs) != 1 {
 		t.Fatalf("one wrapped question is one question, got %d: %+v", len(qs), qs)
 	}
@@ -184,8 +184,9 @@ func TestAnUnreadableAnswersFileStopsEverything(t *testing.T) {
 // other domains — the planted value then appears in the question, the file
 // and the terminal.
 func TestASecretsValueNeverReachesTheQuestion(t *testing.T) {
-	const planted = "AKIAIOSFODNN7EXAMPLE"
-	qs := findingQuestions("security", []gitx.Finding{{
+	planted := "AKIA" + strings.Repeat("X", 4) + "SFODNN7EXAMPLE" // assembled, never a literal the scanners can match
+	root := t.TempDir()
+	qs := findingQuestions(root, "security", []gitx.Finding{{
 		File:    "config/app.yml",
 		Line:    12,
 		Message: "possible AWS key " + planted + " committed",
@@ -201,7 +202,7 @@ func TestASecretsValueNeverReachesTheQuestion(t *testing.T) {
 	}
 	// The other domains DO carry their message: that is the evidence a human
 	// judges, and none of them handle credentials.
-	docsQ := findingQuestions("docs", []gitx.Finding{{File: "a.go", Message: "no doc changed"}}, "real?")
+	docsQ := findingQuestions(root, "docs", []gitx.Finding{{File: "a.go", Message: "no doc changed"}}, "real?")
 	if !strings.Contains(docsQ[0].Text, "no doc changed") {
 		t.Errorf("a docs question must carry its finding: %+v", docsQ[0])
 	}
@@ -213,11 +214,11 @@ func TestASecretsValueNeverReachesTheQuestion(t *testing.T) {
 // them with a new timestamp and the tree is dirty for no reason.
 func TestAsecondRunWithNothingNewWritesNothing(t *testing.T) {
 	root := repo(t, "which cache?")
-	qs := Collect(root)
-	if err := WriteAnswers(root, qs, Answers{qs[0].Key(): "per-user"}, time.Now()); err != nil {
+	qs, _ := Collect(root)
+	if err := WriteAnswers(root, qs, Answers{qs[0].Key(): answers.Entry{Question: qs[0].Text, Answer: "per-user"}}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Stat(Path(root, AnswersFile))
+	before, err := os.Stat(Path(root, answers.File))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +228,7 @@ func TestAsecondRunWithNothingNewWritesNothing(t *testing.T) {
 	if code := Run(root, nil, out); code != 0 {
 		t.Fatalf("everything answered exits 0: %d %v", code, *lines)
 	}
-	after, err := os.Stat(Path(root, AnswersFile))
+	after, err := os.Stat(Path(root, answers.File))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,5 +237,70 @@ func TestAsecondRunWithNothingNewWritesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(Path(root, QuestionsFile)); !os.IsNotExist(err) {
 		t.Error("and no questions file is written when there are no questions")
+	}
+}
+
+// unansweredIn is the question set a repository still has open.
+func unansweredIn(root string, store Answers) []Question {
+	qs, _ := Collect(root)
+	return Unanswered(qs, store)
+}
+
+// The key must not bind an answer to one machine's checkout. Security
+// findings arrive as absolute paths (lint's are relative — the two sources
+// already disagree), and hashing an absolute path into the key means a
+// teammate, CI, or the same person after moving the clone is asked
+// everything again, while the hook feeds absolute paths to the model.
+// proved by: took f.File as-is — the origin then carries /Users/... and the
+// key changes with the checkout directory.
+func TestTheKeyDoesNotDependOnWhereTheCloneLives(t *testing.T) {
+	here := t.TempDir()
+	there := t.TempDir()
+	finding := func(root string) []gitx.Finding {
+		return []gitx.Finding{{File: filepath.Join(root, "internal", "app.go"), Line: 7, Message: "possible key"}}
+	}
+	a := findingQuestions(here, "security", finding(here), "real?")
+	b := findingQuestions(there, "security", finding(there), "real?")
+	if len(a) != 1 || len(b) != 1 {
+		t.Fatalf("one finding each: %+v %+v", a, b)
+	}
+	if a[0].Origin != "internal/app.go:7" {
+		t.Errorf("the origin must be repo-relative, got %q", a[0].Origin)
+	}
+	if a[0].Key() != b[0].Key() {
+		t.Errorf("the same question in two clones is one question: %q vs %q", a[0].Key(), b[0].Key())
+	}
+}
+
+// A record whose question is no longer being asked keeps the question it
+// answered. Rebuilding the file from whatever is live destroyed the text of
+// anything since reworded, leaving an answer nobody could interpret — and the
+// file's own header promises you can edit it to change what procoder
+// believes.
+// proved by: wrote only the live questions — the reworded entry then reads
+// "(no longer asked)" with no question text at all.
+func TestTheRecordKeepsTheQuestionItAnswered(t *testing.T) {
+	root := repo(t, "which cache?")
+	qs, _ := Collect(root)
+	store := Answers{qs[0].Key(): answers.Entry{Question: qs[0].Text, Answer: "per-user"}}
+	if err := WriteAnswers(root, qs, store, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// The question is reworded, so the recorded one is no longer collected.
+	reworded := repo(t, "which cache, and for how long?")
+	live, _ := Collect(reworded)
+	loaded, err := answers.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAnswers(reworded, live, loaded, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(Path(reworded, answers.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "which cache?") {
+		t.Errorf("the question that was answered must survive:\n%s", raw)
 	}
 }

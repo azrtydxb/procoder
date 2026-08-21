@@ -32,7 +32,8 @@ bounded changes to a flow that already exists skip the spec file
 entirely.
 
 The skill runs the controller for you, and it blocks while a section is
-empty, an `OPEN:` question is unresolved, or an acceptance criterion is
+empty, a question in Open questions is unanswered (answer it with
+`procoder ask`, or rewrite it as a decision), or an acceptance criterion is
 untestable.
 
 ## 2. Write the plan
