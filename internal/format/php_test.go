@@ -132,6 +132,13 @@ func realPHPProject(t *testing.T) string {
 	root := tools.RepoRoot(mustDir("."))
 	plugin := filepath.Join(root, "node_modules", "@prettier", "plugin-php", "src", "index.mjs")
 	if _, err := os.Stat(plugin); err != nil {
+		// Where the plugin is promised, a skip is a failure. CI installs it
+		// and sets this, so "the suite was green" cannot quietly mean "the
+		// one test of P-CONTROL for PHP skipped again" — which is how this
+		// guard spent its whole life until now.
+		if os.Getenv("PROCODER_PHP_PLUGIN_REQUIRED") != "" {
+			t.Fatalf("the plugin was installed for this run and is not here: %v", err)
+		}
 		t.Skip("the prettier PHP plugin is not installed here: ", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "messy.php"),

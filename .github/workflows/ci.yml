@@ -46,7 +46,12 @@ jobs:
         # three times and pay npm's install on each. node_modules is
         # gitignored, and doctor skips it.
         if: runner.os == 'Linux'
-        run: npm install --no-save --no-fund --no-audit prettier @prettier/plugin-php
+        run: |
+          npm install --no-save --no-fund --no-audit prettier @prettier/plugin-php
+          # Read by the test: where the plugin is promised, skipping is a
+          # failure. Otherwise a broken install would restore the silent
+          # skip and the suite would stay green over the guard it disabled.
+          echo "PROCODER_PHP_PLUGIN_REQUIRED=1" >> "$GITHUB_ENV"
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder
