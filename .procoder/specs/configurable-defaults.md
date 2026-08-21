@@ -76,9 +76,9 @@ and their only escape is to stop using the domain.
 
 - `.procoder/config.toml` gains `[tools]`, `[security]`, `[timeouts]` and
   per-domain baseline keys.
-- `.procoder/templates/<name>.md` overrides an embedded template; the
-  binary prints the default for any that is missing, as `procoder
-templates` already does for `.procoder/github/`.
+- `.procoder/templates/<name>.md` overrides an embedded template. For
+  anything missing, the binary prints the default — the behaviour
+  `procoder templates` already has for `.procoder/github/`.
 - `.procoder/<domain>/RULES.md` gains list sections for rule sets.
 - `procoder config` prints every effective setting, its value, and where
   it came from — default, config.toml, or a rules file.
