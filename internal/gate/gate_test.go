@@ -147,3 +147,41 @@ func TestBlockingHygieneFailsTheExitCodeNotJustTheReport(t *testing.T) {
 		t.Fatalf("exit %d with a blocking finding in the report, want 1\n%s", code, out.String())
 	}
 }
+
+// A repository with no test setup, no manifests and no rule files commits
+// without a blocking finding. This sprint gave the gate five new legs —
+// SAST, complexity, vulnerable dependencies, the suite, and agents drift
+// — and each one had to decide what to say about a repository that has
+// nothing for it to look at. "Nothing here" must come out silent; a
+// repository that adopts procoder and cannot commit a text file has been
+// told its empty tree is broken.
+//
+// The scanners are stubbed clean because what is under test is procoder's
+// half. A machine WITHOUT them blocks, loudly and on purpose, and that
+// has its own test in internal/security.
+// proved by: made portability.AgentsDrift block when AGENTS.md is absent
+// instead of returning nil — a repository that never opted into an agent
+// layer is blocked for not having one.
+func TestAQuietRepositoryStillCommits(t *testing.T) {
+	stubGitleaks(t)
+	stubSemgrep(t)
+
+	root := t.TempDir()
+	// A note and nothing else: no go.mod, no package.json, no AGENTS.md,
+	// no pytest.ini, no lockfile.
+	note := filepath.Join(root, "NOTES.txt")
+	if err := os.WriteFile(note, []byte("A note.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	code := RunWith([]string{note}, root, "docs: a note", &buf)
+	if code != 0 {
+		t.Errorf("a quiet repository commits, got exit %d:\n%s", code, buf.String())
+	}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "BLOCKING") {
+			t.Errorf("nothing here is not a finding: %s", line)
+		}
+	}
+}
