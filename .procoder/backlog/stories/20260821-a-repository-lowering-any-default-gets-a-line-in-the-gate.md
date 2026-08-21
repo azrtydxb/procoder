@@ -1,23 +1,21 @@
 # A repository lowering any default gets a line in the gate output naming the setting, its value, and the default it replaced.
 
-Status: open
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: configurable-defaults
 Sprint: 010-configurable-defaults-the-repository-decides-and-says-so
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+A green gate must never be able to mean "the config was loosened" without saying so — the rule the gate already lives by, applied to configuration.
 
 ## Acceptance criteria
 
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] A repository lowering any default gets a line in the gate output naming the setting, its value, and the default it replaced.
+- [x] A repository lowering any default gets a line in the gate output naming the setting, its value, and the default it replaced.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+`go test ./internal/config/ -run TestLoweringADefaultPrintsAndRaisingOneDoesNot`: PASS. Run end to end — `commit_gate = "report"` produced `info relaxed: git.commit_gate = report, weaker than the default block — commits with blocking findings are no longer stopped`. It does not block: the repository chose it, and blocking would make the setting useless.
