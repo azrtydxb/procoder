@@ -252,7 +252,10 @@ func terraformDir(root, dir string) []gitx.Finding {
 		}
 		out = append(out, failedClean(tflCount, code, []int{2}, raw, dir, "tflint")...)
 	} else {
-		out = append(out, gitx.Finding{File: dir,
+		// Blocking, like every other check that did not run: Terraform
+		// unlinted is not Terraform approved, and this domain reaches
+		// infrastructure where the cost of a missed finding is highest.
+		out = append(out, gitx.Finding{File: dir, Blocking: true,
 			Message: "tflint not installed — Terraform lint NOT run; `procoder init` (infra)"})
 	}
 	return out
@@ -301,7 +304,7 @@ func helmChart(root, dir string) []gitx.Finding {
 		}
 	}
 	if code != 0 && len(out) == 0 {
-		out = append(out, gitx.Finding{File: dir,
+		out = append(out, gitx.Finding{File: dir, Blocking: true,
 			Message: "helm lint failed without findings — NOT checked: " + textutil.FirstLine(raw) + " (infra)"})
 	}
 	return out
