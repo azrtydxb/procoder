@@ -222,6 +222,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+        with:
+          # The notes below name the previous tag to build a compare link,
+          # and a depth-1 checkout of a tag ref carries no other tag to
+          # compare against. The link would simply be missing — the guard
+          # there is written so it never comes out wrong — but missing is
+          # the whole point of adding it.
+          fetch-depth: 0
       - name: the changelog entry is the release notes
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -240,7 +247,38 @@ jobs:
             echo "no CHANGELOG.md entry for $version — refusing to publish empty release notes" >&2
             exit 1
           fi
-          head -3 /tmp/notes.md
+
+          # The prose says what changed; this says what to do about it.
+          # Without it the release page is five identical-looking binaries
+          # and no statement of which one, how to verify it, or that
+          # upgrading in place is a thing procoder does for you.
+          #
+          # The previous tag is found by walking the tag list rather than
+          # asking git for "the parent": tags are not ordered by ancestry,
+          # and a compare link built from the wrong end reads as though the
+          # release contained everything ever done.
+          prev=$(git tag --list 'v*' --sort=-version:refname | grep -A1 -x "$GITHUB_REF_NAME" | tail -1)
+          {
+            echo
+            echo "---"
+            echo
+            echo "**Upgrade in place:** \`procoder self-upgrade\` — it asks first, and installs"
+            echo "only after the download matches the \`SHA256SUMS\` published below."
+            echo
+            echo "**Or download** the binary for your platform below and check it against"
+            echo "\`SHA256SUMS\` before running it."
+          } >> /tmp/notes.md
+          # A first release has no previous tag, and grep -A1 then returns
+          # the tag itself: a compare of a tag with itself is an empty diff
+          # presented as the release contents, so it is left out instead.
+          if [ -n "$prev" ] && [ "$prev" != "$GITHUB_REF_NAME" ]; then
+            {
+              echo
+              echo "**Every commit in this release:**"
+              echo "https://github.com/${GITHUB_REPOSITORY}/compare/${prev}...${GITHUB_REF_NAME}"
+            } >> /tmp/notes.md
+          fi
+          cat /tmp/notes.md
       - name: stage the binaries under names that do not collide
         run: |
           # gh takes an asset's NAME from the file name; `path#text` sets only

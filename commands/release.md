@@ -22,7 +22,13 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    committed binaries, so a hand-built `dist/` goes red before the tag.
 4. Fix everything the release controller listed — bump the files, write
    the changelog entry, commit — then rerun `launcher.sh release` until
-   it answers ready.
+   it answers ready. The entry's layout is not free-form: CHANGELOG.md
+   opens with the template, and the release job publishes the entry
+   verbatim as the GitHub Release notes, so what you write there is what
+   someone downloading the binary reads. A one-sentence italic summary
+   first, then headlines that open with their kind — Added, Fixed,
+   Changed, Removed, Security — each linking its issue, worst breakage
+   first. A test over the newest entry holds the shape.
 5. When the release controller answers ready it prints the tag command;
    run that command yourself and push the tag. The binary never tags
    (P-CONTROL).

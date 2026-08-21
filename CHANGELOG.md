@@ -2,32 +2,69 @@
 
 Every release, in words a user can read. Newest first.
 
+<!--
+How an entry is written. This layout is the template — the release notes
+GitHub publishes are this entry, extracted verbatim by the release job, so
+what is written here is what a person downloading the binary reads.
+
+    ## <version> — <YYYY-MM-DD>
+
+    *One sentence: what this release is for, for someone deciding whether
+    to upgrade.*
+
+    **Fixed — the headline, as a statement.** (link the issue here) Then
+    the prose: what was wrong, what it cost the person using it, what is
+    true now. Paragraphs, not bullet lists — a changelog is read, not
+    parsed.
+
+Rules that earn their place:
+
+- The summary line comes first and is one sentence. It is the only part a
+  reader skimming a release page is guaranteed to see.
+- Every headline opens with its kind — Added, Fixed, Changed, Removed,
+  Security — so a reader can tell a new feature from a broken thing made
+  whole without reading the paragraph.
+- Something that was broken for everyone leads. Order by what it costs the
+  reader, not by what it cost to build.
+- Link the issue or PR in the headline. An entry a reader cannot get from
+  the sentence to the change is a claim they have to take on faith.
+- Name outside contributors. They are why the thing got fixed.
+-->
+
 ## 1.1.1 — 2026-08-21
 
-**`procoder ask` puts the open questions to a human instead of letting
-the coder guess.** A spec's undecided questions and the gate's own
-findings are collected into `.procoder/ask/QA.md`, answered in
-`answers.md`, and an answered question stops blocking the spec
-controller. A flagged secret's value never travels — not into a
-question, not into the terminal, not into a hook payload.
+_The pi adapter installs at all, generated ids stop welding words
+together, and a spec's open questions reach a human instead of being
+guessed._
 
-**pi could not install procoder at all.** The pi extension was a
-CommonJS module and pi validates the export shape at install time, so
-`omp plugin install` failed outright while the portability docs listed
-pi as supported. Nothing local caught it: Node hands a CommonJS export
-back as `default` on import, so every load test passed. The adapter is
-an ES module now, and the check reads adapter source rather than
-importing it. Reported by @striderZA, who supplied the diagnosis and
-the fix.
+**Fixed — pi could not install procoder at all.**
+([#105](https://github.com/azrtydxb/procoder/issues/105)) The pi
+extension was a CommonJS module and pi validates the export shape at
+install time, so `omp plugin install` failed outright while the
+portability docs listed pi as a supported host. Nothing here caught it:
+Node hands a CommonJS export back as `default` on import, so every load
+test passed and only pi's own validator could see the difference. The
+adapter is an ES module now, and the check reads adapter source rather
+than importing it. Reported and diagnosed by
+[@striderZA](https://github.com/striderZA), who supplied the fix.
 
-**Generated ids no longer weld words together.** Dropping a dot left
-`answers.md` filed as "answersmd" — a story unfindable by the name of
-the file it is about — and collapsed `v1.2.3` and `v12.3` onto one id,
-which surfaced as a refusal with no visible cause. Punctuation
-separates now, accented letters fold to their letters (`café` → `cafe`)
-rather than vanishing, and two criteria that still land on the same id
-get two stories instead of one written over the other. Names already on
-disk are untouched.
+**Fixed — generated ids welded words together.**
+([#103](https://github.com/azrtydxb/procoder/issues/103)) Dropping a dot
+left `answers.md` filed as "answersmd", so the story about a file could
+not be found by the name of the file, and `v1.2.3` and `v12.3` collapsed
+onto one id — a collision that surfaced as `backlog story` refusing with
+nothing on screen to say why. Punctuation separates now, accented
+letters fold to their letters (`café` → `cafe`) instead of vanishing,
+and two criteria that still land on the same id get two stories rather
+than one written over the other. Names already on disk are untouched.
+
+**Added — `procoder ask` puts the open questions to a human.**
+([#104](https://github.com/azrtydxb/procoder/pull/104)) A spec's
+undecided questions and the gate's own findings are collected into
+`.procoder/ask/QA.md`, answered in `answers.md`, and an answered
+question stops blocking the spec controller. A flagged secret's value
+never travels — not into a question, not into the terminal, not into a
+hook payload.
 
 ## 1.1.0 — 2026-08-21
 
