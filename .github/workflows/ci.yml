@@ -105,7 +105,7 @@ jobs:
         run: grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: the tools that have to be compiled, from cache when possible
         id: gotools
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4 gitleaks:allow
         with:
           # gopls and scip-go publish no binaries, so these are the only two
           # the gate still builds. Keyed on the versions file: bumping a line
@@ -113,7 +113,7 @@ jobs:
           path: ~/go/bin
           key: gate-gotools-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
       - name: python and node package caches
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 gitleaks:allow
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4 gitleaks:allow
         with:
           # mermaid-cli pulls puppeteer, which downloads a browser — and that
           # browser lands in ~/.cache/puppeteer, not in the npm cache. Caching
