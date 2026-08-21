@@ -119,8 +119,8 @@ and their only escape is to stop using the domain.
 
 ## Acceptance criteria
 
-- [ ] A repository setting `[tools] php = "pint"` is formatted by pint,
-      and `procoder doctor` lists pint rather than prettier.
+- [ ] A repository setting `[tools] js = "biome"` is formatted by biome,
+      and `procoder doctor` lists biome rather than prettier.
 - [ ] A `[tools]` entry naming a tool Procoder does not ship is reported
       by name, lists what is available, and the default is used — the file
       is still checked.
@@ -173,6 +173,16 @@ and their only escape is to stop using the domain.
   a missing RULES.md section and a missing template file all mean "use the
   default". Only an EMPTY file is an error, because that is a file
   somebody destroyed rather than never wrote.
+- **D-6 (corrects D-1's example): the menu holds only tools that can
+  PRINT.** D-1 said a repository may select any tool Procoder ships a
+  definition for, and used `php = "pint"` as the example. Building it
+  showed the example was impossible: pint writes in place, as do phpcbf
+  and php-cs-fixer, so none of them can be offered without breaking the
+  contract D-1 exists to protect. The rule is therefore narrower than it
+  first read — a tool reaches the menu by being able to emit the formatted
+  source on stdout, which was tested for each candidate rather than
+  assumed. biome does it through `--stdin-file-path`, which is why it is
+  the first alternative shipped.
 - **D-5: `procoder config` exists because configurability without
   visibility is worse than none.** A reader of an unfamiliar repository
   must be able to ask which defaults are still in force and get an answer

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"procoder/internal/config"
 	"procoder/internal/tools"
 )
 
@@ -41,8 +42,9 @@ func Run(root string, stdout io.Writer) int {
 		exts []string
 	}
 	byTool := map[string]*row{}
+	choice := config.Load(root).Tools
 	for ext := range present {
-		t := tools.ByExtension[ext]
+		t := tools.ForFileIn("x"+ext, choice)
 		if t == nil {
 			continue
 		}
@@ -134,8 +136,9 @@ func ExtensionsIn(root string) map[string]bool {
 // for, sorted by tool name — the shared survey doctor and init both start from.
 func RequiredTools(root string) []*tools.Tool {
 	seen := map[string]*tools.Tool{}
+	choice := config.Load(root).Tools
 	for ext := range ExtensionsIn(root) {
-		if t := tools.ByExtension[ext]; t != nil {
+		if t := tools.ForFileIn("x"+ext, choice); t != nil {
 			seen[t.Name] = t
 		}
 	}
