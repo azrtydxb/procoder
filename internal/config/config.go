@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"procoder/internal/tools"
 )
 
 // Config holds every knob the harness reads. Zero values are the defaults, so
@@ -75,6 +77,10 @@ type Config struct {
 	// behind `procoder config`. A reader of an unfamiliar repository has to
 	// be able to ask which defaults are still in force.
 	Settings []Setting
+	// Tools is the repository's choice of tool per language, from [tools].
+	// A name procoder does not ship is reported and dropped, so the default
+	// still runs — a mistyped tool name must not leave code unchecked.
+	Tools map[string]string
 	// Problems are settings the file names that could not be used. They
 	// block: a config that silently falls back lets a team believe a
 	// setting is in force when it never was.
@@ -138,6 +144,30 @@ func Load(root string) Config {
 			value = strings.TrimSpace(value[:i])
 		}
 		value = strings.Trim(value, `"`)
+
+		// [tools] is keyed by language rather than by a fixed set of names,
+		// so it is handled here rather than enumerated in the switch below.
+		if section == "tools" {
+			lang := strings.TrimPrefix(key, "tools.")
+			switch {
+			case !tools.IsLanguage(lang):
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: "procoder ships no alternative tools for " + lang})
+			case tools.Alternatives[lang][value] == nil:
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: fmt.Sprintf("not a tool procoder ships for %s — it has %s",
+						lang, strings.Join(tools.KnownFor(lang), ", "))})
+			default:
+				if cfg.Tools == nil {
+					cfg.Tools = map[string]string{}
+				}
+				cfg.Tools[lang] = value
+				seen[key] = Setting{Key: key, Value: value,
+					Source: fmt.Sprintf(".procoder/config.toml:%d", lineNo)}
+			}
+			continue
+		}
+
 		switch key {
 		case "git.default_branch_policy":
 			cfg.BlockDefaultBranch = value == "block"

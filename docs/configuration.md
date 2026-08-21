@@ -213,3 +213,27 @@ A setting Procoder cannot apply — a mistyped key, a value of the wrong
 kind — is **not** silently ignored. It is reported with its line number
 and it blocks, because a config that quietly reverts to defaults lets a
 team believe a setting is in force when it never was.
+
+## `[tools]`
+
+Choose among the tools Procoder ships, by language:
+
+```toml
+[tools]
+js = "biome"   # instead of the default, prettier
+```
+
+One key per language, covering every extension that language owns — `js`
+covers `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts`.
+
+A repository names a tool; it does not name a binary and an argv.
+Procoder owns the invocation, and that is what keeps the print-don't-write
+contract a guarantee: a formatter is only on the menu if it can emit the
+formatted source on stdout and leave the file alone. Tools that can only
+write in place — Laravel Pint, phpcbf, php-cs-fixer — are absent for that
+reason and not for any other.
+
+Naming a tool Procoder does not ship is reported with the list of what it
+does ship, and blocks. The file is still formatted by the default: a
+mistyped tool name is a reason to tell somebody, never a reason to stop
+reading their code.

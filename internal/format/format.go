@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"procoder/internal/config"
 	"procoder/internal/tools"
 )
 
@@ -58,7 +59,10 @@ const hungToolTimeout = 30 * time.Second
 
 // Check runs the file's formatter and compares output with the file's bytes.
 func Check(file string) Result {
-	tool := tools.ForFile(file)
+	// The repository's choice, where it made one. Resolved per file rather
+	// than once, because a formatter runs against a path and the repo root
+	// is found from it — the same walk Resolve already does.
+	tool := tools.ForFileIn(file, config.Load(tools.RepoRoot(mustDir(file))).Tools)
 	if tool == nil {
 		return Result{File: file, Verdict: OutOfScope,
 			Reason: "no formatter covers this file type"}

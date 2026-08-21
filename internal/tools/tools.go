@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -233,6 +234,23 @@ var (
 			{Manager: "npm", Args: []string{"install", "-D", "prettier", "@prettier/plugin-php"}},
 		},
 	}
+	// biome formats JS and TS, and reaches the menu because it can PRINT:
+	// --stdin-file-path makes it emit the formatted source on stdout and
+	// leave the file alone. That is the whole entry requirement — a tool
+	// that can only write in place cannot be offered here whatever its
+	// merits, which is why pint and phpcbf are absent.
+	biome = &Tool{
+		Name: "biome",
+		Args: func(f string) []string {
+			return []string{"format", "--stdin-file-path=" + f}
+		},
+		Stdin:       true,
+		Install:     "npm i -D @biomejs/biome",
+		VersionArgs: []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "npm", Args: []string{"install", "-D", "@biomejs/biome"}},
+		},
+	}
 	rubocopFmt = &Tool{
 		Name: "rubocop",
 		// --stdin + -x (layout-only autocorrect: formatting, not semantics)
@@ -294,11 +312,64 @@ func init() {
 	reg(prettierPHP, ".php")
 }
 
+// Alternatives are the tools a repository may choose INSTEAD of the
+// default for a language, by name, in [tools]. A tool is here only if it
+// can print the formatted source without touching the file: procoder owns
+// the invocation, and that is what keeps the print-don't-write contract a
+// guarantee rather than a hope.
+//
+// The language key is the name a person would write, not an extension —
+// `js = "biome"` covers every extension biome formats.
+var Alternatives = map[string]map[string]*Tool{
+	"js": {"biome": biome, "prettier": prettier},
+}
+
+// languageOf maps an extension to the language key [tools] uses.
+var languageOf = map[string]string{
+	".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js",
+	".ts": "js", ".tsx": "js", ".mts": "js", ".cts": "js",
+}
+
 // ForFile returns the formatter for a path, or nil when the file type is out
-// of the domain's scope.
+// of the domain's scope. It does not consult the repository's choice —
+// ForFileIn does, and callers that have a root should use that.
 func ForFile(path string) *Tool {
 	return ByExtension[strings.ToLower(filepath.Ext(path))]
 }
+
+// ForFileIn is ForFile with the repository's [tools] choice honoured.
+// An unknown name is not this function's business to report — Config
+// already reported it and blocked — so the default is used and the file is
+// still checked, because a mistyped tool name must not leave code unread.
+func ForFileIn(path string, choice map[string]string) *Tool {
+	ext := strings.ToLower(filepath.Ext(path))
+	lang, ok := languageOf[ext]
+	if !ok {
+		return ByExtension[ext]
+	}
+	name, ok := choice[lang]
+	if !ok {
+		return ByExtension[ext]
+	}
+	if t, ok := Alternatives[lang][name]; ok {
+		return t
+	}
+	return ByExtension[ext]
+}
+
+// KnownFor lists the tool names a language accepts, for the message a
+// person reads when they name one procoder does not ship.
+func KnownFor(lang string) []string {
+	var out []string
+	for name := range Alternatives[lang] {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// IsLanguage reports whether [tools] recognises this key.
+func IsLanguage(lang string) bool { _, ok := Alternatives[lang]; return ok }
 
 // Resolve finds the tool's binary: the project's own node_modules/.bin first
 // (the version a JS project pinned is the version its config was written
