@@ -80,9 +80,12 @@ func Check(file string) Result {
 	}
 
 	if !tools.HasProjectConfig(tool, file) {
-		return Result{File: file, Verdict: OutOfScope, Tool: tool.Name,
-			Reason: fmt.Sprintf("no %s in the project — procoder imposes no style of its own",
-				tool.NeedsProjectConfig)}
+		reason := fmt.Sprintf("no %s in the project — procoder imposes no style of its own",
+			tool.NeedsProjectConfig)
+		if tool.ConfigMissing != "" {
+			reason = tool.ConfigMissing
+		}
+		return Result{File: file, Verdict: OutOfScope, Tool: tool.Name, Reason: reason}
 	}
 
 	bin := tools.Resolve(tool, tools.RepoRoot(mustDir(file)))

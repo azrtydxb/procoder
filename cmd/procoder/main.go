@@ -120,6 +120,20 @@ func init() {
 		if exts[".java"] {
 			out = append(out, lint.Checkstyle)
 		}
+		// PHP names the linters the PROJECT configured, and php itself as
+		// the floor. Listing phpstan on a repository that chose phpcs would
+		// tell a reader to install a tool procoder is never going to run
+		// there — doctor's job is what this repository needs, not what PHP
+		// has available.
+		if exts[".php"] {
+			out = append(out, lint.PHP)
+			if lint.HasPhpstanConfig(root) {
+				out = append(out, lint.Phpstan)
+			}
+			if lint.HasPhpcsConfig(root) {
+				out = append(out, lint.Phpcs)
+			}
+		}
 		// domain 1: gitleaks guards every repo; SAST and dependency scans
 		// where there is code and manifests to scan
 		out = append(out, security.Gitleaks)

@@ -57,6 +57,12 @@ type Tool struct {
 	// something (rubocop detects offenses it corrected) — exit 1 WITH
 	// stdout is the answer, not a failure.
 	ExitOneIsAnswer bool
+	// ConfigMissing replaces the generic "no <file> in the project" sentence
+	// when NeedsProjectConfig names something a person would not recognise
+	// as config. A missing .clang-format explains itself; a missing
+	// node_modules/@prettier/plugin-php/package.json does not, and the
+	// reader needs the line that installs it rather than a path.
+	ConfigMissing string
 }
 
 // ByExtension maps a file extension (lowercase, with dot) to its formatter.
@@ -174,6 +180,31 @@ var (
 			{Manager: "brew", Args: []string{"install", "swiftformat"}},
 		},
 	}
+	// prettierPHP is prettier plus the PHP plugin. The plugin is named by
+	// absolute path because the formatter runs with procoder's working
+	// directory, not the project's, and prettier resolves a bare plugin
+	// name against the former — so `--plugin=@prettier/plugin-php` works
+	// when procoder happens to be run from the project root and fails
+	// everywhere else, which is the worst kind of works.
+	//
+	// prettier is the formatter for PHP because it is the only one that can
+	// be: P-CONTROL requires printing the formatted source without touching
+	// the file, and php-cs-fixer's stdin mode reports which files can be
+	// fixed rather than emitting the fix, while phpcbf and pint write in
+	// place. This was tested against each, not assumed.
+	prettierPHP = &Tool{
+		Name: "prettier",
+		Args: func(f string) []string {
+			return []string{"--plugin=" + phpPluginPath(f), f}
+		},
+		NeedsProjectConfig: "node_modules/@prettier/plugin-php/src/index.mjs",
+		ConfigMissing:      "PHP formatting needs the prettier PHP plugin in the project — npm i -D prettier @prettier/plugin-php",
+		Install:            "npm i -D prettier @prettier/plugin-php",
+		VersionArgs:        []string{"--version"},
+		InstallVia: []InstallCandidate{
+			{Manager: "npm", Args: []string{"install", "-g", "prettier", "@prettier/plugin-php"}},
+		},
+	}
 	rubocopFmt = &Tool{
 		Name: "rubocop",
 		// --stdin + -x (layout-only autocorrect: formatting, not semantics)
@@ -232,6 +263,7 @@ func init() {
 	reg(rubocopFmt, ".rb", ".rake")
 	reg(dartFmt, ".dart")
 	reg(csharpier, ".cs")
+	reg(prettierPHP, ".php")
 }
 
 // ForFile returns the formatter for a path, or nil when the file type is out
@@ -245,9 +277,19 @@ func ForFile(path string) *Tool {
 // against), then PATH. Empty string means not installed.
 func Resolve(t *Tool, repoRoot string) string {
 	if repoRoot != "" {
-		local := filepath.Join(repoRoot, "node_modules", ".bin", t.Name)
-		if runnable(local) {
-			return local
+		// A project-local tool is the right one: it is the version the
+		// project pinned, and it is what the project's own scripts run.
+		// node_modules/.bin is npm's; vendor/bin is composer's, and a PHP
+		// project installs phpstan and phpcs there rather than globally —
+		// so without it procoder would report every PHP linter missing on
+		// exactly the repositories that had carefully installed one.
+		for _, local := range []string{
+			filepath.Join(repoRoot, "node_modules", ".bin", t.Name),
+			filepath.Join(repoRoot, "vendor", "bin", t.Name),
+		} {
+			if runnable(local) {
+				return local
+			}
 		}
 	}
 	p, err := exec.LookPath(t.Name)
@@ -312,6 +354,29 @@ func HasProjectConfig(t *Tool, file string) bool {
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return false
+		}
+		dir = parent
+	}
+}
+
+// phpPluginPath walks up from a file to the node_modules that carries the
+// prettier PHP plugin and returns its absolute path. Empty when there is
+// none — HasProjectConfig has already refused that case, so a caller only
+// reaches the formatter when this finds something.
+func phpPluginPath(file string) string {
+	dir := filepath.Dir(file)
+	for {
+		cand := filepath.Join(dir, "node_modules", "@prettier", "plugin-php")
+		// The plugin's entry module, not the package directory: prettier
+		// refuses a directory ("Directory import is not supported"), and the
+		// package declares its entry through "exports" rather than "main",
+		// so there is nothing for a resolver to fall back to.
+		if entry := filepath.Join(cand, "src", "index.mjs"); runnable(entry) {
+			return entry
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
 		}
 		dir = parent
 	}

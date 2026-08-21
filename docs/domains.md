@@ -35,17 +35,18 @@ comments or `.gitleaksignore`, each a reviewed decision — the flow is in
 The canonical linter per ecosystem, under the project's own config —
 Procoder imposes nothing where the repo has spoken.
 
-| Ecosystem | Tool          | Baseline when the repo has no config                                                                                  |
-| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Go        | golangci-lint | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                      |
-| Python    | ruff check    | ruff's defaults                                                                                                       |
-| Shell     | shellcheck    | shellcheck's defaults                                                                                                 |
-| JS/TS     | eslint        | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed) |
-| Rust      | cargo clippy  | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                   |
-| Kotlin    | ktlint        | ktlint's defaults                                                                                                     |
-| Swift     | swiftlint     | swiftlint's defaults                                                                                                  |
-| Ruby      | rubocop       | rubocop's defaults                                                                                                    |
-| Java      | checkstyle    | the bundled google_checks; a repo `checkstyle.xml` wins                                                               |
+| Ecosystem | Tool           | Baseline when the repo has no config                                                                                                               |
+| --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                   |
+| Python    | ruff check     | ruff's defaults                                                                                                                                    |
+| Shell     | shellcheck     | shellcheck's defaults                                                                                                                              |
+| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed)                              |
+| Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                |
+| Kotlin    | ktlint         | ktlint's defaults                                                                                                                                  |
+| Swift     | swiftlint      | swiftlint's defaults                                                                                                                               |
+| Ruby      | rubocop        | rubocop's defaults                                                                                                                                 |
+| Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                            |
+| PHP       | phpstan, phpcs | whichever the repo configured (`phpstan.neon`, `phpcs.xml`); both if both. With neither, `php -l` reports syntax errors only — no style is imposed |
 
 Report by default; `[lint] policy = "block"` in config.toml makes
 findings block. Lint is judgment where formatting was not — the findings
@@ -156,7 +157,9 @@ Every write is checked against the ecosystem's canonical formatter —
 gofmt, ruff format, prettier (JS/TS/JSON/CSS/HTML/Markdown/YAML),
 rustfmt, clang-format (config required — Procoder has no style opinion
 of its own), shfmt, google-java-format, ktfmt (Kotlin), swiftformat,
-rubocop (Ruby), dart format, and csharpier (C#). Three verdicts, never
+rubocop (Ruby), dart format, csharpier (C#), and prettier with
+`@prettier/plugin-php` for PHP (the plugin must be in the project;
+without it `.php` is out of scope, said and counted). Three verdicts, never
 collapsed: **clean**, **unformatted** (the agent receives the formatted
 result in-turn and writes it itself), **unchecked** (tool missing or
 failed — fails the gate). The file is never touched behind the agent's

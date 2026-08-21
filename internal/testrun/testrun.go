@@ -70,6 +70,9 @@ func Run(root string, paths []string, coverage bool, name string) []Result {
 	if exists(root, "build.gradle") || exists(root, "build.gradle.kts") || exists(root, "pom.xml") {
 		out = append(out, runJava(root, name))
 	}
+	if phpunitDetected(root) {
+		out = append(out, runPHPUnit(root, coverage, name))
+	}
 	return out
 }
 
@@ -78,7 +81,7 @@ func Run(root string, paths []string, coverage bool, name string) []Result {
 // could run at all.
 func Report(results []Result, out func(string)) int {
 	if len(results) == 0 {
-		out("NOT run — no recognized test setup in this repository (go.mod, Cargo.toml, package.json test script, pytest, gradle/maven)")
+		out("NOT run — no recognized test setup in this repository (go.mod, Cargo.toml, package.json test script, pytest, gradle/maven, phpunit)")
 		return 2
 	}
 	failed, ran := false, false

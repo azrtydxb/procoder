@@ -162,6 +162,8 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 			byExt["rs"] = append(byExt["rs"], f)
 		case ".java":
 			byExt["java"] = append(byExt["java"], f)
+		case ".php":
+			byExt["php"] = append(byExt["php"], f)
 		}
 	}
 	var out []gitx.Finding
@@ -191,6 +193,9 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 	}
 	if fs := byExt["java"]; len(fs) > 0 {
 		out = append(out, lintJava(root, fs, block)...)
+	}
+	if fs := byExt["php"]; len(fs) > 0 {
+		out = append(out, lintPHP(root, fs, block)...)
 	}
 	return out
 }
