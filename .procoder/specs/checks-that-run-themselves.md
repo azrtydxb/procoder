@@ -52,6 +52,10 @@ CI.
   where it does not.
 - `procoder status` names any check the gate deferred, so nobody reads a
   green gate as coverage it did not have.
+- CI runs the whole-tree pass: `maintain`, `debt` and `deps` over the
+  whole repository, alongside the `security --deep` and `docs --external`
+  it already runs. The gate answers about the change; CI answers about
+  the tree.
 
 ## Out of scope
 
@@ -77,7 +81,8 @@ CI.
 
 - No new configuration. Nothing here is a knob, because nothing here is
   a preference.
-- No new command. `procoder check`, the hooks and CI keep their shapes.
+- No new command. `procoder check` and the hooks keep their shapes; the CI
+  gate job gains steps for the whole-tree checks.
 - `procoder status` gains a line naming deferred checks when there are
   any.
 
@@ -136,6 +141,11 @@ CI.
       nothing when none were.
 - [ ] A repository with no test setup, no manifests and no rule files
       commits without any new blocking finding.
+- [ ] CI runs `maintain`, `debt` and `deps` over the whole tree and fails
+      the job on a blocking finding from any of them.
+- [ ] A debt marker with no revisit condition, in a file the commit did
+      not touch, is caught by CI and not by the gate — asserted so the two
+      tiers cannot silently collapse into one.
 
 ## Open questions
 
@@ -178,3 +188,12 @@ CI.
 - **D-5: `bench` stays out.** A benchmark at commit time measures the
   machine and the moment, not the change, and a flaky blocking check
   teaches people to bypass the gate.
+- **D-6: the gate answers about the change, CI answers about the tree.**
+  Some of these questions are not about a commit at all. Dependency
+  freshness, the debt ledger and complexity across a codebase are
+  properties of the repository, and asking them of every commit would
+  either report the same finding forever or scan the whole tree each time
+  someone edits a line. They belong in CI, where the subject is the
+  repository. Where a check is meaningful about a change — SAST on the
+  files touched, drift in the rule files, the suite — it belongs in the
+  gate as well, and the two tiers say which is which.
