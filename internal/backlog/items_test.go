@@ -121,3 +121,44 @@ func TestItemFileGuardsTraversal(t *testing.T) {
 		}
 	}
 }
+
+// The ids already on disk were generated before Slug stopped welding words
+// together, and `Sprint:` fields, closed-story evidence and commit messages
+// all reference them. This is a change to how NEW names are made: a rename
+// pass would break every one of those references. So the guard runs each
+// name on disk back through the resolver a command uses — `backlog close
+// story <id>` and `sprint pull <id>` reach a file this way and no other —
+// and asserts the file is there.
+// proved by: made ItemFile re-slug the id it is given — every story seeded
+// before this change then resolves to a path that does not exist, which is
+// exactly what a rename pass would do to the references.
+func TestIdsOnDiskStillResolveThroughItemFile(t *testing.T) {
+	root := filepath.Join("..", "..")
+	dir := filepath.Join(root, Dir, KindStory)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		// Not a skip: an unreadable directory means this guard checked
+		// nothing, and a green run that checked nothing is the failure it
+		// exists to prevent.
+		t.Fatalf("the seeded stories must be readable for this guard to mean anything: %v", err)
+	}
+	checked := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".md")
+		path, err := ItemFile(root, KindStory, id)
+		if err != nil {
+			t.Errorf("%s is on disk but ItemFile refuses it: %v", id, err)
+			continue
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s no longer resolves to a file: %v", id, err)
+		}
+		checked++
+	}
+	if checked == 0 {
+		t.Error("no story ids were checked — this guard proves nothing")
+	}
+}

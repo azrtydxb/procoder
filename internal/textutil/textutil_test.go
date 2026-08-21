@@ -1,8 +1,9 @@
 package textutil
 
-import "strings"
-
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFirstLineSkipsBlanksTrimsAndCaps(t *testing.T) {
 	if got := FirstLine("\n\n  hello  \nsecond\n"); got != "hello" {
@@ -49,5 +50,60 @@ func TestStripCommentsRemovesGuidanceIncludingUnterminated(t *testing.T) {
 	}
 	if got := StripComments("kept <!-- never closed"); got != "kept " {
 		t.Fatalf("an unterminated comment truncates rather than returning everything: %q", got)
+	}
+}
+
+// A dropped character is a boundary, never glue. Welding the halves of a
+// word together made a story about `answers.md` unfindable by anyone
+// grepping for "answers", and collapsed v1.2.3 and v12.3 onto one slug —
+// which surfaces as `backlog story` refusing on a collision the user cannot
+// see the cause of.
+// proved by: dropped the default branch back to the old three-character
+// whitelist — "answers.md" then slugs to "answersmd" and the two versions
+// below collide.
+func TestPunctuationSeparatesInsteadOfWelding(t *testing.T) {
+	for title, want := range map[string]string{
+		"a spec question ANSWERED in `answers.md` no longer blocks": "a-spec-question-answered-in-answers-md-no-longer-blocks",
+		"read config.toml and package.json":                         "read-config-toml-and-package-json",
+		"the v1.2.3 tag is read":                                    "the-v1-2-3-tag-is-read",
+	} {
+		if got := Slug(title); got != want {
+			t.Errorf("Slug(%q)\n got %q\nwant %q", title, got, want)
+		}
+	}
+	if Slug("v1.2.3") == Slug("v12.3") {
+		t.Errorf("two different versions must not slug alike: %q", Slug("v1.2.3"))
+	}
+	// Heavy punctuation must not become a slug of mostly dashes, and must
+	// not lead or trail with one — those are file names.
+	got := Slug("`.procoder/ask/QA.md` and `.procoder/ask/answers.md` are written")
+	if strings.Contains(got, "--") || strings.HasPrefix(got, "-") || strings.HasSuffix(got, "-") {
+		t.Errorf("runs of dashes must collapse and the ends must be clean: %q", got)
+	}
+}
+
+// A Latin letter with a mark is that letter, for a file name's purposes.
+// Dropping the rune left "caf" — a word that is neither the title nor
+// findable by it — and someone typing "cafe" would not match either.
+// proved by: removed the latin1 case from Slug — "café" then slugs to
+// "caf" and "straße" to "stra-e", and neither is findable by the word it
+// was made from.
+func TestAccentedLettersFoldRatherThanVanish(t *testing.T) {
+	for title, want := range map[string]string{
+		"café-story.md is quoted": "cafe-story-md-is-quoted",
+		"naïve façade":            "naive-facade",
+		"Müller straße":           "muller-strasse",
+		"ÉCOLE normale":           "ecole-normale", // uppercase folds too
+		"Łódź report":             "lodz-report",
+	} {
+		if got := Slug(title); got != want {
+			t.Errorf("Slug(%q)\n got %q\nwant %q", title, got, want)
+		}
+	}
+	// The table is Latin only, and says so. A script it does not cover
+	// still loses its letters — the documented ceiling, asserted so that a
+	// later table covering more scripts fails here and gets read.
+	if got := Slug("日本語 title"); got != "title" {
+		t.Errorf("non-Latin scripts are the known ceiling: %q", got)
 	}
 }
