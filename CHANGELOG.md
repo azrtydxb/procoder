@@ -31,6 +31,62 @@ Rules that earn their place:
 - Name outside contributors. They are why the thing got fixed.
 -->
 
+## 1.3.0 — 2026-08-21
+
+_The decisions Procoder used to make on your behalf are yours to make,
+and it says which ones you changed._
+
+**Added — a repository chooses its own tools, thresholds and templates.**
+([#123](https://github.com/azrtydxb/procoder/pull/123),
+[#124](https://github.com/azrtydxb/procoder/pull/124),
+[#125](https://github.com/azrtydxb/procoder/pull/125)) `[tools] js =
+"biome"` picks the formatter for a language. `[security] sast_blocks_at`
+sets the severity that stops a commit, where the code had `ERROR` as a
+literal. `.procoder/templates/<name>.md` replaces any of the nine
+templates that drive the quality chain — spec, plan, ADR, todo,
+milestone, epic, story, sprint, bug — which were embedded constants with
+no way in. And `.procoder/lint/RULES.md` gains the `## checks` list the
+docs and security domains already had, replacing Procoder's curated
+clang-tidy families.
+
+A repository names a tool; it does not name a binary and an argv.
+Procoder owns the invocation, which is what keeps the print-don't-write
+contract a guarantee rather than a hope — a tool reaches the menu by
+being able to emit formatted source on stdout, tested for each candidate
+rather than assumed. Laravel Pint, phpcbf and php-cs-fixer are absent for
+that reason and no other.
+
+**Added — `procoder config` says what is in force and where it came
+from.** ([#123](https://github.com/azrtydxb/procoder/pull/123)) Every
+effective setting, its value, and its source — `default`, or the file and
+line. A setting weaker than its default is marked. Configurability
+without visibility is worse than none: a person reading an unfamiliar
+repository has to be able to ask which of Procoder's defaults still
+apply.
+
+**Changed — a setting that weakens a default prints on every gate
+run.** ([#123](https://github.com/azrtydxb/procoder/pull/123)) Naming
+what was relaxed and what it costs. Strengthening prints nothing. This is
+the rule the gate already lives by, applied to configuration: a green
+verdict must not be able to mean "the config was loosened" without saying
+so.
+
+**Fixed — a setting Procoder cannot apply no longer passes in silence.**
+([#123](https://github.com/azrtydxb/procoder/pull/123)) The loader fell
+through for any key it did not recognise, so `polcy = "block"` was
+accepted, did nothing, and said nothing — the writer believed their
+policy was set. Unknown keys, malformed lines and values of the wrong
+kind are each reported with their line number, and they block.
+
+**Fixed — an emptied Markdown file blocks.**
+([#120](https://github.com/azrtydxb/procoder/pull/120)) `procoder format`
+prints one header line for a file that is already formatted, so a
+pipeline that strips the header and writes the rest empties it on the
+success path. That destroyed a 551-line documentation page in this
+repository, and nothing noticed: the documentation obligation asks
+whether a doc CHANGED, and emptying one is a change, so the destruction
+satisfied the check meant to prevent it.
+
 ## 1.2.0 — 2026-08-21
 
 _A green gate now means the code was checked rather than that the machine
