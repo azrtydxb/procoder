@@ -43,7 +43,11 @@ func TestOnlyTheEcosystemsTheCommitIsWrittenInAreAsked(t *testing.T) {
 // proved by: returned nil from changedPackages — every runner is given
 // the whole tree and a one-line change pays for all of it.
 func TestTheRunIsNarrowedToTheChangedPackages(t *testing.T) {
-	root := filepath.FromSlash("/repo")
+	// t.TempDir, not a literal like "/repo": on Windows a rooted path with
+	// no volume is not absolute, so gitx.RepoRel joins it onto the root a
+	// second time and the test measures its own path arithmetic. The same
+	// fixture mistake this repository has now made three times.
+	root := t.TempDir()
 	got := changedPackages(root, []string{
 		filepath.Join(root, "internal", "textutil", "a.go"),
 		filepath.Join(root, "internal", "textutil", "b.go"),
