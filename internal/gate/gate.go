@@ -95,6 +95,11 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	// threshold that blocks by surprise stops work on exactly the files
 	// that need the refactor.
 	hygiene = append(hygiene, maintain.ComplexityChanged(root, paths, cfg.MaintainBlock)...)
+	// Known vulnerabilities, when the commit touches a dependency
+	// manifest. Only then: the scan answers about the manifests, so a
+	// commit that edits a comment would pay nearly a second to be told the
+	// same thing it was told last time.
+	hygiene = append(hygiene, security.DepsChanged(root, paths)...)
 	blockingHygiene := 0
 	for _, f := range hygiene {
 		mark := "info        "

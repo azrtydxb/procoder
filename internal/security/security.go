@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -373,19 +375,17 @@ func Deps(root string) []gitx.Finding {
 	// manifests are named explicitly: osv's own directory walker trusts
 	// git metadata and comes back empty inside git worktrees
 	var margs []string
-	for _, m := range DepManifests {
-		if _, err := os.Stat(filepath.Join(root, m)); err == nil {
-			margs = append(margs, "-L", m)
-		}
+	for _, m := range manifestsIn(root) {
+		margs = append(margs, "-L", m)
 	}
 	// a bare package.json is not scannable by osv (it needs a lockfile's
 	// pinned versions); one that DECLARES dependencies without any
 	// lockfile is an honest gap, one without dependencies has nothing to
 	// check and stays silent
 	var out []gitx.Finding
-	if hasNpmDepsWithoutLockfile(root) {
-		out = append(out, gitx.Finding{Blocking: true,
-			Message: "npm dependencies NOT checked — package.json declares dependencies but no lockfile exists for osv-scanner; generate package-lock.json (security)"})
+	for _, gap := range npmGaps(root) {
+		out = append(out, gitx.Finding{Blocking: true, File: gap,
+			Message: "npm dependencies NOT checked — this package.json declares dependencies but no lockfile exists beside it for osv-scanner; generate package-lock.json (security)"})
 	}
 	if len(margs) == 0 {
 		if len(out) > 0 {
@@ -446,6 +446,38 @@ func Deps(root string) []gitx.Finding {
 
 // hasNpmDepsWithoutLockfile: package.json declares dependencies but no
 // npm lockfile exists — osv cannot pin versions, so scanning is impossible.
+// npmGaps lists every package.json that declares dependencies with no
+// lockfile beside it — one per package, because a monorepo has one per
+// package and checking only the repository root reports the first and
+// stays silent about the rest.
+func npmGaps(root string) []string {
+	var out []string
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable directory hides its own packages, not the others
+		}
+		if info.IsDir() {
+			if p != root && manifestDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info.Name() != "package.json" {
+			return nil
+		}
+		if hasNpmDepsWithoutLockfile(filepath.Dir(p)) {
+			if rel, ok := gitx.RepoRel(root, p); ok {
+				out = append(out, rel)
+			}
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
+// hasNpmDepsWithoutLockfile answers for ONE directory: a package.json
+// there declaring dependencies with no lockfile beside it.
 func hasNpmDepsWithoutLockfile(root string) bool {
 	for _, lock := range []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
 		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
@@ -496,4 +528,96 @@ func firstLine(s string) string {
 		return "no output"
 	}
 	return s
+}
+
+// DepsChanged is the commit gate's dependency-vulnerability leg: the same
+// scan, run only when the commit touches something that could change the
+// dependency graph.
+//
+// The scan answers about the manifests, not about the files around them,
+// so re-running it on a commit that edits a comment would report the same
+// vulnerabilities forever at a cost of nearly a second each time. A commit
+// that changes a manifest is exactly the moment the answer can change.
+//
+// All manifests are scanned, not only the one that changed: a lockfile
+// edit moves versions the other manifests resolve against, and a scan of
+// half a graph is a scan nobody can trust.
+func DepsChanged(root string, files []string) []gitx.Finding {
+	if !touchesManifest(root, files) {
+		return nil
+	}
+	return Deps(root)
+}
+
+// touchesManifest reports whether any changed file is a dependency
+// manifest osv-scanner reads, or the package.json whose absent lockfile
+// Deps reports on.
+func touchesManifest(root string, files []string) bool {
+	watched := map[string]bool{"package.json": true}
+	for _, m := range DepManifests {
+		watched[m] = true
+	}
+	for _, f := range files {
+		rel, ok := gitx.RepoRel(root, f)
+		if !ok {
+			continue
+		}
+		// By base name: a manifest in a subdirectory is still a manifest,
+		// and a monorepo keeps one per package.
+		if watched[path.Base(rel)] {
+			return true
+		}
+	}
+	return false
+}
+
+// manifestDirs are directories a dependency manifest may sit in without
+// belonging to this repository: vendored copies and installed packages
+// carry their own, and scanning them reports vulnerabilities in code
+// nobody here can change.
+var manifestDirs = map[string]bool{
+	".git": true, "node_modules": true, "vendor": true, "dist": true,
+	"target": true, "__pycache__": true, ".venv": true,
+}
+
+// manifestsIn finds every dependency manifest in the repository, not only
+// the ones at its root.
+//
+// The root-only version was the shape of the whole feature's failure: a
+// monorepo keeps one manifest per package, so `security --deep` scanned
+// the top level and reported clean over every package beneath it — and
+// once the gate began triggering on a nested manifest, a commit paid for
+// a scan that could not look at the file it was triggered by.
+//
+// Paths are returned repo-relative because that is what osv-scanner's -L
+// wants alongside cmd.Dir = root.
+func manifestsIn(root string) []string {
+	names := map[string]bool{}
+	for _, m := range DepManifests {
+		names[m] = true
+	}
+	var out []string
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			// An unreadable directory is not a reason to scan nothing; the
+			// manifests that ARE readable still get scanned, and osv
+			// reports on what it was given.
+			return nil //nolint:nilerr // a walk that cannot enter one directory still covers the rest
+		}
+		if info.IsDir() {
+			if p != root && manifestDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !names[info.Name()] {
+			return nil
+		}
+		if rel, ok := gitx.RepoRel(root, p); ok {
+			out = append(out, rel)
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
 }
