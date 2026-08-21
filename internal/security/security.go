@@ -244,7 +244,7 @@ func severityAtLeast(found, bar string) bool {
 	return f >= b
 }
 
-func Sast(root string) []gitx.Finding { return sast(root, nil) }
+func Sast(root string) []gitx.Finding { return sast(root) }
 
 // SastChanged is the commit gate's SAST leg: the same scan, given the
 // files the commit contains instead of the whole tree.
@@ -269,7 +269,11 @@ func Sast(root string) []gitx.Finding { return sast(root, nil) }
 func SastChanged(root string, files []string) []gitx.Finding {
 	changed := map[string]bool{}
 	for _, f := range files {
-		if rel, err := filepath.Rel(root, f); err == nil && !strings.HasPrefix(rel, "..") {
+		// Boundary-aware: a directory legitimately named "..foo" is inside
+		// the repository, and a prefix test would read it as an escape and
+		// drop the file from the commit's set — quietly not blocking on a
+		// finding that belongs to it.
+		if rel, err := filepath.Rel(root, f); err == nil && !escapes(rel) {
 			changed[filepath.ToSlash(rel)] = true
 		}
 	}
@@ -277,7 +281,7 @@ func SastChanged(root string, files []string) []gitx.Finding {
 		return nil
 	}
 	var out []gitx.Finding
-	for _, f := range sast(root, nil) {
+	for _, f := range sast(root) {
 		// A finding that could not be placed — a scan that did not run,
 		// unreadable output — has no path and belongs to the commit
 		// whatever it touched.
@@ -288,7 +292,7 @@ func SastChanged(root string, files []string) []gitx.Finding {
 	return out
 }
 
-func sast(root string, files []string) []gitx.Finding {
+func sast(root string) []gitx.Finding {
 	blocksAt := config.Load(root).SastBlocksAt
 	bin := tools.Resolve(Semgrep, root)
 	if bin == "" {
@@ -297,12 +301,11 @@ func sast(root string, files []string) []gitx.Finding {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), deepTimeout)
 	defer cancel()
-	targets := []string{"."}
-	if len(files) > 0 {
-		targets = files
-	}
-	args := append([]string{"scan", "--config", "auto", "--json", "--quiet"}, targets...)
-	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
+	// The tree, always. Naming targets is what made semgrep scan files its
+	// own default selection skips, and now that nothing does it there is
+	// no argv built from file names — so no filename can be read as a
+	// flag, and there is no separator to remember.
+	cmd := exec.CommandContext(ctx, bin, "scan", "--config", "auto", "--json", "--quiet", ".") // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	var buf, errb bytes.Buffer
 	cmd.Stdout = &buf
@@ -494,4 +497,10 @@ func firstLine(s string) string {
 		return "no output"
 	}
 	return s
+}
+
+// escapes reports whether a repo-relative path leaves the repository.
+// ".." and "../x" do; "..foo/x" does not.
+func escapes(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.HasPrefix(rel, "../")
 }

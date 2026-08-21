@@ -116,3 +116,34 @@ func TestNoChangedFilesMeansNoScan(t *testing.T) {
 		t.Errorf("nothing changed means nothing to scan, got %+v", got)
 	}
 }
+
+// A directory legitimately named "..foo" is inside the repository. A
+// prefix test for ".." reads it as an escape and drops the file from the
+// commit's set — so a finding that belongs to the change quietly stops
+// blocking it, which is the failure this whole filter exists to avoid,
+// arriving through a string comparison.
+// proved by: replaced escapes with strings.HasPrefix(rel, "..") — the
+// file under ..foo/ is treated as outside the repository and its finding
+// no longer reaches the commit.
+func TestADirectoryNamedLikeAnEscapeIsStillInsideTheRepo(t *testing.T) {
+	for path, want := range map[string]bool{
+		"..":            true,
+		"../outside.py": true,
+		"..foo/a.py":    false,
+		"a.py":          false,
+		"sub/dir/a.py":  false,
+	} {
+		if got := escapes(filepath.FromSlash(path)); got != want {
+			t.Errorf("escapes(%q) = %v, want %v", path, got, want)
+		}
+	}
+
+	// And end to end: a finding under ..foo/ belongs to a commit that
+	// touched it.
+	stubSemgrep(t, `{"results":[{"path":"..foo/a.py","start":{"line":1},"check_id":"x","extra":{"severity":"ERROR","message":"inside"}}]}`)
+	root := t.TempDir()
+	got := SastChanged(root, []string{filepath.Join(root, "..foo", "a.py")})
+	if len(got) != 1 {
+		t.Errorf("a file under ..foo/ is in the repository: %+v", got)
+	}
+}
