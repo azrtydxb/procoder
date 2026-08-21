@@ -1,6 +1,7 @@
 package testrun
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -187,5 +188,43 @@ func TestADependencyBumpRunsTheSuiteItCouldBreak(t *testing.T) {
 	// has already decided CI owns.
 	if _, run := changedPackages(root, []string{filepath.Join(root, "package.json")}); run {
 		t.Error("a package.json bump is CI's, not the gate's")
+	}
+}
+
+// The gate runs only the suites it can narrow, and every other one is
+// CI's. That trade is invisible from a green gate — a JavaScript commit
+// passes having never run its suite — so the deferral has to be
+// nameable. Silence when there is nothing to name: a line on every
+// session in a single-language repository is noise.
+// proved by: returned every detected ecosystem rather than the deferred
+// ones — a Go repository is told its Go suite was deferred to CI on
+// every commit, which is the opposite of true.
+func TestTheGateNamesTheSuitesItLeavesToCI(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A Go repository defers nothing: the gate runs what it narrows.
+	write("go.mod", "module x\n")
+	if d := Deferred(root); len(d) != 0 {
+		t.Errorf("a Go repository has nothing deferred: %v", d)
+	}
+
+	// A package.json with no test script is not a deferred suite — it is
+	// no suite. Naming it would invent a check that does not exist.
+	write("package.json", `{"name":"x"}`)
+	if d := Deferred(root); len(d) != 0 {
+		t.Errorf("no test script is no suite, not a deferred one: %v", d)
+	}
+
+	write("package.json", `{"scripts":{"test":"vitest run"}}`)
+	write("Cargo.toml", "[package]\nname=\"x\"\n")
+	got := Deferred(root)
+	if len(got) != 2 || got[0] != "rust" || got[1] != "js" {
+		t.Errorf("both suites the gate cannot narrow, in reading order: %v", got)
 	}
 }

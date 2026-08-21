@@ -209,3 +209,30 @@ func TestRunPrintsTheHeaderAndExitsZero(t *testing.T) {
 		t.Fatalf("the report must open with %q, got %v", Header, got)
 	}
 }
+
+// The report names what the gate will not run, and stays silent when
+// there is nothing to name.
+// proved by: returned the line unconditionally — every single-language
+// repository gets "gate defers to CI: " on every session, naming nothing.
+func TestTheReportNamesWhatTheGateDefers(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := deferredLine(root); got != "" {
+		t.Errorf("nothing deferred, nothing said: %q", got)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "package.json"),
+		[]byte(`{"scripts":{"test":"vitest run"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := deferredLine(root)
+	if !strings.Contains(got, "js") {
+		t.Errorf("the deferred suite must be named: %q", got)
+	}
+	// Named AND explained: "js" alone reads as a suite that failed.
+	if !strings.Contains(got, "CI") {
+		t.Errorf("the line must say who runs it instead: %q", got)
+	}
+}

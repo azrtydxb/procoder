@@ -247,6 +247,18 @@ reason rather than defaulting to something comfortable. The same block
 is injected at session start, inside a hard three-second budget that
 never runs the gate, the suite, or any network tool.
 
+It also names the suites the commit gate will **not** run here:
+
+```
+gate defers to CI: rust, js suite(s) — the gate narrows only go and pytest
+```
+
+The gate narrows to the runners that accept a target list, so every other
+suite is CI's. Without this line that trade is invisible — a JavaScript
+commit passes a green gate having never run its suite. Nothing deferred,
+nothing said; and a `package.json` with no test script is no suite rather
+than a deferred one, so it is not named.
+
 #### `procoder run [--exec]`
 
 How to run this project: the launch command(s) it declares — package.json
