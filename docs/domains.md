@@ -35,18 +35,18 @@ comments or `.gitleaksignore`, each a reviewed decision — the flow is in
 The canonical linter per ecosystem, under the project's own config —
 Procoder imposes nothing where the repo has spoken.
 
-| Ecosystem | Tool           | Baseline when the repo has no config                                                                                                               |
-| --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                   |
-| Python    | ruff check     | ruff's defaults                                                                                                                                    |
-| Shell     | shellcheck     | shellcheck's defaults                                                                                                                              |
-| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed)                              |
-| Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                |
-| Kotlin    | ktlint         | ktlint's defaults                                                                                                                                  |
-| Swift     | swiftlint      | swiftlint's defaults                                                                                                                               |
-| Ruby      | rubocop        | rubocop's defaults                                                                                                                                 |
-| Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                            |
-| PHP       | phpstan, phpcs | whichever the repo configured (`phpstan.neon`, `phpcs.xml`); both if both. With neither, `php -l` reports syntax errors only — no style is imposed |
+| Ecosystem | Tool           | Baseline when the repo has no config                                                                                                                          |
+| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                              |
+| Python    | ruff check     | ruff's defaults                                                                                                                                               |
+| Shell     | shellcheck     | shellcheck's defaults                                                                                                                                         |
+| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; configless TypeScript is out of scope (a parser would have to be imposed)                                         |
+| Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                           |
+| Kotlin    | ktlint         | ktlint's defaults                                                                                                                                             |
+| Swift     | swiftlint      | swiftlint's defaults                                                                                                                                          |
+| Ruby      | rubocop        | rubocop's defaults                                                                                                                                            |
+| Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                                       |
+| PHP       | phpstan, phpcs | Procoder's curated phpstan baseline (level 5) when the repo configures neither; a repo `phpstan.neon` or `phpcs.xml` wins, and both run when both are present |
 
 Report by default; `[lint] policy = "block"` in config.toml makes
 findings block. Lint is judgment where formatting was not — the findings

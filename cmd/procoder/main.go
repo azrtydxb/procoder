@@ -125,11 +125,15 @@ func init() {
 		// tell a reader to install a tool procoder is never going to run
 		// there — doctor's job is what this repository needs, not what PHP
 		// has available.
+		// phpstan is procoder's default PHP linter, so it is required
+		// wherever PHP is — not only where the project already configured
+		// it. Listing it conditionally was the bug: a repository with no
+		// PHP tooling at all was told nothing was missing, `procoder init`
+		// installed nothing, and the lint domain fell back to a syntax
+		// check forever. phpcs stays conditional because it is the
+		// project's choice, not procoder's default.
 		if exts[".php"] {
-			out = append(out, lint.PHP)
-			if lint.HasPhpstanConfig(root) {
-				out = append(out, lint.Phpstan)
-			}
+			out = append(out, lint.PHP, lint.Phpstan)
 			if lint.HasPhpcsConfig(root) {
 				out = append(out, lint.Phpcs)
 			}
