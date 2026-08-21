@@ -249,27 +249,43 @@ func Sast(root string) []gitx.Finding { return sast(root, nil) }
 // SastChanged is the commit gate's SAST leg: the same scan, given the
 // files the commit contains instead of the whole tree.
 //
-// Scoping is worth doing and it is not what makes this affordable.
-// semgrep's cost is `--config auto` fetching and loading rules, which is
-// fixed: measured on this repository, a one-line file costs 4.7s, two
-// changed files 6.1s, and the entire tree 9s. So the gate pays seconds
-// either way, and the reason it is acceptable is that a commit is not a
-// keystroke — not that the scan was made cheap. On a large repository the
-// difference between "changed files" and "everything" is the part that
-// keeps growing, which is why it is scoped anyway.
+// The scan itself is the same whole-tree scan `security --deep` runs, and
+// the SCOPING is applied to its findings rather than to its targets.
+//
+// That is not the obvious way round, and the obvious way is wrong.
+// Handing semgrep an explicit list of files makes it scan files it
+// otherwise skips — its own default selection is bypassed by naming a
+// target — so the gate reported a finding in a _test.go file that
+// `security --deep` had never once mentioned. A developer blocked by a
+// finding CI does not have is worse than a slower gate.
+//
+// The cost of doing it this way is about three seconds on this
+// repository: measured, the whole tree is 9s against 6.1s for two named
+// files. Little of that is scanning. semgrep's time goes on `--config
+// auto` loading rules, which is fixed — a single one-line file still
+// costs 4.7s — so naming fewer targets was never what made this
+// affordable. What makes it affordable is that a commit is not a
+// keystroke.
 func SastChanged(root string, files []string) []gitx.Finding {
-	var code []string
+	changed := map[string]bool{}
 	for _, f := range files {
 		if rel, err := filepath.Rel(root, f); err == nil && !strings.HasPrefix(rel, "..") {
-			code = append(code, rel)
-		} else {
-			code = append(code, f)
+			changed[filepath.ToSlash(rel)] = true
 		}
 	}
-	if len(code) == 0 {
+	if len(changed) == 0 {
 		return nil
 	}
-	return sast(root, code)
+	var out []gitx.Finding
+	for _, f := range sast(root, nil) {
+		// A finding that could not be placed — a scan that did not run,
+		// unreadable output — has no path and belongs to the commit
+		// whatever it touched.
+		if f.File == "" || changed[filepath.ToSlash(f.File)] {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func sast(root string, files []string) []gitx.Finding {

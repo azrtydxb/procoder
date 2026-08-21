@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -47,43 +46,62 @@ func TestASastFindingInAChangedFileBlocks(t *testing.T) {
 	}
 }
 
-// The scan is given the changed files, not the tree. Scoping does not make
-// semgrep cheap — its cost is rule loading, fixed at seconds — but on a
-// large repository the difference between "the files in this commit" and
-// "everything" is the part that keeps growing.
-// proved by: passed "." instead of the file list — the argv no longer
-// names the file, and every commit scans the whole tree.
-func TestTheScanIsGivenTheChangedFiles(t *testing.T) {
-	// The stub records its arguments so the argv can be asserted without
-	// depending on what a real scanner would find in them.
+// The scoping is applied to the FINDINGS, not to the scan's targets, and
+// the difference is not cosmetic. Handing semgrep an explicit file list
+// makes it scan files its own default selection skips: doing that flagged
+// an exec.Command in a _test.go file that `security --deep` had never
+// once reported, so a developer would have been blocked by a finding CI
+// does not have. The scan is the same whole-tree scan; only its answers
+// are narrowed to the commit.
+// proved by: filtered on nothing and returned every finding — a finding
+// in a file the commit never touched blocks it, which is the whole-repo
+// verdict wearing the gate's name.
+func TestOnlyFindingsInChangedFilesBlockTheCommit(t *testing.T) {
+	const twoFiles = `{"results":[
+      {"path":"mine.py","start":{"line":1},"check_id":"a","extra":{"severity":"ERROR","message":"in my change"}},
+      {"path":"theirs.py","start":{"line":9},"check_id":"b","extra":{"severity":"ERROR","message":"somewhere else"}}
+    ]}`
+	stubSemgrep(t, twoFiles)
+	root := t.TempDir()
+
+	got := SastChanged(root, []string{filepath.Join(root, "mine.py")})
+	if len(got) != 1 {
+		t.Fatalf("only the finding in the changed file belongs to this commit: %+v", got)
+	}
+	if got[0].File != "mine.py" {
+		t.Errorf("wrong finding kept: %+v", got[0])
+	}
+
+	// Narrowing must not mean dropping: a commit touching both owns both.
+	both := SastChanged(root, []string{filepath.Join(root, "mine.py"), filepath.Join(root, "theirs.py")})
+	if len(both) != 2 {
+		t.Errorf("a commit touching both files owns both findings: %+v", both)
+	}
+}
+
+// A finding with no path — a scan that could not run, output that could
+// not be read — belongs to the commit whatever it touched. Dropping it
+// would filter away the very reports that say the check did not happen.
+// proved by: filtered on the path unconditionally — "semgrep is not
+// installed" is discarded and the commit passes unscanned.
+func TestAFindingWithNoPathIsNotFilteredAway(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the stub is a POSIX shell script")
 	}
 	bin := t.TempDir()
-	argsFile := filepath.Join(bin, "args")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\necho '{\"results\":[]}'\n"
+	script := "#!/bin/sh\n" + "echo 'not json'\n" + "exit 1\n"
 	if err := os.WriteFile(filepath.Join(bin, "semgrep"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	root := t.TempDir()
-	SastChanged(root, []string{filepath.Join(root, "a.py"), filepath.Join(root, "b.py")})
-	raw, err := os.ReadFile(argsFile)
-	if err != nil {
-		t.Fatal(err)
+	got := SastChanged(root, []string{filepath.Join(root, "a.py")})
+	if len(got) != 1 {
+		t.Fatalf("a scan that did not run must reach the commit: %+v", got)
 	}
-	argv := string(raw)
-	for _, want := range []string{"a.py", "b.py"} {
-		if !strings.Contains(argv, want) {
-			t.Errorf("the scan must be given %s:\n%s", want, argv)
-		}
-	}
-	// "." would be the whole tree, which is what this replaces.
-	for _, line := range strings.Split(strings.TrimSpace(argv), "\n") {
-		if line == "." {
-			t.Errorf("the whole tree must not be scanned at the gate:\n%s", argv)
-		}
+	if !got[0].Blocking {
+		t.Error("a check that did not happen must block")
 	}
 }
 
