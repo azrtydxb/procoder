@@ -1,6 +1,6 @@
 # interactive-qa
 
-Status: open
+Status: done 2026-08-21
 Created: 2026-08-20
 Milestone: interactive-qa
 Spec: interactive-qa @ f8caff05b79e

@@ -1,6 +1,6 @@
 # Interactive Q&A — procoder asks the human
 
-Status: open 2026-08-20
+Status: done 2026-08-21
 Created: 2026-08-20
 
 ## Goal
