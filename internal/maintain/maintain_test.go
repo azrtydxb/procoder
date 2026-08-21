@@ -55,17 +55,34 @@ func TestComplexityIsReportedAndNothingBlocks(t *testing.T) {
 	}
 }
 
-func TestMissingToolsSayNotCheckedAndStillExitZero(t *testing.T) {
+// maintain is report-only about its FINDINGS: complexity and dead code are
+// judgement calls, nobody is blocked by them, and it exits 0 with a list.
+//
+// A check that could not run is not a finding. This test used to require
+// exit 0 there too, which meant a machine without golangci-lint ran
+// `procoder maintain`, printed "NOT checked", exited 0, and looked exactly
+// like a clean report — and once CI runs this command, that is a job that
+// passes because the tool was absent. Report-only describes the verdict on
+// the code, not the question of whether the code was read.
+// proved by: returned 0 from Run when a leg could not run — the missing
+// tool is still printed and the command still succeeds, which is the
+// silent green this whole rule exists to remove.
+func TestMissingToolsSayNotCheckedAndFail(t *testing.T) {
 	root := t.TempDir()
 	os.WriteFile(filepath.Join(root, "go.mod"), []byte("module demo\n"), 0o644)
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	var lines []string
-	if code := Run(root, func(s string) { lines = append(lines, s) }); code != 0 {
-		t.Fatalf("report-only command must exit 0: %v", lines)
-	}
-	if !strings.Contains(strings.Join(lines, "\n"), "NOT checked") {
+	code := Run(root, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "NOT checked") {
 		t.Fatalf("missing tool must be said: %v", lines)
+	}
+	if code == 0 {
+		t.Fatalf("a check that did not run must not exit 0:\n%s", joined)
+	}
+	if !strings.Contains(joined, "did NOT run") {
+		t.Errorf("the summary must name how many checks were skipped:\n%s", joined)
 	}
 }
 
