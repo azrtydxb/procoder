@@ -111,3 +111,29 @@ func TestExistingIdsOnDiskStillResolve(t *testing.T) {
 		t.Error("no story files were checked — this guard proves nothing")
 	}
 }
+
+// A Latin letter with a mark is that letter, for a file name's purposes.
+// Dropping the rune left "caf" — a word that is neither the title nor
+// findable by it — and someone typing "cafe" would not match either.
+// proved by: removed the latin1 case from Slug — "café" then slugs to
+// "caf" and "straße" to "stra-e", and neither is findable by the word it
+// was made from.
+func TestAccentedLettersFoldRatherThanVanish(t *testing.T) {
+	for title, want := range map[string]string{
+		"café-story.md is quoted": "cafe-story-md-is-quoted",
+		"naïve façade":            "naive-facade",
+		"Müller straße":           "muller-strasse",
+		"ÉCOLE normale":           "ecole-normale", // uppercase folds too
+		"Łódź report":             "lodz-report",
+	} {
+		if got := Slug(title); got != want {
+			t.Errorf("Slug(%q)\n got %q\nwant %q", title, got, want)
+		}
+	}
+	// The table is Latin only, and says so. A script it does not cover
+	// still loses its letters — the documented ceiling, asserted so that a
+	// later table covering more scripts fails here and gets read.
+	if got := Slug("日本語 title"); got != "title" {
+		t.Errorf("non-Latin scripts are the known ceiling: %q", got)
+	}
+}
