@@ -17,7 +17,10 @@ func newestEntry(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("the changelog must be readable: %v", err)
 	}
-	lines := strings.Split(string(raw), "\n")
+	// CRLF leveled first: a Windows checkout rewrites line endings, so the
+	// paragraph below would end in "\r" and an italic closing "_" would
+	// never be the last character.
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
 	start := -1
 	for i, line := range lines {
 		if strings.HasPrefix(line, "## ") {
