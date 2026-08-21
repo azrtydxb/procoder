@@ -38,12 +38,17 @@ func TestAPathIsTheSameFileHoweverItArrives(t *testing.T) {
 // proved by: replaced the boundary test with strings.HasPrefix(rel, "..")
 // — "..foo/a.go" is refused and its findings stop reaching the commit.
 func TestOnlyRealEscapesAreRefused(t *testing.T) {
-	root := filepath.FromSlash("/repo")
+	// A real absolute path outside the repository, derived rather than
+	// written: "/elsewhere/a.go" has no volume on Windows, so it is not
+	// absolute there, gets joined onto the root, and correctly lands
+	// INSIDE — the literal meant two different things on two platforms.
+	root := t.TempDir()
+	outside := filepath.Join(filepath.Dir(root), "elsewhere", "a.go")
 	for path, want := range map[string]bool{
-		filepath.Join(root, "a.go"):           true,
-		filepath.Join(root, "..foo", "a.go"):  true,
-		filepath.FromSlash("..foo/a.go"):      true,
-		filepath.FromSlash("/elsewhere/a.go"): false,
+		filepath.Join(root, "a.go"):          true,
+		filepath.Join(root, "..foo", "a.go"): true,
+		filepath.FromSlash("..foo/a.go"):     true,
+		outside:                              false,
 	} {
 		if _, ok := RepoRel(root, path); ok != want {
 			t.Errorf("RepoRel(%q) ok=%v, want %v", path, ok, want)
