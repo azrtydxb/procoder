@@ -164,5 +164,12 @@ func Run(root string, out func(string)) int {
 		out(fmt.Sprintf("  %d: %s%s", e.Line, e.Text, flag))
 	}
 	out(fmt.Sprintf("procoder debt: %d marker(s), %d with no upgrade trigger — no-trigger debt silently rots; give each a revisit condition", len(entries), noTrigger))
+	// Non-zero on rot, so the CI step that runs this can fail on it.
+	// Printing the count and exiting 0 made the ledger a thing that had to
+	// be read by a person who already knew to look, which is the shape of
+	// every check this sprint went looking for.
+	if noTrigger > 0 {
+		return 1
+	}
 	return 0
 }

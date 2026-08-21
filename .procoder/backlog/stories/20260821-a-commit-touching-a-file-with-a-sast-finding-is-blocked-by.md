@@ -1,6 +1,6 @@
 # A commit touching a file with a SAST finding is blocked by the gate at the configured severity, where previously only CI saw it.
 
-Status: open
+Status: done
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
@@ -15,9 +15,8 @@ Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] A commit touching a file with a SAST finding is blocked by the gate at the configured severity, where previously only CI saw it.
+- [x] A commit touching a file with a SAST finding is blocked by the gate at the configured severity, where previously only CI saw it.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/security/ -run TestASastFindingInAChangedFileBlocks` — a stubbed ERROR finding in a changed file blocks; `[security] sast_blocks_at` selects the bar. (#133)

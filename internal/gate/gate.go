@@ -13,6 +13,7 @@ import (
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
+	"procoder/internal/debt"
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
 	"procoder/internal/lint"
@@ -101,6 +102,11 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	// commit that edits a comment would pay nearly a second to be told the
 	// same thing it was told last time.
 	hygiene = append(hygiene, security.DepsChanged(root, paths)...)
+	// Debt markers with no revisit condition, in the files this commit
+	// carries. The whole ledger is the tree's and belongs to CI; what
+	// belongs here is the shortcut being taken right now, while the reason
+	// for it is still in the author's head.
+	hygiene = append(hygiene, debt.GateCheck(root, paths)...)
 	// The suite, narrowed to the packages this commit touches: the whole
 	// suite cold is a minute on this repository and one package is a
 	// second. A failing test blocks where the repository asked; a suite

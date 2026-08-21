@@ -1,6 +1,6 @@
 # A failing test suite blocks the commit where the repository set the test policy to block, and reports without blocking otherwise.
 
-Status: open
+Status: done
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
@@ -15,9 +15,8 @@ Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] A failing test suite blocks the commit where the repository set the test policy to block, and reports without blocking otherwise.
+- [x] A failing test suite blocks the commit where the repository set the test policy to block, and reports without blocking otherwise.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/testrun/ -run TestASuiteThatCouldNotRun` — findingFor blocks a Fail only under `policy = "block"`, reports otherwise, and blocks a NotRun regardless. (#136)
