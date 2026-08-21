@@ -15,6 +15,12 @@ import (
 // Config holds every knob the harness reads. Zero values are the defaults, so
 // a repository with no .procoder/ directory gets sensible behaviour.
 type Config struct {
+	// AskBlock: pending questions block the gate instead of being reported
+	// (`[ask] policy = "block"`). Default report — a question is a request
+	// for judgement, not a defect, and blocking a commit on one stops work
+	// the human may not be awake to unblock.
+	AskBlock bool
+
 	// VersionCheckOff silences the session-start version check
 	// (`[version] check = "off"`). It is a knob for CI and scripted runs,
 	// where nobody is going to act on the warning and the second spent
@@ -110,6 +116,8 @@ func Load(root string) Config {
 			if value == "block" || value == "report" || value == "off" {
 				cfg.CommitGate = value
 			}
+		case "ask.policy":
+			cfg.AskBlock = value == "block"
 		case "version.check":
 			// Only the two documented values mean anything. A typo — "of",
 			// or the spec's own "warn" misspelt — must not silently leave

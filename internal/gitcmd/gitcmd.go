@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/ask"
 	"strings"
 
 	"procoder/internal/actions"
@@ -119,6 +120,7 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	// The Copilot loop's offline half: what was captured and never closed.
 	// Reading a file, never the network — the gate runs on every commit.
 	out = append(out, lessons.LeakReminder(root)...)
+	out = append(out, ask.GateFindings(root)...)
 
 	msgs := gitx.UnpushedMessages(root)
 	out = append(out, gitx.Attribution(msgs)...)

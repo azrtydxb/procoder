@@ -107,6 +107,10 @@ text).
   has not governed before.
 - `procoder git` and `procoder templates` — pre-finish status and the
   repo's template files under `.procoder/`.
+- `procoder ask` — the questions no domain can answer for itself. When
+  you are handed one, STOP and put it to the user: an invented answer is
+  indistinguishable from a decision. Record theirs with
+  `procoder ask --file <path>`.
 - `procoder agents` — the per-host rule files derived from this file.
   Regenerate after editing it; drift blocks the gate.
 - `procoder lessons` — the ledger of what escaped the gates. A lesson

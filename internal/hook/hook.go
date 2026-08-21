@@ -5,10 +5,12 @@
 package hook
 
 import (
-	"encoding/json"
 	"fmt"
+
+	"encoding/json"
 	"io"
 	"os"
+	"procoder/internal/ask"
 	"strings"
 	"time"
 
@@ -51,6 +53,36 @@ const stdinDeadline = 5 * time.Second
 // is generous: real source files the hook sees are almost always far below it.
 const maxInlineBytes = 48 * 1024
 
+// askPart carries the questions no domain can answer for itself into the
+// place the coder actually reads. Without it these reach the coder as a
+// finding it feels obliged to resolve, and it resolves them by inventing an
+// answer — which is indistinguishable from a decision once written down.
+//
+// The instruction is the point, not the list: the coder is told to stop and
+// relay, and told the route a human answer comes back through.
+func askPart(root string) string {
+	pending, err := ask.Pending(root)
+	if err != nil || len(pending) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "== q&a: %d question(s) only the user can answer\n", len(pending))
+	limit := len(pending)
+	if limit > 5 {
+		limit = 5
+	}
+	for _, q := range pending[:limit] {
+		fmt.Fprintf(&b, "  - %s %s\n", q.Label(), q.Text)
+	}
+	if len(pending) > limit {
+		fmt.Fprintf(&b, "  … and %d more\n", len(pending)-limit)
+	}
+	b.WriteString("Do NOT guess at these and do NOT answer them yourself: an invented answer\n")
+	b.WriteString("reads as a decision once it is written down. Put them to the user, write\n")
+	b.WriteString("their answers into the file, and record them with `procoder ask --file`.")
+	return b.String()
+}
+
 // Run handles one PostToolUse event end to end. It never returns an error to
 // the host: a broken hook must not break the user's session, so every failure
 // path degrades to empty output.
@@ -86,6 +118,7 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		add(secretsPart(root, p.ToolInput.FilePath))
 		add(lintPart(root, p.ToolInput.FilePath))
 	}
+	add(askPart(root))
 	msg := strings.Join(parts, "\n\n")
 
 	if msg == "" {

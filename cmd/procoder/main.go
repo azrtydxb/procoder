@@ -17,6 +17,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/adr"
+	"procoder/internal/ask"
 	"procoder/internal/audit"
 	"procoder/internal/backlog"
 	"procoder/internal/bench"
@@ -175,6 +176,12 @@ var version = "dev"
 
 const usage = `usage: procoder <command> [args]
 
+  ask [--file <path>]  the questions no domain can answer for itself —
+                       unresolved spec questions, documentation gaps,
+                       flagged secrets, lint findings that need judgement.
+                       Asks a person when there is one, writes them to
+                       .procoder/ask/QA.md when there is not. --file
+                       records the answers a human wrote back
   agents               the universal agent layer: per-host rule files
                        derived from AGENTS.md (Cursor, Windsurf, Cline,
                        Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
@@ -543,6 +550,8 @@ func run(args []string) int {
 		return lessons.Run(doctor.Root(), printLine)
 	case "copilot-leak":
 		return copilotLeakCmd(args[1:])
+	case "ask":
+		return askCmd(args[1:])
 	case "agents":
 		return portability.Agents(doctor.Root(), printLine)
 	case "principles":
@@ -674,6 +683,27 @@ func testCmd(args []string) int {
 		}
 	}
 	return testrun.Report(testrun.Run(doctor.Root(), paths, coverage, name), printLine)
+}
+
+// askCmd is `procoder ask`: the questions no domain can answer for itself,
+// put to a person. --file is the way an answer gets back in when there was
+// no terminal to ask on — the coder relays the questions, writes what the
+// human said, and hands the file over.
+func askCmd(args []string) int {
+	root := doctor.Root()
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--file" && i+1 < len(args):
+			return ask.FromFile(root, args[i+1], printLine)
+		case args[i] == "--file":
+			printLine("ask: --file wants the path of the file holding the answers")
+			return 2
+		default:
+			printLine("ask: unknown argument " + args[i])
+			return 2
+		}
+	}
+	return ask.Run(root, os.Stdin, printLine)
 }
 
 // versionCheckCmd is `procoder version --check`: the version, then what

@@ -103,3 +103,37 @@ func TestOpenPipeWithNoDataCannotHangTheHook(t *testing.T) {
 // keep fmt import honest in both build modes
 var _ = fmt.Sprint
 var _ io.Reader = neverReader{}
+
+// C-06: the write hook carries pending questions into the place the coder
+// reads, with the instruction that matters — and carries nothing when there
+// is nothing to ask.
+// proved by: dropped the "do NOT guess" wording — the coder is then handed a
+// list of open questions with no instruction, which is how they got answered
+// by invention in the first place.
+func TestTheHookCarriesPendingQuestionsAndTheInstruction(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder", "specs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := "# widget\n\nStatus: draft\n\n## Open questions\n\n- which database?\n"
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "specs", "widget.md"), []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := askPart(root)
+	for _, want := range []string{"== q&a", "which database?", "Do NOT guess", "procoder ask --file"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the section must carry %q:\n%s", want, got)
+		}
+	}
+
+	// Nothing pending: nothing said. A hook that speaks when it has nothing
+	// to say trains the reader to skip it.
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "specs", "widget.md"),
+		[]byte("# widget\n\nStatus: draft\n\n## Open questions\n\n<!-- none -->\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if quiet := askPart(root); quiet != "" {
+		t.Errorf("no questions, no section: %q", quiet)
+	}
+}
