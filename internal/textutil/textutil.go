@@ -52,11 +52,19 @@ func Slug(title string) string {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			b.WriteRune(r)
-		case r == ' ' || r == '-' || r == '_':
+		default:
+			// Everything else is a boundary, not glue. Dropping the
+			// character outright welded the halves of a word together:
+			// `answers.md` became "answersmd", so the story about a file
+			// could not be found by grepping the name of the file, and
+			// v1.2.3 and v12.3 collapsed to the same slug — a collision
+			// that surfaces as `backlog story` refusing for no visible
+			// reason. One rule for every non-alphanumeric, so there is no
+			// second list of characters to keep in step with this one.
 			b.WriteByte('-')
 		}
 	}
-	slug := strings.Trim(b.String(), "-")
+	slug := collapse(b.String())
 	if len(slug) > maxSlug {
 		cut := slug[:maxSlug]
 		if i := strings.LastIndexByte(cut, '-'); i > 40 {
@@ -65,6 +73,26 @@ func Slug(title string) string {
 		slug = strings.Trim(cut, "-")
 	}
 	return slug
+}
+
+// collapse squeezes runs of dashes to one and trims the ends, so a title
+// that punctuates heavily — "`QA.md` and `answers.md` are written" — yields
+// "qa-md-and-answers-md-are-written" rather than a slug of mostly dashes.
+func collapse(s string) string {
+	var b strings.Builder
+	var dash bool
+	for _, r := range s {
+		if r == '-' {
+			dash = true
+			continue
+		}
+		if dash && b.Len() > 0 {
+			b.WriteByte('-')
+		}
+		dash = false
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Section returns the body between "## name" and the next section heading —
