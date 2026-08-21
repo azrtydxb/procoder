@@ -116,6 +116,11 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	// every run. It rides here so `check`, `git` and CI cannot disagree
 	// about the config any more than they can about the code.
 	out := cfg.Findings()
+	// Domain: the agent layer. `procoder agents` has always ended by
+	// printing "the gate blocks on drift" and the documentation said the
+	// same, while nothing anywhere asked. A rule file that has drifted
+	// means another host is reading rules this repository no longer holds.
+	out = append(out, portability.AgentsDrift(root)...)
 	out = append(out, gitx.ConflictMarkers(changed)...)
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)

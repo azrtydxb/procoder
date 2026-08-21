@@ -401,7 +401,15 @@ one blocks exactly as before.
 The universal agent layer: per-host rule files (Cursor, Windsurf, Cline,
 Kilo Code, Roo Code, Kiro, Antigravity, Qoder, Copilot editors, Codex)
 derived from the canonical `AGENTS.md`. Prints the content for anything
-missing or drifted so the agent can write it; drift blocks the gate.
+missing or drifted so the agent can write it.
+
+Drift blocks the gate — and until now it did not, though this page and
+the command's own output both said so. A rule file that has drifted means
+another host is reading rules this repository no longer holds, which is
+the failure the agent layer exists to prevent, so it is blocking rather
+than advisory. A repository with no `AGENTS.md` ships no agent layer and
+is asked nothing.
+
 See [Every agent](portability.md) for the full host matrix.
 
 #### `procoder lessons`
