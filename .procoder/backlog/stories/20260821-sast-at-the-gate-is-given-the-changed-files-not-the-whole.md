@@ -1,14 +1,21 @@
 # SAST at the gate is given the changed files, not the whole tree, asserted by a fixture where an untouched file carries a finding and the commit is not blocked by it.
 
-Status: done
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+SAST at the gate must answer about the commit. A developer blocked by a
+finding in a file they have never opened cannot act on it, and learns
+that the way to commit is to turn the gate off.
+
+Done means an untouched file's finding does not block the commit,
+asserted by a fixture that carries one. Note the implementation scans the
+tree and filters the results: naming target files changes what semgrep
+itself chooses to scan, which produced findings the real tool never
+reports.
 
 ## Acceptance criteria
 

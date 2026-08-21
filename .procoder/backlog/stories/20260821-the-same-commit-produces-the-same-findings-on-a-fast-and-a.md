@@ -1,14 +1,19 @@
 # The same commit produces the same findings on a fast and a slow run, asserted by running the gate twice against stubs of different speeds and comparing the output.
 
-Status: done
+Status: done 2026-08-21
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 
 ## Description
 
-<!-- The user story: who needs what, and why. What "done" looks like in
-     the reader's terms — a title is not a description. -->
+The companion assertion to the no-budget rule, stated as the property a
+budget would take away: run the same commit twice, changing only how long
+the scanner takes, and compare.
+
+Done means the two outputs are identical, asserted by comparison rather
+than by inspection — a test that merely checks "some finding appeared" in
+both runs would pass against a budget that dropped half of them.
 
 ## Acceptance criteria
 
