@@ -72,6 +72,18 @@ longer needs a project style file to format anything. Every baseline is
 written to a temp file or named on the command line; nothing is written
 into your repository, and a project config always wins.
 
+**Fixed — an emptied documentation file no longer passes the gate.**
+([#120](https://github.com/azrtydxb/procoder/pull/120)) `procoder format`
+prints one header line for a file that is already formatted and nothing
+after it, so a pipeline that strips the header and writes the rest empties
+the file on the success path. That destroyed `docs/commands.md` during
+this release's own development, and nothing noticed: the documentation
+obligation asks whether a doc CHANGED, and emptying one is a change, so
+the destruction satisfied the check meant to prevent it. An emptied
+Markdown file is a blocking finding now, naming the command that restores
+it. PHP also reached the language list in the README, where it was
+missing.
+
 **Fixed — five file types were formatted and never linted.**
 ([#114](https://github.com/azrtydxb/procoder/pull/114)) `.mts` and `.cts`
 went unlinted while `.mjs` and `.cjs` were checked, and `.pyi` was
