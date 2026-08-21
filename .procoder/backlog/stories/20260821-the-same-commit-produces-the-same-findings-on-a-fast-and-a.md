@@ -1,6 +1,6 @@
 # The same commit produces the same findings on a fast and a slow run, asserted by running the gate twice against stubs of different speeds and comparing the output.
 
-Status: open
+Status: done
 Created: 2026-08-21
 Epic: checks-that-run-themselves
 Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
@@ -15,9 +15,8 @@ Sprint: 011-checks-that-run-themselves-the-gate-for-the-change-ci-for
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] The same commit produces the same findings on a fast and a slow run, asserted by running the gate twice against stubs of different speeds and comparing the output.
+- [x] The same commit produces the same findings on a fast and a slow run, asserted by running the gate twice against stubs of different speeds and comparing the output.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/security/ -run TestFastAndSlowRunsAgree` — two runs differing only in a 2s stub delay produce identical findings. Red against a 1s ceiling: the two runs disagree. (#137)

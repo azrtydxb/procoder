@@ -376,7 +376,17 @@ Harvests deliberate-simplification markers into a ledger. Convention: a
 corner cut on purpose carries a comment with the configured marker
 (default `debt:`, `[debt] marker` in config.toml) naming the ceiling and
 the condition to revisit. Markers with no revisit trigger are flagged —
-those are the ones that silently rot. Read-only, never blocking.
+those are the ones that silently rot — and the command **exits 1** when
+the tree carries any, so the CI whole-tree step fails on rot instead of
+printing it into a log nobody opens. Read-only: it reports, it never
+edits.
+
+The commit gate reports the same thing for the files a commit carries, so
+a shortcut is named while the reason for it is still in the author's
+head. Only the changed files: the whole ledger is a property of the tree,
+and printing it on every commit is how a list becomes wallpaper. Reported
+rather than blocking — a deliberate shortcut is the author's call to
+make, but not to make silently.
 
 #### `procoder ask [--file <path>]`
 
