@@ -250,7 +250,7 @@ never runs the gate, the suite, or any network tool.
 It also names the suites the commit gate will **not** run here:
 
 ```
-gate defers to CI: rust, js suite(s) — the gate narrows only go and pytest
+gate defers to CI: rust, js suite(s) — the gate runs go, python
 ```
 
 The gate narrows to the runners that accept a target list, so every other

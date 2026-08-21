@@ -3,6 +3,7 @@ package testrun
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"procoder/internal/gitx"
@@ -238,5 +239,23 @@ func Deferred(root string) []string {
 	if phpunitDetected(root) {
 		out = append(out, "php")
 	}
+	return out
+}
+
+// Narrowed names the ecosystems the gate can run, derived from the table
+// that decides it rather than restated beside it. The report says which
+// suites it defers and which it does not, and a hand-written list there
+// would keep saying "go and pytest" the day a third runner learns to
+// take a target list.
+func Narrowed() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, eco := range pathScoped {
+		if !seen[eco] {
+			seen[eco] = true
+			out = append(out, eco)
+		}
+	}
+	sort.Strings(out)
 	return out
 }

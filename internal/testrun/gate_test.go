@@ -228,3 +228,24 @@ func TestTheGateNamesTheSuitesItLeavesToCI(t *testing.T) {
 		t.Errorf("both suites the gate cannot narrow, in reading order: %v", got)
 	}
 }
+
+// The list of what the gate runs is derived from the table that decides
+// it. Restating it in the report's sentence is how a message keeps saying
+// "go and pytest" the day a third runner learns to take a target list —
+// and a status line that is confidently wrong is worse than none.
+// proved by: returned a fixed []string{"go", "python"} — adding a runner
+// to pathScoped leaves the report naming the old pair.
+func TestWhatTheGateRunsIsDerivedNotRestated(t *testing.T) {
+	got := Narrowed()
+	if len(got) != 2 || got[0] != "go" || got[1] != "python" {
+		t.Fatalf("the ecosystems pathScoped names, deduplicated and sorted: %v", got)
+	}
+
+	// The real assertion: it tracks the table. .pyi and .py both say
+	// python and must not produce it twice, and a new entry must appear.
+	pathScoped[".zig"] = "zig"
+	defer delete(pathScoped, ".zig")
+	if got := Narrowed(); len(got) != 3 || got[2] != "zig" {
+		t.Errorf("a new path-scoped runner must reach the report: %v", got)
+	}
+}

@@ -372,5 +372,6 @@ func deferredLine(root string) string {
 	if len(d) == 0 {
 		return ""
 	}
-	return "gate defers to CI: " + strings.Join(d, ", ") + " suite(s) — the gate narrows only go and pytest"
+	return "gate defers to CI: " + strings.Join(d, ", ") + " suite(s) — the gate runs " +
+		strings.Join(testrun.Narrowed(), ", ")
 }
