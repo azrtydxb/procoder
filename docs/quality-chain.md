@@ -3,7 +3,8 @@
 **An explanation.** Why Procoder makes "done" a verdict something else
 gives, rather than a judgment the agent makes about its own work. For
 the commands, see the [command reference](commands.md); for the daily
-sequence, see [how to ship a change](workflow.md).
+sequence, see [how to ship a change](workflow.md); for the moment each
+check fires, see [when each check runs](lifecycle.md).
 
 ## The problem it solves
 
