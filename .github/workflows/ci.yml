@@ -183,7 +183,11 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 gitleaks:allow
         with:
           path: /tmp/procoder-bins
-          key: gate-relbins-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
+          # The five pins this cache is made of, not the whole versions
+          # file: keyed on the file, a RUFF or PRETTIER bump would throw
+          # away five unchanged binaries and download them again, which
+          # is not the "once per pin" this step claims to be.
+          key: gate-relbins-${{ runner.os }}-${{ env.OSV_SCANNER }}-${{ env.GOLANGCI_LINT }}-${{ env.ACTIONLINT }}-${{ env.LYCHEE }}-${{ env.SCIP }}
       - name: released binaries, downloaded rather than compiled
         if: steps.relbins.outputs.cache-hit != 'true'
         run: |
