@@ -173,8 +173,12 @@ Output is stdout. The only file that changes is the one a person writes.
       absent-CI one.
 - [ ] `procoder ci --emit` in a Go repository prints a workflow
       containing the whole-tree steps (`check` over tracked files,
-      `security --deep`, `docs`, `maintain`, `debt`, `deps`) and a Go
-      suite step.
+      `security --deep`, `docs --external`, `maintain`, `debt`, `deps`)
+      and a Go suite step.
+- [ ] The emitted workflow runs `procoder docs --external` and not the
+      bare `procoder docs`: the offline half already rides the gate, so
+      emitting it again in CI would repeat the commit's answer while
+      leaving link rot — the only part CI can see — unchecked.
 - [ ] The same command in a repository with only a `composer.json` and
       PHP sources prints the PHP suite step and no Go step.
 - [ ] The emitted workflow passes `procoder ci`'s hygiene rules:
