@@ -262,7 +262,7 @@ func TestTheReportNamesWhatTheGateDefers(t *testing.T) {
 // commit.
 func TestAnExpiredBudgetNeverClaimsACleanTree(t *testing.T) {
 	root := fullRepo(t)
-	// Under the reserve, the git lookups have no time at all.
+	// budget == reserve, so the git lookups are handed a zero deadline.
 	lines := report(root, reserve)
 	joined := strings.Join(lines, "\n")
 
@@ -315,9 +315,22 @@ func TestAGitCallThatDidNotAnswerIsNotACleanTree(t *testing.T) {
 		t.Errorf("unknown must carry the reason git gave: %q", got)
 	}
 
-	// headLine takes the same deadline and must answer the same way.
-	if h := headLine(ctx, root); !strings.Contains(h, "unknown") {
+	// headLine takes the same deadline and must answer the same way — and
+	// must say WHICH unknown. It used to answer "no commits yet" for every
+	// failure, so a repository with a hundred commits whose git call timed
+	// out was told it had none.
+	h := headLine(ctx, root)
+	if !strings.Contains(h, "unknown") {
 		t.Errorf("head must be unknown when git did not answer: %q", h)
+	}
+	if strings.Contains(h, "no commits yet") {
+		t.Errorf("this repository has a commit; the reason is the timeout: %q", h)
+	}
+
+	// And the genuinely empty repository still gets the sentence written
+	// for it, rather than git's raw complaint.
+	if e := headLine(context.Background(), t.TempDir()); !strings.Contains(e, "unknown") {
+		t.Errorf("a directory that is not a repository is unknown: %q", e)
 	}
 
 	// branchLine is deliberately NOT asserted here: it reaches git through
