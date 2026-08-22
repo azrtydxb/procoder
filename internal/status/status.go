@@ -42,8 +42,17 @@ const Header = "== state of play"
 // Report returns the state-of-play lines, in reading order: git first
 // (branch, head, dirty), then the project layer (sprint, stories, tasks),
 // then the ledgers (lessons, index).
-func Report(root string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), Budget-reserve)
+func Report(root string) []string { return report(root, Budget) }
+
+// report is Report with the wall named, so a test can assert what a
+// repository says without also asserting how fast the machine is. The
+// budget is real and stays real in production, and TestReportStaysInside
+// TheBudget still asserts it through Report. What the content tests are
+// about is WHAT a repository reports; inheriting the wall made them
+// assert git's speed on a loaded CI runner as well, which is not what any
+// of them was written to check.
+func report(root string, budget time.Duration) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), budget-reserve)
 	defer cancel()
 
 	type gitResult struct {
@@ -159,10 +168,22 @@ func rebaseState(gitDir string) string {
 }
 
 func headLine(ctx context.Context, root string) string {
-	if h := shortHead(ctx, root); h != "" {
+	h, err := git(ctx, root, "rev-parse", "--short", "HEAD")
+	if err == nil && h != "" {
 		return "head: " + h
 	}
-	return "head: unknown — no commits yet"
+	// "no commits yet" is a claim about the repository, and it used to be
+	// made for every failure — a timed-out call, an unreadable directory,
+	// no git at all. A repository with a hundred commits was told it had
+	// none, which is worse than unknown because it reads like an answer.
+	// git says which one it is; the reason it gave is the line.
+	reason := gitReason(err)
+	for _, empty := range []string{"Needed a single revision", "ambiguous argument 'HEAD'", "unknown revision"} {
+		if strings.Contains(reason, empty) {
+			return "head: unknown — no commits yet"
+		}
+	}
+	return "head: unknown — " + reason
 }
 
 func shortHead(ctx context.Context, root string) string {
