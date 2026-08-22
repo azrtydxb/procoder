@@ -170,6 +170,10 @@ func RelativeRefs(root, file string) []gitx.Finding {
 	if err != nil {
 		return nil
 	}
+	// OKF bundles (a directory whose index.md declares okf_version) resolve
+	// absolute links from the bundle root, not the repo root — "/log.md"
+	// inside .okf/ means .okf/log.md. Empty when the file is in no bundle.
+	bundle := okfBundleRoot(root, file)
 	var out []gitx.Finding
 	inFence := false
 	for i, line := range strings.Split(string(data), "\n") {
@@ -198,7 +202,11 @@ func RelativeRefs(root, file string) []gitx.Finding {
 			}
 			resolved := filepath.Join(filepath.Dir(file), filepath.FromSlash(target))
 			if strings.HasPrefix(target, "/") {
-				resolved = filepath.Join(root, filepath.FromSlash(target))
+				base := root
+				if bundle != "" {
+					base = bundle
+				}
+				resolved = filepath.Join(base, filepath.FromSlash(target))
 			}
 			if _, err := os.Stat(resolved); err != nil {
 				out = append(out, gitx.Finding{File: file, Line: i + 1, Blocking: true,
@@ -218,6 +226,56 @@ func RelativeRefs(root, file string) []gitx.Finding {
 		}
 	}
 	return out
+}
+
+// okfBundleRoot walks from the file's directory up to the repo root and
+// returns the nearest directory whose index.md declares okf_version in its
+// frontmatter — the OKF bundle root. Empty when no ancestor is one.
+func okfBundleRoot(root, file string) string {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	dir, err := filepath.Abs(filepath.Dir(file))
+	if err != nil {
+		return ""
+	}
+	for {
+		if hasOKFVersion(filepath.Join(dir, "index.md")) {
+			return dir
+		}
+		if dir == absRoot {
+			return ""
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || len(parent) < len(absRoot) {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// hasOKFVersion reports whether the file opens with a YAML frontmatter block
+// that declares okf_version.
+func hasOKFVersion(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return false
+	}
+	for _, l := range lines[1:] {
+		t := strings.TrimSpace(l)
+		if t == "---" {
+			return false
+		}
+		if strings.HasPrefix(t, "okf_version:") {
+			return true
+		}
+	}
+	return false
 }
 
 var (

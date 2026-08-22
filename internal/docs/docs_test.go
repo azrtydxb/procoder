@@ -41,6 +41,31 @@ func TestBrokenRelativeReferenceIsBlockingAndNamed(t *testing.T) {
 	}
 }
 
+// Inside an OKF bundle (a directory whose index.md declares okf_version),
+// absolute links are bundle-root-relative per the OKF spec — "/log.md" in
+// .okf/ means .okf/log.md. Outside a bundle they stay repo-root-relative,
+// and a bundle link to a file that truly does not exist still blocks.
+func TestOKFBundleLinksResolveFromBundleRoot(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".okf/index.md", "---\nokf_version: \"0.2\"\n---\n\n# B\n")
+	write(t, root, ".okf/log.md", "log\n")
+	write(t, root, ".okf/areas/corpus.md", "x\n")
+	write(t, root, "repo-file.md", "x\n")
+
+	inBundle := write(t, root, ".okf/roadmap.md",
+		"[log](/log.md) [c](/areas/corpus.md) [gone](/nope.md)\n")
+	got := RelativeRefs(root, inBundle)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "/nope.md") {
+		t.Fatalf("want only the truly missing bundle link flagged, got %+v", got)
+	}
+
+	outside := write(t, root, "README.md", "[r](/repo-file.md) [l](/log.md)\n")
+	got = RelativeRefs(root, outside)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "/log.md") {
+		t.Fatalf("outside a bundle, absolute links stay repo-root-relative: %+v", got)
+	}
+}
+
 func TestExternalAndAnchorLinksAreNotRelativeFindings(t *testing.T) {
 	root := t.TempDir()
 	md := write(t, root, "README.md",
