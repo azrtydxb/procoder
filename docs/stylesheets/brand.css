@@ -176,3 +176,240 @@
 .md-typeset [hidden] {
   display: none !important;
 }
+
+/* ── The lifecycle map (reference/lifecycle.md) ──────────────────────
+   One arrow, one station per lifecycle event, one row per check. The
+   verdict colors are semantic rather than brand — they answer "does
+   this stop me?", so they stay outside the purple→cyan family on
+   purpose and are not in brand/README.md. */
+
+.procoder-track {
+  --pc-rail: 4.25rem;
+  position: relative;
+  padding-left: var(--pc-rail);
+  margin: 2rem 0 1rem;
+}
+
+/* the spine carries the signature gradient, running the length of the
+   lifecycle rather than sitting as a band across the top */
+.procoder-track::before {
+  content: "";
+  position: absolute;
+  left: 1.5rem;
+  top: 0;
+  bottom: 4.25rem;
+  width: 0.7rem;
+  border-radius: 0.35rem 0.35rem 0 0;
+  background: linear-gradient(
+    to bottom,
+    var(--procoder-violet) 0%,
+    var(--procoder-purple) 30%,
+    var(--procoder-blue) 65%,
+    var(--procoder-cyan) 100%
+  );
+}
+
+.procoder-track::after {
+  content: "";
+  position: absolute;
+  left: 0.65rem;
+  bottom: 1.6rem;
+  width: 0;
+  height: 0;
+  border-left: 1.25rem solid transparent;
+  border-right: 1.25rem solid transparent;
+  border-top: 2.6rem solid var(--procoder-cyan);
+}
+
+.procoder-stop {
+  position: relative;
+  margin-bottom: 1.75rem;
+}
+
+.procoder-stop__node {
+  position: absolute;
+  left: calc(-1 * var(--pc-rail) + 0.4rem);
+  top: 0.35rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--md-default-bg-color);
+  border: 2px solid var(--procoder-purple);
+  color: var(--procoder-purple);
+  font-family: var(--md-code-font-family), monospace;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.procoder-stop__card {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.procoder-stop__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.9rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--md-code-bg-color);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.md-typeset .procoder-stop__head h3 {
+  margin: 0 !important;
+  flex: 1 1 auto;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.md-typeset .procoder-stop__trigger {
+  font-family: var(--md-code-font-family), monospace;
+  font-size: 0.7rem;
+  color: var(--md-default-fg-color--light);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+}
+
+.md-typeset .procoder-stop__why {
+  margin: 0;
+  padding: 0.85rem 1.1rem 0.35rem;
+  font-size: 0.78rem;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .procoder-checks {
+  list-style: none;
+  margin: 0 !important;
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.md-typeset .procoder-stop--wide .procoder-checks {
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 0.1rem 0.5rem;
+}
+
+.md-typeset .procoder-checks li {
+  display: grid;
+  grid-template-columns: 5.2rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  margin: 0 !important;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+}
+
+.md-typeset .procoder-checks li:nth-child(odd) {
+  background: var(--md-code-bg-color);
+}
+
+.md-typeset .procoder-checks b {
+  font-family: var(--md-code-font-family), monospace;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.md-typeset .procoder-checks i {
+  display: block;
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* verdict chips: the answer to "does this stop me?" */
+.md-typeset .procoder-verdict {
+  font-family: var(--md-code-font-family), monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+[data-md-color-scheme="default"] {
+  --pc-blocks: #a3271b;
+  --pc-blocks-bg: #f8e5e2;
+  --pc-reports: #86560a;
+  --pc-reports-bg: #f9eedb;
+  --pc-info: #3f5a75;
+  --pc-info-bg: #e8edf3;
+}
+
+[data-md-color-scheme="slate"] {
+  --pc-blocks: #f4897d;
+  --pc-blocks-bg: #341a1a;
+  --pc-reports: #dda54f;
+  --pc-reports-bg: #2f2616;
+  --pc-info: #9db2c6;
+  --pc-info-bg: #1a2432;
+}
+
+.md-typeset .procoder-verdict--blocks {
+  color: var(--pc-blocks);
+  background: var(--pc-blocks-bg);
+}
+.md-typeset .procoder-verdict--reports {
+  color: var(--pc-reports);
+  background: var(--pc-reports-bg);
+}
+.md-typeset .procoder-verdict--info {
+  color: var(--pc-info);
+  background: var(--pc-info-bg);
+}
+
+.md-typeset .procoder-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.md-typeset .procoder-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 !important;
+  font-size: 0.75rem;
+  color: var(--md-default-fg-color--light);
+}
+
+@media screen and (max-width: 44em) {
+  .procoder-track {
+    --pc-rail: 2.6rem;
+  }
+  .procoder-track::before {
+    left: 0.8rem;
+    width: 0.5rem;
+  }
+  .procoder-track::after {
+    left: 0.2rem;
+    border-left-width: 0.85rem;
+    border-right-width: 0.85rem;
+    border-top-width: 1.8rem;
+  }
+  .procoder-stop__node {
+    width: 1.8rem;
+    height: 1.8rem;
+    font-size: 0.7rem;
+    left: calc(-1 * var(--pc-rail) + 0.1rem);
+  }
+  .md-typeset .procoder-checks li {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+  .md-typeset .procoder-verdict {
+    justify-self: start;
+  }
+}

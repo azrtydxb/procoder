@@ -5,7 +5,9 @@ the same architecture: the binary computes findings, the write hook hands
 them to the agent in the same turn, the gate carries them at commit time,
 a skill packages the workflow, and every rule is repo-overridable
 (D-OVERRIDE). This page is the detailed reference: what each domain
-checks, with what, what blocks, and where its knobs live.
+checks, with what, what blocks, and where its knobs live. For the same
+checks grouped by _when_ they run — session start, every write, the
+commit gate, CI — see [when each check runs](lifecycle.md).
 
 Reading the tables: **blocks** fails the gate and CI; **reports** informs
 the agent's judgment; **NOT-checked** means the tool was missing or
