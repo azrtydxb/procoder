@@ -172,24 +172,48 @@ jobs:
           echo 'Acquire::Retries "3"; Acquire::http::Timeout "15";' | sudo tee /etc/apt/apt.conf.d/99procoder-fastfail
           sudo apt-get update -q
           sudo apt-get install -y -q shfmt shellcheck gitleaks universal-ctags
+      # The versions are pinned, so a download that already happened has
+      # nothing new to fetch. Suggested in #142, which was wrong about the
+      # cost (measured: 1s on a healthy day) and right that a pinned
+      # download repeated on every run is work with a known answer. The
+      # value is on the bad day, when GitHub's release CDN is slow and the
+      # gate is waiting on five sequential curls.
+      - name: released binaries, from cache when the pins have not moved
+        id: relbins
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 gitleaks:allow
+        with:
+          path: /tmp/procoder-bins
+          key: gate-relbins-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
       - name: released binaries, downloaded rather than compiled
+        if: steps.relbins.outputs.cache-hit != 'true'
         run: |
           # Each of these used to be `go install …@latest`, which compiled the
           # tool from source on every run — osv-scanner alone cost 92 seconds.
           # All three publish per-platform archives, so this is a download.
+          mkdir -p /tmp/procoder-bins
           cd /tmp
-          curl -sSfL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER}/osv-scanner_linux_amd64"
-          sudo install -m 0755 osv-scanner /usr/local/bin/osv-scanner
+          curl -sSfL -o /tmp/procoder-bins/osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER}/osv-scanner_linux_amd64"
           curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT}/golangci-lint-${GOLANGCI_LINT}-linux-amd64.tar.gz" | tar xz
-          sudo install -m 0755 "golangci-lint-${GOLANGCI_LINT}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint
+          mv "golangci-lint-${GOLANGCI_LINT}-linux-amd64/golangci-lint" /tmp/procoder-bins/golangci-lint
           curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT}/actionlint_${ACTIONLINT}_linux_amd64.tar.gz" | tar xz actionlint
-          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          mv actionlint /tmp/procoder-bins/actionlint
           # extracted OUTSIDE the workspace: the tarball carries its own docs,
           # and the docs report must only ever see this repository's files
           curl -sSfL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE}/lychee-x86_64-unknown-linux-gnu.tar.gz" | tar xz
-          sudo install -m 0755 lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/lychee
+          mv lychee-x86_64-unknown-linux-gnu/lychee /tmp/procoder-bins/lychee
           curl -sSfL "https://github.com/sourcegraph/scip/releases/download/v${SCIP}/scip-linux-amd64.tar.gz" | tar xz scip
-          sudo install -m 0755 scip /usr/local/bin/scip
+          mv scip /tmp/procoder-bins/scip
+      # Installed from the same place whether they were just downloaded or
+      # restored, so the cached path is the one every run exercises. A file
+      # the cache restored partially fails here rather than surfacing later
+      # as a tool that is missing — `procoder doctor` runs next and would
+      # say so, but a broken install should not get that far.
+      - name: released binaries onto PATH
+        run: |
+          for b in osv-scanner golangci-lint actionlint lychee scip; do
+            test -s "/tmp/procoder-bins/$b" || { echo "$b missing from the binary cache" >&2; exit 1; }
+            sudo install -m 0755 "/tmp/procoder-bins/$b" "/usr/local/bin/$b"
+          done
       - name: the two tools with no published binary
         if: steps.gotools.outputs.cache-hit != 'true'
         env:
