@@ -42,8 +42,15 @@ const Header = "== state of play"
 // Report returns the state-of-play lines, in reading order: git first
 // (branch, head, dirty), then the project layer (sprint, stories, tasks),
 // then the ledgers (lessons, index).
-func Report(root string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), Budget-reserve)
+func Report(root string) []string { return report(root, Budget) }
+
+// report is Report with the wall named, so a test can assert what a
+// repository says without also asserting how fast the machine is. The
+// budget is real and stays real in production; a test that inherits it
+// asserts git's speed on a loaded CI runner, which is not the subject of
+// any test in this package.
+func report(root string, budget time.Duration) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), budget-reserve)
 	defer cancel()
 
 	type gitResult struct {

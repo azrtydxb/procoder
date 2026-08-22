@@ -1,6 +1,7 @@
 package status
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,7 +74,7 @@ func find(lines []string, prefix string) string {
 
 func TestReportOnAFullRepoIsAllComputedFacts(t *testing.T) {
 	root := fullRepo(t)
-	lines := Report(root)
+	lines := report(root, testBudget)
 	joined := strings.Join(lines, "\n")
 
 	if got := find(lines, "branch:"); !strings.Contains(got, "main") || !strings.Contains(got, "default branch") {
@@ -105,9 +106,16 @@ func TestReportOnAFullRepoIsAllComputedFacts(t *testing.T) {
 	}
 }
 
+// testBudget is deliberately far past anything these fixtures need. What
+// they assert is WHAT a repository reports, and inheriting the production
+// budget made them assert how fast git is on the machine running them —
+// which is how internal/status went red on a loaded Windows runner over a
+// change that touched one Markdown file.
+const testBudget = 60 * time.Second
+
 func TestReportOnABareRepoSaysWhatIsEmpty(t *testing.T) {
 	root := gitRepo(t)
-	lines := Report(root)
+	lines := report(root, testBudget)
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
 		"sprint: none — no backlog yet",
@@ -126,7 +134,7 @@ func TestReportOnABareRepoSaysWhatIsEmpty(t *testing.T) {
 
 func TestReportOutsideARepoIsUnknownWithTheReason(t *testing.T) {
 	requireGit(t)
-	lines := Report(t.TempDir())
+	lines := report(t.TempDir(), testBudget)
 	for _, prefix := range []string{"branch:", "head:", "dirty files:"} {
 		got := find(lines, prefix)
 		if !strings.Contains(got, "unknown — ") {
@@ -159,7 +167,7 @@ func TestUnreadableTodoDirectoryIsUnknownNotZero(t *testing.T) {
 	if _, err := os.ReadDir(dir); err == nil {
 		t.Skip("this filesystem ignores the permission bits")
 	}
-	if got := find(Report(root), "open tasks:"); !strings.Contains(got, "unknown") {
+	if got := find(report(root, testBudget), "open tasks:"); !strings.Contains(got, "unknown") {
 		t.Fatalf("an unreadable todo directory must read as unknown, not none: %q", got)
 	}
 }
@@ -173,7 +181,7 @@ func TestALongSprintIsCappedAndCounted(t *testing.T) {
 		write(t, root, ".procoder/backlog/stories/s-"+string(rune('a'+i))+".md",
 			"# story\n\nStatus: open\nSprint: 001-ship\n")
 	}
-	lines := Report(root)
+	lines := report(root, testBudget)
 	named := 0
 	for _, l := range lines {
 		if strings.HasPrefix(l, "  open story:") {
@@ -235,4 +243,86 @@ func TestTheReportNamesWhatTheGateDefers(t *testing.T) {
 	if !strings.Contains(got, "CI") {
 		t.Errorf("the line must say who runs it instead: %q", got)
 	}
+}
+
+// However the budget runs out, the report never claims a clean tree it
+// did not verify. There are two ways out: each git call fails on its own
+// deadline and the line says unknown WITH the reason, or the whole lookup
+// misses the wall and the git lines are dropped with a note. Both are
+// correct; what must never happen is the third thing — the sentence a
+// clean repository would have produced, printed by a report that never
+// asked.
+//
+// This is the path the Windows runner took. The product was right and
+// the test was wrong: it inherited the production wall and then asserted
+// the machine had beaten it.
+// proved by: made dirtyLine fall back to "none (clean tree)" when git
+// gave no answer — every timed-out report then claims a clean tree, and
+// the session that reads it starts by believing there is nothing to
+// commit.
+func TestAnExpiredBudgetNeverClaimsACleanTree(t *testing.T) {
+	root := fullRepo(t)
+	// Under the reserve, the git lookups have no time at all.
+	lines := report(root, reserve)
+	joined := strings.Join(lines, "\n")
+
+	got := find(lines, "dirty files:")
+	switch {
+	case got == "":
+		// dropped wholesale — then the report must say it dropped something
+		if !strings.Contains(joined, "omitted for speed") {
+			t.Errorf("state left out must be named:\n%s", joined)
+		}
+	case strings.Contains(got, "unknown"):
+		// answered as unknown — then it must carry the reason
+		if !strings.Contains(got, "—") {
+			t.Errorf("unknown must carry its reason: %q", got)
+		}
+	default:
+		t.Errorf("a report that could not ask git must not answer for it: %q", got)
+	}
+
+	// Whichever path it took, the lines that never needed git are there.
+	if find(lines, "sprint:") == "" {
+		t.Errorf("what could be computed is still reported:\n%s", joined)
+	}
+}
+
+// A git call that did not answer is reported as unknown WITH the reason,
+// never as the sentence a clean repository produces. Asserted directly on
+// the line function rather than through Report, because Report races the
+// whole lookup against the wall: whichever way that race falls is correct
+// behaviour, so a test that goes through it can only ever check the
+// invariant, not this branch. This is the branch.
+// proved by: returned "dirty files: none (clean tree)" from the error
+// path — a report that never reached git tells the session there is
+// nothing to commit.
+func TestAGitCallThatDidNotAnswerIsNotACleanTree(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // no time at all, deterministically
+
+	got := dirtyLine(ctx, root)
+	if strings.Contains(got, "clean tree") || strings.Contains(got, "none") {
+		t.Fatalf("git never answered; this is not a clean tree: %q", got)
+	}
+	if !strings.Contains(got, "unknown") {
+		t.Errorf("the line must say unknown: %q", got)
+	}
+	if !strings.Contains(got, "—") {
+		t.Errorf("unknown must carry the reason git gave: %q", got)
+	}
+
+	// headLine takes the same deadline and must answer the same way.
+	if h := headLine(ctx, root); !strings.Contains(h, "unknown") {
+		t.Errorf("head must be unknown when git did not answer: %q", h)
+	}
+
+	// branchLine is deliberately NOT asserted here: it reaches git through
+	// gitx.CurrentBranch and gitx.DefaultBranch, which take no context, so
+	// it answers whatever the deadline says. That is a real gap in the
+	// budget rather than a property worth pinning — filed separately, and
+	// asserting it here would pin the gap in place.
 }
