@@ -1,6 +1,6 @@
 # e2e-campaign
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Spec: e2e-campaign @ 2ede23c986cc
 

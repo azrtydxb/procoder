@@ -1,6 +1,6 @@
 # Teardown, verified by absence
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 018-the-whole-campaign-re-run-from-scratch-until-nothing-new-then
