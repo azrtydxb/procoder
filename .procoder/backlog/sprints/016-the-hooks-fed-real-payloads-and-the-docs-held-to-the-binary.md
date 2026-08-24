@@ -39,8 +39,36 @@ carried: 0
 
 ## Retro
 
-<!-- What slowed us down this sprint. -->
+**Two checks passed for a sprint without testing anything, and both were
+mine.** The P-CONTROL loop ran `procoder format` only over files that were
+already clean, so the branch that prints a whole rewritten file never
+executed — the single branch P-CONTROL exists to police. The hook
+assertions grepped for "deny" or "block", and "block" sits inside "1
+blocking finding(s)" whichever way the decision went, so the check passed
+on an allow. Neither was visible in the output: both printed PASS, in a
+report with no failures.
 
-<!-- What we change next sprint because of it. -->
+**What found them both was the mutation, and only the mutation.** Reading
+the assertions did not; they look right. Running the code with the
+behaviour deliberately broken did. The rule this sprint hardens: an
+assertion is not finished when it passes, it is finished when it has been
+watched to fail.
 
-<!-- One adaptation from this sprint worth keeping. -->
+**A mutation has to reach the branch.** The first format mutation applied
+cleanly, compiled, and changed nothing observable, because every file the
+loop touched was already formatted. That is the same failure as a mutation
+that produces no diff, one layer further in — the diff existed, the
+execution path did not. Before trusting a green mutation run, check that
+the mutated line can actually be reached by the fixture as built.
+
+**Never edit a script while it is running.** bash reads incrementally from
+a byte offset, so rewriting the file underneath a live invocation moved
+what the next read returned; the docs pass executed its P-CONTROL block
+twice and reported 73 passes instead of 50. A count that is too HIGH reads
+as better news, which is why it nearly stood. Every harness here now has a
+known maximum, and the total is checked against it.
+
+**The adaptation worth keeping: know what the maximum possible count is.**
+18 flags + 1 coverage + 6 exit codes + 28 digests = 53. A report that says
+53 is complete; one that says 73 is broken; one that says 3 stopped early.
+Without the arithmetic all three look like success.
