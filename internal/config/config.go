@@ -41,6 +41,13 @@ type Config struct {
 	MaxFileMB int
 	// LintBlock: lint findings block the gate instead of being reported.
 	LintBlock bool
+
+	// PlanningMethod names who owns the planning artifacts: "procoder"
+	// (the default) or "bmad". It moves planning and nothing else — the
+	// gate, the suite, the release controller and the rest read the same
+	// tree and reach the same verdict either way, which is the only reason
+	// a repository that plans elsewhere would install procoder at all.
+	PlanningMethod string
 	// TestBlock: todo and story closes run the test suite and refuse
 	// while it fails (or cannot be verified).
 	TestBlock bool
@@ -178,6 +185,19 @@ func Load(root string) Config {
 			cfg.BlockDefaultBranch = value == "block"
 		case "lint.policy":
 			cfg.LintBlock = value == "block"
+		case "planning.method":
+			// A typo here silently decides which methodology governs the
+			// repository, which is more consequential than most keys: a
+			// mistyped "bmad" would leave a BMad shop being governed by
+			// procoder's own chain and wondering why its artifacts are
+			// ignored.
+			if KnownPlanningMethod(value) {
+				cfg.PlanningMethod = value
+			} else {
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: fmt.Sprintf("not a planning method procoder knows — it has %s",
+						strings.Join(PlanningMethods, ", "))})
+			}
 		case "test.policy":
 			cfg.TestBlock = value == "block"
 		case "sprint.retro":

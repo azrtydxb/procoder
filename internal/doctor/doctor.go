@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"procoder/internal/config"
+	"procoder/internal/planning"
 	"procoder/internal/tools"
 )
 
@@ -83,6 +84,8 @@ func Run(root string, stdout io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "  ok  %-14s %-28s %s\n", n, strings.Join(r.exts, " "), version(bin, r.tool))
 	}
+
+	planningLine(root, stdout)
 
 	if len(byTool) == 0 {
 		fmt.Fprintln(stdout, "no files in this tree have a formatter-covered type")
@@ -166,4 +169,26 @@ func Root() string {
 		return "."
 	}
 	return tools.RepoRoot(wd)
+}
+
+// planningLine reports the planning tool a repository named, when it named
+// one procoder does not ship. A repository whose planning depends on
+// something absent needs to know it is absent — and which version is
+// there when it is, because the artifact layout procoder reads is a
+// version fact.
+//
+// Silent under the default. A repository planning in procoder's own chain
+// has no external tool to report, and a line saying so on every doctor run
+// is noise.
+func planningLine(root string, stdout io.Writer) {
+	if config.Load(root).Planning() != "bmad" {
+		return
+	}
+	fmt.Fprintln(stdout)
+	if !planning.Installed(root) {
+		fmt.Fprintf(stdout, " GAP  %-14s %-28s %s\n", "bmad", "[planning] method", "missing")
+		fmt.Fprintln(stdout, "      this repository plans in BMad Method and no installation is here (manual: npx bmad-method install)")
+		return
+	}
+	fmt.Fprintf(stdout, "  ok  %-14s %-28s %s\n", "bmad", "[planning] method", planning.Version(root))
 }

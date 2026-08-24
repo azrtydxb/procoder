@@ -77,3 +77,34 @@ func severityRank(s string) int {
 
 // KnownSeverity reports whether s is a severity procoder can act on.
 func KnownSeverity(s string) bool { return severityRank(s) >= 0 }
+
+// PlanningMethods are the values [planning] method accepts. "procoder" is
+// the default and means the chain under .procoder/; "bmad" means a
+// separately installed BMad Method owns the planning artifacts and
+// procoder reads them.
+//
+// BMad is named here to describe interoperation — which tool wrote the
+// files procoder is about to read — and nowhere as the name of a procoder
+// feature. TestNoProcoderFeatureIsNamedAfterATrademark holds that line.
+var PlanningMethods = []string{"procoder", "bmad"}
+
+// KnownPlanningMethod reports whether s is a planning method procoder can
+// act on.
+func KnownPlanningMethod(s string) bool {
+	for _, m := range PlanningMethods {
+		if s == m {
+			return true
+		}
+	}
+	return false
+}
+
+// Planning is the effective method: the default where the repository said
+// nothing, so callers never have to spell the default themselves and
+// cannot disagree about what it is.
+func (c Config) Planning() string {
+	if c.PlanningMethod == "" {
+		return "procoder"
+	}
+	return c.PlanningMethod
+}

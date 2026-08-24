@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/analysis"
 	"procoder/internal/answers"
 	"regexp"
 	"sort"
@@ -310,6 +311,13 @@ func checkOne(root, path string, out func(string)) int {
 		if vagueRe.MatchString(c) {
 			gaps = append(gaps, "untestable criterion: "+trim(c)+" — say what a reviewer would observe, not how it should feel")
 		}
+	}
+	// The analysis a spec came from, when there is one. A reader asking
+	// why a spec says what it says can follow the link back; a spec whose
+	// author already knew what to build owes nobody such a document, so
+	// nothing is said when none exists.
+	if src := analysis.SpecSource(root, name); src != "" {
+		notes = append(notes, "  note: this spec came from "+src)
 	}
 	if len(gaps) == 0 {
 		out("spec " + name + ": COMPLETE — sections answered, no open questions, criteria testable")

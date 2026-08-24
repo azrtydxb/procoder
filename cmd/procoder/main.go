@@ -17,6 +17,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/adr"
+	"procoder/internal/analysis"
 	"procoder/internal/ask"
 	"procoder/internal/audit"
 	"procoder/internal/backlog"
@@ -446,6 +447,8 @@ func run(args []string) int {
 		return formatCmd(args[1:])
 	case "review":
 		return reviewCmd(args[1:])
+	case "analyze":
+		return analyzeCmd(args[1:])
 	case "audit":
 		return audit.Run(doctor.Root(), printLine)
 	case "status":
@@ -1257,4 +1260,50 @@ func reviewCmd(args []string) int {
 
 	review.Print(os.Stdout, paths, lenses)
 	return 0
+}
+
+// analyzeCmd is the phase before the spec: it prints a document for the
+// agent to write, lists what exists, and refuses one nobody filled in.
+// The binary writes nothing here either.
+func analyzeCmd(args []string) int {
+	root := doctor.Root()
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | list | check [name|all]")
+		return 2
+	}
+	switch args[0] {
+	case "brief":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name>")
+			return 2
+		}
+		name := args[1]
+		if name != filepath.Base(name) || strings.Contains(name, "..") {
+			fmt.Fprintf(os.Stderr, "invalid analysis name %q — names are plain file names\n", name)
+			return 2
+		}
+		fmt.Printf("== write this to %s/%s.md and fill it through the interview:\n",
+			analysis.Dir, name)
+		fmt.Printf(analysis.Template, name, time.Now().UTC().Format("2006-01-02"))
+		return 0
+	case "list":
+		files := analysis.Files(root)
+		if len(files) == 0 {
+			printLine("no analysis yet — `procoder analyze brief <name>` starts one")
+			return 0
+		}
+		for _, f := range files {
+			printLine(strings.TrimSuffix(filepath.Base(f), ".md"))
+		}
+		return 0
+	case "check":
+		name := ""
+		if len(args) > 1 {
+			name = args[1]
+		}
+		return analysis.Check(root, name, printLine)
+	default:
+		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | list | check [name|all]")
+		return 2
+	}
 }
