@@ -91,6 +91,16 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 		}
 	}
 
+	// 6. the credits in the entry about to be published. GitHub is asked
+	// who actually opened each cited issue, which the suite cannot do —
+	// it runs offline on every commit — and which this controller can,
+	// because the tag it is preparing gets published by a job that talks
+	// to the same API. A misattributed credit hands one person's thanks
+	// to another, permanently, in notes GitHub publishes verbatim.
+	for _, p := range VerifyCredits(root, EntryFor(root, version)) {
+		failures = append(failures, p)
+	}
+
 	if len(failures) > 0 {
 		out(fmt.Sprintf("release %s is NOT ready:", version))
 		for _, f := range failures {

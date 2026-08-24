@@ -247,8 +247,17 @@ into it, no story points, no calendar enforcement.
 The pre-tag controller: verifies in one pass that every file in
 `[release] files` (config.toml) carries the version, CHANGELOG.md has
 the `## <version>` entry, the working tree is clean (untracked
-included), the gate is clean, and the suite is green under
-`[test] policy`. Every failure is listed together; on success the
+included), the gate is clean, the suite is green under
+`[test] policy`, and **every contributor the entry credits actually
+opened one of the issues or pull requests that paragraph cites**.
+
+That last one asks GitHub, which the test suite deliberately cannot —
+the suite runs offline on every commit. This controller can, because the
+tag it prepares is published by a job that talks to the same API, so the
+network was already a precondition. A misattributed credit hands one
+person's thanks to another, permanently, in notes GitHub publishes
+verbatim. GitHub not answering is reported as NOT verified and blocks,
+never as a pass. Every failure is listed together; on success the
 `git tag` command is printed for the agent to run — the binary tags
 nothing. Without `[release] files` the version-sync leg says
 it verified nothing. Bare `procoder release` reads the newest changelog
