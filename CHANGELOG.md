@@ -68,8 +68,8 @@ criterion must cite it:
 ```
 
 Scope no criterion cites is a gap, a gap makes the spec incomplete, and
-seed refuses an incomplete spec. Work cannot be seeded from a spec that promises
-more than it tests.
+seed refuses an incomplete spec. Work cannot be seeded from a spec that
+promises more than it tests.
 
 It exists because that is exactly what happened here. A spec put five
 things in scope, wrote criteria for three, and passed every check
