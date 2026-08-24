@@ -275,10 +275,23 @@ var gitignoreNeeds = []struct{ marker, entry string }{
 	{"requirements.txt", "__pycache__"},
 	{"Cargo.toml", "target"},
 	{"mkdocs.yml", "site"},
-	// procoder's own derived state: per-machine, rebuilt on demand, tracked
-	// no more than .procoder/index/ is.
+	// procoder's own derived state: per-machine, rebuilt on demand, and
+	// written into the repository by procoder itself — so a repository
+	// that follows this advice exactly must not still end up staging
+	// procoder's droppings. These three are what this repository's own
+	// .gitignore carries, and ProcoderArtifacts holds the two together.
 	{".procoder", ".procoder/state/"},
+	{".procoder", ".procoder/index/"},
+	{".procoder", ".lycheecache"},
 }
+
+// ProcoderArtifacts is what procoder writes into a repository it governs:
+// the code index, the per-machine state, and lychee's link cache from
+// `procoder docs --external`. Every one of them needs an ignore entry, and
+// this list is what a test compares against both the advice above and this
+// repository's own .gitignore — because the advice went stale exactly once,
+// by naming one of the three.
+var ProcoderArtifacts = []string{".procoder/state/", ".procoder/index/", ".lycheecache"}
 
 // IgnoreCoverage checks the repo has a .gitignore covering the garbage its
 // present ecosystems generate.

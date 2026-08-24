@@ -539,8 +539,13 @@ func run(args []string) int {
 	case "security":
 		root := doctor.Root()
 		changed, _ := gitx.ChangedFiles(root)
+		deep := len(args) > 1 && args[1] == "--deep"
+		if len(changed) == 0 && !deep {
+			fmt.Println(nothingChanged("security"))
+			return 0
+		}
 		findings := security.SecretsChangedFiles(root, changed)
-		if len(args) > 1 && args[1] == "--deep" {
+		if deep {
 			findings = append(findings, security.Sast(root)...)
 			findings = append(findings, security.Deps(root)...)
 		}
@@ -667,6 +672,16 @@ func adrCmd(args []string) int {
 	}
 }
 
+// nothingChanged is what a change-scoped command says when the change set
+// is empty. Printing "0 finding(s)" there is indistinguishable from
+// printing it over a clean diff, so a person on an untouched tree was told
+// their repository linted clean by a linter that never opened a file.
+// `procoder check` has always said "no changed files"; this is the same
+// sentence for the commands that forgot it.
+func nothingChanged(cmd string) string {
+	return "procoder " + cmd + ": no changed files — nothing was checked (pass paths to check them anyway)"
+}
+
 func lintCmd(args []string) int {
 	root := doctor.Root()
 	types := false
@@ -683,6 +698,10 @@ func lintCmd(args []string) int {
 		if err != nil {
 			fmt.Println(err)
 			return 1
+		}
+		if len(changed) == 0 {
+			fmt.Println(nothingChanged("lint"))
+			return 0
 		}
 		paths = changed
 	} else {
