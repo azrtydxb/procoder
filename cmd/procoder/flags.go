@@ -91,3 +91,53 @@ func flagsSentence(allowed []string) string {
 	}
 	return "it takes " + strings.Join(allowed, ", ")
 }
+
+// currentCmd is the top-level command being dispatched, kept so a usage
+// error can print that command's own help. A package variable rather than
+// a parameter threaded through forty-five call sites: the process runs one
+// command and exits.
+var currentCmd string
+
+// usageErr prints the usage of the command that was actually typed, and
+// returns the usage exit code.
+//
+// It replaces printing the whole usage text, which is 159 lines. Somebody
+// who typed `procoder adr` and forgot the subcommand had to find one line
+// of the seventy-eight to learn what they were missing, which is a poor
+// answer to a question procoder knows the answer to.
+func usageErr(stderr io.Writer) int {
+	fmt.Fprint(stderr, usageFor(currentCmd))
+	return 2
+}
+
+// usageFor cuts one command's block out of the usage text: the line that
+// names it, plus every continuation line under it. A command it cannot
+// find falls back to the whole text, because a person who mistyped the
+// command name does want the list.
+func usageFor(cmd string) string {
+	lines := strings.Split(usage, "\n")
+	start := -1
+	for i, l := range lines {
+		if !strings.HasPrefix(l, "  ") || strings.HasPrefix(l, "   ") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimSpace(l), " ")
+		if name == cmd {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return usage
+	}
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "  ") && !strings.HasPrefix(lines[i], "   ") {
+			end = i
+			break
+		}
+	}
+	// the block keeps its own indentation so the continuation lines stay
+	// aligned under the description, which is what makes it readable
+	return "usage:\n" + strings.Join(lines[start:end], "\n") + "\n"
+}

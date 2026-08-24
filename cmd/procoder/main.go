@@ -420,6 +420,7 @@ func run(args []string) int {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
+	currentCmd = args[0]
 	// A flag the command does not implement is a usage error (exit 2 per
 	// ADR 0003), never a path and never silence.
 	args, ok := checkFlags(args, os.Stderr)
@@ -429,8 +430,7 @@ func run(args []string) int {
 	switch args[0] {
 	case "hook":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[1] {
 		case "post-tool-use":
@@ -442,13 +442,11 @@ func run(args []string) int {
 		case "stop":
 			return hook.Stop(os.Stdin, doctor.Root())
 		default:
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 	case "format":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return formatCmd(args[1:])
 	case "review":
@@ -462,29 +460,25 @@ func run(args []string) int {
 	case "env":
 		sync := len(args) > 1 && args[1] == "--sync"
 		if len(args) > 1 && !sync {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return envsync.Run(doctor.Root(), sync, printLine)
 	case "run":
 		exec := len(args) > 1 && args[1] == "--exec"
 		if len(args) > 1 && !exec {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return runcmd.Run(doctor.Root(), exec, printLine)
 	case "adr":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return adrCmd(args[1:])
 	case "bench":
 		root := doctor.Root()
 		save := len(args) > 1 && args[1] == "--save"
 		if len(args) > 1 && !save {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return bench.Run(root, save, config.Load(root).BenchThreshold, printLine)
 	case "deps":
@@ -500,14 +494,12 @@ func run(args []string) int {
 		}, suiteCheck(root), printLine)
 	case "backlog":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlogCmd(args[1:])
 	case "sprint":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return sprintCmd(args[1:])
 	case "check":
@@ -559,8 +551,7 @@ func run(args []string) int {
 		// the decision instead of a silent skip
 		if len(args) > 1 && args[1] == "--ack" {
 			if len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			fmt.Println(docs.AckLine(strings.Join(args[2:], " ")))
 			return 0
@@ -570,26 +561,22 @@ func run(args []string) int {
 		return docs.RunFor(root, changed, "", external, config.Load(root).DocsBlock, os.Stdout)
 	case "index":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return indexCmd(args[1:])
 	case "todo":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todoCmd(args[1:])
 	case "spec":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return specCmd(args[1:])
 	case "plan":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return planCmd(args[1:])
 	case "debt":
@@ -613,8 +600,7 @@ func run(args []string) int {
 		return testCmd(args[1:])
 	case "scrub":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return gitcmd.Scrub(args[1], os.Stdin, os.Stdout)
 	case "version":
@@ -646,8 +632,7 @@ func run(args []string) int {
 		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -658,8 +643,7 @@ func adrCmd(args []string) int {
 	switch args[0] {
 	case "new":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return adr.New(root, strings.Join(args[1:], " "), printLine)
 	case "list":
@@ -667,8 +651,7 @@ func adrCmd(args []string) int {
 	case "check":
 		return adr.Run(root, printLine)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -901,8 +884,7 @@ func indexCmd(args []string) int {
 		return 0
 	case "callers":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return codeindex.Callers(root, args[1], out)
 	case "unused":
@@ -913,8 +895,7 @@ func indexCmd(args []string) int {
 		return codeindex.Graph(root, out)
 	case "find", "search", "refs", "outline", "impls":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[0] {
 		case "find":
@@ -942,8 +923,7 @@ func indexCmd(args []string) int {
 			pos = append(pos, args[i])
 		}
 		if len(pos) != 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return codeindex.Rename(root, pos[0], pos[1], at, out)
 	case "impact":
@@ -956,8 +936,7 @@ func indexCmd(args []string) int {
 	case "stats":
 		return codeindex.Stats(root, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -984,37 +963,32 @@ func backlogCmd(args []string) int {
 	switch args[0] {
 	case "milestone":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Milestone(root, strings.Join(args[1:], " "), out)
 	case "epic":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Epic(root, strings.Join(pos, " "), ms, out)
 	case "story":
 		epic, pos := flagVal("--epic", args[1:])
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Story(root, strings.Join(pos, " "), epic, out)
 	case "bug":
 		epic, pos := flagVal("--epic", args[1:])
 		severity, pos := flagVal("--severity", pos)
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Bug(root, strings.Join(pos, " "), epic, severity, out)
 	case "seed":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) != 1 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Seed(root, pos[0], ms, out)
 	case "list":
@@ -1023,8 +997,7 @@ func backlogCmd(args []string) int {
 		return backlog.Board(root, out)
 	case "close":
 		if len(args) < 3 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[1] {
 		case "story":
@@ -1035,22 +1008,18 @@ func backlogCmd(args []string) int {
 			}, suiteCheck(root), out)
 		case "epic":
 			if len(args) != 3 {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			return backlog.CloseEpic(root, args[2], out)
 		case "milestone":
 			if len(args) != 3 {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			return backlog.CloseMilestone(root, args[2], out)
 		}
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1061,20 +1030,17 @@ func sprintCmd(args []string) int {
 	switch args[0] {
 	case "open":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintOpen(root, strings.Join(args[1:], " "), out)
 	case "pull":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintPull(root, args[1:], out)
 	case "carry":
 		if len(args) < 3 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintCarry(root, args[1], strings.Join(args[2:], " "), out)
 	case "status":
@@ -1082,8 +1048,7 @@ func sprintCmd(args []string) int {
 	case "close":
 		return backlog.SprintClose(root, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1119,14 +1084,12 @@ func todoCmd(args []string) int {
 		return 0
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todo.Add(root, strings.Join(args[1:], " "), out)
 	case "show":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		path, err := todo.File(root, args[1])
 		if err != nil {
@@ -1142,15 +1105,13 @@ func todoCmd(args []string) int {
 		return 0
 	case "close":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todo.CloseWith(root, args[1], func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
 		}, suiteCheck(root), out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1163,8 +1124,7 @@ func planCmd(args []string) int {
 		return plan.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return plan.PrintTemplate(args[1], out)
 	case "check":
@@ -1174,8 +1134,7 @@ func planCmd(args []string) int {
 		}
 		return plan.Check(root, name, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1188,8 +1147,7 @@ func specCmd(args []string) int {
 		return spec.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return spec.PrintTemplate(args[1], out)
 	case "check":
@@ -1199,8 +1157,7 @@ func specCmd(args []string) int {
 		}
 		return spec.Check(root, name, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 

@@ -124,3 +124,40 @@ func TestTheDispatchItselfRefusesTheFlag(t *testing.T) {
 		t.Errorf("run(config --get) = %d, want 2 (a flag config does not implement is a usage error)", code)
 	}
 }
+
+// `procoder adr` with no subcommand printed all 159 lines of the usage
+// text, leaving somebody who forgot one word to find their command among
+// seventy-eight. The usage error now answers the question that was asked.
+//
+// proved by: making usageFor return `usage` unconditionally — this test
+// then sees the whole text where one block belongs.
+func TestAUsageErrorAnswersAboutTheCommandThatWasTyped(t *testing.T) {
+	got := usageFor("adr")
+
+	if !strings.Contains(got, "architecture decision records") {
+		t.Errorf("adr's own description is missing:\n%s", got)
+	}
+	if strings.Contains(got, "the commit gate") {
+		t.Errorf("adr's usage carries the whole book:\n%s", got)
+	}
+	if n := strings.Count(got, "\n"); n > 12 {
+		t.Errorf("one command's usage is %d lines, which is the bug this replaced", n)
+	}
+	// The continuation lines are what make the block readable, so they
+	// have to come with it.
+	if !strings.Contains(got, "new <title> | list | check") {
+		t.Errorf("the block stopped at its first line:\n%s", got)
+	}
+}
+
+// A command name procoder does not have is a different question — there
+// the whole list IS the answer.
+//
+// proved by: returning "" instead of usage for an unmatched name — this
+// test then finds no command list to fall back to.
+func TestAnUnknownCommandStillGetsTheWholeList(t *testing.T) {
+	got := usageFor("thereisnosuchcommand")
+	if !strings.Contains(got, "the commit gate") {
+		t.Errorf("a mistyped command name needs the list of real ones:\n%s", got)
+	}
+}
