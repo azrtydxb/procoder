@@ -45,7 +45,14 @@ plant() {
 	# reports the opposite of a finding — and the first version of this
 	# script counted it CAUGHT. A tool that is absent is NOT RUN, and NOT
 	# RUN is neither a catch nor a miss.
-	if grep -qE "(NOT (checked|run|linted)|is not installed).*$(basename "$expect")|$(basename "$expect").*(NOT (checked|run|linted)|is not installed)" "$log"; then
+	#
+	# The match is the FORMATTING verdict specifically. A looser one that
+	# accepted any "NOT ..." line naming the file called dart a NOT RUN,
+	# because procoder separately reports "NOT linted — Dart: procoder has
+	# no linter for it yet" about a file whose formatter caught the defect
+	# perfectly well. Over-correcting a false pass into a false skip is
+	# still a wrong verdict.
+	if grep -qE "^(UNCHECKED|BLOCKING).*$(basename "$expect").*NOT checked|^UNCHECKED +.*$(basename "$expect")" "$log"; then
 		printf 'NOT RUN %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
 		notrun=$((notrun + 1))
 	elif grep -qF "$expect" "$log"; then
@@ -101,7 +108,7 @@ for lang in go py rs c sh java kt swift rb dart cs php web; do
 	dart) f=dart/sloppy.dart ;; cs) f=cs/Sloppy.cs ;; php) f=php/Sloppy.php ;;
 	web) f=web/sloppy.js ;;
 	esac
-	plant "fmt_$lang" "$f" check "$f"
+	plant "fmt_$lang" "unformatted  $f" check "$f"
 done
 
 plant lint sh/unused.sh lint sh/unused.sh
