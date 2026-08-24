@@ -295,3 +295,34 @@ func TestAPerspectiveOverrideBehavesLikeALensOverride(t *testing.T) {
 		}
 	}
 }
+
+// The two sets are selected by the same flag, so an error about an
+// unknown name has to say which set it looked in. Under --perspectives
+// the names offered are perspectives, and reporting "no such lens" both
+// contradicts the flag the caller passed and lists names that are not
+// lenses.
+// proved by: hard-coded "lens" in the unknown-name error — the
+// perspective mode reports a lens that does not exist and offers four
+// perspectives as the alternatives.
+func TestTheUnknownNameErrorNamesTheSetItSearched(t *testing.T) {
+	root := t.TempDir()
+
+	lenses, _ := Resolve(root)
+	if _, unknown := Select(lenses, []string{"analyst"}); len(unknown) != 1 {
+		t.Error("a perspective is not a lens, and must come back unknown from the lens set")
+	}
+
+	ps, _ := ResolvePerspectives(root)
+	if _, unknown := Select(ps, []string{"adversarial"}); len(unknown) != 1 {
+		t.Error("a lens is not a perspective, and must come back unknown from the perspective set")
+	}
+
+	// The names each set offers are its own, which is what the error
+	// prints as the alternatives.
+	if got := Names(ps); len(got) != 4 || got[0] != "analyst" {
+		t.Errorf("the perspective set offers perspectives: %v", got)
+	}
+	if got := Names(lenses); len(got) != 5 || got[0] != "adversarial" {
+		t.Errorf("the lens set offers lenses: %v", got)
+	}
+}

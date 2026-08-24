@@ -1252,8 +1252,16 @@ func reviewCmd(args []string) int {
 	if len(want) > 0 {
 		selected, unknown := review.Select(lenses, want)
 		if len(unknown) > 0 {
-			fmt.Fprintf(os.Stderr, "procoder review: no such lens: %s — procoder has %s\n",
-				strings.Join(unknown, ", "), strings.Join(review.Names(lenses), ", "))
+			// Named for the mode the caller asked for: under
+			// --perspectives these are perspectives, and an error saying
+			// "no such lens" contradicts the flag they just passed while
+			// listing names that are not lenses either.
+			kind := "lens"
+			if perspectives {
+				kind = "perspective"
+			}
+			fmt.Fprintf(os.Stderr, "procoder review: no such %s: %s — procoder has %s\n",
+				kind, strings.Join(unknown, ", "), strings.Join(review.Names(lenses), ", "))
 			return 2
 		}
 		lenses = selected
