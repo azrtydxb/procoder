@@ -23,10 +23,10 @@ named agent personas for multi-perspective work. Meanwhile it has no commit
 gate, no test harness, no formatter, no release controller, no debt ledger —
 the half procoder spent its effort on.
 
-Now, because the two are converging on the same users. A repository adopting
-procoder for its gate has to leave procoder to plan, and a repository
-adopting BMad to plan has nothing verifying the result before it ships. Both
-groups are stitching the halves together by hand.
+This matters now because the two are converging on the same users. A
+repository adopting procoder for its gate has to leave procoder to plan, and
+a repository adopting BMad to plan has nothing verifying the result before it
+ships. Both groups are stitching the halves together by hand.
 
 ## Users
 
@@ -123,16 +123,16 @@ Two tracks, deliberately separable — each ships value without the other.
 
 ## Interfaces
 
-| Surface                                   | Behaviour                                                                                                                      |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `procoder review [paths...]`              | Prints each applicable lens and the content in scope, for the agent to judge. Exit 0.                                          |
-| `procoder review --lens <name>[,<name>]`  | Runs only the named lenses. An unknown name is reported and nothing is printed.                                                |
-| `procoder analyze <sub>`                  | The pre-spec phase: `brief`, `explore`, `list`, `check`. Prints documents for the agent to write, under `.procoder/analysis/`. |
-| `[planning] method`                       | `"procoder"` (default) or `"bmad"`. Anything else is a Problem naming the line.                                                |
-| `.procoder/review/lenses/<name>.md`       | Replaces one shipped lens. Present-and-empty is an error, not a fallback.                                                      |
-| `.procoder/review/perspectives/<name>.md` | Replaces one shipped perspective, same rule.                                                                                   |
-| `procoder doctor`                         | Under `method = "bmad"`, reports whether BMad is installed and its version.                                                    |
-| `procoder status`                         | Under `method = "bmad"`, reports sprint state from `sprint-status.yaml`.                                                       |
+| Surface                                   | Behaviour                                                                                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `procoder review [paths...]`              | Prints each applicable lens and the content in scope, for the agent to judge. Exit 0 when every selected lens loaded; 1 when one could not, naming it. |
+| `procoder review --lens <name>[,<name>]`  | Runs only the named lenses. An unknown name is a usage error: it is reported, nothing is printed, exit 2.                                              |
+| `procoder analyze <sub>`                  | The pre-spec phase: `brief`, `explore`, `list`, `check`. Prints documents for the agent to write, under `.procoder/analysis/`.                         |
+| `[planning] method`                       | `"procoder"` (default) or `"bmad"`. Anything else is a Problem naming the line.                                                                        |
+| `.procoder/review/lenses/<name>.md`       | Replaces one shipped lens. Present-and-empty is an error, not a fallback.                                                                              |
+| `.procoder/review/perspectives/<name>.md` | Replaces one shipped perspective, same rule.                                                                                                           |
+| `procoder doctor`                         | Under `method = "bmad"`, reports whether BMad is installed and its version.                                                                            |
+| `procoder status`                         | Under `method = "bmad"`, reports sprint state from `sprint-status.yaml`.                                                                               |
 
 ## Data
 
@@ -199,13 +199,16 @@ Track 2 adds nothing and owns nothing. It reads, at paths BMad's own
 - [ ] `procoder review` over a fixture diff prints all five lenses with the
       content in scope, and leaves every file's bytes unchanged, asserted by
       comparing a digest of the tree before and after.
-- [ ] `procoder review --lens edge-case` prints exactly that lens, and an
-      unrecognised name reports the name and prints no lens at all.
+- [ ] `procoder review --lens edge-case` prints exactly that lens and exits
+      0; an unrecognised name reports the name, prints no lens at all, and
+      exits 2 — a usage error, not a finding.
 - [ ] A repository carrying `.procoder/review/lenses/adversarial.md` gets
       that content in place of the shipped lens; without the file it gets the
       shipped one unchanged.
 - [ ] An empty `.procoder/review/lenses/adversarial.md` blocks and names the
-      file rather than falling back to the shipped lens.
+      file rather than falling back to the shipped lens, exiting 1 — a lens
+      that could not load is a refusal, and a review that did not happen must
+      not exit 0.
 - [ ] `procoder analyze check` refuses a hollow analysis document — a
       section left as its template comment is not a filled section — and
       passes a filled one.
