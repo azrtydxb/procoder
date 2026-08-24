@@ -101,3 +101,62 @@ func TestNoProcoderFeatureIsNamedAfterATrademark(t *testing.T) {
 			strings.Join(offenders, "\n  "))
 	}
 }
+
+// A command nobody can find is a command nobody uses. `procoder config`
+// shipped, worked, printed every effective setting with the config.toml
+// line it came from — and appeared in neither `procoder help` nor
+// docs/commands.md. It was found by comparing the dispatch against the
+// docs during the fixture campaign, which is a thing a test can do every
+// time instead of once.
+//
+// Subcommand arms are excluded: `list`, `check`, `close` and the rest are
+// documented under their parent's entry, not as commands of their own.
+//
+// proved by: deleting the `config` block from the usage text in main.go —
+// this test then names it as shipped and undiscoverable.
+func TestEveryShippedCommandIsDiscoverable(t *testing.T) {
+	main := filepath.Join("..", "..", "cmd", "procoder", "main.go")
+	raw, err := os.ReadFile(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+
+	// the top-level switch only: from run()'s switch to the next
+	// function, so the subcommand dispatchers below are not counted
+	start := strings.Index(src, "func run(args []string) int {")
+	if start < 0 {
+		t.Fatal("run() not found in main.go")
+	}
+	end := strings.Index(src[start+10:], "\nfunc ")
+	if end < 0 {
+		t.Fatal("could not find the end of run()")
+	}
+	top := src[start : start+10+end]
+
+	usageText := src[strings.Index(src, "usage = `"):]
+	docs, err := os.ReadFile(filepath.Join("..", "..", "docs", "commands.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Exactly one tab: the arms of run()'s own switch. `commandCase`
+	// allows any indentation, which would count `post-tool-use` and the
+	// rest — subcommands of `hook`, nested inside its arm — as top-level
+	// commands and demand a usage block each.
+	topLevelCase := regexp.MustCompile(`(?m)^\tcase ((?:"[a-z0-9-]+"(?:, )?)+):`)
+	for _, m := range topLevelCase.FindAllStringSubmatch(top, -1) {
+		for _, name := range strings.Split(m[1], ",") {
+			name = strings.Trim(strings.TrimSpace(name), `"`)
+			if name == "" || name == "help" {
+				continue
+			}
+			if !strings.Contains(usageText, "\n  "+name+" ") && !strings.Contains(usageText, "\n  "+name+"\n") {
+				t.Errorf("`procoder %s` is dispatched but absent from the usage text — nobody running `procoder help` can find it", name)
+			}
+			if !strings.Contains(string(docs), "procoder "+name) {
+				t.Errorf("`procoder %s` is dispatched but absent from docs/commands.md", name)
+			}
+		}
+	}
+}

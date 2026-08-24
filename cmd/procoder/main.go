@@ -218,6 +218,11 @@ const usage = `usage: procoder <command> [args]
                        Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
                        Codex) — prints content for anything missing or
                        drifted; the gate blocks on drift
+  analyze <sub>        the question before the spec, under .procoder/analysis/:
+                       brief <name> | list | where | check [name|all] — what
+                       is known, what is not, the options and a
+                       recommendation; "where" right-sizes a piece of work
+                       to the stage it actually needs
   audit                every domain's checks over the WHOLE tracked tree —
                        the onboarding sweep for a repository procoder has
                        not governed before; exit 1 if it would fail the gate
@@ -245,6 +250,9 @@ const usage = `usage: procoder <command> [args]
                        concurrency cancellation, tests exist; --runs asks gh
                        for this branch's newest run per workflow instead, and
                        says when the newest run predates your latest push
+  config               every effective setting, its value, and where it came
+                       from — a config.toml line or procoder's default —
+                       with any policy relaxed below the default marked
   debt                 harvest deliberate-simplification markers (comment
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
@@ -318,6 +326,13 @@ const usage = `usage: procoder <command> [args]
                        with — .procoder/PRINCIPLES.md wins over the default;
                        --hook answers in the running host's SessionStart
                        JSON shape (claude/codex/copilot/qoder)
+  review [--lens <name>[,<name>]] [--perspectives] [paths...]
+                       the judgment half of the gate: prints the review
+                       lenses and the scope for the agent to judge against,
+                       and writes nothing. --perspectives reads the change
+                       as analyst, architect, implementer and reviewer in
+                       turn; a lens that could not be loaded is a refusal,
+                       never a review that silently happened
   release [<version>]  the pre-tag controller: version-sync across [release]
                        files, the changelog entry, a clean tree, the gate, and
                        the suite under [test] policy — every failure listed,

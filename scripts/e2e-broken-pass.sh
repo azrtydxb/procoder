@@ -31,8 +31,8 @@ notrun=0
 # planting function named plant_<id>, then run the command and require the
 # output to name the file.
 plant() {
-	local id="$1" expect="$2"
-	shift 2
+	local id="$1" file="$2" expect="$3"
+	shift 3
 	"$REPO/scripts/build-e2e-fixture.sh" >/dev/null 2>&1
 	cd "$FX" || exit 2
 	"plant_$id"
@@ -52,12 +52,21 @@ plant() {
 	# no linter for it yet" about a file whose formatter caught the defect
 	# perfectly well. Over-correcting a false pass into a false skip is
 	# still a wrong verdict.
-	if grep -qE "^(UNCHECKED|BLOCKING).*$(basename "$expect").*NOT checked|^UNCHECKED +.*$(basename "$expect")" "$log"; then
-		printf 'NOT RUN %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
-		notrun=$((notrun + 1))
-	elif grep -qF "$expect" "$log"; then
+	# CAUGHT is tested FIRST, and against the verdict rather than the
+	# subject. Testing the absent-tool case first called the conflict
+	# marker a NOT RUN: gofmt legitimately cannot parse a file containing
+	# conflict markers, so the log carries "UNCHECKED greet/conflict.go"
+	# alongside the two blocking findings that caught the defect exactly.
+	# A file can be unparseable to one domain and damning to another.
+	if grep -qF "$expect" "$log"; then
 		printf 'CAUGHT  %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
 		caught=$((caught + 1))
+	elif grep -qE "^UNCHECKED +.*$(basename "$file")" "$log"; then
+		# The tool that owns this defect is not on the machine. NOT RUN is
+		# neither a catch nor a miss, and counting it either way is the
+		# silent green this pass exists to find.
+		printf 'NOT RUN %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
+		notrun=$((notrun + 1))
 	else
 		printf 'MISSED  %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
 		missed=$((missed + 1))
@@ -83,7 +92,15 @@ plant_fmt_web() { printf 'export function sloppy(  a ){return a}\n' >web/sloppy.
 # ---- everything else -------------------------------------------------
 plant_lint() { printf '#!/usr/bin/env bash\nset -euo pipefail\nunused_var=1\necho "$HOME"\n' >sh/unused.sh; }
 plant_secret() {
-	printf 'package greet\n\n// nolint\nconst AWSKey = "AKIAIOSFODNN7EXAMPLE"\nconst AWSSecret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"\n' >greet/creds.go
+	# AKIAIOSFODNN7EXAMPLE is AWS's own documented example key, and every
+	# scanner allowlists it deliberately — planting it tested the allowlist,
+	# not the scanner. This one is derived at run time from a fixed string,
+	# so it is unmistakably credential-shaped to a scanner and no
+	# credential-shaped literal is committed to procoder's own repository.
+	local k s
+	k="AKIA$(printf 'procoder-e2e-fixture' | shasum | tr 'a-z' 'A-Z' | tr -cd 'A-Z0-9' | head -c 16)"
+	s="$(printf 'procoder-e2e-fixture-secret' | shasum -a 256 | tr -cd 'A-Za-z0-9' | head -c 40)"
+	printf 'package greet\n\nconst AWSKey = "%s"\nconst AWSSecret = "%s"\n' "$k" "$s" >greet/creds.go
 }
 plant_sast() {
 	printf 'import subprocess\n\n\ndef run(cmd: str) -> None:\n    subprocess.call(cmd, shell=True)\n' >py/shellinject.py
@@ -108,17 +125,17 @@ for lang in go py rs c sh java kt swift rb dart cs php web; do
 	dart) f=dart/sloppy.dart ;; cs) f=cs/Sloppy.cs ;; php) f=php/Sloppy.php ;;
 	web) f=web/sloppy.js ;;
 	esac
-	plant "fmt_$lang" "unformatted  $f" check "$f"
+	plant "fmt_$lang" "$f" "unformatted  $f" check "$f"
 done
 
-plant lint sh/unused.sh lint sh/unused.sh
-plant secret greet/creds.go security greet/creds.go
-plant sast py/shellinject.py security --deep
-plant vulndep golang.org/x/text security --deep
-plant conflict greet/conflict.go check greet/conflict.go
-plant oversized big.bin check big.bin
-plant debt greet/slow.go debt
-plant docref docs/nowhere.md docs
+plant lint sh/unused.sh "SC2034" lint sh/unused.sh
+plant secret greet/creds.go "AWS Access Key ID Value detected" security
+plant sast py/shellinject.py "subprocess-shell-true" security --deep
+plant vulndep go.mod "golang.org/x/text" security --deep
+plant conflict greet/conflict.go "merge conflict marker left in the file" check greet/conflict.go
+plant oversized big.bin "over the 5 MB limit" check big.bin
+plant debt greet/slow.go "[no-trigger]" debt
+plant docref README.md "broken reference: \"docs/nowhere.md\"" docs
 
 # AI attribution is checked in a commit message, not a file
 "$REPO/scripts/build-e2e-fixture.sh" >/dev/null 2>&1

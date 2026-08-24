@@ -599,6 +599,14 @@ single-topic answers left plain. A repo replaces them wholesale with
 
 ### Setup and plumbing
 
+#### `procoder config`
+
+Every setting Procoder is actually running under: its value, and where
+that value came from — a line in `.procoder/config.toml`, with the line
+number, or Procoder's own default. A policy set weaker than the default
+is marked as relaxed, so a repository that quietly turned a gate down
+says so out loud rather than looking like a repository that never had one.
+
 #### `procoder doctor`
 
 Which tools this repository needs (by its file inventory), which are
