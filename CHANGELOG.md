@@ -68,8 +68,8 @@ criterion must cite it:
 ```
 
 Scope no criterion cites is a gap, a gap makes the spec incomplete, and
-seed refuses an incomplete spec. **Work cannot be seeded from a spec that
-promises more than it tests.**
+seed refuses an incomplete spec. Work cannot be seeded from a spec that promises
+more than it tests.
 
 It exists because that is exactly what happened here. A spec put five
 things in scope, wrote criteria for three, and passed every check
@@ -79,7 +79,7 @@ epic closed at "fourteen of fourteen" with two of five features never
 built. The verdict was true and useless: fourteen of fourteen
 _criteria_, not fourteen of fourteen _scope_.
 
-**To upgrade:** label the bullets in each spec's In scope section and cite
+To upgrade, label the bullets in each spec's In scope section and cite
 those ids from the criteria that cover them. A spec whose bullets carry
 no ids is reported NOT CHECKED rather than assumed covered — coverage is
 declared, never guessed, because matching prose to prose would fail open
@@ -116,7 +116,7 @@ method = "bmad"` and Procoder reads that installation's artifacts —
 sprint status, its own output folder, its version — instead of demanding
 `.procoder/specs`, `plans` and `backlog`.
 
-**The setting moves planning and nothing else.** The gate, the suite,
+The setting moves planning and nothing else. The gate, the suite,
 formatting, the release controller, the debt ledger, security and docs
 reach the same verdict about the same code either way, asserted by a test
 rather than promised. Setting it with no such installation present is a
