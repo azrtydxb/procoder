@@ -56,7 +56,12 @@ Status: draft
 
 ## In scope
 
-<!-- What this change WILL do. Bullet points, each one buildable. -->
+<!-- What this change WILL do. Bullet points, each one buildable, each
+     labelled "- [S-1] ...". Every id must be cited by at least one
+     acceptance criterion below: backlog seed writes one story per
+     criterion, so scope no criterion cites becomes no story, no sprint,
+     and ships unbuilt. The check is on the ids, not the prose — guessing
+     whether a criterion covers a bullet would fail open. -->
 
 ## Out of scope
 
@@ -85,7 +90,9 @@ Status: draft
 ## Acceptance criteria
 
 <!-- Each criterion is a testable checkbox: an observable behaviour a
-     reviewer can verify, not a feeling. These seed the todo tasks. -->
+     reviewer can verify, not a feeling. These seed the todo tasks.
+     Each cites the scope it tests — "- [ ] [S-1] ..." — and one
+     criterion may cite several ids where it genuinely covers them. -->
 
 - [ ] ...
 
@@ -297,13 +304,29 @@ func checkOne(root, path string, out func(string)) int {
 		notes = append(notes, fmt.Sprintf("  note: %d question(s) here are answered in %s — rewriting them as decisions is tidier, and no longer required to pass",
 			answered, filepath.ToSlash(filepath.Join(answers.Dir, answers.File))))
 	}
+	// Every promise needs a test, or the story it becomes never exists.
+	// Declared rather than inferred: a bullet wrongly judged covered
+	// would be the same silence this check exists to break.
+	if uncovered, declared := ScopeCoverage(text); !declared {
+		if ScopePromises(text) {
+			gaps = append(gaps, "scope coverage NOT checked — In scope carries no [S-n] ids, so nothing can tell which promises are tested; label each promise and cite its id from the criterion that covers it")
+		}
+	} else if len(uncovered) > 0 {
+		gaps = append(gaps, fmt.Sprintf("scope %s promised and untested — `backlog seed` writes one story per criterion, so scope no criterion cites becomes no story, no sprint, and ships unbuilt",
+			strings.Join(uncovered, ", ")))
+	}
+
 	criteria := textutil.Section(text, "Acceptance criteria")
 	boxes := checkboxRe.FindAllStringSubmatch(criteria, -1)
 	if strings.Contains(text, "## Acceptance criteria") && len(boxes) == 0 {
 		gaps = append(gaps, "Acceptance criteria carry no checkboxes — each criterion must be a testable `- [ ]` line")
 	}
 	for _, m := range boxes {
-		c := strings.TrimSpace(m[1])
+		// The scope citation is traceability, not the requirement. Every
+		// check below reads what the criterion ASKS FOR, so the ids come
+		// off first — otherwise `- [ ] [S-1] ...` is not the placeholder
+		// it plainly is, and a hollow spec seeds hollow stories.
+		c := StripScopeIDs(m[1])
 		if c == "..." {
 			gaps = append(gaps, "Acceptance criteria still contain the placeholder")
 			continue

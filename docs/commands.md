@@ -106,6 +106,15 @@ disk changes.
 `--lens` narrows to the named ones. A name that is not a lens is a usage
 error (exit 2), never a silent full review.
 
+`--perspectives` reads with a different set: **who** is reading, where a
+lens is **how**. Analyst (is this the right problem), architect (what
+does this commit the system to), implementer (what will it be like to
+live in), reviewer (what is a reader owed). Meant for a spec or a plan —
+the architectural question is cheapest to answer before there is a diff
+to answer it against. Deliberately stances without names: Procoder has
+no voice by design, so it takes the multi-angle read and leaves the
+cast.
+
 Any lens is replaceable from `.procoder/review/lenses/<name>.md`
 (D-OVERRIDE). An empty or unreadable override **blocks and prints
 nothing** — unlike a template, which falls back to Procoder's version and
@@ -125,6 +134,14 @@ we do not know, Options, Recommendation) for the agent to write under
 `.procoder/analysis/`; `list` shows what exists; `check [name|all]`
 refuses one whose sections are still template comments, to the same
 standard a spec is held to.
+
+`where` names every entry point in the chain — analysis, spec, plan,
+backlog, todo, build — with what each is for and what to run, and says
+which one this repository has already used. **Nothing requires you to
+start above the point you need:** no gate finding asks for a spec, and a
+change that begins at build is gated, tested, formatted and released
+like any other. What the chain refuses is a story closing without
+evidence, and that applies wherever you began.
 
 Never required. Nothing demands an analysis document exist — it is the
 answer to "I do not know what I am building yet", not a new tollgate.
@@ -402,6 +419,24 @@ interviews the gaps closed; the binary judges completeness.
   spec whose `Status:` line still says `draft` earns a note to advance it
   to `complete` — a note, never a gap. A complete spec seeds the todo
   list — one task per criterion group.
+
+**Scope coverage.** Every `## In scope` bullet carries an id — `- [S-1]
+…` — and at least one acceptance criterion must cite it: `- [ ] [S-1]
+…`. One criterion may cite several ids where it genuinely covers them.
+
+Scope no criterion cites is a gap, and a gap makes the spec incomplete,
+and `procoder backlog seed` refuses a spec that is not complete. That is
+the loop: **work cannot be seeded from a spec that promises more than it
+tests.** It exists because a spec here once put five things in scope,
+wrote criteria for three, and passed — `seed` writes one story per
+criterion, so the two untested promises became no stories, got no
+sprint, and the epic closed at "all stories done" with the feature
+half-built.
+
+Coverage is **declared, never inferred**. Matching a bullet to a
+criterion by keyword would fail open, and a bullet wrongly judged
+covered is the exact silence this prevents. A spec whose bullets carry
+no ids is reported NOT CHECKED rather than covered.
 
 #### `procoder plan <sub>`
 

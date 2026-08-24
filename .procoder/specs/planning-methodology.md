@@ -51,29 +51,29 @@ Two tracks, deliberately separable — each ships value without the other.
 
 **Track 1 — procoder grows the capability in its own code.**
 
-- `procoder review` — multi-lens review over a diff, file, or document.
+- [S-1] `procoder review` — multi-lens review over a diff, file, or document.
   Five lenses, each a distinct stance: adversarial, edge-case,
   verification-gap, structure, prose. Written in procoder's own words, not
   BMad's.
-- An analysis phase ahead of the spec, under `.procoder/analysis/`, for
+- [S-2] An analysis phase ahead of the spec, under `.procoder/analysis/`, for
   getting from a notion to something `spec check` can meaningfully judge.
-- Perspectives — analyst, architect, implementer, reviewer — applied as
+- [S-3] Perspectives — analyst, architect, implementer, reviewer — applied as
   review stances at spec and plan time.
-- Right-sizing: naming which entry point in the chain a change belongs at,
+- [S-4] Right-sizing: naming which entry point in the chain a change belongs at,
   and making every entry point reachable rather than only the seeded one.
-- Every lens, perspective and phase repo-overridable from `.procoder/`,
+- [S-5] Every lens, perspective and phase repo-overridable from `.procoder/`,
   following D-OVERRIDE like every other domain.
 
 **Track 2 — a repository can run the real BMad instead.**
 
-- `[planning] method = "procoder" | "bmad"` in `.procoder/config.toml`,
+- [S-6] `[planning] method = "procoder" | "bmad"` in `.procoder/config.toml`,
   defaulting to `procoder`.
-- Under `bmad`, procoder's planning controllers read and validate BMad's
+- [S-7] Under `bmad`, procoder's planning controllers read and validate BMad's
   artifacts — `planning-artifacts/`, `implementation-artifacts/`,
   `sprint-status.yaml` — instead of `.procoder/specs|plans|backlog`.
-- `procoder status` reports sprint state from `sprint-status.yaml`.
-- `procoder doctor` reports whether BMad is installed and at what version.
-- The governance backbone — gate, test, format, release, debt, scrub,
+- [S-8] `procoder status` reports sprint state from `sprint-status.yaml`.
+- [S-9] `procoder doctor` reports whether BMad is installed and at what version.
+- [S-10] The governance backbone — gate, test, format, release, debt, scrub,
   security, docs — is untouched by the setting and runs identically in both
   modes.
 
@@ -196,41 +196,49 @@ Track 2 adds nothing and owns nothing. It reads, at paths BMad's own
 
 ## Acceptance criteria
 
-- [ ] `procoder review` over a fixture diff prints all five lenses with the
+- [ ] [S-1] `procoder review` over a fixture diff prints all five lenses with the
       content in scope, and leaves every file's bytes unchanged, asserted by
       comparing a digest of the tree before and after.
-- [ ] `procoder review --lens edge-case` prints exactly that lens and exits
+- [ ] [S-1] `procoder review --lens edge-case` prints exactly that lens and exits
       0; an unrecognised name reports the name, prints no lens at all, and
       exits 2 — a usage error, not a finding.
-- [ ] A repository carrying `.procoder/review/lenses/adversarial.md` gets
+- [ ] [S-5] A repository carrying `.procoder/review/lenses/adversarial.md` gets
       that content in place of the shipped lens; without the file it gets the
       shipped one unchanged.
-- [ ] An empty `.procoder/review/lenses/adversarial.md` blocks and names the
+- [ ] [S-5] An empty `.procoder/review/lenses/adversarial.md` blocks and names the
       file rather than falling back to the shipped lens, exiting 1 — a lens
       that could not load is a refusal, and a review that did not happen must
       not exit 0.
-- [ ] `procoder analyze check` refuses a hollow analysis document — a
+- [ ] [S-2] `procoder analyze check` refuses a hollow analysis document — a
       section left as its template comment is not a filled section — and
       passes a filled one.
-- [ ] `procoder spec check` names the analysis document a spec came from when
+- [ ] [S-2] `procoder spec check` names the analysis document a spec came from when
       one exists, and does not require one when it does not.
-- [ ] `[planning] method = "bmad"` with no BMad installed produces a blocking
+- [ ] [S-6] `[planning] method = "bmad"` with no BMad installed produces a blocking
       finding naming both the setting and the missing installation.
-- [ ] `[planning] method = "bmad"` with a fixture BMad install reports sprint
+- [ ] [S-7] [S-8] `[planning] method = "bmad"` with a fixture BMad install reports sprint
       state from `sprint-status.yaml`, with each story's status, and does not
       report from `.procoder/backlog/`.
-- [ ] A `sprint-status.yaml` that will not parse produces a blocking finding
+- [ ] [S-7] A `sprint-status.yaml` that will not parse produces a blocking finding
       naming the file, distinct from the finding for one that is absent.
-- [ ] A status in `sprint-status.yaml` that procoder does not recognise is
+- [ ] [S-7] A status in `sprint-status.yaml` that procoder does not recognise is
       reported by name rather than mapped to a procoder status.
-- [ ] `[planning] method = "nonsense"` is a config Problem naming the line,
+- [ ] [S-6] `[planning] method = "nonsense"` is a config Problem naming the line,
       and the run continues on the default.
-- [ ] Under `method = "bmad"`, `procoder check` produces byte-identical
+- [ ] [S-10] Under `method = "bmad"`, `procoder check` produces byte-identical
       output to the same tree under `method = "procoder"`, asserted on a
       fixture — the setting governs planning and nothing else.
-- [ ] `procoder doctor` under `method = "bmad"` names BMad's installed
+- [ ] [S-9] `procoder doctor` under `method = "bmad"` names BMad's installed
       version, and says plainly that it is absent when it is.
-- [ ] No procoder-owned feature name contains "BMad", asserted by an audit
+- [ ] [S-3] `procoder review --perspectives` prints four perspectives —
+      analyst, architect, implementer, reviewer — each a distinct stance
+      and none of them a lens under another name, and a repository
+      carrying `.procoder/review/perspectives/architect.md` gets that
+      content instead.
+- [ ] [S-4] `procoder analyze where` names every entry point in the chain
+      with what each is for and what to run, including build, and says
+      plainly that nothing requires starting above the point you need.
+- [ ] [S-1] No procoder-owned feature name contains "BMad", asserted by an audit
       over the source and the command table, so the trademark boundary cannot
       erode by accident.
 

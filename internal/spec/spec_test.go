@@ -32,9 +32,12 @@ func completeSpec() string {
 	for _, s := range Sections {
 		b.WriteString("\n## " + s + "\n\n")
 		switch s {
+		case "In scope":
+			b.WriteString("- [S-1] the offline report\n")
+			b.WriteString("- [S-2] the suite it has to keep green\n")
 		case "Acceptance criteria":
-			b.WriteString("- [ ] report renders with the network cable pulled\n")
-			b.WriteString("- [ ] go test ./... exits 0\n")
+			b.WriteString("- [ ] [S-1] report renders with the network cable pulled\n")
+			b.WriteString("- [ ] [S-2] go test ./... exits 0\n")
 		case "Open questions":
 			// none — every decision resolved
 		default:
@@ -72,14 +75,14 @@ func TestCheckBlocksOnGaps(t *testing.T) {
 			return s + "\n- OPEN: which database?\n"
 		}, "unresolved OPEN:"},
 		{"no checkboxes", func(s string) string {
-			s = strings.Replace(s, "- [ ] report renders with the network cable pulled\n", "renders offline\n", 1)
-			return strings.Replace(s, "- [ ] go test ./... exits 0\n", "", 1)
+			s = strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled\n", "renders offline\n", 1)
+			return strings.Replace(s, "- [ ] [S-2] go test ./... exits 0\n", "", 1)
 		}, "no checkboxes"},
 		{"placeholder criterion", func(s string) string {
-			return strings.Replace(s, "- [ ] report renders with the network cable pulled", "- [ ] ...", 1)
+			return strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled", "- [ ] ...", 1)
 		}, "placeholder"},
 		{"untestable criterion", func(s string) string {
-			return strings.Replace(s, "- [ ] report renders with the network cable pulled",
+			return strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled",
 				"- [ ] the UI is user-friendly", 1)
 		}, "untestable criterion"},
 	}
