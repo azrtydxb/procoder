@@ -218,7 +218,7 @@ namespace fixture {
 // Returns a greeting for name, or a generic one when it is empty.
 std::string greet(const std::string &name);
 
-}  // namespace fixture
+} // namespace fixture
 EOF
 
 f cpp/greet.cpp <<'EOF'
@@ -233,7 +233,7 @@ std::string greet(const std::string &name) {
   return "Hello, " + name + "!";
 }
 
-}  // namespace fixture
+} // namespace fixture
 EOF
 
 f cpp/greet.cc <<'EOF'
@@ -255,7 +255,7 @@ namespace fixture {
 
 std::string shout(const std::string &name) { return greet(name) + "!!"; }
 
-}  // namespace fixture
+} // namespace fixture
 EOF
 
 # ---------------------------------------------------------------- shell
@@ -580,18 +580,48 @@ EOF
 
 # ---------------------------------------------------------------- docs
 f README.md <<'EOF'
-# fixture
+# fixture 0.1.0
+
+[![ci](https://img.shields.io/badge/ci-passing-brightgreen)](.github/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A repository that exists to be checked. It carries one file for every
 extension procoder's tool table names, a test suite in several runners, a
 CI workflow, and dependency manifests — so that running procoder against
 it answers what procoder says about a project that is not its own.
 
+## Quick start
+
+```sh
+go run . Ada
+```
+
 See [the docs](docs/usage.md) for what it does, which is print a greeting.
 
 Built by `scripts/build-e2e-fixture.sh` in the procoder repository. It is
 not maintained by hand and anything committed to it will be lost on the
 next rebuild.
+EOF
+
+f CHANGELOG.md <<'EOF'
+# Changelog
+
+## 0.1.0
+
+- The fixture greets a name, or a stranger when given none, in every
+  language procoder claims to format.
+EOF
+
+f LICENSE <<'EOF'
+MIT License
+
+Copyright (c) 2026 Fixture Author
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
 EOF
 
 f docs/usage.md <<'EOF'
@@ -640,6 +670,11 @@ f .gitignore <<'EOF'
 /bin/
 __pycache__/
 *.class
+*.test
+# what procoder writes into a repository it governs
+.procoder/index/
+.procoder/state/
+.lycheecache
 EOF
 
 git init -q -b main

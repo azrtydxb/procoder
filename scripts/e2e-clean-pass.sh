@@ -30,7 +30,10 @@ run() {
 	"$PC" "$@" >"$log" 2>&1
 	local code=$?
 	local verdict
-	if grep -qiE 'NOT (checked|run)|could not run|missing|not installed|no known package' "$log"; then
+	# NOT RUN is claimed only in procoder's own no-silent-green vocabulary.
+	# An earlier version matched "missing" too, which reads a finding about
+	# a missing PR template as a check that did not happen.
+	if grep -qE 'NOT (checked|run|computed)|is not installed|could not run|no known package' "$log"; then
 		verdict="NOT RUN"
 		notrun=$((notrun + 1))
 	elif [ "$code" -eq 0 ]; then
@@ -71,11 +74,12 @@ run docs docs
 run test test
 run bench bench
 run audit audit
-run scrub scrub
+run scrub scrub README.md
 run principles principles
 run agents agents
 run templates templates
-run adr adr
+run adr-list adr list
+run adr-check adr check
 run lessons lessons
 run version version
 
@@ -96,11 +100,11 @@ run index-build index build
 run index-stats index stats
 run index-entrypoints index entrypoints
 run index-unused index unused
-run index-outline index outline greet
+run index-outline index outline greet/greet.go
 run index-find index find Greet
 run index-search index search Greet
 run index-refs index refs Greet
-run index-impls index impls Greet
+run index-impls index impls greet.Greet
 run index-callers index callers Greet
 run index-graph index graph
 run index-impact index impact greet/greet.go
