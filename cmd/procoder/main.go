@@ -540,6 +540,15 @@ func run(args []string) int {
 		if deep {
 			findings = append(findings, security.Sast(root)...)
 			findings = append(findings, security.Deps(root)...)
+		} else {
+			// The gate runs the SAST leg over the changed files as well as
+			// the secret scanner, and this command has to answer the same
+			// question or it is not a preview of the gate — it is a weaker
+			// check wearing the same name. A hardcoded AWS key that blocks
+			// at commit was reported here as zero findings, because
+			// gitleaks does not fire on it and semgrep, which does, was
+			// never asked.
+			findings = append(findings, security.SastChanged(root, changed)...)
 		}
 		return printFindings(root, "security", findings, printLine)
 	case "lint":

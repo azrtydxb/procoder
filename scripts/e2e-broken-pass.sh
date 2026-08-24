@@ -25,6 +25,7 @@ mkdir -p "$OUT/log"
 
 caught=0
 missed=0
+notrun=0
 
 # plant <id> <expect-file> <command...> — rebuild the fixture, run the
 # planting function named plant_<id>, then run the command and require the
@@ -38,7 +39,16 @@ plant() {
 	local log="$OUT/log/$id.txt"
 	"$PC" "$@" >"$log" 2>&1
 	local code=$?
-	if grep -qF "$expect" "$log"; then
+	# A line that merely mentions the file is not a catch. `procoder check
+	# cs/Sloppy.cs` on a machine with no csharpier prints "UNCHECKED
+	# cs/Sloppy.cs — csharpier is not installed", which names the file and
+	# reports the opposite of a finding — and the first version of this
+	# script counted it CAUGHT. A tool that is absent is NOT RUN, and NOT
+	# RUN is neither a catch nor a miss.
+	if grep -qE "(NOT (checked|run|linted)|is not installed).*$(basename "$expect")|$(basename "$expect").*(NOT (checked|run|linted)|is not installed)" "$log"; then
+		printf 'NOT RUN %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
+		notrun=$((notrun + 1))
+	elif grep -qF "$expect" "$log"; then
 		printf 'CAUGHT  %-26s exit=%-2s %s\n' "$id" "$code" "procoder $*" >>"$OUT/report.txt"
 		caught=$((caught + 1))
 	else
@@ -116,6 +126,6 @@ else
 fi
 cd "$REPO" || exit 2
 
-printf '\ncaught=%s missed=%s\n' "$caught" "$missed" >>"$OUT/report.txt"
+printf '\ncaught=%s missed=%s notrun=%s\n' "$caught" "$missed" "$notrun" >>"$OUT/report.txt"
 cat "$OUT/report.txt"
 echo "logs: $OUT/log"

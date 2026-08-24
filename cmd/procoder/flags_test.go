@@ -161,3 +161,37 @@ func TestAnUnknownCommandStillGetsTheWholeList(t *testing.T) {
 		t.Errorf("a mistyped command name needs the list of real ones:\n%s", got)
 	}
 }
+
+// `procoder security` is how a person checks their work before committing,
+// so it has to ask what the gate asks. It did not: the gate runs the
+// secret scanner AND the SAST leg over the changed files, and the command
+// ran only the secret scanner. A hardcoded AWS key blocked at the gate and
+// was reported here as "0 finding(s) (0 blocking)" — the most dangerous
+// place in procoder to answer a question it did not ask.
+//
+// gitleaks is what makes this reachable rather than theoretical: it does
+// not fire on a bare `const K = "AKIA…"` in Go, and semgrep does, so the
+// two legs genuinely differ in what they see.
+//
+// proved by: deleting the SastChanged call from the non-deep security arm
+// — this test then finds the command silent about a key the gate blocks.
+func TestSecurityAsksWhatTheGateAsks(t *testing.T) {
+	gateSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(gateSrc)
+	arm := src[strings.Index(src, `case "security":`):]
+	arm = arm[:strings.Index(arm, `case "lint":`)]
+
+	for _, leg := range []string{"SecretsChangedFiles", "SastChanged"} {
+		if !strings.Contains(arm, leg) {
+			t.Errorf("the security command does not run %s, which the gate runs over the same files", leg)
+		}
+	}
+	// --deep replaces the changed-file SAST leg with the whole-tree one;
+	// running both would report every finding twice.
+	if strings.Count(arm, "SastChanged") != 1 {
+		t.Errorf("SastChanged belongs in the non-deep branch only: %s", arm)
+	}
+}
