@@ -21,6 +21,7 @@ import (
 	"procoder/internal/gitx"
 	"procoder/internal/infra"
 	"procoder/internal/lessons"
+	"procoder/internal/planning"
 	"procoder/internal/portability"
 	"procoder/internal/security"
 )
@@ -121,6 +122,12 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	// same, while nothing anywhere asked. A rule file that has drifted
 	// means another host is reading rules this repository no longer holds.
 	out = append(out, portability.AgentsDrift(root)...)
+	// The planning domain answers only whether the method the repository
+	// chose can be honoured — is the tool it named actually here, do its
+	// artifacts parse. It says nothing about the code, which is what keeps
+	// `procoder check` byte-identical across the setting for a repository
+	// that left the method at its default.
+	out = append(out, planning.Check(root, cfg.Planning())...)
 	out = append(out, gitx.ConflictMarkers(changed)...)
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)

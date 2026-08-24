@@ -1,9 +1,9 @@
 # `procoder analyze check` refuses a hollow analysis document — a section left as its template comment is not a filled section — and passes a filled one.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
-Sprint: -
+Sprint: 013-the-analysis-phase-and-the-seam-that-lets-bmad-plan
 
 ## Description
 
@@ -20,9 +20,8 @@ already refuses a hollow spec — same standard, same reason.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `procoder analyze check` refuses a hollow analysis document — a section left as its template comment is not a filled section — and passes a filled one.
+- [x] `procoder analyze check` refuses a hollow analysis document — a section left as its template comment is not a filled section — and passes a filled one.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/analysis/ -run 'TestAHollowAnalysisIsRefused|TestCheckRefusesWhileAnyDocumentIsHollow'` — every section still carrying its template comment is a gap, an absent section is a _different_ gap from an empty one, a filled document passes, and `Check` exits 1 while any document is hollow. An empty tree exits 0: the phase is available, never required. Mutation proven: dropping StripComments lets a document that is nothing but its own template pass as COMPLETE.

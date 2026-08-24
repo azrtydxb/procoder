@@ -19,7 +19,9 @@ import (
 
 	"procoder/internal/backlog"
 	"procoder/internal/codeindex"
+	"procoder/internal/config"
 	"procoder/internal/lessons"
+	"procoder/internal/planning"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
 )
@@ -66,7 +68,14 @@ func report(root string, budget time.Duration) []string {
 
 	// the file-backed lines are computed while git runs: they read small
 	// local files, and doing them here keeps the total inside the budget
-	project := append(sprintLines(root), taskLine(root), lessonLine(root))
+	// A repository that plans in BMad reads its own sprint state back,
+	// not an empty procoder backlog beside the one being worked.
+	var project []string
+	if cfg := config.Load(root); cfg.Planning() == "bmad" {
+		project = append(planning.Report(root, "bmad"), taskLine(root), lessonLine(root))
+	} else {
+		project = append(sprintLines(root), taskLine(root), lessonLine(root))
+	}
 	if d := deferredLine(root); d != "" {
 		project = append(project, d)
 	}

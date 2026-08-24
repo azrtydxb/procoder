@@ -336,3 +336,56 @@ func TestAnEmptyDebtMarkerKeepsTheDefault(t *testing.T) {
 		t.Errorf("DebtMarker = %q, want the default %q", got, "debt:")
 	}
 }
+
+// A typo in this key silently decides which methodology governs the
+// repository, which is more consequential than most: a mistyped "bmad"
+// leaves a repository that plans elsewhere being governed by procoder's
+// own chain and wondering why its artifacts are ignored.
+// proved by: accepted any value into cfg.PlanningMethod — "nonsense"
+// becomes the effective method, no Problem names the line, and the
+// repository is governed by a method that does not exist.
+func TestAnUnknownPlanningMethodIsAProblemAndTheDefaultRuns(t *testing.T) {
+	root := t.TempDir()
+	write := func(body string) Config {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, ".procoder"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return Load(root)
+	}
+
+	cfg := write("[planning]\nmethod = \"nonsense\"\n")
+	if len(cfg.Problems) != 1 {
+		t.Fatalf("a value procoder cannot act on is exactly one Problem: %+v", cfg.Problems)
+	}
+	if cfg.Problems[0].Line != 2 {
+		t.Errorf("the Problem must name the line: %+v", cfg.Problems[0])
+	}
+	if !strings.Contains(cfg.Problems[0].Reason, "procoder, bmad") {
+		t.Errorf("and say what procoder does know: %q", cfg.Problems[0].Reason)
+	}
+	// The run continues on the default rather than on the typo.
+	if cfg.Planning() != "procoder" {
+		t.Errorf("an unusable value falls back to the default: %q", cfg.Planning())
+	}
+
+	// Both documented values are accepted, and neither is a Problem.
+	for _, m := range PlanningMethods {
+		cfg := write("[planning]\nmethod = \"" + m + "\"\n")
+		if len(cfg.Problems) != 0 {
+			t.Errorf("%s is a method procoder knows: %+v", m, cfg.Problems)
+		}
+		if cfg.Planning() != m {
+			t.Errorf("%s must be the effective method, got %q", m, cfg.Planning())
+		}
+	}
+
+	// And a repository that said nothing gets the default without having
+	// to spell it, so no caller can disagree about what the default is.
+	if got := (Config{}).Planning(); got != "procoder" {
+		t.Errorf("the unset default is procoder: %q", got)
+	}
+}

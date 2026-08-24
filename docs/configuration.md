@@ -282,3 +282,31 @@ present replaces the default; a section that is absent keeps it.
 That list replaces Procoder's curated clang-tidy families. Replace means
 replace — a family left out does not survive. A project `.clang-tidy`
 still wins over both: that is the tool's own configuration.
+
+## `[planning]`
+
+| Key      | Values             | Default    | Effect                           |
+| -------- | ------------------ | ---------- | -------------------------------- |
+| `method` | `procoder`, `bmad` | `procoder` | Who owns the planning artifacts. |
+
+`procoder` is the chain under `.procoder/` — specs, plans, backlog,
+sprints.
+
+`bmad` means a separately installed [BMad
+Method](https://github.com/bmad-code-org/bmad-method) owns them, and
+Procoder reads its artifacts instead: `sprint-status.yaml` for sprint
+state, and the installation's own `output_folder` setting for where to
+look. `procoder status` reports that sprint; `procoder doctor` names the
+installed version. Procoder never writes into those directories — BMad
+owns what it wrote.
+
+**The setting moves planning and nothing else.** The gate, the suite,
+formatting, the release controller, the debt ledger, security and docs
+run identically either way and reach the same verdict about the same
+code. A test asserts that every finding the gate makes about the code is
+identical across both settings, so the seam cannot drift.
+
+Setting `bmad` with no BMad installed is a blocking finding naming both,
+rather than a silent fall back to Procoder's own chain: a repository that
+chose one methodology must not be governed by the other without being
+told.

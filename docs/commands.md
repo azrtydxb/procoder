@@ -113,6 +113,24 @@ says so. A lens shapes a judgment, and a review under your lens's name
 running Procoder's words is worse than no review, so nothing is printed
 for an agent to act on by mistake. Exit 1.
 
+#### `procoder analyze <sub>`
+
+The phase before the spec. `spec check` judges whether a document is
+complete, never whether the idea in it is good — it will pass a
+thoroughly filled-in specification for the wrong feature. This is where
+an idea becomes something worth checking.
+
+`brief <name>` prints an analysis document (Question, What we know, What
+we do not know, Options, Recommendation) for the agent to write under
+`.procoder/analysis/`; `list` shows what exists; `check [name|all]`
+refuses one whose sections are still template comments, to the same
+standard a spec is held to.
+
+Never required. Nothing demands an analysis document exist — it is the
+answer to "I do not know what I am building yet", not a new tollgate.
+`procoder spec check` names the analysis a spec came from when one
+shares its name, and says nothing when none does.
+
 #### `procoder git`
 
 The pre-finish status: branch vs default, changed-file count, template
