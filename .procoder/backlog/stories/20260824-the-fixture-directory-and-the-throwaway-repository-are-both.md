@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-24
 Epic: e2e-campaign
-Sprint: -
+Sprint: 018-the-whole-campaign-re-run-from-scratch-until-nothing-new-then
 
 ## Description
 
