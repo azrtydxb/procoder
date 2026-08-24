@@ -90,10 +90,22 @@ func TestTheNewestChangelogEntryFollowsTheLayout(t *testing.T) {
 }
 
 var (
-	// A link into this repository's pull requests or issues — what lets a
+	// A link into THIS repository's pull requests or issues — what lets a
 	// reader get from a claim on the release page to the change that made
 	// it true.
-	changeLink = regexp.MustCompile(`\]\(https://github\.com/[^)]+/(?:pull|issues)/\d+\)`)
+	//
+	// The owner and repo are spelled out rather than left as a wildcard: an
+	// entry may legitimately link somebody else's repository — an upstream
+	// fix, a tool's changelog — and such a link is not the change that
+	// shipped this. Accepting any host path would let a paragraph satisfy
+	// the rule while linking nothing a reader could use to see what
+	// changed here.
+	//
+	// Hardcoded because CHANGELOG.md hardcodes it too, in its own rule
+	// example and in every entry. If this repository is ever renamed those
+	// hundreds of links break as well, so this failing is the right signal
+	// rather than a maintenance cost.
+	changeLink = regexp.MustCompile(`\]\(https://github\.com/azrtydxb/procoder/(?:pull|issues)/\d+\)`)
 	// A mention that is not a link. Inside a plain .md file "@handle" is
 	// text: it renders as prose on the release page and leads nowhere.
 	bareHandle = regexp.MustCompile(`(^|[^\[\w/])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\b`)
