@@ -230,6 +230,14 @@ Track 2 adds nothing and owns nothing. It reads, at paths BMad's own
       fixture — the setting governs planning and nothing else.
 - [ ] [S-9] `procoder doctor` under `method = "bmad"` names BMad's installed
       version, and says plainly that it is absent when it is.
+- [ ] [S-3] `procoder review --perspectives` prints four perspectives —
+      analyst, architect, implementer, reviewer — each a distinct stance
+      and none of them a lens under another name, and a repository
+      carrying `.procoder/review/perspectives/architect.md` gets that
+      content instead.
+- [ ] [S-4] `procoder analyze where` names every entry point in the chain
+      with what each is for and what to run, including build, and says
+      plainly that nothing requires starting above the point you need.
 - [ ] [S-1] No procoder-owned feature name contains "BMad", asserted by an audit
       over the source and the command table, so the trademark boundary cannot
       erode by accident.

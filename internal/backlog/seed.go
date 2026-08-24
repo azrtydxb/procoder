@@ -99,6 +99,11 @@ func Seed(root, specName, milestone string, out func(string)) int {
 	date := time.Now().UTC().Format("20060102")
 	taken := map[string]bool{}
 	for i, c := range crits {
+		// The scope ids a criterion cites are traceability, not part of
+		// the requirement: leaving them in puts "[S-1]" in the story's
+		// title and its file name, where it means nothing to a reader
+		// and changes the slug if the spec is ever renumbered.
+		c = spec.StripScopeIDs(c)
 		slug := textutil.Slug(c)
 		if slug == "" {
 			// A criterion of pure punctuation still deserves a story; the

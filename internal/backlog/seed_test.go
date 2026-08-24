@@ -3,6 +3,7 @@ package backlog
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,10 @@ func writeSpec(t *testing.T, root, name, body string) string {
 // completeSpec builds a spec body that spec.Check accepts as COMPLETE, with
 // the given lines as its Acceptance criteria section body.
 func completeSpec(name, criteria string) string {
+	// Every criterion cites the fixture's single scope bullet: spec check
+	// requires scope to be covered, so a fixture that skipped it would be
+	// testing seed against a spec seed is right to refuse.
+	criteria = regexp.MustCompile(`(?m)^(\s*- \[[ xX]\] )`).ReplaceAllString(criteria, "${1}[S-1] ")
 	return "# " + name + `
 
 Status: draft
@@ -42,7 +47,7 @@ Something concrete hurts today and this spec fixes it.
 
 ## In scope
 
-- The one buildable thing.
+- [S-1] The one buildable thing.
 
 ## Out of scope
 
@@ -118,20 +123,35 @@ func TestSeedRefusesPlaceholderOnlyCriteria(t *testing.T) {
 	}
 }
 
-func TestSeedRefusesSpecWithNoRealCriteria(t *testing.T) {
+// A criterion inside an HTML comment is not a criterion, and a spec
+// whose only one is commented out cannot seed anything.
+//
+// This used to be caught by Seed's own zero-criteria guard, after the
+// spec had passed as COMPLETE — the checker scanned raw text, so a
+// commented checkbox satisfied it. Scope coverage catches it a step
+// earlier now: the commented citation does not cover S-1, so the spec is
+// not COMPLETE and Seed refuses before reaching its own guard. That
+// guard stays as defence in depth; what changed is which refusal fires
+// first, and that it fires without the spec ever having read as ready.
+// proved by: let ScopeCoverage scan the criteria section raw instead of
+// stripping comments — the commented citation covers S-1, the spec reads
+// COMPLETE, and a spec with no real criteria is one guard away from
+// seeding an epic with no stories.
+func TestACommentedCriterionCoversNothing(t *testing.T) {
 	root := t.TempDir()
-	// The checker scans raw text, so a checkbox inside an HTML comment
-	// satisfies it — but a commented-out criterion is not a story. This is
-	// exactly the divergence the zero-criteria guard exists for.
-	body := completeSpec("ghost", "Criteria live in the comment below.\n\n<!--\n- [ ] a criterion nobody uncommented\n-->")
-	writeSpec(t, root, "ghost", body)
-	mustBeComplete(t, root, "ghost")
+	writeSpec(t, root, "ghost", completeSpec("ghost",
+		"Criteria live in the comment below.\n\n<!--\n- [ ] a criterion nobody uncommented\n-->"))
+
 	out, lines := collect()
-	if code := Seed(root, "ghost", "", out); code != 1 {
-		t.Fatalf("zero real criteria must refuse with exit 1, got %d: %v", code, *lines)
+	if code := Seed(root, "ghost", "", out); code == 0 {
+		t.Fatalf("a spec whose only criterion is commented out must not seed: %v", *lines)
 	}
-	if !strings.Contains(strings.Join(*lines, "\n"), "an epic with no stories is not a decomposition") {
-		t.Fatalf("refusal must state the rule: %v", *lines)
+	joined := strings.Join(*lines, "\n")
+	if !strings.Contains(joined, "S-1") {
+		t.Errorf("the refusal names the scope nothing tests: %v", *lines)
+	}
+	if !strings.Contains(joined, "not COMPLETE") {
+		t.Errorf("and refuses because the spec is not ready, not merely empty: %v", *lines)
 	}
 }
 

@@ -78,14 +78,25 @@ func TestAnUnlabelledScopeIsNotCheckedRatherThanCovered(t *testing.T) {
 	if len(uncovered) != 0 {
 		t.Errorf("an unchecked spec reports no uncovered ids — it reports that it is unchecked: %v", uncovered)
 	}
-	if n := ScopeBullets(s); n != 2 {
-		t.Errorf("and says how many bullets would need labelling, got %d", n)
+	if !ScopePromises(s) {
+		t.Error("a spec with promises in scope must be seen to have them")
 	}
 
 	// A spec that promises nothing at all is not unchecked; there is
 	// simply nothing to check, and a report saying otherwise is noise.
-	if n := ScopeBullets(specWith("", "- [ ] one\n")); n != 0 {
-		t.Errorf("no bullets is not a gap: %d", n)
+	if ScopePromises(specWith("", "- [ ] one\n")) {
+		t.Error("an empty scope section promises nothing")
+	}
+	if ScopePromises(specWith("<!-- the template prompt nobody replaced -->\n", "")) {
+		t.Error("an unanswered template comment is not a promise")
+	}
+
+	// Prose scope counts too. Counting only bullets left a bypass: a
+	// paragraph carries no ids, so it would satisfy nothing and be
+	// reported fully covered — failing open, reachable by not using a
+	// list.
+	if !ScopePromises(specWith("We will make the thing faster.\n", "")) {
+		t.Error("scope written as prose is still scope, and still unchecked without ids")
 	}
 }
 

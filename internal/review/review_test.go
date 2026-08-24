@@ -209,3 +209,89 @@ func TestAnUnreadableOverrideBlocksAndDoesNotFallBack(t *testing.T) {
 		t.Errorf("the other four are unaffected: %v", Names(lenses))
 	}
 }
+
+// Perspectives are who is reading, where lenses are how. A lens is a
+// method — enumerate paths, trace verification; a perspective is a set
+// of concerns brought before any method is applied, and the architect and
+// the implementer reach different conclusions about the same correct
+// code.
+// proved by: pointed PerspectiveSet at Lenses — the two sets become one,
+// and asking for a perspective returns a method instead of a stance.
+func TestPerspectivesAreTheirOwnSetAndTheirOwnStances(t *testing.T) {
+	root := t.TempDir()
+	got, problems := ResolvePerspectives(root)
+	if len(problems) != 0 {
+		t.Fatalf("a repository with no overrides has no problems: %+v", problems)
+	}
+	if len(got) != 4 {
+		t.Fatalf("four shipped perspectives, got %d: %v", len(got), Names(got))
+	}
+
+	// Distinct from each other, for the reason the lenses are: four
+	// wordings of one stance costs four passes and returns one read.
+	seen := map[string]string{}
+	for _, p := range got {
+		if prior, dup := seen[p.Body]; dup {
+			t.Errorf("perspectives %s and %s are the same stance", prior, p.Name)
+		}
+		seen[p.Body] = p.Name
+	}
+
+	// And distinct from the lenses: sharing a body would mean one of the
+	// two sets is not what it claims to be.
+	lensBodies := map[string]bool{}
+	for _, l := range Lenses {
+		lensBodies[l.Body] = true
+	}
+	for _, p := range got {
+		if lensBodies[p.Body] {
+			t.Errorf("perspective %s is a lens wearing another name", p.Name)
+		}
+	}
+}
+
+// The override contract is the same one lenses hold, and for the same
+// reason: a read under your own perspective's name running procoder's
+// words is worse than no read, so nothing is printed to act on.
+// proved by: had ResolvePerspectives read the lens directory instead —
+// a repository's perspective override is ignored and its lens override
+// silently governs a different command.
+func TestAPerspectiveOverrideBehavesLikeALensOverride(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, PerspectiveDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const mine = "# Ours\n\nAsk what our last incident would have asked.\n"
+	if err := os.WriteFile(filepath.Join(dir, "architect.md"), []byte(mine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, problems := ResolvePerspectives(root)
+	if len(problems) != 0 {
+		t.Fatalf("a readable override is not a problem: %+v", problems)
+	}
+	for _, p := range got {
+		if p.Name == "architect" && p.Body != mine {
+			t.Errorf("the override is what runs:\n%s", p.Body)
+		}
+	}
+
+	// Empty refuses and does not fall back, and the refusal says
+	// "perspective" rather than calling everything a lens.
+	if err := os.WriteFile(filepath.Join(dir, "architect.md"), []byte("  \n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, problems = ResolvePerspectives(root)
+	if len(problems) != 1 || !problems[0].Blocking {
+		t.Fatalf("an empty override blocks: %+v", problems)
+	}
+	if !strings.Contains(problems[0].Message, "perspective architect") {
+		t.Errorf("the refusal names what it is: %q", problems[0].Message)
+	}
+	for _, p := range got {
+		if p.Name == "architect" {
+			t.Error("procoder must not substitute its own for one the repository replaced")
+		}
+	}
+}

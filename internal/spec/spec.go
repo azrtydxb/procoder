@@ -308,8 +308,8 @@ func checkOne(root, path string, out func(string)) int {
 	// Declared rather than inferred: a bullet wrongly judged covered
 	// would be the same silence this check exists to break.
 	if uncovered, declared := ScopeCoverage(text); !declared {
-		if n := ScopeBullets(text); n > 0 {
-			gaps = append(gaps, fmt.Sprintf("scope coverage NOT checked — the %d In scope bullet(s) carry no [S-n] ids, so nothing can tell which are tested; label each and cite the id from its criteria", n))
+		if ScopePromises(text) {
+			gaps = append(gaps, "scope coverage NOT checked — In scope carries no [S-n] ids, so nothing can tell which promises are tested; label each promise and cite its id from the criterion that covers it")
 		}
 	} else if len(uncovered) > 0 {
 		gaps = append(gaps, fmt.Sprintf("scope %s promised and untested — `backlog seed` writes one story per criterion, so scope no criterion cites becomes no story, no sprint, and ships unbuilt",
@@ -322,7 +322,11 @@ func checkOne(root, path string, out func(string)) int {
 		gaps = append(gaps, "Acceptance criteria carry no checkboxes — each criterion must be a testable `- [ ]` line")
 	}
 	for _, m := range boxes {
-		c := strings.TrimSpace(m[1])
+		// The scope citation is traceability, not the requirement. Every
+		// check below reads what the criterion ASKS FOR, so the ids come
+		// off first — otherwise `- [ ] [S-1] ...` is not the placeholder
+		// it plainly is, and a hollow spec seeds hollow stories.
+		c := StripScopeIDs(m[1])
 		if c == "..." {
 			gaps = append(gaps, "Acceptance criteria still contain the placeholder")
 			continue

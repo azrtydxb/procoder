@@ -31,7 +31,12 @@ var scopeID = regexp.MustCompile(`\[([Ss]-\d+)\]`)
 // checks the two sets agree.
 func ScopeCoverage(text string) (uncovered []string, declared bool) {
 	scope := textutil.Section(text, "In scope")
-	criteria := textutil.Section(text, "Acceptance criteria")
+	// Comments stripped before the criteria are scanned: a citation
+	// inside an HTML comment is not a criterion, and counting it would
+	// let a spec satisfy coverage with work nobody committed to. The
+	// same divergence the zero-criteria guard in backlog seed exists
+	// for, arriving one check earlier.
+	criteria := textutil.StripComments(textutil.Section(text, "Acceptance criteria"))
 
 	inScope := idsIn(scope)
 	if len(inScope) == 0 {
@@ -49,17 +54,16 @@ func ScopeCoverage(text string) (uncovered []string, declared bool) {
 	return uncovered, true
 }
 
-// ScopeBullets counts the bullets in the In scope section, so a spec that
-// promises things without giving any of them an id can be told what it
-// would have to label.
-func ScopeBullets(text string) int {
-	n := 0
-	for _, line := range strings.Split(textutil.Section(text, "In scope"), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
-			n++
-		}
-	}
-	return n
+// ScopePromises reports whether the In scope section says anything at
+// all, so a spec that promises without labelling can be told it is
+// unchecked rather than assumed covered.
+//
+// Any content counts, not only bullets. Counting bullets alone left a
+// bypass: scope written as prose would carry no ids, satisfy nothing,
+// and be reported as fully covered — the same failing-open this check
+// exists to prevent, reachable by writing a paragraph.
+func ScopePromises(text string) bool {
+	return strings.TrimSpace(textutil.StripComments(textutil.Section(text, "In scope"))) != ""
 }
 
 // idsIn returns the scope ids a section cites, deduplicated and ordered
@@ -85,4 +89,12 @@ func idLess(a, b string) bool {
 	fmt.Sscanf(a, "S-%d", &na)
 	fmt.Sscanf(b, "S-%d", &nb)
 	return na < nb
+}
+
+// StripScopeIDs removes the `[S-n]` citations from a criterion, leaving
+// the requirement. The ids link scope to test; they are not part of what
+// the criterion asks for, so anything rendering a criterion for a reader
+// — a story title, a file name — takes this form.
+func StripScopeIDs(s string) string {
+	return strings.TrimSpace(scopeID.ReplaceAllString(s, ""))
 }

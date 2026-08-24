@@ -1215,6 +1215,7 @@ func reviewCmd(args []string) int {
 
 	var want []string
 	var paths []string
+	perspectives := false
 	for i := 0; i < len(args); i++ {
 		switch {
 		case args[i] == "--lens" && i+1 < len(args):
@@ -1222,6 +1223,8 @@ func reviewCmd(args []string) int {
 			want = append(want, strings.Split(args[i], ",")...)
 		case strings.HasPrefix(args[i], "--lens="):
 			want = append(want, strings.Split(strings.TrimPrefix(args[i], "--lens="), ",")...)
+		case args[i] == "--perspectives":
+			perspectives = true
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(os.Stderr, "procoder review: unknown flag %q\n", args[i])
 			return 2
@@ -1230,7 +1233,14 @@ func reviewCmd(args []string) int {
 		}
 	}
 
-	lenses, problems := review.Resolve(root)
+	// Perspectives are who is reading; lenses are how. A spec or a plan
+	// wants the first — the architectural question is cheapest to answer
+	// before there is a diff to answer it against.
+	resolve := review.Resolve
+	if perspectives {
+		resolve = review.ResolvePerspectives
+	}
+	lenses, problems := resolve(root)
 	// The refusal comes before anything is printed. A lens that could not
 	// be read must not be discovered halfway down a review the reader has
 	// already started acting on.
@@ -1258,7 +1268,11 @@ func reviewCmd(args []string) int {
 		paths = changed
 	}
 
-	review.Print(os.Stdout, paths, lenses)
+	if perspectives {
+		review.PrintPerspectives(os.Stdout, paths, lenses)
+	} else {
+		review.Print(os.Stdout, paths, lenses)
+	}
 	return 0
 }
 
@@ -1268,7 +1282,7 @@ func reviewCmd(args []string) int {
 func analyzeCmd(args []string) int {
 	root := doctor.Root()
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | list | check [name|all]")
+		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
 		return 2
 	}
 	switch args[0] {
@@ -1296,6 +1310,8 @@ func analyzeCmd(args []string) int {
 			printLine(strings.TrimSuffix(filepath.Base(f), ".md"))
 		}
 		return 0
+	case "where":
+		return analysis.Where(root, printLine)
 	case "check":
 		name := ""
 		if len(args) > 1 {
@@ -1303,7 +1319,7 @@ func analyzeCmd(args []string) int {
 		}
 		return analysis.Check(root, name, printLine)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | list | check [name|all]")
+		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
 		return 2
 	}
 }
