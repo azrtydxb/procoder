@@ -1,6 +1,6 @@
 # one planted defect per class, and every one of them caught
 
-Status: active
+Status: closed 2026-08-24
 Created: 2026-08-24
 
 ## Goal
@@ -29,3 +29,17 @@ The security half is proved in both directions: each planted defect
 blocks at the documented severity, and then stops blocking when the
 documented configuration relaxes it — because a knob that quietly does
 nothing looks exactly like a knob that works.
+
+## Result
+
+committed: 2
+done: 2 (20260824-a-planted-secret-sast-finding-and-vulnerable-dependency, 20260824-one-deliberate-defect-per-class-procoder-claims-to-catch-is)
+carried: 0
+
+## Retro
+
+<!-- What slowed us down this sprint. -->
+
+<!-- What we change next sprint because of it. -->
+
+<!-- One adaptation from this sprint worth keeping. -->

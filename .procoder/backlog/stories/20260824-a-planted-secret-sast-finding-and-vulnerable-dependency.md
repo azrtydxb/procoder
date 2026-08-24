@@ -1,6 +1,6 @@
 # Security, proved in both directions
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 015-one-planted-defect-per-class-and-every-one-of-them-caught

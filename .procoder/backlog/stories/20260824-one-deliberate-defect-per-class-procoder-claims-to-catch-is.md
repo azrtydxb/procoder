@@ -1,6 +1,6 @@
 # The broken pass — one planted defect per class, each must be caught
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 015-one-planted-defect-per-class-and-every-one-of-them-caught
