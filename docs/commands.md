@@ -403,6 +403,24 @@ interviews the gaps closed; the binary judges completeness.
   to `complete` — a note, never a gap. A complete spec seeds the todo
   list — one task per criterion group.
 
+**Scope coverage.** Every `## In scope` bullet carries an id — `- [S-1]
+…` — and at least one acceptance criterion must cite it: `- [ ] [S-1]
+…`. One criterion may cite several ids where it genuinely covers them.
+
+Scope no criterion cites is a gap, and a gap makes the spec incomplete,
+and `procoder backlog seed` refuses a spec that is not complete. That is
+the loop: **work cannot be seeded from a spec that promises more than it
+tests.** It exists because a spec here once put five things in scope,
+wrote criteria for three, and passed — `seed` writes one story per
+criterion, so the two untested promises became no stories, got no
+sprint, and the epic closed at "all stories done" with the feature
+half-built.
+
+Coverage is **declared, never inferred**. Matching a bullet to a
+criterion by keyword would fail open, and a bullet wrongly judged
+covered is the exact silence this prevents. A spec whose bullets carry
+no ids is reported NOT CHECKED rather than covered.
+
 #### `procoder plan <sub>`
 
 Implementation plans under `.procoder/plans/`, written from an approved
