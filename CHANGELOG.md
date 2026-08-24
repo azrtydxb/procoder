@@ -12,10 +12,12 @@ what is written here is what a person downloading the binary reads.
     *One sentence: what this release is for, for someone deciding whether
     to upgrade.*
 
-    **Fixed — the headline, as a statement.** (link the issue here) Then
-    the prose: what was wrong, what it cost the person using it, what is
-    true now. Paragraphs, not bullet lists — a changelog is read, not
-    parsed.
+    **Fixed — the headline, as a statement.**
+    ([#123](https://github.com/azrtydxb/procoder/pull/123)) Then the
+    prose: what was wrong, what it cost the person using it, what is
+    true now. Reported by
+    [@handle](https://github.com/handle). Paragraphs, not bullet lists —
+    a changelog is read, not parsed.
 
 Rules that earn their place:
 
@@ -26,9 +28,23 @@ Rules that earn their place:
   whole without reading the paragraph.
 - Something that was broken for everyone leads. Order by what it costs the
   reader, not by what it cost to build.
-- Link the issue or PR in the headline. An entry a reader cannot get from
-  the sentence to the change is a claim they have to take on faith.
-- Name outside contributors. They are why the thing got fixed.
+- Every entry links the PR (or PRs) that shipped it —
+  `[#123](https://github.com/azrtydxb/procoder/pull/123)` — not just the
+  issue. An entry that changed several PRs' worth of code links all of
+  them, the way 1.4.0's entries do. Link the tracking issue too when one
+  exists and the reader would otherwise have no way to find it.
+- Every outside contributor is named AND linked to their GitHub profile —
+  `[@handle](https://github.com/handle)`, never the bare @handle text,
+  which is not a link inside this file. This covers whoever reported it,
+  diagnosed it, or wrote the fix; being the reason something got looked
+  at is the bar, not having sent a PR. Filing the issue and nothing else
+  still earns the credit — say so plainly ("Reported by ...") rather than
+  folding a reporter into a sentence about the fix, which reads as if the
+  fixer noticed it unprompted.
+- Get the name right. A misattributed credit is worse than none — verify
+  who actually opened the issue or PR being cited (`gh issue view <n>`,
+  `gh pr view <n>`) before writing the handle, rather than recalling it
+  from memory or another entry's context.
 -->
 
 ## 1.4.0 — 2026-08-22
