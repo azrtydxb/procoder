@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-24
 Epic: e2e-campaign
-Sprint: -
+Sprint: 015-one-planted-defect-per-class-and-every-one-of-them-caught
 
 ## Description
 
