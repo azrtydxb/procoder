@@ -52,7 +52,8 @@ var blocking = regexp.MustCompile(`Blocking:\s*true\b`)
 //
 // A second, unrelated "NOT checked" appearing in either file is exactly
 // the drift this audit exists to catch, and stays caught: the exemption
-// is per file, and each file has exactly one such literal today.
+// matches the specific message each decision names, not the file — see
+// TestASecondOffenderInAnExemptFileIsStillCaught below.
 //
 // This is a source audit rather than a behavioural test on purpose: the
 // failure it guards against is a NEW domain, or a new branch of an old one,
@@ -67,9 +68,6 @@ func TestNoDomainReportsAnUnrunCheckAsMerelyInformational(t *testing.T) {
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
-		}
-		if isExempt(path) {
-			return nil
 		}
 		raw, rerr := os.ReadFile(path)
 		if rerr != nil {
@@ -87,17 +85,18 @@ func TestNoDomainReportsAnUnrunCheckAsMerelyInformational(t *testing.T) {
 	}
 }
 
-// exempt are the two paths D-7 and D-8 name — see the decision comment on
-// findingLiteral and blocking above.
-var exempt = []string{"lint/unlinted.go", "lessons/copilot.go"}
-
-func isExempt(path string) bool {
-	for _, e := range exempt {
-		if strings.HasSuffix(filepath.ToSlash(path), e) {
-			return true
-		}
-	}
-	return false
+// exempt names the ONE known literal per file this audit does not require
+// to block — matched against a substring unique to that literal's own
+// message, not against the file as a whole. A whole-file exemption was
+// the first version of this and review on #159 caught what it actually
+// meant: a second, unrelated "NOT checked" added anywhere else in either
+// file would have gone unseen, exactly the drift the comment above
+// claimed stayed caught. Matching the specific message text instead
+// means only the literal D-7 or D-8 actually names is excused; anything
+// else in the same file is scanned like any other file in the tree.
+var exempt = []struct{ path, substr string }{
+	{"lint/unlinted.go", "NOT linted — %s (lint)"},
+	{"lessons/copilot.go", "captured Copilot findings cannot be counted"},
 }
 
 // offendersIn is the walk's per-file check, pulled out so it can be proven
@@ -119,9 +118,21 @@ func offendersIn(path, src string) []string {
 		if blocking.MatchString(text) {
 			continue
 		}
+		if isExemptLiteral(path, text) {
+			continue
+		}
 		out = append(out, path+":"+itoa(strings.Count(src[:lit[0]], "\n")+1))
 	}
 	return out
+}
+
+func isExemptLiteral(path, literalText string) bool {
+	for _, e := range exempt {
+		if strings.HasSuffix(path, e.path) && strings.Contains(literalText, e.substr) {
+			return true
+		}
+	}
+	return false
 }
 
 // The regex this audit scans with has to see through Go's elided-type
@@ -164,4 +175,35 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// The exemption for D-7 and D-8 must not become a hiding place for a
+// different bug. It matches the one literal each decision names, by a
+// substring unique to that literal's message — a second, unrelated
+// "NOT checked" in the same file has to be caught like any other file
+// in the tree.
+// proved by: matching exempt by path alone (the file-wide form review
+// caught on #159) — a synthetic second offender in unlinted.go goes
+// unseen, in the same file the real, narrow exemption already excuses.
+func TestASecondOffenderInAnExemptFileIsStillCaught(t *testing.T) {
+	src := `package lint
+
+import "procoder/internal/gitx"
+
+func lintUnlinted(files []string, block bool) []gitx.Finding {
+	out = append(out, gitx.Finding{Blocking: block, File: f,
+		Message: fmt.Sprintf("NOT linted — %s (lint)", why)})
+	// a second, unrelated finding sharing the file — not the one D-7 names
+	out = append(out, gitx.Finding{File: f,
+		Message: "NOT checked — some other tool is not installed (lint)"})
+	return out
+}
+`
+	got := offendersIn("internal/lint/unlinted.go", src)
+	if len(got) != 1 {
+		t.Fatalf("the D-7 literal stays excused, the unrelated one does not: %v", got)
+	}
+	if !strings.Contains(got[0], "unlinted.go:9") {
+		t.Errorf("the caught offender must be the unrelated line, not D-7's: %v", got)
+	}
 }
