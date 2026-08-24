@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-24
 Epic: planning-methodology
-Sprint: -
+Sprint: 013-the-analysis-phase-and-the-seam-that-lets-bmad-plan
 
 ## Description
 
