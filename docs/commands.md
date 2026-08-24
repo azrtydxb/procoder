@@ -566,7 +566,19 @@ not learned. An unreadable ledger exits 2.
 #### `procoder copilot-leak [--since <dur>] [--quiet] [--from-copilot]`
 
 What GitHub Copilot's auto-review caught that this repository's gates did
-not. Findings are sanitised before anything is shown or sent — fenced and
+not, from both places it says it. **Issues**: those authored by
+`copilot[bot]` or `copilot-preview[bot]`, those carrying the
+`auto-copilot` label, and those whose body quotes a review with
+`> **Copilot**`. And **pull request review comments**, which is where the
+inline review actually lands — matched on a Bot account whose login begins
+with `copilot`, because the review path posts as `Copilot` with no `[bot]`
+suffix at all.
+
+Both sources must answer. If either query fails the command reports NOT
+checked rather than a count, because "0 findings" from one source and
+silence from the other is indistinguishable from a clean review.
+
+Findings are sanitised before anything is shown or sent — fenced and
 indented code stripped, secrets redacted, absolute paths made relative — so
 what leaves the machine is metadata about a failure, never the source that
 failed. Nothing is published without an explicit yes on a terminal; with no

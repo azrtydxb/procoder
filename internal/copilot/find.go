@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"procoder/internal/textutil"
 )
 
 // findTimeout is the budget for one gh call: it goes to GitHub's API over the
@@ -140,6 +142,16 @@ func Find(root string, since time.Duration, out func(string)) ([]Finding, bool) 
 			Created:     is.CreatedAt,
 		})
 	}
+
+	// The second source. Both must answer, or the caller cannot tell
+	// "Copilot found nothing" from "one of the two places was never
+	// looked at" — which is the whole point of this file's second return
+	// value, and exactly how the review half came to be missing.
+	reviews, rok := reviewFindings(root, bin, cutoff, say)
+	if !rok {
+		return nil, false
+	}
+	finds = append(finds, reviews...)
 	return finds, true
 }
 
@@ -293,4 +305,138 @@ func gitRemotes(root string) (string, bool) {
 		return "", false
 	}
 	return string(out), true
+}
+
+// ---------------------------------------------------------------------
+// The second source: pull request review comments.
+//
+// Copilot's auto-review does not open issues on this repository or most
+// others — it leaves inline comments on the pull request. The issue query
+// above cannot see those, so `copilot-leak` reported "no findings" while
+// four real defects sat in a review of the very branch that added it.
+// That is the failure this whole domain exists to catch, in the domain
+// that exists to catch it.
+
+// reviewCommentLimit is one page of GitHub's repo-wide review-comment
+// endpoint. The window already narrows it; this is the ceiling.
+const reviewCommentLimit = "100"
+
+// copilotReviewAuthor is the author test for a review comment, which is
+// NOT the issue test. The bot posts issues as `copilot[bot]` and review
+// comments as `Copilot` with no suffix at all, so the issue pattern —
+// which requires `[bot]` — matches none of them. Measured against a real
+// review: `{"login":"Copilot","type":"Bot"}`.
+//
+// Both halves are required. `type == "Bot"` alone would take every bot in
+// the repository, and the login alone would take a person who happened to
+// call themselves copilotfan.
+var copilotReviewLogin = regexp.MustCompile(`(?i)^copilot`)
+
+// ghReviewComment is one review comment as the REST API reports it.
+type ghReviewComment struct {
+	Body string `json:"body"`
+	Path string `json:"path"`
+	// Line is null for a comment whose anchor has drifted out of the
+	// diff, in which case original_line still holds where it was written.
+	Line         *int   `json:"line"`
+	OriginalLine *int   `json:"original_line"`
+	HTMLURL      string `json:"html_url"`
+	User         struct {
+		Login string `json:"login"`
+		Type  string `json:"type"`
+	} `json:"user"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// reviewFindings returns the Copilot review comments touched in the
+// window, and whether the question was answered. The contract is the
+// file's contract: false means NOT checked, said out loud, never zero.
+func reviewFindings(root, bin string, cutoff time.Time, say func(string)) ([]Finding, bool) {
+	stdout, stderr, runErr, timedOut := ghReviewComments(root, bin, cutoff)
+	if timedOut {
+		say(fmt.Sprintf("Copilot review comments NOT checked — gh gave no answer in %s and was killed", findTimeout))
+		return nil, false
+	}
+	if runErr != nil {
+		say("Copilot review comments NOT checked — " + ghReason(stderr+stdout, runErr))
+		return nil, false
+	}
+	var comments []ghReviewComment
+	if err := json.Unmarshal([]byte(stdout), &comments); err != nil {
+		say("Copilot review comments NOT checked — gh returned output that is not the expected JSON")
+		return nil, false
+	}
+	var finds []Finding
+	for _, c := range comments {
+		if !fromCopilotReview(c) || !c.UpdatedAt.After(cutoff) {
+			continue
+		}
+		if notCodeQuality.MatchString(c.Body) {
+			continue
+		}
+		finds = append(finds, Finding{
+			OriginalURL: c.HTMLURL,
+			Title:       reviewTitle(c.Body),
+			Body:        c.Body,
+			Line:        reviewLine(c),
+			Repo:        repoOf(c.HTMLURL),
+			Created:     c.CreatedAt,
+		})
+	}
+	return finds, true
+}
+
+// fromCopilotReview is the author test described above: a Bot account
+// whose login begins with copilot.
+func fromCopilotReview(c ghReviewComment) bool {
+	return strings.EqualFold(c.User.Type, "Bot") && copilotReviewLogin.MatchString(c.User.Login)
+}
+
+// reviewLine prefers the current anchor and falls back to where the
+// comment was originally written. Zero means the API gave neither, which
+// the ledger renders as no line rather than as line zero.
+func reviewLine(c ghReviewComment) int {
+	if c.Line != nil {
+		return *c.Line
+	}
+	if c.OriginalLine != nil {
+		return *c.OriginalLine
+	}
+	return 0
+}
+
+// reviewTitle is the comment's first sentence, which is how Copilot writes
+// them: the claim first, the reasoning after. Capped so a ledger line stays
+// a line.
+func reviewTitle(body string) string {
+	t := strings.TrimSpace(textutil.FirstLine(body))
+	if i := strings.Index(t, ". "); i > 0 {
+		t = t[:i]
+	}
+	if len(t) > 120 {
+		t = strings.TrimSpace(t[:120]) + "…"
+	}
+	if t == "" {
+		return "Copilot review comment"
+	}
+	return t
+}
+
+// ghReviewComments asks for every review comment in the repository updated
+// since the cutoff. The repo-wide endpoint is used rather than one call per
+// pull request: one request answers for the window, and a repository with
+// no pull requests answers with an empty list rather than an error.
+func ghReviewComments(root, bin string, cutoff time.Time) (string, string, error, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), findTimeout)
+	defer cancel()
+	path := fmt.Sprintf("repos/{owner}/{repo}/pulls/comments?since=%s&per_page=%s",
+		cutoff.UTC().Format("2006-01-02T15:04:05Z"), reviewCommentLimit)
+	cmd := exec.CommandContext(ctx, bin, "api", path) // nosemgrep -- gh resolved from PATH, path built from a formatted timestamp
+	cmd.Dir = root
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err, ctx.Err() == context.DeadlineExceeded
 }

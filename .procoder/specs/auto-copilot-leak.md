@@ -45,6 +45,26 @@ A top-level command that:
   issues where the `auto-copilot` label exists, or the author is
   `copilot[bot]`, or the issue body contains a `---\n> **Copilot**` quote
   block (the Copilot review annotation format).
+- Queries the same window for **pull request review comments**, through
+  `gh api repos/{owner}/{repo}/pulls/comments?since=…`, keeping those from
+  a Bot account whose login begins with `copilot`.
+
+  Added after the command shipped and reported "no findings" while four
+  real defects sat in a Copilot review of the branch that was extending
+  it. Copilot's auto-review does not open issues on this repository or
+  most others — it comments inline on the pull request — so the issue
+  query alone could not see the thing the command is named for.
+
+  The author test is NOT the issue test: measured against a real review,
+  the bot posts review comments as `{"login":"Copilot","type":"Bot"}`,
+  with no `[bot]` suffix, so the issue pattern matches none of them. Both
+  halves of the new test are required — `type == "Bot"` alone takes every
+  bot in the repository, and the login alone takes a person who chose the
+  name.
+
+- Either query failing means the command reports NOT checked. A count
+  built from one source while the other went unread is the silent green
+  this domain exists to catch.
 - For each matching issue, extracts the finding text (the body, stripped
   of Copilot's header).
 - Asks the user (stdout) a single prompt:

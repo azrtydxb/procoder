@@ -51,6 +51,12 @@ func mk(author, title, body string, labels ...string) issue {
 // ghOut is what the fake gh prints; an empty ghOut means "install no gh at all".
 // remote is what `git remote -v` prints.
 func stubPath(t *testing.T, ghOut, remote string) (dir string, argsFile string) {
+	return stubPathWithReviews(t, ghOut, "[]", remote)
+}
+
+// stubPathWithReviews is stubPath plus the payload the review-comment call
+// gets, for the tests that exercise the second source.
+func stubPathWithReviews(t *testing.T, ghOut, reviewOut, remote string) (dir string, argsFile string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stubs are POSIX shell scripts")
@@ -59,8 +65,16 @@ func stubPath(t *testing.T, ghOut, remote string) (dir string, argsFile string) 
 	argsFile = filepath.Join(dir, "gh.args")
 	if ghOut != "" {
 		// printf, not cat: PATH is the stub directory and nothing else, so the
-		// script may use shell builtins only
-		script := "#!/bin/sh\nprintf '%s' \"$*\" > " + argsFile + "\nprintf '%s' " + quoted(ghOut) + "\n"
+		// script may use shell builtins only.
+		//
+		// Find makes TWO calls now — `issue list` and `api .../pulls/comments`
+		// — so the stub branches on the subcommand and APPENDS its args.
+		// Answering both with the same payload and overwriting the args file
+		// made the second call erase the first's record, which is how the
+		// window assertion came to read the wrong argv.
+		script := "#!/bin/sh\n" +
+			"printf '%s\\n' \"$*\" >> " + argsFile + "\n" +
+			"if [ \"$1\" = api ]; then printf '%s' " + quoted(reviewOut) + "; else printf '%s' " + quoted(ghOut) + "; fi\n"
 		if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -352,5 +366,163 @@ func TestOurOwnIssuesAreNeverCapturedAgain(t *testing.T) {
 	got, ok, said, _ = find(t, 24*time.Hour, theirs)
 	if !ok || len(got) != 1 {
 		t.Fatalf("a genuine auto-review must still match: ok=%v got=%+v said=%s", ok, got, said)
+	}
+}
+
+// Copilot's auto-review does not open issues on most repositories — it
+// leaves inline comments on the pull request. `copilot-leak` queried only
+// `gh issue list`, so it reported "no findings" while four real defects
+// sat in a review of the very branch that was adding this. The command
+// built to catch what escapes the gates was blind to what had just
+// escaped them.
+//
+// The author test is NOT the issue test, and that is the part worth
+// pinning: measured against a real review, the bot posts review comments
+// as `{"login":"Copilot","type":"Bot"}` — no `[bot]` suffix — so the issue
+// pattern, which requires one, matches none of them.
+//
+// proved by: replacing fromCopilotReview's body with
+// copilotAuthor.MatchString(c.User.Login) — the real shape is then
+// rejected and this test finds nothing.
+func TestAReviewCommentFromCopilotIsRecognised(t *testing.T) {
+	bot := func(login, typ string) ghReviewComment {
+		c := ghReviewComment{}
+		c.User.Login, c.User.Type = login, typ
+		return c
+	}
+	cases := []struct {
+		login, typ string
+		want       bool
+	}{
+		{"Copilot", "Bot", true},      // what the API actually returns
+		{"copilot[bot]", "Bot", true}, // the issue-path spelling
+		{"copilot-preview[bot]", "Bot", true},
+		{"dependabot[bot]", "Bot", false}, // a bot, not this one
+		{"copilotfan", "User", false},     // a person who chose the name
+		{"Copilot", "User", false},        // a person who chose the name exactly
+	}
+	for _, c := range cases {
+		if got := fromCopilotReview(bot(c.login, c.typ)); got != c.want {
+			t.Errorf("fromCopilotReview(%q, %q) = %v, want %v", c.login, c.typ, got, c.want)
+		}
+	}
+}
+
+// A comment whose anchor drifted out of the diff reports line: null, and
+// the line it was written against survives in original_line. Rendering
+// that as line zero would put a wrong number in the ledger.
+//
+// proved by: returning 0 from reviewLine when Line is nil — the fallback
+// case then reports no line for a comment that has one.
+func TestAReviewCommentWithNoCurrentLineFallsBackToWhereItWasWritten(t *testing.T) {
+	n := func(i int) *int { return &i }
+	for _, c := range []struct {
+		line, orig *int
+		want       int
+	}{
+		{n(122), n(116), 122}, // both: the current anchor wins
+		{nil, n(116), 116},    // drifted: where it was written
+		{nil, nil, 0},         // neither: no line, not line zero
+	} {
+		got := reviewLine(ghReviewComment{Line: c.line, OriginalLine: c.orig})
+		if got != c.want {
+			t.Errorf("reviewLine(%v, %v) = %d, want %d", c.line, c.orig, got, c.want)
+		}
+	}
+}
+
+// proved by: returning the whole body from reviewTitle — a ledger line
+// then carries a paragraph.
+func TestAReviewTitleIsTheClaimNotTheParagraph(t *testing.T) {
+	body := "pyDeps is currently too broad: the arm will match any list. " +
+		"The match should be limited to actual dependency declarations."
+	got := reviewTitle(body)
+	if strings.Contains(got, "The match should be limited") {
+		t.Errorf("the title should stop at the first sentence, got %q", got)
+	}
+	if !strings.Contains(got, "pyDeps is currently too broad") {
+		t.Errorf("the title lost the claim, got %q", got)
+	}
+	if len(got) > 130 {
+		t.Errorf("title is %d chars, which is not a line", len(got))
+	}
+	if reviewTitle("   ") == "" {
+		t.Error("an empty body still needs a title the ledger can print")
+	}
+}
+
+// Both sources must answer or the whole command reports NOT checked. If
+// the issue query succeeds and the review query fails, "0 findings" means
+// "half the places were never looked at" — which is the failure this
+// file's second return value exists to prevent, and precisely how the
+// review half came to be missing in the first place.
+//
+// proved by: made reviewFindings' failure path return (nil, true) — this
+// test then sees a clean answer from a command that could not look.
+func TestAFailedReviewQueryIsNotZeroFindings(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stubs are POSIX shell scripts")
+	}
+	dir := t.TempDir()
+	// `issue list` answers with an empty list; `api` exits non-zero.
+	script := "#!/bin/sh\nif [ \"$1\" = api ]; then echo 'gh: not found' >&2; exit 1; fi\nprintf '[]'\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git := "#!/bin/sh\nprintf '%s' " + quoted(githubRemote) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(git), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	var said strings.Builder
+	got, ok := Find(t.TempDir(), 6*time.Hour, func(s string) { said.WriteString(s + "\n") })
+
+	if ok {
+		t.Fatalf("a failed review query answered as if it had looked: %+v", got)
+	}
+	if got != nil {
+		t.Errorf("nothing may be returned from an unanswered question: %+v", got)
+	}
+	if !strings.Contains(said.String(), "NOT checked") {
+		t.Errorf("the refusal must say NOT checked: %q", said.String())
+	}
+}
+
+// The end-to-end shape of the defect this closes: a repository whose
+// Copilot review left inline comments and opened no issue at all.
+//
+// proved by: removing the reviewFindings call from Find — this test then
+// finds nothing where a real review left four comments.
+func TestReviewCommentsAreFoundWhenNoIssueExists(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stubs are POSIX shell scripts")
+	}
+	// the shape the API actually returns, measured from a real review
+	reviews := `[{"body":"pyDeps is currently too broad: the arm matches any list.",
+	  "path":"internal/security/security.go","line":null,"original_line":570,
+	  "html_url":"https://github.com/acme/widget/pull/171#discussion_r1",
+	  "user":{"login":"Copilot","type":"Bot"},
+	  "created_at":"` + time.Now().Format(time.RFC3339) + `",
+	  "updated_at":"` + time.Now().Format(time.RFC3339) + `"}]`
+	stubPathWithReviews(t, "[]", reviews, githubRemote)
+
+	var said strings.Builder
+	got, ok := Find(t.TempDir(), 6*time.Hour, func(s string) { said.WriteString(s + "\n") })
+
+	if !ok {
+		t.Fatalf("NOT checked where it should have answered: %s", said.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("the review comment was not found, got %+v", got)
+	}
+	if got[0].Line != 570 {
+		t.Errorf("line should fall back to original_line, got %d", got[0].Line)
+	}
+	if !strings.Contains(got[0].Title, "pyDeps") {
+		t.Errorf("the title lost the claim: %q", got[0].Title)
+	}
+	if got[0].Repo != "acme/widget" {
+		t.Errorf("repo should come from the comment URL, got %q", got[0].Repo)
 	}
 }
