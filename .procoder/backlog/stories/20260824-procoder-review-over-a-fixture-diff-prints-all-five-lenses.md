@@ -1,6 +1,6 @@
 # `procoder review` over a fixture diff prints all five lenses with the content in scope, and leaves every file's bytes unchanged, asserted by comparing a digest of the tree before and after.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
 Sprint: 012-review-with-judgment-not-just-tooling
@@ -23,9 +23,8 @@ after.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `procoder review` over a fixture diff prints all five lenses with the content in scope, and leaves every file's bytes unchanged, asserted by comparing a digest of the tree before and after.
+- [x] `procoder review` over a fixture diff prints all five lenses with the content in scope, and leaves every file's bytes unchanged, asserted by comparing a digest of the tree before and after.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/review/ -run TestReviewPrintsEveryLensAndWritesNothing` — all five lens bodies reach the output with the scope named, and a SHA-256 digest of every file's path and content is identical before and after. Verified end to end against a real git fixture: `procoder review` printed five lenses over the changed file, exit 0, tree unchanged. Mutation proven: Print writing a file alongside its output fails the digest while the printed bytes stay identical.

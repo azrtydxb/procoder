@@ -1,6 +1,6 @@
 # An empty `.procoder/review/lenses/adversarial.md` blocks and names the file rather than falling back to the shipped lens, exiting 1 — a lens that could not load is a refusal, and a review that did not happen must not exit 0.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
 Sprint: 012-review-with-judgment-not-just-tooling
@@ -19,9 +19,8 @@ exits 1. A review that did not happen must not exit 0.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] An empty `.procoder/review/lenses/adversarial.md` blocks and names the file rather than falling back to the shipped lens, exiting 1 — a lens that could not load is a refusal, and a review that did not happen must not exit 0.
+- [x] An empty `.procoder/review/lenses/adversarial.md` blocks and names the file rather than falling back to the shipped lens, exiting 1 — a lens that could not load is a refusal, and a review that did not happen must not exit 0.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/review/ -run TestAnUnreadableOverrideBlocksAndDoesNotFallBack` — an empty override is exactly one blocking finding naming the file, and the lens set comes back with four entries rather than five: procoder does NOT substitute its own. Verified end to end: `procoder review` printed the block and no lens at all, exit 1. Mutation proven: returning the shipped lens alongside the finding, the way templates.Resolve does, restores the count to five and prints procoder's stance under the repository's name.
