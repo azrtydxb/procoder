@@ -1,6 +1,6 @@
 # No procoder-owned feature name contains "BMad", asserted by an audit over the source and the command table, so the trademark boundary cannot erode by accident.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
 Sprint: 012-review-with-judgment-not-just-tooling
