@@ -22,16 +22,19 @@ twice and comparing.
 
 ### Findings — procoder
 
-| #   | Severity | What                                                                       | Status |
-| --- | -------- | -------------------------------------------------------------------------- | ------ |
-| F-1 | high     | A flag no command implements was read as a filename; the gate exited 0     | fixed  |
-| F-2 | high     | `pyproject.toml` aborted osv-scanner, silencing every other manifest       | fixed  |
-| F-3 | medium   | A failed tool's reason was the first line of stderr, which is progress     | fixed  |
-| F-4 | medium   | `lint` and `security` printed "0 finding(s)" over an empty change set      | fixed  |
-| F-5 | medium   | procoder writes three artifacts into a repository and advises ignoring one | fixed  |
-| F-6 | medium   | The README version check read two hardcoded manifests, unconfigurable      | fixed  |
-| F-7 | low      | A usage error printed all 159 lines of usage, for any of 45 sites          | fixed  |
-| F-8 | open     | `sprint status` exits 1 with no active sprint; `todo list` exits 0         | asked  |
+| #    | Severity | What                                                                       | Status |
+| ---- | -------- | -------------------------------------------------------------------------- | ------ |
+| F-1  | high     | A flag no command implements was read as a filename; the gate exited 0     | fixed  |
+| F-2  | high     | `pyproject.toml` aborted osv-scanner, silencing every other manifest       | fixed  |
+| F-3  | medium   | A failed tool's reason was the first line of stderr, which is progress     | fixed  |
+| F-4  | medium   | `lint` and `security` printed "0 finding(s)" over an empty change set      | fixed  |
+| F-5  | medium   | procoder writes three artifacts into a repository and advises ignoring one | fixed  |
+| F-6  | medium   | The README version check read two hardcoded manifests, unconfigurable      | fixed  |
+| F-7  | low      | A usage error printed all 159 lines of usage, for any of 45 sites          | fixed  |
+| F-8  | low      | `sprint status` exited 1 with no active sprint; `todo list` exits 0        | fixed  |
+| F-9  | medium   | `brew install rubocop` — no such formula, and no fallthrough to the gem    | fixed  |
+| F-10 | medium   | A tool installed exactly where procoder said to put it stayed unresolvable | fixed  |
+| F-11 | medium   | `dependencies = []` was read as a dependency set — a gap about nothing     | fixed  |
 
 **F-1.** `procoder check --staged` exited 0. The arm hands `args[1:]` to
 the gate as paths, no formatter covers a file called `--staged`, so it
@@ -59,9 +62,21 @@ filesystem walk for root: /". Alarming, and not the reason. The exit
 status is the fallback, not the answer, or every failure reads "exit
 status 127".
 
-**F-8** is a question rather than a finding, because ADR 0003 pins exit
-codes as the public interface and the answer is a judgement about intent,
-not a fact about the code.
+**F-9 and F-10 are the same shape twice: an instruction that cannot
+work.** `brew install rubocop` was the first thing procoder printed to
+anyone missing rubocop, and there has never been such a formula — it
+ships as a gem — while brew being on PATH meant the gem candidate was
+never reached. Then `composer global require phpstan/phpstan`, which
+procoder also prints, installs into `~/.composer/vendor/bin` and puts
+nothing on PATH, so following the advice exactly left procoder still
+reporting the tool missing. Every other package name in the table was
+checked the same way and is real; that check is now part of the clean
+pass so it is asked again rather than remembered.
+
+**F-11 was found by the fixture in a fix made earlier the same day.** The
+python dependency gap added for F-2 matched the word `dependencies`
+anywhere in a `pyproject.toml`, so `dependencies = []` — a project
+declaring none — was told its dependencies had not been checked.
 
 ### Findings — fixture
 
@@ -73,22 +88,37 @@ not a fact about the code.
 
 ### The clean pass
 
-Fifty-three invocations against the healthy fixture: **40 pass, 4
-finding, 9 NOT RUN.**
+Fifty-four invocations against the healthy fixture: **43 pass, 3 finding,
+7 NOT RUN**, and no false alarm among them.
 
 Every remaining finding is correct behaviour: `doctor` exits 1 because
-eleven tools are absent from this machine, `ci --emit` exits 2 because
-the flag is not implemented yet, `index impls` on a function reports that
-functions have no implementors, and `sprint status` is F-8.
+three tools are absent from this machine, `ci --emit` exits 2 because the
+flag is not implemented yet, and `index impls` on a function reports that
+functions have no implementors.
+
+Over the whole tree: **45 clean, 0 unformatted, 1 unchecked**. The one is
+`cs/Greet.cs`, which needs a dotnet SDK this machine does not have.
+
+### A finding in the campaign itself
+
+The brew-formula check read `tools.go` by a path relative to the working
+directory, and the script had already `cd`'d into the fixture. grep found
+nothing, the loop ran zero times, and it reported every formula valid.
+The campaign committed the exact failure it exists to find, and an empty
+list is now a NOT RUN rather than a pass.
+
+Its classifier had the same shape earlier: it claimed NOT RUN for any
+output containing "missing", which read a finding about an absent PR
+template as a check that never happened.
 
 ### What this pass did NOT cover
 
-- **Six of the thirteen formatter rows never ran.** rubocop, ktfmt,
-  csharpier, dart, google-java-format and the prettier PHP plugin are
-  not installed here, so Ruby, Kotlin, C#, Dart, Java and PHP were
-  reported UNCHECKED rather than checked. That is the honest verdict and
-  it is also a hole in the campaign: six languages procoder claims are
-  untested by it until those tools exist on the machine.
+- **One of the thirteen formatter rows never ran.** Six did at first;
+  installing the missing tools closed five of them, and csharpier is the
+  last — it needs a dotnet SDK this machine does not have, so C# is
+  reported UNCHECKED rather than checked. Java's precise index tier is
+  also absent (scip-java needs coursier), and `mvn` is missing, so the
+  fixture's Java tests report NOT run.
 - **Nothing was planted.** Every "clean" verdict above is only as
   meaningful as the broken pass that follows it, which is sprint 015.
 - **Nothing that needs GitHub.** `ci --runs`, `copilot-leak`, `docs

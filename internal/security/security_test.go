@@ -605,6 +605,41 @@ func TestAPyprojectWithDependenciesAndNoLockFileIsAnHonestGap(t *testing.T) {
 	}
 }
 
+// An empty declaration is not a dependency set. The first version of this
+// check matched the word "dependencies" anywhere in the file, so a project
+// with `dependencies = []` was told its dependencies had not been checked
+// — a gap reported about nothing at all. The fixture caught it.
+//
+// proved by: matching the bare word instead of the regexp — every empty
+// case below then reports a gap.
+func TestAnEmptyDependencyDeclarationIsNotADependencySet(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"pep621 empty", "[project]\ndependencies = []\n", false},
+		{"pep621 one", "[project]\ndependencies = [\"requests==2.0.0\"]\n", true},
+		{"pep621 multiline", "[project]\ndependencies = [\n  \"requests\",\n]\n", true},
+		{"poetry empty table", "[tool.poetry.dependencies]\n", false},
+		{"poetry one", "[tool.poetry.dependencies]\nrequests = \"^2.0\"\n", true},
+		{"groups empty", "[dependency-groups]\n", false},
+		{"groups one", "[dependency-groups]\ndev = [\"pytest\"]\n", true},
+		{"only prose", "# this project lists no dependencies anywhere\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := hasPythonDepsWithoutLockfile(root); got != c.want {
+				t.Errorf("%s: got %v want %v for:\n%s", c.name, got, c.want, c.body)
+			}
+		})
+	}
+}
+
 // proved by: made hasPythonDepsWithoutLockfile ignore the lock files —
 // this test then reports a gap for a repository that pinned its versions.
 func TestAPyprojectWithALockFileBesideItIsNotAGap(t *testing.T) {

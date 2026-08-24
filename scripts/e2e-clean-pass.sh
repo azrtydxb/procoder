@@ -9,6 +9,7 @@ set -uo pipefail
 
 PC="${1:?usage: e2e-clean-pass.sh <procoder-binary> [fixture-dir]}"
 PC="$(cd "$(dirname "$PC")" && pwd)/$(basename "$PC")"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 FX="${2:-${TMPDIR:-/tmp}/procoder-e2e-fixture}"
 OUT="${OUT:-${TMPDIR:-/tmp}/procoder-e2e-clean}"
 
@@ -117,17 +118,26 @@ echo "logs: $OUT/log"
 # found `brew install rubocop`, which procoder had been printing to
 # everyone missing it and which has never been a formula. Needs brew and
 # the network, so it reports NOT RUN rather than passing when it cannot ask.
-if command -v brew >/dev/null 2>&1; then
-	bad=0
-	for f in $(grep -oE '\{Manager: "brew", Args: \[\]string\{"install", "[^"]+"' \
-		"$(dirname "$0")/../internal/tools/tools.go" | grep -oE '"[^"]+"$' | tr -d '"' | sort -u); do
-		brew info --formula "$f" >/dev/null 2>&1 || {
-			echo "FINDING   brew formula named by procoder does not exist: $f" >>"$OUT/report.txt"
-			bad=$((bad + 1))
-		}
-	done
-	[ "$bad" = 0 ] && echo "PASS      every brew formula procoder names exists" >>"$OUT/report.txt"
-else
+if ! command -v brew >/dev/null 2>&1; then
 	echo "NOT RUN   brew formula names — brew is not installed here" >>"$OUT/report.txt"
+else
+	names=$(grep -oE '\{Manager: "brew", Args: \[\]string\{"install", "[^"]+"' \
+		"$REPO/internal/tools/tools.go" | grep -oE '"[^"]+"$' | tr -d '"' | sort -u)
+	# An empty list is not a clean list. The first version of this check
+	# read a path relative to the fixture procoder had already cd'd into,
+	# grep found nothing, the loop ran zero times, and it reported every
+	# formula valid — the campaign committing the failure it hunts.
+	if [ -z "$names" ]; then
+		echo "NOT RUN   brew formula names — no names found in tools.go, so nothing was checked" >>"$OUT/report.txt"
+	else
+		bad=0
+		for f in $names; do
+			brew info --formula "$f" >/dev/null 2>&1 || {
+				echo "FINDING   brew formula named by procoder does not exist: $f" >>"$OUT/report.txt"
+				bad=$((bad + 1))
+			}
+		done
+		[ "$bad" = 0 ] && echo "PASS      $(echo "$names" | wc -l | tr -d " ") brew formula name(s) checked, all exist" >>"$OUT/report.txt"
+	fi
 fi
 tail -3 "$OUT/report.txt"

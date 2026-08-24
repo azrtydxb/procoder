@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -554,14 +555,19 @@ func hasPythonDepsWithoutLockfile(root string) bool {
 	// A dependency table under any of the layouts in use: PEP 621's
 	// `dependencies = [...]`, poetry's `[tool.poetry.dependencies]`, and
 	// PEP 735's `[dependency-groups]`. Matching the key rather than
-	// parsing TOML keeps this a read, which is what the gate can afford.
-	for _, key := range []string{"dependencies", "[tool.poetry.dependencies]", "[dependency-groups]"} {
-		if strings.Contains(string(raw), key) {
-			return true
-		}
-	}
-	return false
+	// parsing TOML keeps this a read, which is what the gate can afford —
+	// but the key alone is not the answer. `dependencies = []` declares
+	// nothing, and reporting a gap there tells a project with no
+	// dependencies that its dependencies were not checked.
+	return pyDeps.MatchString(string(raw))
 }
+
+// pyDeps matches a dependency declaration that actually has something in
+// it: a PEP 621 or PEP 735 list with a first element, or a poetry table
+// with a first key. An empty list or an empty table is not a dependency
+// set, and neither is the word appearing in prose.
+var pyDeps = regexp.MustCompile(`(?m)^\s*(?:dependencies|[a-zA-Z0-9_-]+)\s*=\s*\[\s*(?:#[^\n]*)?\n?\s*["']|` +
+	`(?s)\[(?:tool\.poetry\.(?:dev-)?dependencies|dependency-groups)\][^\[]*?\S\s*=`)
 
 // why reports why a tool gave no answer. The tool's own last line of
 // stderr is the diagnosis: scanners log their progress first and the
