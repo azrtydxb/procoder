@@ -44,7 +44,9 @@ Rules that earn their place:
 - Get the name right. A misattributed credit is worse than none — verify
   who actually opened the issue or PR being cited (`gh issue view <n>`,
   `gh pr view <n>`) before writing the handle, rather than recalling it
-  from memory or another entry's context.
+  from memory or another entry's context. `procoder release` checks this
+  against GitHub and refuses to call a release ready when a credited
+  handle opened none of what its paragraph cites.
 -->
 
 ## 2.0.0 — 2026-08-24
