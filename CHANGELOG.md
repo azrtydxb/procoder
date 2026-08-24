@@ -47,6 +47,69 @@ Rules that earn their place:
   from memory or another entry's context.
 -->
 
+## 1.5.0 — 2026-08-24
+
+_Two bugs that made procoder unusable for a whole language are fixed,
+along with the two checks that only run when nobody typed them._
+
+**Fixed — a language with no linter blocked every commit, regardless of
+[lint] policy.** ([#152](https://github.com/azrtydxb/procoder/pull/152))
+C# and Dart have no linter procoder ships yet, and that finding blocked
+unconditionally — a repository writing either language could not land
+any commit that touched it, whatever `[lint] policy` said. The only
+escape a real repository found was turning off the commit gate entirely.
+It now honors policy like every other lint finding, because there is no
+`procoder init` that fixes "the linter does not exist." Reported by
+[@codixio](https://github.com/codixio) in
+[#150](https://github.com/azrtydxb/procoder/issues/150).
+
+**Fixed — csharpier's own cache made a correctly formatted file fail the
+gate.** ([#151](https://github.com/azrtydxb/procoder/pull/151))
+csharpier 1.x prints nothing for a file it has already formatted once,
+and procoder read that silence as the tool not having answered — so a
+clean `.cs` file failed as UNCHECKED on every commit after the first
+that touched it, because the cache fills on the very run `procoder
+format` suggests. Runs with `--no-cache` now. Reported by
+[@codixio](https://github.com/codixio) in
+[#149](https://github.com/azrtydxb/procoder/issues/149).
+
+**Fixed — OKF bundle links reported as broken when they were not.**
+([#148](https://github.com/azrtydxb/procoder/pull/148)) An
+[OKF](https://openknowledgeformat.org) bundle resolves an absolute link
+from the bundle's own root, not the repository's — `/log.md` inside
+`.okf/` means `.okf/log.md`. procoder resolved every absolute link from
+the repository root, so a conformant bundle reported dozens of false
+"broken reference" findings. Contributed by
+[@Acroaticum](https://github.com/Acroaticum).
+
+**Fixed — two findings that should always block could report instead.**
+([#159](https://github.com/azrtydxb/procoder/pull/159)) A missing
+infrastructure tool and a GitHub Pages check that could not reach `gh`
+both said "NOT checked" and reported it as information rather than
+blocking it, because Go's slice-literal shape they were written in was
+invisible to the audit meant to catch exactly this. Found by widening
+that audit to see the shape it had been blind to — the same class of bug
+this project's whole "no silent green" rule exists to prevent, this time
+hiding from the check that enforces the rule itself.
+
+**Fixed — the state-of-play report could run past its own three-second
+budget.** ([#144](https://github.com/azrtydxb/procoder/pull/144),
+[#158](https://github.com/azrtydxb/procoder/pull/158)) A slow or hung
+git left the branch line waiting past the deadline the rest of the
+report honors, with nothing to say why. Every git call the report makes
+now shares its budget, and answers "unknown — \<reason\>" rather than
+running past the wall.
+
+**Added — a reference page for when each check runs.**
+([#141](https://github.com/azrtydxb/procoder/pull/141)) One arrow, one
+station per lifecycle event — session start, every file written, the
+commit gate, CI — with every check placed where it actually fires,
+published at
+[procoder.azrty.com/lifecycle](https://procoder.azrty.com/lifecycle/).
+
+**Changed — the pinned CI binaries download once per pin, not once per
+run.** ([#147](https://github.com/azrtydxb/procoder/pull/147))
+
 ## 1.4.0 — 2026-08-22
 
 _The checks that waited to be asked now run themselves — at the commit
