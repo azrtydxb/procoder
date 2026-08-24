@@ -250,3 +250,73 @@ instrument rather than the subject — lodash 4.18.1 was a real version,
 `ci --emit` was planned work rather than a broken promise, and a `.invalid`
 dead link is excluded by lychee under RFC 2606. Each check cost about a
 minute.
+
+## Sprint 018 — the loop, and teardown
+
+Round two, against a fixture rebuilt from `git init` with eighteen fixes
+layered in, is identical to round one in every phase: 42/3/8 clean, 20
+hooks, 7 knobs, 53 docs, 21 caught and 0 missed. No finding appeared that
+was not already recorded and fixed, and nothing the fixes broke.
+
+The P-CONTROL loop then grew to 55 assertions, covering `bench` and
+`release` — the only two commands that can legitimately write. Both write
+nothing without their flag. That gap was found by a false alarm: a stale
+`baseline.txt` looked like a violation, and following it after it turned
+out to be stale is what showed the loop had never covered the two commands
+where a violation could actually happen.
+
+Teardown: **6 pass, 0 fail.** The fixture directory gone, the build script
+proved to still produce commit `00ea6ca` after the removal, that rebuild
+removed too, the script and this report surviving, and the repository no
+longer answering — confirmed independently by `gh api` returning 404.
+
+The repository was deleted by its owner; this session's token had no
+`delete_repo` scope. The teardown decides its verdict on whether the thing
+still answers rather than on a delete command's exit code, so its report is
+identical to the one a successful self-delete would have produced.
+
+Before removal the pushed repository was cloned fresh and scanned: **0
+findings.** Every planted defect lived in the local fixture and was never
+pushed, so the removal was tidiness rather than remediation.
+
+## The campaign, in one place
+
+**17 procoder defects, all fixed, all with a regression test.** 31
+mutations applied to source, built, and watched to fail. Three mutations
+did NOT fail their test, and each exposed a hollow assertion rather than a
+working one.
+
+Three of the seventeen are one family — **an instruction procoder gives
+that cannot work**: `brew install rubocop` (no such formula, ever),
+`composer global require phpstan/phpstan` (installs where procoder then
+cannot look), and `git tag -a v0.2.0` (printed for a tag that exists).
+
+Two are the campaign's headline shape — **a check that reports clean
+because it never looked**: `procoder check --staged` exiting 0 having
+assessed a filename somebody mistyped, and `procoder security` reporting
+0 findings on a hardcoded AWS key the gate blocks.
+
+**7 defects in the campaign's own harness.** Five are one shape: a grep
+that finds nothing is indistinguishable from a grep that found nothing
+wrong. Two are the other: a check that never reaches the dangerous branch
+reports success from the safe one. Both are in
+`.procoder/github/LESSONS.md`.
+
+**Four times an alarming finding turned out to be the instrument** — a
+version number that was real, a feature that was backlogged rather than
+broken, a dead link excluded by RFC 2606, and a stale benchmark baseline.
+Each check cost about a minute; each would otherwise have been a false
+report filed against the project's own record.
+
+### What this campaign did not cover
+
+- C# formatting — csharpier needs a dotnet SDK this machine lacks.
+- The Java precise index tier — scip-java needs coursier.
+- Maven tests — `mvn` is absent.
+- The `sast_blocks_at` WARNING/ERROR boundary — semgrep's `--config auto`
+  produces no WARNING-severity finding this fixture can carry, so both
+  settings block the same one.
+- The Pages health check's "enabled but stale" branch — enabling Pages on
+  a throwaway repository to reach one branch was out of proportion.
+- Windows and Linux — CI covers all three platforms; this campaign ran on
+  darwin only.
