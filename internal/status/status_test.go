@@ -333,9 +333,46 @@ func TestAGitCallThatDidNotAnswerIsNotACleanTree(t *testing.T) {
 		t.Errorf("a directory that is not a repository is unknown: %q", e)
 	}
 
-	// branchLine is deliberately NOT asserted here: it reaches git through
-	// gitx.CurrentBranch and gitx.DefaultBranch, which take no context, so
-	// it answers whatever the deadline says. That is a real gap in the
-	// budget rather than a property worth pinning — filed separately, and
-	// asserting it here would pin the gap in place.
+	// branchLine takes the same deadline now too — the gap #145 filed and
+	// this test used to name rather than assert.
+	gitDir := filepath.Join(root, ".git")
+	b := branchLine(ctx, root, gitDir)
+	if !strings.Contains(b, "unknown") {
+		t.Errorf("branch must be unknown when git did not answer: %q", b)
+	}
+	if !strings.Contains(b, "—") {
+		t.Errorf("unknown must carry the reason: %q", b)
+	}
+}
+
+// currentBranch and defaultBranch are what closed #145: gitx.CurrentBranch
+// and gitx.DefaultBranch take no context, so branchLine answered whatever a
+// hung or slow git said, past the report's own deadline, with no note
+// explaining why. Each is asserted directly, because branchLine only
+// reaches defaultBranch once currentBranch has already succeeded — a
+// cancelled context from the start proves currentBranch's awareness and
+// nothing about defaultBranch's.
+// proved by: swallowing ctx.Err() and returning "", nil the way
+// gitx.CurrentBranch and gitx.DefaultBranch do — both report a legitimate
+// negative (detached HEAD, no default branch) instead of the timeout that
+// actually happened.
+func TestBranchLookupsHonourTheDeadline(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := currentBranch(ctx, root); err == nil {
+		t.Error("currentBranch must report why it could not answer, not silently \"\"")
+	}
+	if _, err := defaultBranch(ctx, root); err == nil {
+		t.Error("defaultBranch must report why it could not answer, not silently \"\"")
+	}
+
+	// And working git untouched: a live context still gets the real
+	// branch back, so the deadline check is not swallowing good answers.
+	if got, err := currentBranch(context.Background(), root); err != nil || got != "main" {
+		t.Errorf("a live context must still resolve the real branch: %q %v", got, err)
+	}
 }
