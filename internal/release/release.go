@@ -7,12 +7,15 @@
 package release
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"time"
 
 	"procoder/internal/config"
 )
@@ -29,6 +32,11 @@ const changelogName = "CHANGELOG.md"
 // controller reuses the same verdicts `procoder check` and the todo closer
 // use — the disciplines can never disagree. suite is nil when the repo does
 // not block on tests. Exit 0 ship / 1 blocked / 2 usage.
+// distTimeout is the budget for asking one shipped binary its version. It
+// is a local exec of a file in this repository, so a second is generous;
+// the point of the timeout is that a corrupt binary hangs nothing.
+const distTimeout = 10 * time.Second
+
 func Run(root, version string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
 	if version == "" {
 		v, err := newestChangelogVersion(root)
@@ -103,7 +111,16 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 		failures = append(failures, msg)
 	}
 
-	// 7. the credits in the entry about to be published. GitHub is asked
+	// 7. the binaries this release actually ships. The manifests are text
+	// and version-sync reads them; dist/ is what the plugin executes on
+	// every session start and what `self-upgrade` downloads, and nothing
+	// looked at it. 3.0.0 was tagged with dist/ still holding 2.0.1
+	// binaries — every manifest said 3.0.0, the gate was green, the suite
+	// was green, and the plugin would have installed a version that
+	// reported one number and behaved like another.
+	failures = append(failures, staleDist(root, version)...)
+
+	// 8. the credits in the entry about to be published. GitHub is asked
 	// who actually opened each cited issue, which the suite cannot do —
 	// it runs offline on every commit — and which this controller can,
 	// because the tag it is preparing gets published by a job that talks
@@ -167,6 +184,47 @@ func changelogHasVersion(root, version string) bool {
 // dirtyTree returns a failure line when the working tree is not clean, or
 // when git cannot say — unknown counts as dirty, because a release must not
 // depend on state nobody committed.
+// DistDir holds the per-platform binaries the plugin runs and the release
+// publishes.
+const DistDir = "dist"
+
+// staleDist reports any shipped binary that does not answer with the
+// version being released, and any that cannot be asked. A binary that
+// will not run is not a binary that passed — the whole point of asking it
+// is that the manifests cannot answer for it.
+//
+// Only the host's own platform can be executed here; the others are
+// checked by CI, which rebuilds dist/ and compares hashes. That split is
+// stated rather than hidden: a check that silently covers one of five
+// files is one somebody will later believe covered all five.
+func staleDist(root, version string) []string {
+	dir := filepath.Join(root, DistDir)
+	if _, err := os.Stat(dir); err != nil {
+		return nil // a repository that ships no binaries has none to check
+	}
+	bin := filepath.Join(dir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if _, err := os.Stat(bin); err != nil {
+		return []string{fmt.Sprintf("%s carries no binary for this platform (%s) — rebuild it with scripts/build-dist.sh",
+			DistDir, runtime.GOOS+"-"+runtime.GOARCH)}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), distTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "version").Output() // nosemgrep -- a path under the repository's own dist/, not user input
+	if err != nil {
+		return []string{fmt.Sprintf("the shipped binary %s would not answer `version` (%v) — rebuild it with scripts/build-dist.sh",
+			filepath.ToSlash(filepath.Join(DistDir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")), err)}
+	}
+	got := strings.TrimSpace(string(out))
+	if got != version {
+		return []string{fmt.Sprintf("the shipped binary reports %s, not %s — rebuild %s with scripts/build-dist.sh",
+			got, version, DistDir)}
+	}
+	return nil
+}
+
 // tagExists reports the release already having a tag. git failing to
 // answer is NOT "no tag", for the same reason an unreadable tree is not a
 // clean one — unknown is never clean.

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -305,5 +306,121 @@ func TestTagCheckThatCannotRunIsNotAPass(t *testing.T) {
 		t.Error("git failing to list tags must be reported, never read as no-tag")
 	} else if !strings.Contains(msg, "NOT verified") {
 		t.Errorf("the message must say the check did not run, got %q", msg)
+	}
+}
+
+// 3.0.0 was tagged with dist/ still holding 2.0.1 binaries. Every manifest
+// said 3.0.0, the gate was green, the suite was green, `procoder release`
+// said ready — and the plugin, which executes dist/ directly on every
+// session start, would have installed a version that reported one number
+// and behaved like another. Version-sync reads the text manifests; nothing
+// asked the binary.
+//
+// proved by: deleting the staleDist call from Run — this test then sees a
+// release pronounced ready while shipping the previous version.
+func TestAReleaseShippingLastVersionsBinaryIsNotReady(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	writeFile(t, root, "CHANGELOG.md", "# Changelog\n\n## 3.0.0\n\n- a thing\n")
+	writeShippedBinary(t, root, "2.0.1")
+	git(t, root, "add", "-A")
+	git(t, root, "commit", "-qm", "release: 3.0.0")
+
+	out, lines := capture()
+	code := Run(root, "3.0.0", gateGreen, nil, out)
+
+	if code == 0 {
+		t.Fatalf("a release shipping the previous version's binary was ready:\n%s", joined(lines))
+	}
+	if !strings.Contains(joined(lines), "reports 2.0.1, not 3.0.0") {
+		t.Errorf("the refusal must name both versions:\n%s", joined(lines))
+	}
+	if !strings.Contains(joined(lines), "build-dist.sh") {
+		t.Errorf("the refusal must say how to fix it:\n%s", joined(lines))
+	}
+}
+
+// proved by: made staleDist return nil when the versions match — no, that
+// is its job; made it compare with strings.Contains instead of equality,
+// and "3.0.0" then satisfies a binary reporting "13.0.0".
+func TestAReleaseShippingTheRightBinaryIsReady(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	writeFile(t, root, "CHANGELOG.md", "# Changelog\n\n## 3.0.0\n\n- a thing\n")
+	writeShippedBinary(t, root, "3.0.0")
+	git(t, root, "add", "-A")
+	git(t, root, "commit", "-qm", "release: 3.0.0")
+
+	out, lines := capture()
+	if code := Run(root, "3.0.0", gateGreen, nil, out); code != 0 {
+		t.Fatalf("a release shipping the right binary was refused:\n%s", joined(lines))
+	}
+}
+
+// A binary that will not run is not a binary that passed. The whole point
+// of asking it is that the manifests cannot answer for it, so "it did not
+// answer" must not read the same as "it answered correctly".
+//
+// proved by: returning nil from staleDist's exec error path — an
+// unrunnable binary then ships as though it had been checked.
+func TestAShippedBinaryThatWillNotRunIsNotAPass(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, DistDir, runtime.GOOS+"-"+runtime.GOARCH)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "procoder"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	// present, executable, and not a program
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("not a binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := staleDist(root, "3.0.0")
+
+	if len(got) == 0 {
+		t.Fatal("a binary that cannot run must not pass as one that reported the right version")
+	}
+	if !strings.Contains(got[0], "would not answer") {
+		t.Errorf("the message must say it could not be asked, got %q", got[0])
+	}
+}
+
+// A repository that ships no binaries has none to check, and must not be
+// blocked for it — this check is procoder's own, not a rule imposed on
+// every repository the controller runs in.
+//
+// proved by: returning a failure when dist/ is absent — a repository that
+// ships no binaries is then unable to release at all.
+func TestARepositoryWithNoShippedBinariesIsNotBlocked(t *testing.T) {
+	if got := staleDist(t.TempDir(), "3.0.0"); len(got) != 0 {
+		t.Errorf("a repository with no dist/ has nothing to check, got %q", got)
+	}
+}
+
+// writeShippedBinary compiles a tiny program that prints version, into the
+// place dist/ keeps the host's binary. A real executable rather than a
+// stub script: staleDist runs it, and on Windows a shell script is not
+// something exec can start.
+func writeShippedBinary(t *testing.T, root, version string) {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "main.go")
+	if err := os.WriteFile(src, []byte(
+		"package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\""+version+"\") }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, DistDir, runtime.GOOS+"-"+runtime.GOARCH)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "procoder"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, name), src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("cannot build a fixture binary here: %v\n%s", err, out)
 	}
 }
