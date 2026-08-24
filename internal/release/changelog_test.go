@@ -88,3 +88,75 @@ func TestTheNewestChangelogEntryFollowsTheLayout(t *testing.T) {
 		t.Error("no headline links an issue or PR — the reader cannot reach the change")
 	}
 }
+
+var (
+	// A link into THIS repository's pull requests or issues — what lets a
+	// reader get from a claim on the release page to the change that made
+	// it true.
+	//
+	// The owner and repo are spelled out rather than left as a wildcard: an
+	// entry may legitimately link somebody else's repository — an upstream
+	// fix, a tool's changelog — and such a link is not the change that
+	// shipped this. Accepting any host path would let a paragraph satisfy
+	// the rule while linking nothing a reader could use to see what
+	// changed here.
+	//
+	// Hardcoded because CHANGELOG.md hardcodes it too, in its own rule
+	// example and in every entry. If this repository is ever renamed those
+	// hundreds of links break as well, so this failing is the right signal
+	// rather than a maintenance cost.
+	changeLink = regexp.MustCompile(`\]\(https://github\.com/azrtydxb/procoder/(?:pull|issues)/\d+\)`)
+	// A mention that is not a link. Inside a plain .md file "@handle" is
+	// text: it renders as prose on the release page and leads nowhere.
+	bareHandle = regexp.MustCompile(`(^|[^\[\w/])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\b`)
+)
+
+// paragraphs splits an entry on blank lines, so a headline and the prose
+// that belongs to it are judged together — the link usually sits in the
+// sentence after the bolded claim, not in the claim itself.
+func paragraphs(entry string) []string {
+	var out []string
+	for _, p := range strings.Split(entry, "\n\n") {
+		if strings.TrimSpace(p) != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Every entry links the change that shipped it, and every contributor
+// mention is a link rather than text. Both rules are written at the top of
+// CHANGELOG.md and neither was enforced: they were added as prose in #157,
+// after a merged commit credited the wrong person, and prose is what had
+// just failed.
+//
+// This is the changelog's own version of the gap `spec check` now closes
+// for specs — a promise with nothing testing it. It matters more here than
+// most places because the release job publishes this entry verbatim: an
+// unlinked claim is one a reader on the release page cannot check, and a
+// bare "@handle" is a credit that renders as prose and leads nowhere.
+// proved by: removed the PR link from any headline paragraph, or wrote a
+// contributor as a bare @handle instead of a markdown link — this names
+// the paragraph, where every other check on the changelog passes.
+func TestTheNewestEntryLinksItsChangesAndItsPeople(t *testing.T) {
+	entry := newestEntry(t)
+
+	var unlinked []string
+	for _, p := range paragraphs(entry) {
+		if !anyHeadline.MatchString(p) {
+			continue // prose continuing a headline, or the summary
+		}
+		if !changeLink.MatchString(p) {
+			unlinked = append(unlinked, strings.SplitN(p, "\n", 2)[0])
+		}
+	}
+	if len(unlinked) > 0 {
+		t.Errorf("every entry links the PR or issue that shipped it — a claim a reader cannot follow is one they take on faith:\n  %s",
+			strings.Join(unlinked, "\n  "))
+	}
+
+	for _, m := range bareHandle.FindAllStringSubmatch(entry, -1) {
+		t.Errorf("contributor @%s is named but not linked — inside a .md file that is text, not a link; write [@%s](https://github.com/%s)",
+			m[2], m[2], m[2])
+	}
+}
