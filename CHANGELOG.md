@@ -49,6 +49,132 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.0.0 — 2026-08-24
+
+_Procoder was run against a repository it had never seen, and against a
+real one on GitHub, and twenty-four things it says or does turned out to
+be wrong. Four of them were checks reporting clean because they never
+looked, and one of those was the check that exists to catch the others._
+
+**Fixed — `procoder check --staged` exited 0, having checked nothing.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) The gate takes
+paths, and every arm read its flags positionally, so a flag nobody
+implemented was not refused — it was handed to the formatter as a
+filename. No formatter covers a file called `--staged`, so it was counted
+out of scope, nothing else was looked at, and the gate reported clean.
+`ci --run`, `security --deeep` and `format --write` did the same. A flag
+a command does not implement is now a usage error that names the flags it
+does take, which is the rule `procoder version` alone had from the start.
+
+**Fixed — `procoder security` was weaker than the gate it previews.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) A hardcoded AWS
+key in a changed file: the commit gate blocked it, and the command a
+person runs to check their work first reported "0 finding(s) (0
+blocking)". The gate runs the secret scanner and the SAST pass over the
+changed files; the command ran only the secret scanner. The two genuinely
+differ — gitleaks does not fire on a bare `const K = "AKIA…"` in Go, and
+semgrep does — so this was reachable rather than theoretical. The command
+now asks what the gate asks.
+
+**Fixed — one unscannable manifest silenced every dependency scan.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) `pyproject.toml`
+declares version ranges rather than pinned versions, so osv-scanner has no
+extractor for it: handed one, it exits 127 and emits no JSON at all. Every
+other manifest in the same invocation went down with it, so a repository
+with seven known vulnerabilities in its `go.mod` and a `pyproject.toml`
+beside it was told only that the output was unreadable. Python now gets
+the honest gap a bare `package.json` already got, and the scan reaches the
+manifests osv can read.
+
+**Fixed — three install instructions that could not work.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) `brew install
+rubocop` was the first thing procoder printed to anyone missing rubocop,
+and there has never been such a formula — it ships as a gem, and brew
+being on PATH meant the gem candidate was never reached. `composer global
+require phpstan/phpstan` installs into `~/.composer/vendor/bin` and puts
+nothing on PATH, so following procoder's advice exactly left procoder
+still reporting the tool missing. And the release controller pronounced an
+already-tagged, already-published version ready, printing a `git tag`
+command that answers "fatal: tag already exists". Every other package name
+in the tool table was checked against its registry; the rest are real.
+
+**Fixed — three shipped commands `procoder help` never mentioned.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) `config` prints
+every setting procoder is running under and where it came from, `review`
+is the judgment half of the gate, and `analyze` is the first stage of the
+whole chain. All three worked; none appeared in the usage text. They
+slipped through because the test that existed pinned the usage text
+against a canonical list, and a command absent from both agrees with
+itself. `docs --ack` — the command the gate's own blocking message tells
+an agent to run — was documented nowhere either.
+
+**Fixed — an empty change set was reported as a clean one.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) `procoder lint`
+and `procoder security` on an untouched tree printed "0 finding(s) (0
+blocking)", the same sentence they print over a diff they actually read.
+`procoder check` had always said "no changed files" instead. Also fixed:
+a failed tool's reason was the first line of its stderr, which for a
+scanner is a progress log ("dependencies were NOT checked: Starting
+filesystem walk for root: /") rather than the reason; procoder writes
+three artifacts into a repository it governs and advised ignoring one of
+them; and a usage error printed all 159 lines of the usage text.
+
+**Changed — the README version check is the repository's to configure.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) It read
+`.claude-plugin/plugin.json` then `package.json` and nothing else, so a Go
+project carrying a `package.json` for its tooling was blocked because its
+README did not mention the npm package's version. True, and
+unconfigurable. `## Version source` in `.procoder/docs/RULES.md` now names
+the file, and `none` switches the check off. The defaults do not move.
+
+**Fixed — a project with no dependencies was blocked for having any list
+at all.** ([#171](https://github.com/azrtydxb/procoder/pull/171)) The
+pattern behind the new Python dependency gap matched any non-empty list
+assignment, so a `pyproject.toml` with `dependencies = []` and
+`keywords = ["cli"]` — no dependencies whatsoever — was told its
+dependencies had not been checked, and blocked. A blocking false positive
+about a file the reader has done nothing wrong with is worse than the gap
+it was written to close. Found by GitHub Copilot's review of the pull
+request that introduced it.
+
+**Fixed — `procoder security` reported "no changed files" when it could
+not find out.** ([#171](https://github.com/azrtydxb/procoder/pull/171))
+The error from listing the changed files was discarded, so outside a git
+repository, or whenever git could not run, the command answered as though
+it had looked and exited 0. It now says NOT checked, names git's error,
+and exits 1. Also found by Copilot's review, along with an install retry
+line that credited every failure to the first package manager tried.
+
+**Added — `procoder copilot-leak` reads the review, not only the issues.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) The command exists
+to collect what Copilot's auto-review caught that the gates did not, and
+it queried GitHub issues. Copilot's auto-review does not open issues on
+most repositories — it comments inline on the pull request — so it
+reported "no findings" while four real defects sat in a review of the very
+branch extending it. It now reads pull request review comments too, and
+reports NOT checked when either source fails, because a count from one
+place while the other went unread is the silence it was built to break.
+
+**Added — the rules a change is held to, written where the change is
+made.** ([#171](https://github.com/azrtydxb/procoder/pull/171))
+`.github/instructions/` carries four path-scoped files — Go, tests,
+workflows, prose — that Copilot reads in the editor and in its code
+review, alongside the repository-wide instructions generated from
+`AGENTS.md`. Every rule in them names the defect that produced it.
+
+**Changed — exit codes move and blocking checks are added, which is what
+makes this a major release.**
+([#171](https://github.com/azrtydxb/procoder/pull/171)) Per ADR 0003 each
+of these alone would be enough. A flag a command does not implement
+now exits 2 rather than being silently ignored, and `procoder sprint
+status` with no active sprint exits 0 rather than 1 — asking which sprint
+is running is a question, and "none" is its answer, the way `todo list`
+answers "no tasks". Pulling, carrying and closing with no sprint open are
+refusals and keep their 1. Three checks can newly stop a commit or a
+release: the SAST leg inside `procoder security`, a `pyproject.toml` with
+dependencies and no lock file, and a release version that is already
+tagged.
+
 ## 2.0.1 — 2026-08-24
 
 _The changelog's own rules are checked now, including the one about
