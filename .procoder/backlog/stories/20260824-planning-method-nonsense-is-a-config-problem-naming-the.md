@@ -1,6 +1,6 @@
 # `[planning] method = "nonsense"` is a config Problem naming the line, and the run continues on the default.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
 Sprint: 013-the-analysis-phase-and-the-seam-that-lets-bmad-plan
@@ -20,9 +20,8 @@ run continues on the default.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `[planning] method = "nonsense"` is a config Problem naming the line, and the run continues on the default.
+- [x] `[planning] method = "nonsense"` is a config Problem naming the line, and the run continues on the default.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/config/ -run TestAnUnknownPlanningMethodIsAProblemAndTheDefaultRuns` — exactly one Problem naming line 2 and listing `procoder, bmad`; the run continues on the default; both documented values are accepted and neither is a Problem. Verified end to end: `procoder config` printed `NOT applied .procoder/config.toml:2`, and the exit code matches an existing bad value (`security.sast_blocks_at = "NONSENSE"`) rather than being special-cased.

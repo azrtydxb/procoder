@@ -1,6 +1,6 @@
 # `procoder doctor` under `method = "bmad"` names BMad's installed version, and says plainly that it is absent when it is.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
 Sprint: 013-the-analysis-phase-and-the-seam-that-lets-bmad-plan
@@ -20,9 +20,8 @@ is absent when it is.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `procoder doctor` under `method = "bmad"` names BMad's installed version, and says plainly that it is absent when it is.
+- [x] `procoder doctor` under `method = "bmad"` names BMad's installed version, and says plainly that it is absent when it is.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/planning/ -run TestSprintStateComesFromTheArtifactsOnDisk` asserts `Version` reads `6.11.0` from the installation's manifest rather than guessing. Verified end to end: `procoder doctor` printed `ok bmad [planning] method 6.11.0` with the install present, and a `GAP` line naming the install command when absent. Silent under the default method — a repository planning in procoder's own chain has no external tool to report.

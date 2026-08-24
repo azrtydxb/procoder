@@ -1,6 +1,6 @@
 # planning-methodology
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Spec: planning-methodology @ 86cabf0d9508
 
