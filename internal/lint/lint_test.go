@@ -253,3 +253,36 @@ func TestGolangciBaselineNamesTheCuratedSet(t *testing.T) {
 		}
 	}
 }
+
+// A language procoder has no linter for at all — not "not installed", but
+// genuinely absent from the table — cannot be fixed by installing
+// anything. Blocking regardless of [lint] policy the way a missing
+// gitleaks does would leave a repository writing that language unable to
+// land any commit that touches it, with no escape but disabling the gate
+// entirely.
+// proved by: hard-coded Blocking: true in lintUnlinted — a repository that
+// sets `[lint] policy = "report"` still cannot commit a .cs change.
+func TestUnlintedLanguagesHonourLintPolicy(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "a.cs")
+	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// csharpier formats .cs, so this file reaches lintUnlinted rather than
+	// notChecked — a real installed csharpier is not required, because the
+	// finding under test is the one lintUnlinted itself produces.
+	t.Setenv("PATH", t.TempDir())
+
+	reported := lintUnlinted([]string{p}, false)
+	if len(reported) != 1 || reported[0].Blocking {
+		t.Fatalf("policy=report must not block: %+v", reported)
+	}
+	if !strings.Contains(reported[0].Message, "NOT linted") {
+		t.Errorf("the reason must still be named: %q", reported[0].Message)
+	}
+
+	blocked := lintUnlinted([]string{p}, true)
+	if len(blocked) != 1 || !blocked[0].Blocking {
+		t.Fatalf("policy=block must block: %+v", blocked)
+	}
+}
