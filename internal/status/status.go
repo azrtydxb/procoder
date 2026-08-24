@@ -19,7 +19,6 @@ import (
 
 	"procoder/internal/backlog"
 	"procoder/internal/codeindex"
-	"procoder/internal/gitx"
 	"procoder/internal/lessons"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
@@ -131,8 +130,17 @@ func gitLines(ctx context.Context, root string) ([]string, string) {
 // branchLine names where the work is happening and how it stands against the
 // default branch. A detached HEAD and a rebase in progress are named, never
 // smoothed over into a branch name that is not true.
+//
+// currentBranch and defaultBranch below are reimplemented from gitx rather
+// than called from it: gitx.CurrentBranch and gitx.DefaultBranch take no
+// context, so a hung or slow git made this one line in the report run past
+// the wall the rest of it honours, with no note explaining why — the
+// deadline expired and the call was simply still running.
 func branchLine(ctx context.Context, root, gitDir string) string {
-	current := gitx.CurrentBranch(root)
+	current, err := currentBranch(ctx, root)
+	if err != nil {
+		return "branch: unknown — " + gitReason(err)
+	}
 	state := rebaseState(gitDir)
 	if current == "" {
 		at := shortHead(ctx, root)
@@ -141,19 +149,55 @@ func branchLine(ctx context.Context, root, gitDir string) string {
 		}
 		return "branch: detached HEAD at " + at + state
 	}
-	def := gitx.DefaultBranch(root)
+	def, err := defaultBranch(ctx, root)
+	if err != nil {
+		return "branch: " + current + state + " — default branch unknown — " + gitReason(err)
+	}
 	if def == "" {
 		return "branch: " + current + state + " — default branch unknown (no origin/HEAD, no main or master)"
 	}
 	if def == current {
 		return "branch: " + current + state + " — this is the default branch"
 	}
-	counts, err := git(ctx, root, "rev-list", "--left-right", "--count", def+"...HEAD")
+	counts, cerr := git(ctx, root, "rev-list", "--left-right", "--count", def+"...HEAD")
 	fields := strings.Fields(counts)
-	if err != nil || len(fields) != 2 {
-		return "branch: " + current + state + " — distance from " + def + " unknown (" + gitReason(err) + ")"
+	if cerr != nil || len(fields) != 2 {
+		return "branch: " + current + state + " — distance from " + def + " unknown (" + gitReason(cerr) + ")"
 	}
 	return fmt.Sprintf("branch: %s%s — %s ahead, %s behind %s", current, state, fields[1], fields[0], def)
+}
+
+// currentBranch is gitx.CurrentBranch under the report's deadline: the same
+// command, "" with a nil error for a legitimately detached HEAD — git exits
+// 0 with empty output for that — and a non-nil error only when the call
+// itself did not answer, which is what a plain "" could not tell apart from
+// detached.
+func currentBranch(ctx context.Context, root string) (string, error) {
+	return git(ctx, root, "branch", "--show-current")
+}
+
+// defaultBranch is gitx.DefaultBranch under the report's deadline: origin's
+// HEAD first, then the conventional names. It stops at the first candidate
+// that answers and keeps falling through on a plain miss — no origin
+// remote, no main, no master are all ordinary, negative-but-legitimate
+// answers, matching gitx.DefaultBranch exactly. The one thing it will not
+// do is spend the rest of the budget finding that out three times: once
+// ctx itself has expired, every remaining candidate fails the same way, so
+// it stops and reports why rather than trying them anyway.
+func defaultBranch(ctx context.Context, root string) (string, error) {
+	if ref, err := git(ctx, root, "symbolic-ref", "refs/remotes/origin/HEAD", "--short"); err == nil {
+		return strings.TrimPrefix(ref, "origin/"), nil
+	} else if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	for _, name := range []string{"main", "master"} {
+		if _, err := git(ctx, root, "rev-parse", "--verify", "refs/heads/"+name); err == nil {
+			return name, nil
+		} else if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+	}
+	return "", nil
 }
 
 // rebaseState names an in-progress rebase, the way git's own directories
