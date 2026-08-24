@@ -30,7 +30,7 @@ Rules that earn their place:
   reader, not by what it cost to build.
 - Every entry links the PR (or PRs) that shipped it —
   `[#123](https://github.com/azrtydxb/procoder/pull/123)` — not just the
-  issue. An entry that changed several PRs' worth of code links all of
+  issue. An entry that spans several PRs' worth of change links all of
   them, the way 1.4.0's entries do. Link the tracking issue too when one
   exists and the reader would otherwise have no way to find it.
 - Every outside contributor is named AND linked to their GitHub profile —
