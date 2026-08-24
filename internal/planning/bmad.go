@@ -75,7 +75,7 @@ func OutputFolder(root string) (string, *gitx.Finding) {
 		if !ok || strings.TrimSpace(k) != "output_folder" {
 			continue
 		}
-		if val := strings.Trim(strings.TrimSpace(v), `"'`); val != "" {
+		if val := scalar(v); val != "" {
 			return val, nil
 		}
 	}
@@ -150,7 +150,7 @@ func parseDevelopmentStatus(src string) (entries []Status, ok bool) {
 		if !cut {
 			continue
 		}
-		value := strings.Trim(strings.TrimSpace(v), `"'`)
+		value := scalar(v)
 		if value == "" {
 			continue
 		}
@@ -187,26 +187,34 @@ func Check(root, method string) []gitx.Finding {
 // the procoder-native report uses: one line for the sprint, then the work
 // that is not finished. A repository reads its own state, not a
 // translation of it.
+//
+// The lines carry the `sprint:` prefix the native report uses rather than
+// a prefix of their own. That prefix is an invariant — the report is
+// searched by it, in this repository's own tests among other places — and
+// a repository that switched methodology would otherwise have no sprint
+// line at all as far as any reader looking for one is concerned. Which
+// methodology produced it goes in the content, where it informs without
+// hiding the line.
 func Report(root, method string) []string {
 	if method != "bmad" {
 		return nil
 	}
 	if !Installed(root) {
-		return []string{"planning: bmad — unknown (no BMad installation found)"}
+		return []string{"sprint: unknown — no BMad installation found, and this repository plans in bmad"}
 	}
 	output, problem := OutputFolder(root)
 	if problem != nil {
-		return []string{"planning: bmad — unknown (" + problem.Message + ")"}
+		return []string{"sprint: unknown — " + problem.Message}
 	}
 	path := StatusFile(root, output)
 	entries, findings := SprintStatus(path)
 	for _, f := range findings {
 		if f.Blocking {
-			return []string{"planning: bmad — unknown (" + f.Message + ")"}
+			return []string{"sprint: unknown — " + f.Message}
 		}
 	}
 	if len(entries) == 0 {
-		return []string{"planning: bmad — no planning artifacts yet"}
+		return []string{"sprint: none — no planning artifacts yet (bmad)"}
 	}
 
 	done, open := 0, []Status{}
@@ -223,7 +231,7 @@ func Report(root, method string) []string {
 		}
 		open = append(open, e)
 	}
-	out := []string{fmt.Sprintf("planning: bmad — %d done, %d open", done, len(open))}
+	out := []string{fmt.Sprintf("sprint: %d done, %d open (bmad)", done, len(open))}
 	for i, e := range open {
 		if i == openCap {
 			out = append(out, fmt.Sprintf("  … %d more open — read %s", len(open)-openCap,
@@ -262,10 +270,39 @@ func Version(root string) string {
 			if key != "version" && key != "bmad_version" {
 				continue
 			}
-			if val := strings.Trim(strings.TrimSpace(v), `"'`); val != "" {
+			if val := scalar(v); val != "" {
 				return val
 			}
 		}
 	}
 	return "present (version unknown)"
+}
+
+// scalar reads the value half of a `key: value` or `key = value` line as
+// the format's own reader would: an unquoted `#` starts a comment, one
+// inside quotes does not, and the surrounding quotes come off last.
+//
+// Written because getting this wrong is silent in both directions. A
+// TOML `output_folder = "planning" # where we put it` parsed naively
+// yields a directory that does not exist, so a repository mid-sprint
+// reads as one that has planned nothing. A YAML `1-1: done # tuesday`
+// yields a status nothing recognises, so a finished story is counted
+// open AND reported as an unknown status. Both look like answers.
+func scalar(v string) string {
+	v = strings.TrimSpace(v)
+	quote := byte(0)
+	for i := 0; i < len(v); i++ {
+		switch {
+		case quote != 0:
+			if v[i] == quote {
+				quote = 0
+			}
+		case v[i] == '"' || v[i] == '\'':
+			quote = v[i]
+		case v[i] == '#':
+			v = strings.TrimSpace(v[:i])
+			i = len(v) // stop: everything after is a comment
+		}
+	}
+	return strings.Trim(v, `"'`)
 }

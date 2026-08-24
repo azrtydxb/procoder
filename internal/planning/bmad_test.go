@@ -182,3 +182,91 @@ func TestTheOutputFolderIsReadFromTheInstallation(t *testing.T) {
 		t.Errorf("and the sprint is found there: %v", lines)
 	}
 }
+
+// Both formats use # for comments and both quote values, and getting
+// that wrong is silent in either direction: a TOML output_folder with a
+// trailing comment points at a directory that does not exist, so a
+// repository mid-sprint reads as one that has planned nothing; a YAML
+// status with a trailing comment matches nothing procoder knows, so a
+// finished story is counted open AND reported as an unknown status. Both
+// look like answers.
+// proved by: replaced scalar() with strings.Trim(strings.TrimSpace(v),
+// `"'`) — the form this fixes — and each case below comes back carrying
+// its comment.
+func TestAnInlineCommentIsNotPartOfTheValue(t *testing.T) {
+	root := fixture(t, map[string]string{
+		"_bmad/manifest.yaml": "version: \"6.11.0\" # pinned\n",
+		"_bmad/config.toml":   "output_folder = \"planning\" # where we put it\n",
+		"planning/implementation-artifacts/sprint-status.yaml": "development_status:\n  1-1-auth: done # finished tuesday\n  1-2-profile: ready-for-dev\n",
+	})
+
+	folder, problem := OutputFolder(root)
+	if problem != nil {
+		t.Fatalf("a readable config is not a problem: %+v", problem)
+	}
+	if folder != "planning" {
+		t.Errorf("the comment is not part of the folder: %q", folder)
+	}
+	if v := Version(root); v != "6.11.0" {
+		t.Errorf("the comment is not part of the version: %q", v)
+	}
+
+	// The commented status is recognised, so it counts as done and
+	// produces no unknown-status finding.
+	if got := Check(root, "bmad"); len(got) != 0 {
+		t.Errorf("a status with a trailing comment is still a status procoder knows: %+v", got)
+	}
+	if lines := Report(root, "bmad"); !strings.Contains(strings.Join(lines, "\n"), "1 done, 1 open") {
+		t.Errorf("and it counts as done: %v", lines)
+	}
+}
+
+// A # inside quotes is part of the value, not the start of a comment.
+// The naive fix for the bug above — cut at the first # — introduces this
+// one, and a repository whose folder legitimately contains a hash would
+// be sent to a directory that does not exist.
+// proved by: cut scalar() at the first # regardless of quoting — the
+// folder comes back truncated at the hash.
+func TestAHashInsideQuotesIsNotAComment(t *testing.T) {
+	if got := scalar(`"c#-services" # the folder`); got != "c#-services" {
+		t.Errorf("a quoted hash belongs to the value: %q", got)
+	}
+	if got := scalar(`  done  `); got != "done" {
+		t.Errorf("an ordinary value is unchanged: %q", got)
+	}
+	if got := scalar(`"quoted"`); got != "quoted" {
+		t.Errorf("quotes come off: %q", got)
+	}
+	if got := scalar(`# only a comment`); got != "" {
+		t.Errorf("a value that is only a comment is empty: %q", got)
+	}
+}
+
+// The report carries the `sprint:` prefix the native report uses. That
+// prefix is an invariant — this repository's own status tests search by
+// it — so a repository that switched methodology would otherwise have no
+// sprint line at all as far as any reader looking for one is concerned.
+// proved by: prefixed these lines with `planning:` instead — every
+// consumer that finds the sprint line by prefix stops finding it, and
+// nothing else in the suite notices.
+func TestTheSprintLineKeepsItsPrefix(t *testing.T) {
+	roots := map[string]string{
+		"installed with a sprint": fixture(t, map[string]string{
+			"_bmad/manifest.yaml": "version: \"6.11.0\"\n",
+			"_bmad-output/implementation-artifacts/sprint-status.yaml": statusYAML,
+		}),
+		"no artifacts":  fixture(t, map[string]string{"_bmad/manifest.yaml": "version: \"6.11.0\"\n"}),
+		"not installed": fixture(t, map[string]string{"a.txt": "x\n"}),
+	}
+
+	for name, root := range roots {
+		lines := Report(root, "bmad")
+		if len(lines) == 0 {
+			t.Errorf("%s: the report must say something", name)
+			continue
+		}
+		if !strings.HasPrefix(lines[0], "sprint:") {
+			t.Errorf("%s: a reader finds the sprint by its prefix, got %q", name, lines[0])
+		}
+	}
+}
