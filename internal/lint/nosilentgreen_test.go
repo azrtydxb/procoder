@@ -55,15 +55,29 @@ func TestEveryFormattedExtensionReachesALinterOrSaysItDoesNot(t *testing.T) {
 		}
 		// Two acceptable outcomes, and nothing else: a linter ran and had
 		// something to say about this deliberately invalid fixture, or it
-		// could not run and said THAT, blocking. What must never happen is
-		// silence. The distinction is not asserted per extension because
-		// which one you get depends on what is installed on the machine
-		// running the suite — clang-tidy resolves from Homebrew's keg even
-		// with PATH emptied, so C and C++ really are analysed here.
+		// could not run and said THAT. What must never happen is silence.
+		// The distinction is not asserted per extension because which one
+		// you get depends on what is installed on the machine running the
+		// suite — clang-tidy resolves from Homebrew's keg even with PATH
+		// emptied, so C and C++ really are analysed here.
+		//
+		// "NOT checked" and "NOT linted" carry different policies on
+		// purpose. A known linter that is not installed is fixable by
+		// `procoder init`, so that finding blocks regardless of [lint]
+		// policy the way a missing gitleaks does. A language with no
+		// linter at all — .cs, .dart — has no install to run; the call
+		// here passes block=false, so that finding must NOT block, or a
+		// repository writing that language could never land a commit
+		// under any policy setting.
 		for _, f := range got {
-			if strings.Contains(f.Message, "NOT checked") || strings.Contains(f.Message, "NOT linted") {
+			switch {
+			case strings.Contains(f.Message, "NOT checked"):
 				if !f.Blocking {
 					t.Errorf("%s: a check that did not happen must block: %q", name, f.Message)
+				}
+			case strings.Contains(f.Message, "NOT linted"):
+				if f.Blocking {
+					t.Errorf("%s: NOT linted honours [lint] policy — block=false here: %q", name, f.Message)
 				}
 			}
 		}

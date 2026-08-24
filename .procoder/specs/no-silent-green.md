@@ -118,8 +118,11 @@ TypeScript twins do not, which is not a decision anybody made.
       reaches ruff, asserted by a fixture of each.
 - [ ] A C++ file reaches clang-tidy and a real finding is reported with its
       file and line.
-- [ ] A language procoder formats but cannot lint reports NOT checked,
-      blocking, naming the language — never nothing.
+- [x] A language procoder formats but cannot lint reports NOT linted,
+      naming the language — never nothing. — SUPERSEDED: blocking
+      unconditionally is impossible to escape for a language with no
+      linter to install, see D-7. Now governed by `[lint] policy`, the
+      same as every other lint finding.
 - [ ] A file type procoder does not claim is still out of scope and still
       passes, asserted so the change cannot swallow every unknown file.
 - [ ] `procoder doctor` lists every new default tool with its install line,
@@ -160,3 +163,20 @@ TypeScript twins do not, which is not a decision anybody made.
   on a single file with no compilation database. The set is the analyser
   and bug-prone families — the classes that are bugs in any codebase — not
   style, which clang-format already owns.
+
+- **D-7: a language with no linter at all is not covered by D-1, and
+  honors `[lint] policy` instead.** D-1 drew no line between "the tool is
+  not installed" and "the tool does not exist" — both were "could not
+  check" and both blocked. The two are not the same failure. A missing
+  gitleaks or golangci-lint is fixable by `procoder init`; a repository
+  writing C# or Dart has no linter to install, ever, because procoder has
+  not written one. Blocking that unconditionally does not name a remedy,
+  it names a wall — reported in #150, where the only escape a real
+  repository found was `[git] commit_gate = "report"`, switching off
+  every other check the gate does to route around this one. `[lint]
+policy` already exists to separate a judgement from a fact; "no linter
+  exists for this language" is closer to a judgement about the language
+  than a fact about a broken machine, so it takes the same policy every
+  other lint finding does. D-1's rule stands for every case it was
+  written for — a tool procoder ships that is not installed still blocks
+  regardless of policy.

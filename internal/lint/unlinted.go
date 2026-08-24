@@ -22,9 +22,16 @@ var unlinted = map[string]string{
 }
 
 // lintUnlinted reports, for each language procoder formats and cannot lint,
-// that no linting happened. Blocking, like every other check that did not
-// run: an honest refusal a person can act on beats a green gate they
-// cannot trust.
+// that no linting happened.
+//
+// This is not notChecked's case. A missing gitleaks or golangci-lint is a
+// machine that has not run `procoder init` yet — install it and the check
+// runs, so that finding blocks regardless of policy the same way every
+// "the check did not run" finding does. A language with no linter at all
+// has no install to run; the repository cannot fix its way out, and a
+// finding that always blocks would leave it unable to land any commit
+// touching that language. [lint] policy governs this one, like every
+// other judgement call in this file.
 func lintUnlinted(files []string, block bool) []gitx.Finding {
 	seen := map[string]bool{}
 	var out []gitx.Finding
@@ -35,7 +42,7 @@ func lintUnlinted(files []string, block bool) []gitx.Finding {
 			continue
 		}
 		seen[ext] = true
-		out = append(out, gitx.Finding{Blocking: true, File: f,
+		out = append(out, gitx.Finding{Blocking: block, File: f,
 			Message: fmt.Sprintf("NOT linted — %s (lint)", why)})
 	}
 	return out

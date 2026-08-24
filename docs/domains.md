@@ -65,8 +65,12 @@ tree. It is there because a commit is not a keystroke and a finding caught
 now never leaves the machine. A finding in a file the commit did not touch
 does not block it; CI still reports everything.
 
-C# and Dart are formatted and have no linter yet. They say so, blocking,
-rather than passing silently.
+C# and Dart are formatted and have no linter yet. They say so — `[lint]
+policy` governs whether that blocks, the same as every other lint
+finding, because there is no `procoder init` that fixes a language with
+no linter at all. A tool procoder ships that is merely not installed
+still blocks regardless of policy; see D-7 in
+`.procoder/specs/no-silent-green.md`.
 
 | Ecosystem | Tool           | Baseline when the repo has no config                                                                                                                          |
 | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
