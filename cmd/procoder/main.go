@@ -420,6 +420,12 @@ func run(args []string) int {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
+	// A flag the command does not implement is a usage error (exit 2 per
+	// ADR 0003), never a path and never silence.
+	args, ok := checkFlags(args, os.Stderr)
+	if !ok {
+		return 2
+	}
 	switch args[0] {
 	case "hook":
 		if len(args) < 2 {
