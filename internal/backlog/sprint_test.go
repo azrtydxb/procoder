@@ -232,6 +232,13 @@ func TestSprintStatusWithoutActiveSprintIsNotAFailure(t *testing.T) {
 // proved by: returning 0 from the error branch — this test then sees an
 // unreadable backlog reported as "no sprint".
 func TestAnUnreadableSprintIsStillAFailure(t *testing.T) {
+	// Windows does not make a directory unreadable through a mode of 0,
+	// so the sprint stays readable there and the branch under test is
+	// never entered. The branch is not platform-specific; the way of
+	// provoking it is.
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory mode of 0 does not deny reads on Windows")
+	}
 	root := t.TempDir()
 	dir := filepath.Join(root, ".procoder", "backlog", "sprints")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

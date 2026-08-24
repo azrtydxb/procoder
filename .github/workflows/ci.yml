@@ -219,7 +219,7 @@ jobs:
       # say so, but a broken install should not get that far.
       - name: released binaries onto PATH
         run: |
-          for b in osv-scanner golangci-lint actionlint lychee scip; do
+          for b in osv-scanner gitleaks golangci-lint actionlint lychee scip; do
             test -s "/tmp/procoder-bins/$b" || { echo "$b missing from the binary cache" >&2; exit 1; }
             sudo install -m 0755 "/tmp/procoder-bins/$b" "/usr/local/bin/$b"
           done
