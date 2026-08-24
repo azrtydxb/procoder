@@ -356,7 +356,7 @@ func failedClean(parsed int, code int, okCodes []int, raw, file, tool string) []
 }
 
 func notChecked(file, tool string) []gitx.Finding {
-	return []gitx.Finding{{File: file,
+	return []gitx.Finding{{File: file, Blocking: true,
 		Message: fmt.Sprintf("NOT checked — %s is not installed; run `procoder init` (infra)", tool)}}
 }
 
