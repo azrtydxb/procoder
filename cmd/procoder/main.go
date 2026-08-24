@@ -545,11 +545,25 @@ func run(args []string) int {
 		return maintain.Run(doctor.Root(), printLine)
 	case "security":
 		root := doctor.Root()
-		changed, _ := gitx.ChangedFiles(root)
 		deep := len(args) > 1 && args[1] == "--deep"
-		if len(changed) == 0 && !deep {
-			fmt.Println(nothingChanged("security"))
-			return 0
+		// Positional paths were read as nothing at all: `procoder security
+		// scripts/` scanned the change set and answered about that, so a
+		// person who named a directory was told "0 finding(s)" about files
+		// nobody had looked at. Worse, the empty-change-set message added
+		// earlier in this campaign ends "(pass paths to check them anyway)"
+		// — advice this command did not take. `lint` and `check` have
+		// always honoured their paths; this is the same.
+		// A directory is expanded to its files, exactly as lintCmd does:
+		// SecretsChangedFiles drops anything that is not a regular file, so
+		// an unexpanded directory scans nothing and reports clean.
+		paths := expandDirs(root, positional(args[1:]))
+		changed := paths
+		if len(changed) == 0 {
+			changed, _ = gitx.ChangedFiles(root)
+			if len(changed) == 0 && !deep {
+				fmt.Println(nothingChanged("security"))
+				return 0
+			}
 		}
 		findings := security.SecretsChangedFiles(root, changed)
 		if deep {
@@ -685,6 +699,57 @@ func adrCmd(args []string) int {
 // their repository linted clean by a linter that never opened a file.
 // `procoder check` has always said "no changed files"; this is the same
 // sentence for the commands that forgot it.
+// expandDirs replaces each directory argument with the repository files
+// under it, and returns every path rooted. Two silences depended on this:
+// a check that works file by file gets nothing from an unexpanded
+// directory, and SecretsChangedFiles resolves what it is handed against
+// the PROCESS's directory while gitx.ChangedFiles hands it absolute paths
+// — so a relative path scanned nothing whenever procoder was run from a
+// subdirectory, and said "0 finding(s)" about it.
+func expandDirs(root string, paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, p)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			// Not resolvable from the root either; hand it on unchanged so
+			// the check that receives it can say so about the name the
+			// person actually typed.
+			out = append(out, p)
+			continue
+		}
+		if !info.IsDir() {
+			out = append(out, abs)
+			continue
+		}
+		for _, f := range gitx.FilesUnder(root, p) {
+			if filepath.IsAbs(f) {
+				out = append(out, f)
+				continue
+			}
+			out = append(out, filepath.Join(root, f))
+		}
+	}
+	return out
+}
+
+// positional drops the flags a command has already read, leaving the paths.
+// Flag parsing happens at the front (see checkFlags), so anything that is
+// not a leading dash is a path.
+func positional(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 func nothingChanged(cmd string) string {
 	return "procoder " + cmd + ": no changed files — nothing was checked (pass paths to check them anyway)"
 }

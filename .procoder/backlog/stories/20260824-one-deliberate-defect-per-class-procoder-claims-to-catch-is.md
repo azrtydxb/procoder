@@ -66,7 +66,7 @@ installed` counted as a catch. The correction over-reached and called
   procoder has no linter for it yet" about a file whose formatter had
   caught the defect. Both were found by replaying the classifier over logs
   already on disk rather than trusting the next version.
-- The secret plant originally used `AKIAIOSFODNN7EXAMPLE`, AWS's own
+- The secret plant originally used AWS's documented example access key (the `AKIA…EXAMPLE` one), AWS's own
   documented example key, which every scanner allowlists deliberately — it
   tested the allowlist, not the scanner. It also carried a `// nolint`
   line, which measurement showed made no difference. The replacement is

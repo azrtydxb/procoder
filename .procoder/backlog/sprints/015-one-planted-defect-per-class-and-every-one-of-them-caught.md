@@ -63,7 +63,7 @@ re-running a ten-minute pass and without trusting the next version to be
 right. The logs are the fixture for the harness.
 
 **A plant can test the wrong thing entirely.** The secret plant used
-`AKIAIOSFODNN7EXAMPLE`, AWS's own documented example key, which every
+AWS's documented example access key (the `AKIA…EXAMPLE` one), AWS's own documented example key, which every
 scanner allowlists on purpose — so it measured the allowlist, not the
 scanner. It also carried a `// nolint` line I had added without thinking,
 which measurement showed made no difference. Chasing that misfire is what

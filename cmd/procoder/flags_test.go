@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	"procoder/internal/security"
 )
 
 // The defect this file exists for: `procoder check --staged` exited 0. The
@@ -193,5 +198,104 @@ func TestSecurityAsksWhatTheGateAsks(t *testing.T) {
 	// running both would report every finding twice.
 	if strings.Count(arm, "SastChanged") != 1 {
 		t.Errorf("SastChanged belongs in the non-deep branch only: %s", arm)
+	}
+}
+
+// `procoder security scripts/` scanned the change set and answered about
+// that, so a person who named a directory was told "0 finding(s)" about
+// files nobody had opened. The empty-change-set message added earlier in
+// the same campaign ends "(pass paths to check them anyway)" — advice this
+// command did not take, which made the silence worse than accidental.
+//
+// A directory has to be expanded too: SecretsChangedFiles drops anything
+// that is not a regular file, so a bare directory scans nothing and
+// reports clean — the same trap lintCmd already carries a comment about.
+//
+// proved by: deleting the expandDirs call from the security arm — the
+// directory case then finds nothing.
+func TestSecurityHonoursThePathsItIsGiven(t *testing.T) {
+	root := repoRootForTest(t)
+	if _, err := exec.LookPath("gitleaks"); err != nil {
+		t.Skip("gitleaks is not installed")
+	}
+	dir := filepath.Join(root, "internal", "e2eprobe")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	// Derived rather than written: this file must not be a credential
+	// literal itself, and a hand-invented string does not reliably look
+	// like a key to the scanner — gitleaks weighs the body's character
+	// profile, and the first hand-written attempt here was not flagged at
+	// all, which would have made this test pass for the wrong reason.
+	sum := sha256.Sum256([]byte("procoder-e2e-flag-test"))
+	body := make([]byte, 0, 16)
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	for _, b := range sum {
+		if len(body) == 16 {
+			break
+		}
+		body = append(body, alphabet[int(b)%len(alphabet)])
+	}
+	key := "AKIA" + string(body)
+	if err := os.WriteFile(filepath.Join(dir, "p.go"),
+		[]byte("package e2eprobe\n\nconst K = \""+key+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, arg := range []string{"internal/e2eprobe/p.go", "internal/e2eprobe"} {
+		got := security.SecretsChangedFiles(root, expandDirs(root, []string{arg}))
+		if len(got) == 0 {
+			t.Errorf("a planted credential under %q was not found", arg)
+			continue
+		}
+		for _, f := range got {
+			if strings.Contains(f.Message, key) {
+				t.Errorf("the finding echoed the credential's value: %q", f.Message)
+			}
+		}
+	}
+}
+
+// proved by: returning paths unchanged from expandDirs — the directory
+// then contributes nothing and this test sees no files.
+func TestADirectoryArgumentBecomesItsFiles(t *testing.T) {
+	root := repoRootForTest(t)
+	got := expandDirs(root, []string{"internal/audit"})
+	if len(got) < 2 {
+		t.Fatalf("internal/audit holds several files; expandDirs gave %d: %q", len(got), got)
+	}
+	for _, g := range got {
+		if strings.HasSuffix(g, "internal/audit") {
+			t.Errorf("the directory itself survived expansion: %q", got)
+		}
+	}
+}
+
+// proved by: dropping the HasPrefix check — the flag is then treated as a
+// path and handed to the scanner as a filename, which is the bug the flag
+// guard was written for, reappearing one layer down.
+func TestPositionalDropsFlagsAndKeepsPaths(t *testing.T) {
+	got := positional([]string{"--deep", "internal", "cmd/procoder"})
+	if len(got) != 2 || got[0] != "internal" || got[1] != "cmd/procoder" {
+		t.Errorf("positional() = %q, want the two paths without the flag", got)
+	}
+}
+
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above the test directory")
+		}
+		dir = parent
 	}
 }

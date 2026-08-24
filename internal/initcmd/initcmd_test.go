@@ -159,6 +159,12 @@ func skipOnWindows(t *testing.T) {
 // proved by: returning Rest as nil from choose() — this test then sees the
 // second manager never tried.
 func TestAFailedInstallTriesTheNextPackageManager(t *testing.T) {
+	// The fake managers are shell scripts with no extension, which
+	// exec.LookPath cannot see on Windows — it requires PATHEXT. The
+	// behaviour under test is not platform-specific; the stub is.
+	if runtime.GOOS == "windows" {
+		t.Skip("the package-manager stubs are shell scripts")
+	}
 	dir := t.TempDir()
 	// two fake managers on PATH: the first always fails, the second
 	// records that it ran
@@ -192,6 +198,12 @@ func TestAFailedInstallTriesTheNextPackageManager(t *testing.T) {
 // proved by: carrying every candidate in Rest rather than only the usable
 // ones — this test then finds the absent manager queued as a retry.
 func TestOnlyPackageManagersThatExistAreCarried(t *testing.T) {
+	// The fake managers are shell scripts with no extension, which
+	// exec.LookPath cannot see on Windows — it requires PATHEXT. The
+	// behaviour under test is not platform-specific; the stub is.
+	if runtime.GOOS == "windows" {
+		t.Skip("the package-manager stubs are shell scripts")
+	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "realmgr"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)

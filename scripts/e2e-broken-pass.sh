@@ -92,9 +92,12 @@ plant_fmt_web() { printf 'export function sloppy(  a ){return a}\n' >web/sloppy.
 # ---- everything else -------------------------------------------------
 plant_lint() { printf '#!/usr/bin/env bash\nset -euo pipefail\nunused_var=1\necho "$HOME"\n' >sh/unused.sh; }
 plant_secret() {
-	# AKIAIOSFODNN7EXAMPLE is AWS's own documented example key, and every
-	# scanner allowlists it deliberately — planting it tested the allowlist,
-	# not the scanner. This one is derived at run time from a fixed string,
+	# AWS's own documented example access key — the AKIA…EXAMPLE one — is
+	# allowlisted deliberately by every scanner, so planting it tested the
+	# allowlist rather than the scanner. It is not written out here either:
+	# a credential-shaped literal in a repository that polices credentials
+	# gets flagged, and older gitleaks flags that one. This key is derived
+	# at run time from a fixed string,
 	# so it is unmistakably credential-shaped to a scanner and no
 	# credential-shaped literal is committed to procoder's own repository.
 	local k s
