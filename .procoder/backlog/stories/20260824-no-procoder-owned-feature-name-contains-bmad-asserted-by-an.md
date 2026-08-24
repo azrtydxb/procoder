@@ -21,9 +21,16 @@ the boundary is held by a test rather than by everyone remembering.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] No procoder-owned feature name contains "BMad", asserted by an audit over the source and the command table, so the trademark boundary cannot erode by accident.
+- [x] No procoder-owned feature name contains "BMad", asserted by an audit over the source and the command table, so the trademark boundary cannot erode by accident.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/audit/ -run TestNoProcoderFeatureIsNamedAfterATrademark`
+  — audits the command table in `cmd/procoder/main.go` and every exported
+  `func`/`type` under `internal/`. Four mutations proven failing: a
+  `case "bmad-sync":` arm (caught at main.go:446), an exported func, an
+  exported type, and a method on a receiver (each caught by file and line).
+  A fifth probe proved the distinction holds in the other direction — a
+  config value `"bmad"`, a doctor string naming BMad, and an unexported
+  helper are all permitted, because naming the mark to describe
+  interoperation is nominative use and only a feature NAME is a claim.
