@@ -45,6 +45,7 @@ import (
 	"procoder/internal/principles"
 	"procoder/internal/release"
 	"procoder/internal/releases"
+	"procoder/internal/review"
 	"procoder/internal/runcmd"
 	"procoder/internal/security"
 	"procoder/internal/spec"
@@ -443,6 +444,8 @@ func run(args []string) int {
 			return 2
 		}
 		return formatCmd(args[1:])
+	case "review":
+		return reviewCmd(args[1:])
 	case "audit":
 		return audit.Run(doctor.Root(), printLine)
 	case "status":
@@ -1194,4 +1197,64 @@ func formatCmd(files []string) int {
 		}
 	}
 	return code
+}
+
+// reviewCmd is the judgment half of the gate: it prints the lenses and the
+// scope, and the agent judges. The binary writes nothing, which is what
+// makes it safe to run on anything.
+//
+// Exit codes follow ADR 0003: 0 when every selected lens resolved, 1 when
+// one could not — a lens that failed to load is a refusal, and a review
+// that did not happen must not exit 0 — and 2 for a name that is not a
+// lens, which is a usage error rather than a finding about the code.
+func reviewCmd(args []string) int {
+	root := doctor.Root()
+
+	var want []string
+	var paths []string
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--lens" && i+1 < len(args):
+			i++
+			want = append(want, strings.Split(args[i], ",")...)
+		case strings.HasPrefix(args[i], "--lens="):
+			want = append(want, strings.Split(strings.TrimPrefix(args[i], "--lens="), ",")...)
+		case strings.HasPrefix(args[i], "-"):
+			fmt.Fprintf(os.Stderr, "procoder review: unknown flag %q\n", args[i])
+			return 2
+		default:
+			paths = append(paths, args[i])
+		}
+	}
+
+	lenses, problems := review.Resolve(root)
+	// The refusal comes before anything is printed. A lens that could not
+	// be read must not be discovered halfway down a review the reader has
+	// already started acting on.
+	if len(problems) > 0 {
+		printFindings(root, "review", problems, printLine)
+		return 1
+	}
+
+	if len(want) > 0 {
+		selected, unknown := review.Select(lenses, want)
+		if len(unknown) > 0 {
+			fmt.Fprintf(os.Stderr, "procoder review: no such lens: %s — procoder has %s\n",
+				strings.Join(unknown, ", "), strings.Join(review.Names(lenses), ", "))
+			return 2
+		}
+		lenses = selected
+	}
+
+	if len(paths) == 0 {
+		changed, err := gitx.ChangedFiles(root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "procoder review: cannot list changed files (%v) — pass paths explicitly\n", err)
+			return 2
+		}
+		paths = changed
+	}
+
+	review.Print(os.Stdout, paths, lenses)
+	return 0
 }

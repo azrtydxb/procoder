@@ -1,4 +1,4 @@
-# review with judgment, not just tooling
+# Review with judgment, not just tooling
 
 Status: active
 Created: 2026-08-24

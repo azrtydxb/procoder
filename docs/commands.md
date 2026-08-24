@@ -84,6 +84,35 @@ lint, CI hygiene, infrastructure hygiene, lint findings, secrets (blocking),
 docs checks, and the change's blast radius from the index. Exit 1 on any
 blocking finding.
 
+#### `procoder review [--lens <name>[,<name>]] [paths...]`
+
+The judgment half of the gate. Every other check Procoder runs is
+mechanical and has one right answer; this one asks the questions that do
+not — is this the right shape, what breaks at the edges, would a test
+catch this regressing.
+
+It prints five lenses over the changed files (or the given paths), each a
+distinct stance rather than a checklist: **adversarial** (assume it is
+wrong and find where), **edge-case** (enumerate paths, report only the
+unhandled ones), **verification-gap** (would verification actually fail if
+this broke?), **structure** (how it is organised), and **prose** (how it
+is expressed). Overlap between two lenses is signal, not duplication.
+
+The binary judges nothing — it cannot, it is not a language model. It
+prints the lens and the scope; the agent judges. Same contract as
+`procoder format`: the binary prints, the agent writes, and nothing on
+disk changes.
+
+`--lens` narrows to the named ones. A name that is not a lens is a usage
+error (exit 2), never a silent full review.
+
+Any lens is replaceable from `.procoder/review/lenses/<name>.md`
+(D-OVERRIDE). An empty or unreadable override **blocks and prints
+nothing** — unlike a template, which falls back to Procoder's version and
+says so. A lens shapes a judgment, and a review under your lens's name
+running Procoder's words is worse than no review, so nothing is printed
+for an agent to act on by mistake. Exit 1.
+
 #### `procoder git`
 
 The pre-finish status: branch vs default, changed-file count, template

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -65,7 +66,7 @@ func TestNoProcoderFeatureIsNamedAfterATrademark(t *testing.T) {
 		for _, mark := range trademarked {
 			if strings.Contains(strings.ToLower(arm), mark) {
 				offenders = append(offenders, "cmd/procoder/main.go:"+
-					itoa(strings.Count(src[:m[0]], "\n")+1)+" command "+arm)
+					strconv.Itoa(strings.Count(src[:m[0]], "\n")+1)+" command "+arm)
 			}
 		}
 	}
@@ -85,7 +86,7 @@ func TestNoProcoderFeatureIsNamedAfterATrademark(t *testing.T) {
 			for _, mark := range trademarked {
 				if strings.Contains(strings.ToLower(name), mark) {
 					offenders = append(offenders, filepath.ToSlash(path)+":"+
-						itoa(strings.Count(src[:m[0]], "\n")+1)+" exports "+name)
+						strconv.Itoa(strings.Count(src[:m[0]], "\n")+1)+" exports "+name)
 				}
 			}
 		}
