@@ -229,3 +229,81 @@ func TestDirtyGateBlocks(t *testing.T) {
 		t.Errorf("gate failure missing:\n%s", joined(lines))
 	}
 }
+
+// The controller said "release 0.2.0 is ready — tag it: git tag -a v0.2.0"
+// for a version already tagged and already published on GitHub, and the
+// command it printed answers "fatal: tag 'v0.2.0' already exists". Whether
+// a version has shipped is the first thing a release controller ought to
+// know, and an instruction that cannot succeed is worse than silence — the
+// reader has to work out that procoder was wrong rather than their repo.
+//
+// Found by cutting a real release on the campaign's throwaway repository
+// and then asking for the same version again.
+//
+// proved by: deleting the tagExists call from Run — this test then sees
+// the controller pronounce an already-tagged version ready.
+func TestAnAlreadyTaggedVersionIsNotReady(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	writeFile(t, root, "CHANGELOG.md", "# Changelog\n\n## 0.2.0\n\n- a thing\n")
+	git(t, root, "add", "-A")
+	git(t, root, "commit", "-qm", "release: 0.2.0")
+	git(t, root, "tag", "-a", "v0.2.0", "-m", "0.2.0")
+
+	out, lines := capture()
+	code := Run(root, "0.2.0", gateGreen, nil, out)
+
+	if code == 0 {
+		t.Fatalf("an already-tagged version was pronounced ready:\n%s", joined(lines))
+	}
+	if !strings.Contains(joined(lines), "v0.2.0 already exists") {
+		t.Errorf("the refusal must name the tag:\n%s", joined(lines))
+	}
+	if strings.Contains(joined(lines), "git tag -a") {
+		t.Errorf("it must not print a tag command that cannot succeed:\n%s", joined(lines))
+	}
+}
+
+// The tag for a DIFFERENT version is not this version's tag. A check that
+// matched loosely would refuse 0.2.0 because v0.2.0-rc1 or v10.2.0 exists.
+//
+// Two mechanisms keep that out and either alone suffices: `--list` is
+// given the exact tag as its glob, and the result is compared for
+// equality. So no SINGLE mutation fails this test — passing `tag+"*"` is
+// caught by the equality, and swapping the equality for a Contains is
+// caught by the pattern. That redundancy is deliberate and the honest way
+// to state the proof is as the pair.
+//
+// proved by: making the pattern `tag+"*"` AND the comparison a
+// strings.Contains, together — this test then reports 0.2.0 blocked by
+// v0.2.0-rc1. Either mutation alone leaves it passing, which is what
+// redundancy is for and why claiming a single-mutation proof here would
+// have been false.
+func TestAnUnrelatedTagDoesNotBlockTheRelease(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	writeFile(t, root, "CHANGELOG.md", "# Changelog\n\n## 0.2.0\n\n- a thing\n")
+	git(t, root, "add", "-A")
+	git(t, root, "commit", "-qm", "release: 0.2.0")
+	git(t, root, "tag", "-a", "v0.2.0-rc1", "-m", "rc")
+	git(t, root, "tag", "-a", "v10.2.0", "-m", "later")
+
+	out, lines := capture()
+	if code := Run(root, "0.2.0", gateGreen, nil, out); code != 0 {
+		t.Fatalf("0.2.0 was blocked by a tag that is not v0.2.0:\n%s", joined(lines))
+	}
+}
+
+// git failing to answer is not "no tag", for the same reason an unreadable
+// tree is not a clean one.
+//
+// proved by: returning "" instead of the NOT-verified message when git
+// errors — this test then sees a release pronounced ready by a check that
+// could not run.
+func TestTagCheckThatCannotRunIsNotAPass(t *testing.T) {
+	if msg := tagExists(filepath.Join(t.TempDir(), "nonexistent"), "0.2.0"); msg == "" {
+		t.Error("git failing to list tags must be reported, never read as no-tag")
+	} else if !strings.Contains(msg, "NOT verified") {
+		t.Errorf("the message must say the check did not run, got %q", msg)
+	}
+}

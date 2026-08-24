@@ -393,6 +393,21 @@ Workflow hygiene: actions pinned to mutable refs (report by default,
 `timeout-minutes`, missing concurrency cancellation, and pipelines without
 tests.
 
+`--runs` asks GitHub about this branch instead: the newest run of each
+workflow, its conclusion, its age, and — when it failed — which jobs
+failed. It then answers the question the report exists for, which is
+whether that verdict is about the commit in your working tree: a run older
+than HEAD is named stale, an unpushed HEAD is named as one CI cannot have
+seen, and a branch with no runs at all is called an absence of evidence
+rather than a green verdict.
+
+It always exits 0, including when the run failed. `--runs` reports what a
+remote system said; it is not a verdict on your tree, and the two tiers are
+kept apart deliberately — the gate answers about the change, CI answers
+about the tree. Read the text, not the exit code: `procoder ci --runs |
+grep failure` is the shape a script wants, and nothing here will ever
+answer "green" by staying quiet.
+
 #### `procoder infra`
 
 Where the files exist: hadolint over Dockerfiles, `terraform fmt` /

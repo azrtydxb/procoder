@@ -91,7 +91,19 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 		}
 	}
 
-	// 6. the credits in the entry about to be published. GitHub is asked
+	// 6. the tag this controller is about to tell somebody to create. It
+	// said "ready — tag it: git tag -a v0.2.0" for a version already
+	// tagged and already published, and the printed command answers
+	// "fatal: tag 'v0.2.0' already exists". Whether a version has already
+	// shipped is the first thing a release controller ought to know, and
+	// printing an instruction that cannot succeed is worse than silence:
+	// the reader has to work out that procoder was wrong rather than
+	// their repository.
+	if msg := tagExists(root, version); msg != "" {
+		failures = append(failures, msg)
+	}
+
+	// 7. the credits in the entry about to be published. GitHub is asked
 	// who actually opened each cited issue, which the suite cannot do —
 	// it runs offline on every commit — and which this controller can,
 	// because the tag it is preparing gets published by a job that talks
@@ -155,6 +167,29 @@ func changelogHasVersion(root, version string) bool {
 // dirtyTree returns a failure line when the working tree is not clean, or
 // when git cannot say — unknown counts as dirty, because a release must not
 // depend on state nobody committed.
+// tagExists reports the release already having a tag. git failing to
+// answer is NOT "no tag", for the same reason an unreadable tree is not a
+// clean one — unknown is never clean.
+//
+// `--list` takes a glob, and the exact tag is passed as the pattern, so
+// v0.2.0-rc1 and v10.2.0 do not answer for v0.2.0. That is safe only
+// because Run has already required the version to match N.N.N, which
+// carries no glob characters. The equality below is belt and braces on
+// top of that filtering, and is deliberately kept: it costs nothing and
+// it is what makes the pattern's job explicit to the next reader.
+func tagExists(root, version string) string {
+	tag := "v" + version
+	cmd := exec.Command("git", "-C", root, "tag", "--list", tag)
+	raw, err := cmd.Output()
+	if err != nil {
+		return fmt.Sprintf("existing tags NOT verified — git tag failed (%v)", err)
+	}
+	if strings.TrimSpace(string(raw)) == tag {
+		return fmt.Sprintf("%s already exists — this version is already tagged; bump the version, or delete the tag if it was never pushed", tag)
+	}
+	return ""
+}
+
 func dirtyTree(root string) string {
 	cmd := exec.Command("git", "-C", root, "status", "--porcelain")
 	raw, err := cmd.Output()
