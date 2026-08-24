@@ -75,7 +75,7 @@ format` suggests. Runs with `--no-cache` now. Reported by
 
 **Fixed — OKF bundle links reported as broken when they were not.**
 ([#148](https://github.com/azrtydxb/procoder/pull/148)) An
-[OKF](https://openknowledgeformat.org) bundle resolves an absolute link
+OKF bundle resolves an absolute link
 from the bundle's own root, not the repository's — `/log.md` inside
 `.okf/` means `.okf/log.md`. procoder resolved every absolute link from
 the repository root, so a conformant bundle reported dozens of false
