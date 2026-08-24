@@ -351,3 +351,23 @@ func TestRepoRootReturnsTheInputWhenThereIsNoRepository(t *testing.T) {
 		t.Errorf("RepoRoot = %q, want the input %q unchanged", got, dir)
 	}
 }
+
+// csharpier 1.x caches formatting results and prints nothing for a file
+// it has already seen — a correctly formatted file then reads as a tool
+// that "did not answer" and fails the gate as UNCHECKED. --no-cache keeps
+// the print-not-write contract this tool exists for holding regardless of
+// cache state.
+// proved by: dropped --no-cache from the argv — this fails, and so does
+// procoder against a real csharpier on a second run over the same file.
+func TestCsharpierNeverUsesTheCache(t *testing.T) {
+	args := csharpier.Args("/x/a.cs")
+	var noCache bool
+	for _, a := range args {
+		if a == "--no-cache" {
+			noCache = true
+		}
+	}
+	if !noCache {
+		t.Errorf("csharpier must run with --no-cache: %v", args)
+	}
+}
