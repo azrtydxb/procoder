@@ -626,6 +626,18 @@ func TestAnEmptyDependencyDeclarationIsNotADependencySet(t *testing.T) {
 		{"groups empty", "[dependency-groups]\n", false},
 		{"groups one", "[dependency-groups]\ndev = [\"pytest\"]\n", true},
 		{"only prose", "# this project lists no dependencies anywhere\n", false},
+		// Copilot's review found these: the key half was `[a-zA-Z0-9_-]+`,
+		// so ANY non-empty list counted and a project with no dependencies
+		// at all was blocked. Eight cases here missed it because not one
+		// of them carried a second list.
+		{"keywords beside an empty dependencies", "[project]\nkeywords = [\"cli\"]\ndependencies = []\n", false},
+		{"classifiers only", "[project]\nclassifiers = [\"Programming Language :: Python\"]\n", false},
+		{"authors table", "[project]\nauthors = [{name = \"A\"}]\n", false},
+		{"optional-dependencies list", "[project]\noptional-dependencies = [\"pytest\"]\n", true},
+		{"poetry group table", "[tool.poetry.group.dev.dependencies]\npytest = \"^8\"\n", true},
+		{"poetry group empty", "[tool.poetry.group.dev.dependencies]\n", false},
+		{"optional-dependencies table", "[project.optional-dependencies]\ntest = [\"pytest\"]\n", true},
+		{"a tool table that merely mentions it", "[tool.ruff]\nselect = [\"E\"]\n", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

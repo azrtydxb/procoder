@@ -104,15 +104,21 @@ func Run(root string, execute bool, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "\n== %s %s\n", s.Manager, strings.Join(s.Args, " "))
 		err := runInstall(s.Manager, s.Args, stdout)
 		// A failed installer is not the end of the attempt while another
-		// package manager on this machine also carries the tool.
+		// package manager on this machine also carries the tool. `tried`
+		// follows the attempts: naming s.Manager in every retry line
+		// credited the first manager with a failure a later one produced,
+		// which is a diagnostic that misleads precisely when there are
+		// enough candidates for it to matter.
+		tried := s.Manager
 		for _, c := range s.Rest {
 			if err == nil {
 				break
 			}
 			fmt.Fprintf(stdout, "procoder init: %s via %s failed (%v) — trying %s\n",
-				s.Tool.Name, s.Manager, err, c.Manager)
+				s.Tool.Name, tried, err, c.Manager)
 			fmt.Fprintf(stdout, "\n== %s %s\n", c.Manager, strings.Join(c.Args, " "))
 			err = runInstall(c.Manager, c.Args, stdout)
+			tried = c.Manager
 		}
 		if err != nil {
 			fmt.Fprintf(stdout, "procoder init: %s failed: %v\n", s.Tool.Name, err)

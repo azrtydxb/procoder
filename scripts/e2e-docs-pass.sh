@@ -61,7 +61,8 @@ done <"$OUT/docflags.txt"
 # `procoder review --perspectives` reads a change as analyst, architect,
 # implementer and reviewer in turn, and nobody reading the docs would know
 # it exists.
-python3 - "$REPO/cmd/procoder/flags.go" "$OUT/docflags.txt" "$REPO/docs/commands.md" >"$OUT/undocflags.txt" <<'PYEOF'
+scan_status=0
+python3 - "$REPO/cmd/procoder/flags.go" "$OUT/docflags.txt" "$REPO/docs/commands.md" >"$OUT/undocflags.txt" <<'PYEOF' || scan_status=$?
 import re, sys
 
 src = open(sys.argv[1]).read()
@@ -87,25 +88,16 @@ for m in re.finditer(r'"([a-z-]+)":\s*\{([^}]*)\}', table):
             print(cmd, f)
 if found == 0:
     print("SCAN-FAILED knownFlags")
-PYEOF'
-import re, sys
-src = open(sys.argv[1]).read()
-table = re.search(r'var knownFlags = map\[string\]\[\]string\{(.*?)
-\}', src, re.S)
-documented = set()
-for line in open(sys.argv[2]):
-    parts = line.split()
-    if len(parts) == 2:
-        documented.add(tuple(parts))
-docs = open(sys.argv[3]).read()
-for m in re.finditer(r'"([a-z-]+)":\s*\{([^}]*)\}', table.group(1) if table else ""):
-    cmd = m.group(1)
-    for f in re.findall(r'"(--[a-z-]+)"', m.group(2)):
-        if (cmd, f) not in documented and f not in docs:
-            print(cmd, f)
 PYEOF
 
-if grep -q 'SCAN-FAILED' "$OUT/undocflags.txt"; then
+# The SCAN-FAILED guard below only fires when python RAN and found
+# nothing. It did not save this check the first time: a broken heredoc fed
+# python a syntax error, so it never ran, the output file was empty, and
+# the check reported every flag documented. python's own exit code is the
+# thing to test first.
+if [ "$scan_status" -ne 0 ]; then
+	say FAIL "the knownFlags extraction did not run (python exited $scan_status) — this check proved nothing"
+elif grep -q 'SCAN-FAILED' "$OUT/undocflags.txt"; then
 	say FAIL "could not read knownFlags from flags.go — this check proved nothing"
 elif [ -s "$OUT/undocflags.txt" ]; then
 	while read -r cmd flag; do

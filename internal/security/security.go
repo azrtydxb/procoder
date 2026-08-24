@@ -566,8 +566,21 @@ func hasPythonDepsWithoutLockfile(root string) bool {
 // it: a PEP 621 or PEP 735 list with a first element, or a poetry table
 // with a first key. An empty list or an empty table is not a dependency
 // set, and neither is the word appearing in prose.
-var pyDeps = regexp.MustCompile(`(?m)^\s*(?:dependencies|[a-zA-Z0-9_-]+)\s*=\s*\[\s*(?:#[^\n]*)?\n?\s*["']|` +
-	`(?s)\[(?:tool\.poetry\.(?:dev-)?dependencies|dependency-groups)\][^\[]*?\S\s*=`)
+//
+// The key half is spelled out rather than left as `[a-zA-Z0-9_-]+`. That
+// alternation matched ANY non-empty list assignment, so a project with
+// `dependencies = []` and `keywords = ["cli"]` — no dependencies at all —
+// was blocked with "python dependencies NOT checked". A blocking false
+// positive about a file the reader has done nothing wrong with is worse
+// than the gap it was written to close.
+var pyDeps = regexp.MustCompile(
+	// PEP 621: dependencies = ["x"] / optional-dependencies = ["x"]
+	`(?m)^\s*(?:optional-)?dependencies\s*=\s*\[\s*(?:#[^\n]*)?\n?\s*["']` +
+		// a table whose entries ARE the dependencies, with a first key
+		`|(?s)\[(?:tool\.poetry\.(?:dev-)?dependencies` +
+		`|tool\.poetry\.group\.[^.\]]+\.dependencies` +
+		`|project\.optional-dependencies` +
+		`|dependency-groups)\][^\[]*?\S\s*=`)
 
 // why reports why a tool gave no answer. The tool's own last line of
 // stderr is the diagnosis: scanners log their progress first and the

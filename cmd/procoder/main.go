@@ -559,7 +559,16 @@ func run(args []string) int {
 		paths := expandDirs(root, positional(args[1:]))
 		changed := paths
 		if len(changed) == 0 {
-			changed, _ = gitx.ChangedFiles(root)
+			var err error
+			changed, err = gitx.ChangedFiles(root)
+			if err != nil {
+				// "I could not find out what changed" is not "nothing
+				// changed". Swallowing this reported a clean-looking
+				// verdict outside a git repository, or whenever git could
+				// not run — the exact silent green this domain polices.
+				fmt.Printf("procoder security: NOT checked — the changed files could not be listed (%v); pass paths to scan them explicitly\n", err)
+				return 1
+			}
 			if len(changed) == 0 && !deep {
 				fmt.Println(nothingChanged("security"))
 				return 0
