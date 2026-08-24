@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"procoder/internal/tools"
 )
 
 // A repo whose only source file is Go, so gofmt is the one required tool.
@@ -144,5 +146,89 @@ func skipOnWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("sh-stub fixtures cannot run on Windows")
+	}
+}
+
+// A package manager being installed is not the same as it carrying the
+// package. `brew install rubocop` was procoder's first suggestion to
+// everyone missing rubocop, and there has never been such a formula —
+// rubocop ships as a gem. brew being on PATH meant the gem candidate was
+// never reached, so the attempt ended at the one command that could not
+// work.
+//
+// proved by: returning Rest as nil from choose() — this test then sees the
+// second manager never tried.
+func TestAFailedInstallTriesTheNextPackageManager(t *testing.T) {
+	dir := t.TempDir()
+	// two fake managers on PATH: the first always fails, the second
+	// records that it ran
+	if err := os.WriteFile(filepath.Join(dir, "brokenmgr"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "ran")
+	if err := os.WriteFile(filepath.Join(dir, "workingmgr"),
+		[]byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	tool := &tools.Tool{Name: "example", InstallVia: []tools.InstallCandidate{
+		{Manager: "brokenmgr", Args: []string{"install", "example"}},
+		{Manager: "workingmgr", Args: []string{"install", "example"}},
+	}}
+	step := choose(tool)
+
+	if step.Manager != "brokenmgr" {
+		t.Fatalf("the first candidate on PATH is still chosen first, got %q", step.Manager)
+	}
+	if len(step.Rest) != 1 || step.Rest[0].Manager != "workingmgr" {
+		t.Fatalf("the remaining usable candidates must be carried, got %+v", step.Rest)
+	}
+}
+
+// A candidate whose manager is not on this machine is not a fallback — it
+// is a command that cannot run. Only what is present is carried.
+//
+// proved by: carrying every candidate in Rest rather than only the usable
+// ones — this test then finds the absent manager queued as a retry.
+func TestOnlyPackageManagersThatExistAreCarried(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "realmgr"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	tool := &tools.Tool{Name: "example", Install: "by hand", InstallVia: []tools.InstallCandidate{
+		{Manager: "realmgr", Args: []string{"install", "example"}},
+		{Manager: "nosuchmgr", Args: []string{"install", "example"}},
+	}}
+	step := choose(tool)
+
+	if step.Manager != "realmgr" {
+		t.Fatalf("chose %q", step.Manager)
+	}
+	if len(step.Rest) != 0 {
+		t.Errorf("a manager absent from this machine is not a retry: %+v", step.Rest)
+	}
+}
+
+// rubocop has no homebrew formula. Offering one meant procoder printed an
+// install command that fails everywhere, which is worse than saying
+// nothing — the reader runs it, watches it fail, and has to work out for
+// themselves that procoder was wrong rather than their machine.
+//
+// proved by: restoring the brew candidate — this test names it.
+func TestRubocopIsNotOfferedThroughHomebrew(t *testing.T) {
+	rb := tools.ByExtension[".rb"]
+	if rb == nil || rb.Name != "rubocop" {
+		t.Fatalf(".rb no longer maps to rubocop: %+v", rb)
+	}
+	for _, c := range rb.InstallVia {
+		if c.Manager == "brew" {
+			t.Errorf("there is no homebrew formula for rubocop; it ships as a gem")
+		}
+	}
+	if strings.Contains(rb.Install, "brew install rubocop") {
+		t.Errorf("the printed instruction still names a formula that does not exist: %q", rb.Install)
 	}
 }

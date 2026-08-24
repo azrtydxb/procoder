@@ -261,10 +261,15 @@ var (
 		Args:            func(f string) []string { return []string{"--stdin", f, "-x", "--stderr", "--format", "quiet"} },
 		Stdin:           true,
 		ExitOneIsAnswer: true,
-		Install:         "brew install rubocop   (or: gem install rubocop)",
-		VersionArgs:     []string{"--version"},
+		// rubocop ships as a gem and has no homebrew formula — `brew
+		// install rubocop` fails on every machine, and it was the first
+		// thing procoder told anyone missing it to run. Modern rubocop
+		// needs a Ruby newer than the one macOS ships, which is why the
+		// instruction says so rather than leaving a permissions error to
+		// be interpreted.
+		Install:     "gem install rubocop   (needs Ruby 3.0+: brew install ruby)",
+		VersionArgs: []string{"--version"},
 		InstallVia: []InstallCandidate{
-			{Manager: "brew", Args: []string{"install", "rubocop"}},
 			{Manager: "gem", Args: []string{"install", "rubocop"}},
 		},
 	}

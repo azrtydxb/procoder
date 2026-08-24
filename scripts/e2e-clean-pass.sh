@@ -112,3 +112,22 @@ run index-impact index impact greet/greet.go
 printf '\n%s\n' "pass=$pass finding=$finding notrun=$notrun" >>"$OUT/report.txt"
 cat "$OUT/report.txt"
 echo "logs: $OUT/log"
+
+# Every package name procoder tells a person to install must exist. This
+# found `brew install rubocop`, which procoder had been printing to
+# everyone missing it and which has never been a formula. Needs brew and
+# the network, so it reports NOT RUN rather than passing when it cannot ask.
+if command -v brew >/dev/null 2>&1; then
+	bad=0
+	for f in $(grep -oE '\{Manager: "brew", Args: \[\]string\{"install", "[^"]+"' \
+		"$(dirname "$0")/../internal/tools/tools.go" | grep -oE '"[^"]+"$' | tr -d '"' | sort -u); do
+		brew info --formula "$f" >/dev/null 2>&1 || {
+			echo "FINDING   brew formula named by procoder does not exist: $f" >>"$OUT/report.txt"
+			bad=$((bad + 1))
+		}
+	done
+	[ "$bad" = 0 ] && echo "PASS      every brew formula procoder names exists" >>"$OUT/report.txt"
+else
+	echo "NOT RUN   brew formula names — brew is not installed here" >>"$OUT/report.txt"
+fi
+tail -3 "$OUT/report.txt"

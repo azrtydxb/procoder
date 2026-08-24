@@ -36,6 +36,12 @@ type Step struct {
 	Manager  string
 	Args     []string
 	Fallback string
+	// Rest is the candidates after the chosen one whose manager is also on
+	// this machine. A package manager being installed is not the same as it
+	// carrying the formula: `brew install rubocop` fails on every machine,
+	// because there is no such formula, and rubocop ships as a gem. Without
+	// these, the first candidate failing ended the attempt.
+	Rest []tools.InstallCandidate
 }
 
 // Plan surveys root and returns one Step per missing formatter. Tools already
@@ -52,12 +58,16 @@ func Plan(root string) []Step {
 }
 
 func choose(t *tools.Tool) Step {
+	var usable []tools.InstallCandidate
 	for _, c := range t.InstallVia {
 		if _, err := exec.LookPath(c.Manager); err == nil {
-			return Step{Tool: t, Manager: c.Manager, Args: c.Args}
+			usable = append(usable, c)
 		}
 	}
-	return Step{Tool: t, Fallback: t.Install}
+	if len(usable) == 0 {
+		return Step{Tool: t, Fallback: t.Install}
+	}
+	return Step{Tool: t, Manager: usable[0].Manager, Args: usable[0].Args, Rest: usable[1:]}
 }
 
 // Run prints the plan; with execute it also carries it out. Returns the exit
@@ -92,7 +102,19 @@ func Run(root string, execute bool, stdout io.Writer) int {
 			continue
 		}
 		fmt.Fprintf(stdout, "\n== %s %s\n", s.Manager, strings.Join(s.Args, " "))
-		if err := runInstall(s, stdout); err != nil {
+		err := runInstall(s.Manager, s.Args, stdout)
+		// A failed installer is not the end of the attempt while another
+		// package manager on this machine also carries the tool.
+		for _, c := range s.Rest {
+			if err == nil {
+				break
+			}
+			fmt.Fprintf(stdout, "procoder init: %s via %s failed (%v) — trying %s\n",
+				s.Tool.Name, s.Manager, err, c.Manager)
+			fmt.Fprintf(stdout, "\n== %s %s\n", c.Manager, strings.Join(c.Args, " "))
+			err = runInstall(c.Manager, c.Args, stdout)
+		}
+		if err != nil {
 			fmt.Fprintf(stdout, "procoder init: %s failed: %v\n", s.Tool.Name, err)
 			failed++
 		}
@@ -109,10 +131,10 @@ func Run(root string, execute bool, stdout io.Writer) int {
 	return 1
 }
 
-func runInstall(s Step, stdout io.Writer) error {
+func runInstall(manager string, args []string, stdout io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), installTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, s.Manager, s.Args...) // nosemgrep -- resolved from the fixed tool table, never user input
+	cmd := exec.CommandContext(ctx, manager, args...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Stdout = stdout
 	cmd.Stderr = stdout
 	err := cmd.Run()
