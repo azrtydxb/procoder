@@ -1,6 +1,6 @@
 # The hooks, fed real payloads on stdin
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 016-the-hooks-fed-real-payloads-and-the-docs-held-to-the-binary

@@ -1,6 +1,6 @@
 # the hooks fed real payloads, and the docs held to the binary
 
-Status: active
+Status: closed 2026-08-24
 Created: 2026-08-24
 
 ## Goal
@@ -30,3 +30,17 @@ Sprint 015 found three commands missing from `procoder help` by comparing
 the dispatch against the docs. This sprint does that comparison properly,
 in both directions, for what each command actually does rather than
 whether it is mentioned.
+
+## Result
+
+committed: 2
+done: 2 (20260824-each-of-sessionstart-posttooluse-pretooluse-and-stop-is-fed, 20260824-every-command-documented-in-docs-commands-md-is-invoked-and)
+carried: 0
+
+## Retro
+
+<!-- What slowed us down this sprint. -->
+
+<!-- What we change next sprint because of it. -->
+
+<!-- One adaptation from this sprint worth keeping. -->
