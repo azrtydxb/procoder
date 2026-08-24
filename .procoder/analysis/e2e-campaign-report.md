@@ -35,6 +35,34 @@ twice and comparing.
 | F-9  | medium   | `brew install rubocop` — no such formula, and no fallthrough to the gem    | fixed  |
 | F-10 | medium   | A tool installed exactly where procoder said to put it stayed unresolvable | fixed  |
 | F-11 | medium   | `dependencies = []` was read as a dependency set — a gap about nothing     | fixed  |
+| F-12 | high     | `procoder security` was weaker than the gate it previews                   | fixed  |
+| F-13 | medium   | `config`, `review` and `analyze` shipped absent from `procoder help`       | fixed  |
+| F-14 | low      | `docs --ack` — what the gate tells agents to run — was undocumented        | fixed  |
+| F-15 | low      | `principles --hook` missing from the command reference                     | fixed  |
+| F-16 | medium   | `ci --runs` was in a heading and explained nowhere, exit code included     | fixed  |
+| F-17 | high     | The release controller pronounced an already-tagged version ready          | fixed  |
+
+**F-12 is the one the broken pass exists for.** A hardcoded AWS key in a
+changed file: the commit gate blocked it, and `procoder security` — the
+command a person runs to check their work before committing — reported
+"0 finding(s) (0 blocking)". The gate runs the secret scanner AND the SAST
+leg over changed files; the command ran only the first. Reachable rather
+than theoretical, because the two genuinely differ: gitleaks does not fire
+on a bare `const K = "AKIA…"` in Go, and semgrep does.
+
+**F-17 came from cutting a real release** and then asking for the same
+version again: "ready — tag it: `git tag -a v0.2.0`", for a tag that
+existed and a release that was published. The printed command answers
+"fatal: tag 'v0.2.0' already exists". No local fixture could have produced
+it — it needs a tag that exists, which needs a release that happened.
+
+**F-9 and F-10 are the same shape as F-17, twice more.** `brew install
+rubocop` has never been a formula; rubocop ships as a gem, and brew being
+on PATH meant the gem candidate was never reached. `composer global
+require phpstan/phpstan`, which procoder also prints, installs into
+`~/.composer/vendor/bin` and puts nothing on PATH — so following procoder's
+advice exactly left procoder still reporting the tool missing. Three
+findings in one family: **an instruction procoder gives that cannot work.**
 
 **F-1.** `procoder check --staged` exited 0. The arm hands `args[1:]` to
 the gate as paths, no formatter covers a file called `--staged`, so it
@@ -125,3 +153,100 @@ template as a check that never happened.
 --external` and the release path are sprint 017.
 - **The hooks were not fed payloads.** Sprint 016.
 - **The docs were not compared against the binary.** Sprint 016.
+
+## Sprint 015 — the broken pass
+
+Twenty-two defects planted, each alone in a freshly built fixture and
+removed before the next: two at once cannot tell you which was found.
+**21 caught, 0 missed, 1 NOT RUN** (C# formatting needs a dotnet SDK this
+machine does not have).
+
+Every catch is matched against the owning command's verdict text, not the
+planted file's name — `unformatted  <file>`, `merge conflict marker left
+in the file`, `over the 5 MB limit`, `[no-trigger]`, `broken reference`,
+`SC2034`, `subprocess-shell-true`, `AWS Access Key ID Value detected`,
+`golang.org/x/text`.
+
+The security domain is proved in the directions the product offers. A
+planted secret, a SAST finding and a vulnerable dependency each block; an
+absent scanner reports "NOT checked — semgrep is not installed" rather
+than clean; and the flagged credential's VALUE appears in no finding, no
+`QA.md` entry and no hook payload, asserted by searching each for it.
+
+One criterion was rewritten rather than quietly dropped. "Each stops
+blocking when the documented configuration relaxes it" was written on a
+premise measurement disproved: procoder documents one security knob,
+`sast_blocks_at`, and all three of its values only make MORE findings
+block. Secrets and vulnerable dependencies have no relaxation at all. The
+criterion was unsatisfiable rather than unmet.
+
+The `WARNING`/`ERROR` boundary is recorded **UNPROVED**, not passed:
+semgrep's `--config auto` produces no WARNING-severity finding this fixture
+can carry, so both settings block the same one.
+
+## Sprint 016 — the hooks and the docs
+
+**20 hook assertions, 0 failures**, at the process boundary the suite
+cannot reach. PreToolUse returns `permissionDecision: "deny"` with a reason
+naming the file and the fix, and lets a non-commit Bash call through with
+no decision at all. PostToolUse returns `additionalContext` carrying
+gofmt's output and the sentence saying the file was NOT modified — with
+the file, read back after, unmodified. Empty stdin, a truncated payload
+and a payload naming a missing file crash nothing.
+
+**53 docs assertions, 0 failures.** Every documented flag is accepted,
+every implemented flag is documented, the ADR 0003 exit codes hold, and 28
+read-only invocations leave the tree byte-identical.
+
+## Sprint 017 — the GitHub half
+
+`ci --runs` read four real states: in progress, success, failure with the
+failing job named, and "HEAD is not pushed — CI cannot have seen it".
+`copilot-leak` answered live. `docs --external` reported Pages as not
+enabled and blocked on a real 404 with URL and line. A release was cut end
+to end and verified by download: the published checksum matched the
+downloaded binary, and it ran.
+
+**Not covered:** the Pages health check's "enabled but stale" branch.
+Enabling Pages on a throwaway repository to reach one branch was judged
+out of proportion, and it is written down rather than left to read as
+tested.
+
+## Findings in the campaign itself
+
+Seven, and they matter because each one made a broken check look like a
+working one:
+
+1. The clean-pass classifier claimed NOT RUN for any output containing
+   "missing", reading a finding about an absent PR template as a check
+   that never happened.
+2. The brew-formula check read `tools.go` by a path relative to a
+   directory the script had already left; grep matched nothing, the loop
+   ran zero times, and it reported every formula valid.
+3. The broken-pass catch test matched the planted file's name, so
+   `UNCHECKED cs/Sloppy.cs — csharpier is not installed` counted as a
+   catch.
+4. Correcting (3) over-reached and called Dart a NOT RUN, because procoder
+   separately reports "NOT linted — Dart: procoder has no linter for it
+   yet" about a file whose formatter had caught the defect.
+5. Under `set -o pipefail`, `procoder security | grep -q X` fails whenever
+   procoder exits 1 — which is what procoder does when it finds something
+   — so two checks that matched perfectly read as checks that failed.
+6. The docs pass was edited while bash was executing it; bash reads
+   incrementally from a byte offset, so its P-CONTROL block ran twice and
+   it reported 73 passes instead of 50. A count that is too HIGH reads as
+   better news.
+7. The P-CONTROL loop ran `procoder format` only over already-clean files,
+   so the branch that prints a rewritten file never executed — and a
+   mutation making that branch write to disk passed the check untouched.
+
+Five of the seven are one shape: **a grep that finds nothing is
+indistinguishable from a grep that found nothing wrong.** Two are the
+other: **a check that never reaches the dangerous branch reports success
+from the safe one.** Both are recorded in `.procoder/github/LESSONS.md`.
+
+Three times the interesting-looking finding turned out to be the
+instrument rather than the subject — lodash 4.18.1 was a real version,
+`ci --emit` was planned work rather than a broken promise, and a `.invalid`
+dead link is excluded by lychee under RFC 2606. Each check cost about a
+minute.
