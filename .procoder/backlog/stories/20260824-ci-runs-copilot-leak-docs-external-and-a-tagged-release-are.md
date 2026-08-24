@@ -1,6 +1,6 @@
 # The GitHub-dependent commands, against a throwaway public repository
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 017-procoder-against-a-real-github-repository-ci-and-a-release
