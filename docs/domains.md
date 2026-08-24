@@ -180,6 +180,23 @@ presence checks alone let documentation rot silently.
 Rules live in `.procoder/docs/RULES.md`; this site is built and deployed
 by the harness's own CI job.
 
+The version those pages are held to is read from
+`.claude-plugin/plugin.json`, then `package.json` — deliberately not from
+every manifest a repository might carry, because a polyglot tree declares
+a version in several places and holding its README to whichever procoder
+found first means blocking on a number the project never meant as its
+own. A repository names its own source instead:
+
+```markdown
+## Version source
+
+- crates/app/metadata.json:release
+```
+
+The entry is a path to a JSON file, optionally `path:key` (`version` is
+assumed). The literal `none` switches the check off for repositories that
+do not publish a version at all.
+
 Decisions are documentation too, and they rot differently: prose can be
 corrected, but a decision rewritten after the fact loses the reason it
 was taken. `procoder adr` keeps them under `.procoder/adr/` as numbered,
