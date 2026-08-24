@@ -49,6 +49,39 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 2.0.1 — 2026-08-24
+
+_The changelog's own rules are checked now, including the one about
+crediting the right person — which was written down after it was broken,
+and left as prose until now._
+
+**Fixed — four of the six changelog rules were written down and never
+checked.** ([#168](https://github.com/azrtydxb/procoder/pull/168)) The
+suite enforced the italic summary and the headline kind. It did not
+enforce that an entry links the pull request that shipped it, or that a
+contributor is named AND linked — both added in
+[#157](https://github.com/azrtydxb/procoder/pull/157), after a merged
+commit credited the wrong person, and both left as prose. Prose was what
+had just failed.
+
+Now checked on the newest entry, which is the one the release job
+publishes verbatim: an unlinked claim is one a reader on the release
+page cannot follow, and a bare handle inside a Markdown file renders as
+text and leads nowhere, so a credit written that way is not a credit.
+
+**Fixed — a credited contributor is verified against GitHub before a
+release is called ready.**
+([#169](https://github.com/azrtydxb/procoder/pull/169)) `procoder
+release` now asks who actually opened each issue and pull request an
+entry cites, and refuses when a credited handle opened none of what its
+paragraph links. The message names who did open them, so the correction
+is in the error rather than another lookup away.
+
+This is the only check in the controller that reaches the network, and
+it can, because the tag it prepares is published by a job that talks to
+the same API. GitHub not answering is reported as NOT verified and
+blocks — a credit nothing checked is exactly how the wrong name ships.
+
 ## 2.0.0 — 2026-08-24
 
 _Procoder gains an opinion about a change, a phase before the spec, and a

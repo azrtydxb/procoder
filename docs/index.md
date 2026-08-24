@@ -7,7 +7,7 @@ bug's whole class, and one contract that works across every AI coding
 agent. The agent stays in control; nothing ever touches your code behind
 its back.
 
-Current version: **2.0.0**
+Current version: **2.0.1**
 
 ```mermaid
 flowchart LR
