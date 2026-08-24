@@ -280,8 +280,12 @@ var (
 		},
 	}
 	csharpier = &Tool{
-		Name:        "csharpier",
-		Args:        func(f string) []string { return []string{"format", "--write-stdout", f} },
+		Name: "csharpier",
+		// --no-cache: csharpier 1.x keeps a formatting cache and prints
+		// nothing for a file it has already seen, which the print-not-write
+		// contract this tool exists for reads as "did not answer" — a
+		// correctly formatted file then fails the gate as UNCHECKED.
+		Args:        func(f string) []string { return []string{"format", "--write-stdout", "--no-cache", f} },
 		Install:     "dotnet tool install -g csharpier",
 		VersionArgs: []string{"--version"},
 		InstallVia: []InstallCandidate{
