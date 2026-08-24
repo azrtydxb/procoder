@@ -47,6 +47,89 @@ Rules that earn their place:
   from memory or another entry's context.
 -->
 
+## 2.0.0 — 2026-08-24
+
+_Procoder gains an opinion about a change, a phase before the spec, and a
+way to hand planning to BMad Method entirely — and a spec can no longer
+promise more than it tests._
+
+**Changed — a spec that promises more than it tests is no longer
+complete.** ([#166](https://github.com/azrtydxb/procoder/pull/166)) This
+is the breaking change, and the reason for the major version: `procoder
+spec check` now exits 1 on specs that passed yesterday, and `procoder
+backlog seed` refuses them.
+
+Every `## In scope` bullet carries an id, and at least one acceptance
+criterion must cite it:
+
+```
+- [S-1] the thing being built
+- [ ] [S-1] the observable behaviour that proves it
+```
+
+Scope no criterion cites is a gap, a gap makes the spec incomplete, and
+seed refuses an incomplete spec. **Work cannot be seeded from a spec that
+promises more than it tests.**
+
+It exists because that is exactly what happened here. A spec put five
+things in scope, wrote criteria for three, and passed every check
+Procoder had. Seed writes one story per criterion, so the two untested
+promises became no stories, got no sprint, and were never missed — the
+epic closed at "fourteen of fourteen" with two of five features never
+built. The verdict was true and useless: fourteen of fourteen
+_criteria_, not fourteen of fourteen _scope_.
+
+**To upgrade:** label the bullets in each spec's In scope section and cite
+those ids from the criteria that cover them. A spec whose bullets carry
+no ids is reported NOT CHECKED rather than assumed covered — coverage is
+declared, never guessed, because matching prose to prose would fail open
+and a bullet wrongly judged covered is the silence this prevents.
+
+**Added — `procoder review`, five stances over a change.**
+([#163](https://github.com/azrtydxb/procoder/pull/163)) Every other check
+Procoder runs is mechanical and has one right answer; this one asks the
+questions that do not. Adversarial (assume it is wrong and find where),
+edge-case (enumerate paths, report only the unhandled), verification-gap
+(would verification actually fail if this broke?), structure, and prose.
+`--perspectives` reads with a different set — analyst, architect,
+implementer, reviewer — meant for a spec or a plan, where the
+architectural question is still cheap to answer.
+
+The binary judges nothing: it prints the lens and the scope, the agent
+judges, and nothing on disk changes. Any lens or perspective is
+replaceable from `.procoder/review/`; one that cannot be read blocks and
+prints nothing at all, because a review under your own name running
+Procoder's words is worse than no review.
+
+**Added — `procoder analyze`, the phase before the spec.**
+([#165](https://github.com/azrtydxb/procoder/pull/165)) `spec check`
+judges whether a document is complete, never whether the idea in it is
+good — it will pass a thoroughly filled-in specification for the wrong
+feature. An analysis document asks what is actually undecided, what is
+known and how, what is not, what the options cost, and which one and why.
+Never required. `analyze where` names every entry point in the chain and
+says plainly that nothing makes you start above the one you need.
+
+**Added — a repository can hand planning to BMad Method.**
+([#165](https://github.com/azrtydxb/procoder/pull/165)) `[planning]
+method = "bmad"` and Procoder reads that installation's artifacts —
+sprint status, its own output folder, its version — instead of demanding
+`.procoder/specs`, `plans` and `backlog`.
+
+**The setting moves planning and nothing else.** The gate, the suite,
+formatting, the release controller, the debt ledger, security and docs
+reach the same verdict about the same code either way, asserted by a test
+rather than promised. Setting it with no such installation present is a
+blocking finding naming both, never a silent fall back to Procoder's own
+chain.
+
+**Fixed — three defects in the artifact reader, two of them silent.**
+([#165](https://github.com/azrtydxb/procoder/pull/165)) An inline `#`
+comment was read as part of the value in both TOML and YAML, so a
+repository mid-sprint would have been told it had planned nothing, and a
+finished story would have counted as open _and_ been reported as an
+unknown status.
+
 ## 1.5.0 — 2026-08-24
 
 _Two bugs that made procoder unusable for a whole language are fixed,
