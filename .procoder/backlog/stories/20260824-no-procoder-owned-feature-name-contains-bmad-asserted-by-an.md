@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-24
 Epic: planning-methodology
-Sprint: -
+Sprint: 012-review-with-judgment-not-just-tooling
 
 ## Description
 
