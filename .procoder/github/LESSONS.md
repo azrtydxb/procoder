@@ -310,3 +310,22 @@ cs/Sloppy.cs — csharpier is not installed` — which names the file and
   perfectly well. A false skip is as wrong as a false pass, and both were
   caught only by replaying the classifier over logs already on disk rather
   than trusting the second version.
+
+## 2026-08-24 e2e-campaign (self) — a shell script edited while it was running re-executed part of itself
+
+- Class: mechanical
+- Missed by: nothing — the harness again, and the duplicate output nearly passed for a longer report
+- Adaptation: bash reads a script incrementally from a byte offset rather
+  than loading it whole, so rewriting the file underneath a running
+  invocation moves what the next read returns. The docs pass came back
+  with its P-CONTROL block executed twice and a pass count inflated by
+  twenty-five, which looks exactly like a more thorough run. Nothing in
+  the output says "this ran twice"; it was visible only because the
+  section repeated verbatim and the total did not match what the script
+  could produce.
+
+  The rule: never edit a script that is currently executing — queue the
+  edit, or copy the script and edit the copy. And when a harness reports a
+  count, know what the maximum possible count is, because a number that is
+  too HIGH is as much a defect as one that is too low and reads as better
+  news.

@@ -1,3 +1,3 @@
-# procoder bench baseline 2026-08-24 7a065e1 darwin/arm64
-BenchmarkRefreshRewritesTheIndex-10    	      64	  20417629 ns/op	 3295584 B/op	    3306 allocs/op
-BenchmarkDriftOverATypicalCorpus-10    	      66	  17568780 ns/op	  337319 B/op	    2035 allocs/op
+# procoder bench baseline 2026-08-24 2dc122c darwin/arm64
+BenchmarkRefreshRewritesTheIndex-10    	      78	  14171815 ns/op	 3292310 B/op	    3297 allocs/op
+BenchmarkDriftOverATypicalCorpus-10    	      88	  13853635 ns/op	  339153 B/op	    2022 allocs/op

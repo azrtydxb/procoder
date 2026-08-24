@@ -57,6 +57,65 @@ while read -r cmd flag; do
 	fi
 done <"$OUT/docflags.txt"
 
+# The other direction: a flag the binary accepts that no entry advertises.
+# `procoder review --perspectives` reads a change as analyst, architect,
+# implementer and reviewer in turn, and nobody reading the docs would know
+# it exists.
+python3 - "$REPO/cmd/procoder/flags.go" "$OUT/docflags.txt" "$REPO/docs/commands.md" >"$OUT/undocflags.txt" <<'PYEOF'
+import re, sys
+
+src = open(sys.argv[1]).read()
+# sliced rather than matched: the regex for this block was written twice and
+# wrong twice, and a table it fails to find scans zero flags and reports
+# every flag documented — the empty-match pass, again.
+i = src.index("var knownFlags = map")
+table = src[i:src.index("\n}", i)]
+
+documented = set()
+for line in open(sys.argv[2]):
+    parts = line.split()
+    if len(parts) == 2:
+        documented.add(tuple(parts))
+
+docs = open(sys.argv[3]).read()
+found = 0
+for m in re.finditer(r'"([a-z-]+)":\s*\{([^}]*)\}', table):
+    cmd = m.group(1)
+    for f in re.findall(r'"(--[a-z-]+)"', m.group(2)):
+        found += 1
+        if (cmd, f) not in documented and f not in docs:
+            print(cmd, f)
+if found == 0:
+    print("SCAN-FAILED knownFlags")
+PYEOF'
+import re, sys
+src = open(sys.argv[1]).read()
+table = re.search(r'var knownFlags = map\[string\]\[\]string\{(.*?)
+\}', src, re.S)
+documented = set()
+for line in open(sys.argv[2]):
+    parts = line.split()
+    if len(parts) == 2:
+        documented.add(tuple(parts))
+docs = open(sys.argv[3]).read()
+for m in re.finditer(r'"([a-z-]+)":\s*\{([^}]*)\}', table.group(1) if table else ""):
+    cmd = m.group(1)
+    for f in re.findall(r'"(--[a-z-]+)"', m.group(2)):
+        if (cmd, f) not in documented and f not in docs:
+            print(cmd, f)
+PYEOF
+
+if grep -q 'SCAN-FAILED' "$OUT/undocflags.txt"; then
+	say FAIL "could not read knownFlags from flags.go — this check proved nothing"
+elif [ -s "$OUT/undocflags.txt" ]; then
+	while read -r cmd flag; do
+		[ -z "$cmd" ] && continue
+		say FAIL "\`procoder $cmd $flag\` is implemented and documented nowhere"
+	done <"$OUT/undocflags.txt"
+else
+	say PASS "every implemented flag appears in docs/commands.md"
+fi
+
 # ---- 2. the exit codes ADR 0003 promises ------------------------------
 "$REPO/scripts/build-e2e-fixture.sh" >/dev/null 2>&1
 cd "$FX" || exit 2
@@ -92,10 +151,18 @@ digest() {
 		sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1
 }
 
+# An UNFORMATTED file, planted before the loop. Running `procoder format`
+# only on files that are already clean tests nothing: the unformatted
+# branch — the one that prints a whole rewritten file — never executes, so
+# a mutation that made it write to disk passed the P-CONTROL check
+# untouched. This is the case P-CONTROL exists for.
+printf 'package greet\n\nfunc  Untidy( ) int {\nreturn 1\n}\n' >greet/untidy.go
+
 for cmd in "status" "check" "git" "ci" "lint" "maintain" "security" "debt" "docs" \
 	"config" "doctor" "init" "principles" "agents" "templates" "lessons" "review" \
 	"backlog board" "sprint status" "todo list" "spec list" "plan list" "analyze list" \
-	"format greet/greet.go" "format main.go"; do
+	"format greet/greet.go" "format main.go" "format greet/untidy.go" \
+	"check greet/untidy.go" "lint greet/untidy.go"; do
 	before=$(digest)
 	# shellcheck disable=SC2086
 	"$PC" $cmd >/dev/null 2>&1
@@ -108,6 +175,8 @@ for cmd in "status" "check" "git" "ci" "lint" "maintain" "security" "debt" "docs
 		say FAIL "\`procoder $cmd\` CHANGED the tree"
 	fi
 done
+
+rm -f greet/untidy.go
 
 cd "$REPO" || exit 2
 printf '\npass=%s fail=%s\n' "$pass" "$fail" >>"$OUT/report.txt"

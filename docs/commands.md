@@ -372,12 +372,19 @@ Dead-code candidates from the index's precise tier, cyclomatic complexity
 and function length from isolated linter runs. Nothing blocks; thresholds
 are the repo's to set (`[maintain]` in config.toml).
 
-#### `procoder docs [--external]`
+#### `procoder docs [--external] [--ack <reason>]`
 
 Broken relative references and non-compiling Mermaid diagrams block; doc
 drift, missing API doc comments, required docs, badges, README structure,
 version-tracked pages, and command coverage report. `--external` adds
 lychee link checking and GitHub Pages health.
+
+`--ack <reason>` prints the one line that clears the documentation
+obligation for a change that genuinely needs no documentation. When a
+commit adds an exported symbol and touches no documentation file, the gate
+blocks and names this command; the agent puts the printed line in the
+commit message, where a reviewer sees the decision and its reason instead
+of a silent skip. The binary prints the line — it never edits the message.
 
 #### `procoder ci [--runs]`
 
@@ -560,10 +567,11 @@ cannot parse, it reports NOT checked and exits 2 rather than reporting zero.
 A repository with no GitHub remote is a different case: there are no
 auto-reviews to ask about, so the empty answer is real and the exit is 0.
 
-#### `procoder principles`
+#### `procoder principles [--hook]`
 
-Prints the engineering principles each session starts with (a SessionStart
-hook injects them): build-ladder first — reuse, stdlib, platform, then the
+Prints the engineering principles each session starts with (`--hook` is
+how the SessionStart hook asks for them, wrapped in the envelope its host
+reads; without it the same content goes to the terminal): build-ladder first — reuse, stdlib, platform, then the
 minimum code that works — the delegation discipline (independent work
 fans out to parallel subagents under a clear contract, nothing started
 that somebody else is already on, watched as it
