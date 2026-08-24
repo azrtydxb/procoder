@@ -1,9 +1,9 @@
 # A repository carrying `.procoder/review/lenses/adversarial.md` gets that content in place of the shipped lens; without the file it gets the shipped one unchanged.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
-Sprint: -
+Sprint: 012-review-with-judgment-not-just-tooling
 
 ## Description
 
@@ -20,9 +20,8 @@ unchanged.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] A repository carrying `.procoder/review/lenses/adversarial.md` gets that content in place of the shipped lens; without the file it gets the shipped one unchanged.
+- [x] A repository carrying `.procoder/review/lenses/adversarial.md` gets that content in place of the shipped lens; without the file it gets the shipped one unchanged.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/review/ -run TestAnOverrideReplacesTheShippedLens` — the override's content is what runs, the other four stay procoder's, and the printed lens names its source so a reader knows whose words they are reading. Verified end to end against a fixture carrying `.procoder/review/lenses/adversarial.md`. Mutation proven: Resolve ignoring the override directory returns procoder's shipped lens under the repository's name.

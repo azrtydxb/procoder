@@ -1,9 +1,9 @@
 # `procoder review --lens edge-case` prints exactly that lens and exits 0; an unrecognised name reports the name, prints no lens at all, and exits 2 — a usage error, not a finding.
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: planning-methodology
-Sprint: -
+Sprint: 012-review-with-judgment-not-just-tooling
 
 ## Description
 
@@ -20,9 +20,8 @@ reader believing they got the lens they asked for.
 <!-- Each criterion is testable. Check a box ONLY when it is verifiably
      true — the closer will ask for the evidence. -->
 
-- [ ] `procoder review --lens edge-case` prints exactly that lens and exits 0; an unrecognised name reports the name, prints no lens at all, and exits 2 — a usage error, not a finding.
+- [x] `procoder review --lens edge-case` prints exactly that lens and exits 0; an unrecognised name reports the name, prints no lens at all, and exits 2 — a usage error, not a finding.
 
 ## Evidence
 
-<!-- Filled at close time: the commands run and what their output proved,
-     one line per criterion. Empty evidence keeps the story open. -->
+- `go test ./internal/review/ -run TestSelectNarrowsAndNamesWhatItDoesNotKnow` — `--lens edge-case` yields exactly that lens, selection keeps the caller's order rather than the shipped one, and an unknown name comes back by name. Verified end to end: `procoder review --lens edge-case` exits 0; `--lens nope` prints `no such lens: nope — procoder has adversarial, edge-case, verification-gap, structure, prose` and exits 2, a usage error per ADR 0003. Mutation proven: Select swallowing the unknown name gives a full review and exit 0.
