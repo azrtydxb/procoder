@@ -1,6 +1,6 @@
 # The fixture repository, built from a script rather than copied
 
-Status: open
+Status: done 2026-08-24
 Created: 2026-08-24
 Epic: e2e-campaign
 Sprint: 014-a-fixture-that-is-not-this-repository-and-a-clean-pass-over

@@ -1,6 +1,6 @@
 # a fixture that is not this repository, and a clean pass over it
 
-Status: active
+Status: closed 2026-08-24
 Created: 2026-08-24
 
 ## Goal
@@ -22,3 +22,17 @@ passes nor the defects.
 Nothing here plants a defect. That is the next sprint, and it is the one
 that proves this sprint's silence meant something — which is why this
 sprint's output is a table of what ran, not a claim that all is well.
+
+## Result
+
+committed: 2
+done: 2 (20260824-a-script-builds-a-fixture-repository-from-git-init-alone, 20260824-every-offline-command-is-invoked-against-the-healthy)
+carried: 0
+
+## Retro
+
+<!-- What slowed us down this sprint. -->
+
+<!-- What we change next sprint because of it. -->
+
+<!-- One adaptation from this sprint worth keeping. -->
