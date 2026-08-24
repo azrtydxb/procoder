@@ -410,8 +410,18 @@ func Resolve(t *Tool, repoRoot string) string {
 		dirs := kegDirs()
 		if home, herr := os.UserHomeDir(); herr == nil {
 			dirs = append(dirs, filepath.Join(home, "go", "bin"), filepath.Join(home, ".local", "bin"),
-				filepath.Join(home, ".dotnet", "tools"))
+				filepath.Join(home, ".dotnet", "tools"),
+				// composer's global bin, both layouts. procoder's own
+				// instruction for phpstan is `composer global require`,
+				// which installs here and nowhere on PATH — so following
+				// procoder's advice exactly left procoder still reporting
+				// the tool missing.
+				filepath.Join(home, ".composer", "vendor", "bin"),
+				filepath.Join(home, ".config", "composer", "vendor", "bin"),
+				// gem's per-user bin, for the same reason
+				filepath.Join(home, ".gem", "bin"))
 		}
+		dirs = append(dirs, gemBinDirs()...)
 		{
 			for _, dir := range dirs {
 				for _, name := range candidateNames(t.Name) {
@@ -446,6 +456,30 @@ func Resolve(t *Tool, repoRoot string) string {
 // would install the tool, the resurvey would still report it missing, and
 // C/C++ would stay blocked with a remedy that had already been carried
 // out. That is worse than the original silence: a wall with no door.
+// gemBinDirs are where a brewed Ruby puts the executables `gem install`
+// creates. Homebrew keeps Ruby keg-only, so neither the interpreter nor
+// anything installed through it reaches PATH by default — which is how
+// `gem install rubocop` can succeed and leave procoder reporting rubocop
+// missing. The version component varies, so it is globbed rather than
+// guessed.
+func gemBinDirs() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	var out []string
+	for _, pat := range []string{
+		"/opt/homebrew/lib/ruby/gems/*/bin",
+		"/usr/local/lib/ruby/gems/*/bin",
+	} {
+		matches, err := filepath.Glob(pat)
+		if err != nil {
+			continue
+		}
+		out = append(out, matches...)
+	}
+	return out
+}
+
 func kegDirs() []string {
 	if runtime.GOOS == "windows" {
 		return nil
