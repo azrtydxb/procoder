@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -331,7 +332,7 @@ func sast(root string) []gitx.Finding {
 	}
 	if json.Unmarshal(buf.Bytes(), &rep) != nil {
 		return []gitx.Finding{{Blocking: true,
-			Message: "semgrep output unreadable — SAST was NOT run: " + firstLine(errb.String()+errStr(err)) + " (security)"}}
+			Message: "semgrep output unreadable — SAST was NOT run: " + why(errb.String(), err) + " (security)"}}
 	}
 	var out []gitx.Finding
 	for _, r := range rep.Results {
@@ -358,7 +359,13 @@ func sast(root string) []gitx.Finding {
 // Podfile.lock is deliberately absent: osv has no extractor for it and one
 // bad -L fails the whole invocation (verified against 2.5.1).
 var DepManifests = []string{"go.mod", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-	"requirements.txt", "poetry.lock", "Pipfile.lock", "pyproject.toml",
+	// pyproject.toml is deliberately absent: it declares ranges rather
+	// than pinned versions, so osv-scanner has no extractor for it and
+	// exits non-zero WITHOUT emitting JSON — which took every other
+	// manifest in the same invocation down with it. A repository with a
+	// pyproject.toml and no lock file is reported as a gap below, the
+	// same way a bare package.json is, rather than scanned and lost.
+	"requirements.txt", "poetry.lock", "Pipfile.lock",
 	"Cargo.lock", "composer.lock", "Gemfile.lock",
 	"pom.xml", "gradle.lockfile", "buildscript-gradle.lockfile",
 	"packages.lock.json", "Package.resolved",
@@ -386,6 +393,10 @@ func Deps(root string) []gitx.Finding {
 	for _, gap := range npmGaps(root) {
 		out = append(out, gitx.Finding{Blocking: true, File: gap,
 			Message: "npm dependencies NOT checked — this package.json declares dependencies but no lockfile exists beside it for osv-scanner; generate package-lock.json (security)"})
+	}
+	for _, gap := range pythonGaps(root) {
+		out = append(out, gitx.Finding{Blocking: true, File: gap,
+			Message: "python dependencies NOT checked — this pyproject.toml declares dependencies but no lock file exists beside it for osv-scanner; generate poetry.lock, Pipfile.lock or requirements.txt (security)"})
 	}
 	if len(margs) == 0 {
 		if len(out) > 0 {
@@ -423,7 +434,7 @@ func Deps(root string) []gitx.Finding {
 	}
 	if json.Unmarshal(buf.Bytes(), &rep) != nil {
 		return append(out, gitx.Finding{Blocking: true,
-			Message: "osv-scanner output unreadable — dependencies were NOT checked: " + firstLine(errb.String()+errStr(err)) + " (security)"})
+			Message: "osv-scanner output unreadable — dependencies were NOT checked: " + why(errb.String(), err) + " (security)"})
 	}
 	for _, r := range rep.Results {
 		for _, p := range r.Packages {
@@ -496,6 +507,114 @@ func hasNpmDepsWithoutLockfile(root string) bool {
 		return true // unparseable manifest: assume deps, stay honest
 	}
 	return len(m.Dependencies)+len(m.DevDependencies) > 0
+}
+
+// pythonGaps finds every pyproject.toml declaring dependencies with no
+// lock file beside it — the Python half of the honest gap npm already
+// gets. Without it, dropping pyproject.toml from DepManifests would mean
+// a Python repository is told its dependencies are clean when nothing
+// looked at them.
+func pythonGaps(root string) []string {
+	var out []string
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable directory hides its own packages, not the others
+		}
+		if info.IsDir() {
+			if p != root && manifestDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if info.Name() != "pyproject.toml" {
+			return nil
+		}
+		if hasPythonDepsWithoutLockfile(filepath.Dir(p)) {
+			if rel, ok := gitx.RepoRel(root, p); ok {
+				out = append(out, rel)
+			}
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
+// hasPythonDepsWithoutLockfile answers for ONE directory: a pyproject.toml
+// there declaring dependencies with nothing pinned beside it.
+func hasPythonDepsWithoutLockfile(root string) bool {
+	for _, lock := range []string{"poetry.lock", "Pipfile.lock", "requirements.txt", "uv.lock", "pdm.lock"} {
+		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
+			return false
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "pyproject.toml"))
+	if err != nil {
+		return false
+	}
+	// A dependency table under any of the layouts in use: PEP 621's
+	// `dependencies = [...]`, poetry's `[tool.poetry.dependencies]`, and
+	// PEP 735's `[dependency-groups]`. Matching the key rather than
+	// parsing TOML keeps this a read, which is what the gate can afford —
+	// but the key alone is not the answer. `dependencies = []` declares
+	// nothing, and reporting a gap there tells a project with no
+	// dependencies that its dependencies were not checked.
+	return pyDeps.MatchString(string(raw))
+}
+
+// pyDeps matches a dependency declaration that actually has something in
+// it: a PEP 621 or PEP 735 list with a first element, or a poetry table
+// with a first key. An empty list or an empty table is not a dependency
+// set, and neither is the word appearing in prose.
+//
+// The key half is spelled out rather than left as `[a-zA-Z0-9_-]+`. That
+// alternation matched ANY non-empty list assignment, so a project with
+// `dependencies = []` and `keywords = ["cli"]` — no dependencies at all —
+// was blocked with "python dependencies NOT checked". A blocking false
+// positive about a file the reader has done nothing wrong with is worse
+// than the gap it was written to close.
+var pyDeps = regexp.MustCompile(
+	// PEP 621: dependencies = ["x"] / optional-dependencies = ["x"]
+	`(?m)^\s*(?:optional-)?dependencies\s*=\s*\[\s*(?:#[^\n]*)?\n?\s*["']` +
+		// a table whose entries ARE the dependencies, with a first key
+		`|(?s)\[(?:tool\.poetry\.(?:dev-)?dependencies` +
+		`|tool\.poetry\.group\.[^.\]]+\.dependencies` +
+		`|project\.optional-dependencies` +
+		`|dependency-groups)\][^\[]*?\S\s*=`)
+
+// why reports why a tool gave no answer. The tool's own last line of
+// stderr is the diagnosis: scanners log their progress first and the
+// reason they gave up last, so quoting the FIRST line told the reader
+// "dependencies were NOT checked: Starting filesystem walk for root: /" —
+// alarming, and not the reason.
+//
+// The exit status is the fallback, not the answer. It is appended after
+// stderr at the call sites, so folding the two together and taking the
+// last line would report "exit status 127" every time and lose the
+// diagnosis entirely — which is why stderr is asked first, on its own.
+func why(stderr string, err error) string {
+	if d := lastLine(stderr); d != "" {
+		return d
+	}
+	if s := lastLine(errStr(err)); s != "" {
+		return s
+	}
+	return "no output"
+}
+
+// lastLine is the last non-empty line, trimmed and capped. Empty when
+// there is none, so callers can fall back rather than print nothing.
+func lastLine(s string) string {
+	out := ""
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			out = t
+		}
+	}
+	if len(out) > 160 {
+		out = out[:160]
+	}
+	return out
 }
 
 func shortCheck(id string) string {

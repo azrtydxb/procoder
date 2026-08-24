@@ -86,6 +86,7 @@ type Rules struct {
 	ReadmeSections []string // headings/elements required on the README's first screen
 	VersionedDocs  []string // docs whose first screen must carry the current version
 	ReadmeMentions []string // phrases the README's narrative must carry — feature families, not commands
+	VersionSources []string // `path` or `path:key` for JSON files declaring the project's version; `none` switches the check off
 }
 
 func defaultRules() Rules {
@@ -95,6 +96,13 @@ func defaultRules() Rules {
 		ReadmeSections: []string{"usp", "badges", "quick start"},
 		VersionedDocs:  []string{"README.md", "docs/index.md"},
 		ReadmeMentions: nil, // opt-in via the rules file: a repo lists its own feature families
+		// Two JSON files, in order. Deliberately not every manifest a
+		// repository might carry: a polyglot tree declares a version in
+		// several places and picking one for it would hold the README to
+		// a number the project never meant as its own. A repository whose
+		// version lives elsewhere names it under `## version source`, and
+		// one that does not want the check says `none` there.
+		VersionSources: []string{".claude-plugin/plugin.json:version", "package.json:version"},
 	}
 }
 
@@ -108,7 +116,7 @@ func LoadRules(root string) Rules {
 		return r
 	}
 	section := ""
-	var docsL, badgesL, secsL, verL, mentionsL []string
+	var docsL, badgesL, secsL, verL, mentionsL, srcL []string
 	for _, line := range strings.Split(string(data), "\n") {
 		t := strings.TrimSpace(line)
 		if strings.HasPrefix(t, "## ") {
@@ -130,6 +138,8 @@ func LoadRules(root string) Rules {
 			verL = append(verL, item)
 		case "readme must mention":
 			mentionsL = append(mentionsL, strings.ToLower(item))
+		case "version source":
+			srcL = append(srcL, item)
 		}
 	}
 	if docsL != nil {
@@ -140,6 +150,9 @@ func LoadRules(root string) Rules {
 	}
 	if secsL != nil {
 		r.ReadmeSections = secsL
+	}
+	if srcL != nil {
+		r.VersionSources = srcL
 	}
 	if verL != nil {
 		r.VersionedDocs = verL
@@ -612,23 +625,24 @@ func RequiredDocs(root string, r Rules) []gitx.Finding {
 // firstScreen is how much of the README counts as "what a visitor sees first".
 const firstScreenLines = 40
 
-// versionSources are the files a project declares its version in, tried in
-// order; the first that exists and parses wins.
-var versionSources = []struct{ path, key string }{
-	{".claude-plugin/plugin.json", "version"},
-	{"package.json", "version"},
-}
-
 // VersionSync checks every version-tracked doc's first screen carries the
 // version. Drift here shipped three releases in a row unnoticed: prose claims
 // aren't file paths, so the drift check never fires on them — this is the
 // mechanical tripwire that forces the README to be touched, and therefore
 // read, at every release. Objectively wrong, so blocking.
 func VersionSync(root string) []gitx.Finding {
+	rules := LoadRules(root)
 	version := ""
 	source := ""
-	for _, vs := range versionSources {
-		raw, err := os.ReadFile(filepath.Join(root, vs.path))
+	for _, spec := range rules.VersionSources {
+		if strings.EqualFold(strings.TrimSpace(spec), "none") {
+			return nil // the repository said its version is not procoder's business
+		}
+		path, key := spec, "version"
+		if i := strings.LastIndex(spec, ":"); i > 0 {
+			path, key = spec[:i], spec[i+1:]
+		}
+		raw, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
 			continue
 		}
@@ -636,8 +650,8 @@ func VersionSync(root string) []gitx.Finding {
 		if json.Unmarshal(raw, &m) != nil {
 			continue
 		}
-		if v, ok := m[vs.key].(string); ok && v != "" {
-			version, source = v, vs.path
+		if v, ok := m[key].(string); ok && v != "" {
+			version, source = v, path
 			break
 		}
 	}
@@ -645,7 +659,7 @@ func VersionSync(root string) []gitx.Finding {
 		return nil // no declared version, nothing to hold the README to
 	}
 	var out []gitx.Finding
-	for _, doc := range LoadRules(root).VersionedDocs {
+	for _, doc := range rules.VersionedDocs {
 		path := filepath.Join(root, doc)
 		data, err := os.ReadFile(path)
 		if err != nil {

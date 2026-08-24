@@ -56,7 +56,28 @@ A few repo-specific rules:
 - **Changelog entries ride releases**, not PRs — describe the change well in
   the PR body and it will be told in `CHANGELOG.md` when it ships.
 - **Every non-trivial change leaves a test behind** — the smallest thing
-  that fails if the logic breaks.
+  that fails if the logic breaks, carrying a `// proved by:` line naming a
+  mutation that makes it fail. Apply that mutation and watch it fail
+  before you call the test done; several here passed with the behaviour
+  deliberately broken until somebody actually tried it.
+
+The rules a change is held to are written down where the change is made,
+under [`.github/instructions/`](.github/instructions/) — one file per
+surface, scoped by path:
+
+| File                        | Applies to             | Covers                                                          |
+| --------------------------- | ---------------------- | --------------------------------------------------------------- |
+| `go.instructions.md`        | `**/*.go`              | no silent green, P-CONTROL, path handling, exit codes, findings |
+| `tests.instructions.md`     | `**/*_test.go`         | the mutation discipline, assertions that can fail, portability  |
+| `workflows.instructions.md` | `.github/workflows/**` | the two tiers, pinning, honesty in a job                        |
+| `docs.instructions.md`      | prose and specs        | command coverage, the changelog rules, scope ids                |
+
+GitHub Copilot reads these automatically — both in the editor and in its
+code review — alongside the repository-wide
+`.github/copilot-instructions.md`, which is generated from `AGENTS.md` by
+`procoder agents` and should not be hand-edited. They are worth reading
+whether or not you use Copilot: every rule in them is there because
+breaking it produced a defect that shipped.
 
 ## Pull requests
 

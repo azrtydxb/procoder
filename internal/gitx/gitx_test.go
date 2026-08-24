@@ -403,3 +403,59 @@ func TestChangedFilesKeepsTheFirstPathWhole(t *testing.T) {
 		t.Errorf("the path returned must be one that exists: %v", err)
 	}
 }
+
+// procoder writes three things into a repository it governs, and its own
+// .gitignore has ignored all three since early on. The advice it gives an
+// adopter named one of them, so a repository that followed procoder's
+// advice exactly still staged procoder's code index.
+//
+// proved by: dropping the {".procoder", ".procoder/index/"} row — this
+// test then names .procoder/index/ as unadvised.
+func TestEveryArtifactProcoderWritesIsOneItAdvisesIgnoring(t *testing.T) {
+	advised := map[string]bool{}
+	for _, n := range gitignoreNeeds {
+		advised[n.entry] = true
+	}
+	for _, a := range ProcoderArtifacts {
+		if !advised[a] {
+			t.Errorf("procoder writes %s into a repository and never advises ignoring it", a)
+		}
+	}
+}
+
+// The advice is only trustworthy if this repository takes it. procoder's
+// own .gitignore is the worked example, the same way its ci.yml is.
+//
+// proved by: adding ".procoder/nonexistent/" to ProcoderArtifacts — this
+// test then reports it as advised but not taken here.
+func TestThisRepositoryTakesItsOwnIgnoreAdvice(t *testing.T) {
+	root := repoRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range ProcoderArtifacts {
+		if !strings.Contains(string(raw), a) {
+			t.Errorf("procoder advises ignoring %s and its own .gitignore does not", a)
+		}
+	}
+}
+
+// repoRoot walks up from the test's working directory to the module root.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above test dir")
+		}
+		dir = parent
+	}
+}

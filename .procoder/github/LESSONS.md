@@ -282,3 +282,50 @@ does. `procoder lessons` flags entries with no adaptation.
 - Class: portability
 - Missed by: the local suite — macOS and Linux call `/repo` absolute, Windows does not
 - Adaptation: `TestNoTestUsesARootedLiteralAsARepositoryRoot` in internal/audit reads the tree for `"/repo"`-shaped roots; `gitx.RepoRel` joins a non-absolute path onto the root, so the fixture was silently measuring its own path arithmetic rather than the function
+
+## 2026-08-24 e2e-campaign (self) — "did the output contain X" read three absent tools as passes
+
+- Class: mechanical
+- Missed by: nothing — the campaign's own harness, which had no gate over it
+- Adaptation: three separate checks written to hunt silent greens each
+  produced one. The classifier claimed NOT RUN for any output containing
+  "missing", so a finding about an absent PR template read as a check that
+  never happened. The brew-formula check read `tools.go` by a path
+  relative to a directory the script had already left, so grep matched
+  nothing, the loop ran zero times, and it reported every formula valid.
+  The catch test matched the planted file's name, so `UNCHECKED
+cs/Sloppy.cs — csharpier is not installed` — which names the file and
+  reports the opposite of a finding — counted as a catch.
+
+  The shape is one shape: **a grep that finds nothing is indistinguishable
+  from a grep that found nothing wrong.** Every place a verdict is derived
+  from "does this text appear", the empty case has to be answered
+  separately and first, and the pattern has to match the verdict rather
+  than the subject — `unformatted  <file>`, not `<file>`.
+
+  The over-correction is its own lesson: widening the absent-tool pattern
+  to any "NOT ..." line naming the file turned Dart into a NOT RUN,
+  because procoder separately reports "NOT linted — Dart: procoder has no
+  linter for it yet" about a file whose formatter had caught the defect
+  perfectly well. A false skip is as wrong as a false pass, and both were
+  caught only by replaying the classifier over logs already on disk rather
+  than trusting the second version.
+
+## 2026-08-24 e2e-campaign (self) — a shell script edited while it was running re-executed part of itself
+
+- Class: mechanical
+- Missed by: nothing — the harness again, and the duplicate output nearly passed for a longer report
+- Adaptation: bash reads a script incrementally from a byte offset rather
+  than loading it whole, so rewriting the file underneath a running
+  invocation moves what the next read returns. The docs pass came back
+  with its P-CONTROL block executed twice and a pass count inflated by
+  twenty-five, which looks exactly like a more thorough run. Nothing in
+  the output says "this ran twice"; it was visible only because the
+  section repeated verbatim and the total did not match what the script
+  could produce.
+
+  The rule: never edit a script that is currently executing — queue the
+  edit, or copy the script and edit the copy. And when a harness reports a
+  count, know what the maximum possible count is, because a number that is
+  too HIGH is as much a defect as one that is too low and reads as better
+  news.

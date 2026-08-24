@@ -218,6 +218,11 @@ const usage = `usage: procoder <command> [args]
                        Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
                        Codex) — prints content for anything missing or
                        drifted; the gate blocks on drift
+  analyze <sub>        the question before the spec, under .procoder/analysis/:
+                       brief <name> | list | where | check [name|all] — what
+                       is known, what is not, the options and a
+                       recommendation; "where" right-sizes a piece of work
+                       to the stage it actually needs
   audit                every domain's checks over the WHOLE tracked tree —
                        the onboarding sweep for a repository procoder has
                        not governed before; exit 1 if it would fail the gate
@@ -245,6 +250,9 @@ const usage = `usage: procoder <command> [args]
                        concurrency cancellation, tests exist; --runs asks gh
                        for this branch's newest run per workflow instead, and
                        says when the newest run predates your latest push
+  config               every effective setting, its value, and where it came
+                       from — a config.toml line or procoder's default —
+                       with any policy relaxed below the default marked
   debt                 harvest deliberate-simplification markers (comment
                        marker from [debt] in config.toml, default "debt:")
                        into a ledger; markers with no revisit trigger are
@@ -318,6 +326,13 @@ const usage = `usage: procoder <command> [args]
                        with — .procoder/PRINCIPLES.md wins over the default;
                        --hook answers in the running host's SessionStart
                        JSON shape (claude/codex/copilot/qoder)
+  review [--lens <name>[,<name>]] [--perspectives] [paths...]
+                       the judgment half of the gate: prints the review
+                       lenses and the scope for the agent to judge against,
+                       and writes nothing. --perspectives reads the change
+                       as analyst, architect, implementer and reviewer in
+                       turn; a lens that could not be loaded is a refusal,
+                       never a review that silently happened
   release [<version>]  the pre-tag controller: version-sync across [release]
                        files, the changelog entry, a clean tree, the gate, and
                        the suite under [test] policy — every failure listed,
@@ -420,11 +435,17 @@ func run(args []string) int {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
+	currentCmd = args[0]
+	// A flag the command does not implement is a usage error (exit 2 per
+	// ADR 0003), never a path and never silence.
+	args, ok := checkFlags(args, os.Stderr)
+	if !ok {
+		return 2
+	}
 	switch args[0] {
 	case "hook":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[1] {
 		case "post-tool-use":
@@ -436,13 +457,11 @@ func run(args []string) int {
 		case "stop":
 			return hook.Stop(os.Stdin, doctor.Root())
 		default:
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 	case "format":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return formatCmd(args[1:])
 	case "review":
@@ -456,29 +475,25 @@ func run(args []string) int {
 	case "env":
 		sync := len(args) > 1 && args[1] == "--sync"
 		if len(args) > 1 && !sync {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return envsync.Run(doctor.Root(), sync, printLine)
 	case "run":
 		exec := len(args) > 1 && args[1] == "--exec"
 		if len(args) > 1 && !exec {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return runcmd.Run(doctor.Root(), exec, printLine)
 	case "adr":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return adrCmd(args[1:])
 	case "bench":
 		root := doctor.Root()
 		save := len(args) > 1 && args[1] == "--save"
 		if len(args) > 1 && !save {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return bench.Run(root, save, config.Load(root).BenchThreshold, printLine)
 	case "deps":
@@ -494,14 +509,12 @@ func run(args []string) int {
 		}, suiteCheck(root), printLine)
 	case "backlog":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlogCmd(args[1:])
 	case "sprint":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return sprintCmd(args[1:])
 	case "check":
@@ -532,11 +545,48 @@ func run(args []string) int {
 		return maintain.Run(doctor.Root(), printLine)
 	case "security":
 		root := doctor.Root()
-		changed, _ := gitx.ChangedFiles(root)
+		deep := len(args) > 1 && args[1] == "--deep"
+		// Positional paths were read as nothing at all: `procoder security
+		// scripts/` scanned the change set and answered about that, so a
+		// person who named a directory was told "0 finding(s)" about files
+		// nobody had looked at. Worse, the empty-change-set message added
+		// earlier in this campaign ends "(pass paths to check them anyway)"
+		// — advice this command did not take. `lint` and `check` have
+		// always honoured their paths; this is the same.
+		// A directory is expanded to its files, exactly as lintCmd does:
+		// SecretsChangedFiles drops anything that is not a regular file, so
+		// an unexpanded directory scans nothing and reports clean.
+		paths := expandDirs(root, positional(args[1:]))
+		changed := paths
+		if len(changed) == 0 {
+			var err error
+			changed, err = gitx.ChangedFiles(root)
+			if err != nil {
+				// "I could not find out what changed" is not "nothing
+				// changed". Swallowing this reported a clean-looking
+				// verdict outside a git repository, or whenever git could
+				// not run — the exact silent green this domain polices.
+				fmt.Printf("procoder security: NOT checked — the changed files could not be listed (%v); pass paths to scan them explicitly\n", err)
+				return 1
+			}
+			if len(changed) == 0 && !deep {
+				fmt.Println(nothingChanged("security"))
+				return 0
+			}
+		}
 		findings := security.SecretsChangedFiles(root, changed)
-		if len(args) > 1 && args[1] == "--deep" {
+		if deep {
 			findings = append(findings, security.Sast(root)...)
 			findings = append(findings, security.Deps(root)...)
+		} else {
+			// The gate runs the SAST leg over the changed files as well as
+			// the secret scanner, and this command has to answer the same
+			// question or it is not a preview of the gate — it is a weaker
+			// check wearing the same name. A hardcoded AWS key that blocks
+			// at commit was reported here as zero findings, because
+			// gitleaks does not fire on it and semgrep, which does, was
+			// never asked.
+			findings = append(findings, security.SastChanged(root, changed)...)
 		}
 		return printFindings(root, "security", findings, printLine)
 	case "lint":
@@ -548,8 +598,7 @@ func run(args []string) int {
 		// the decision instead of a silent skip
 		if len(args) > 1 && args[1] == "--ack" {
 			if len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			fmt.Println(docs.AckLine(strings.Join(args[2:], " ")))
 			return 0
@@ -559,26 +608,22 @@ func run(args []string) int {
 		return docs.RunFor(root, changed, "", external, config.Load(root).DocsBlock, os.Stdout)
 	case "index":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return indexCmd(args[1:])
 	case "todo":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todoCmd(args[1:])
 	case "spec":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return specCmd(args[1:])
 	case "plan":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return planCmd(args[1:])
 	case "debt":
@@ -602,8 +647,7 @@ func run(args []string) int {
 		return testCmd(args[1:])
 	case "scrub":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return gitcmd.Scrub(args[1], os.Stdin, os.Stdout)
 	case "version":
@@ -635,8 +679,7 @@ func run(args []string) int {
 		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -647,8 +690,7 @@ func adrCmd(args []string) int {
 	switch args[0] {
 	case "new":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return adr.New(root, strings.Join(args[1:], " "), printLine)
 	case "list":
@@ -656,9 +698,69 @@ func adrCmd(args []string) int {
 	case "check":
 		return adr.Run(root, printLine)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
+}
+
+// nothingChanged is what a change-scoped command says when the change set
+// is empty. Printing "0 finding(s)" there is indistinguishable from
+// printing it over a clean diff, so a person on an untouched tree was told
+// their repository linted clean by a linter that never opened a file.
+// `procoder check` has always said "no changed files"; this is the same
+// sentence for the commands that forgot it.
+// expandDirs replaces each directory argument with the repository files
+// under it, and returns every path rooted. Two silences depended on this:
+// a check that works file by file gets nothing from an unexpanded
+// directory, and SecretsChangedFiles resolves what it is handed against
+// the PROCESS's directory while gitx.ChangedFiles hands it absolute paths
+// — so a relative path scanned nothing whenever procoder was run from a
+// subdirectory, and said "0 finding(s)" about it.
+func expandDirs(root string, paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, p)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			// Not resolvable from the root either; hand it on unchanged so
+			// the check that receives it can say so about the name the
+			// person actually typed.
+			out = append(out, p)
+			continue
+		}
+		if !info.IsDir() {
+			out = append(out, abs)
+			continue
+		}
+		for _, f := range gitx.FilesUnder(root, p) {
+			if filepath.IsAbs(f) {
+				out = append(out, f)
+				continue
+			}
+			out = append(out, filepath.Join(root, f))
+		}
+	}
+	return out
+}
+
+// positional drops the flags a command has already read, leaving the paths.
+// Flag parsing happens at the front (see checkFlags), so anything that is
+// not a leading dash is a path.
+func positional(args []string) []string {
+	var out []string
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func nothingChanged(cmd string) string {
+	return "procoder " + cmd + ": no changed files — nothing was checked (pass paths to check them anyway)"
 }
 
 func lintCmd(args []string) int {
@@ -677,6 +779,10 @@ func lintCmd(args []string) int {
 		if err != nil {
 			fmt.Println(err)
 			return 1
+		}
+		if len(changed) == 0 {
+			fmt.Println(nothingChanged("lint"))
+			return 0
 		}
 		paths = changed
 	} else {
@@ -876,8 +982,7 @@ func indexCmd(args []string) int {
 		return 0
 	case "callers":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return codeindex.Callers(root, args[1], out)
 	case "unused":
@@ -888,8 +993,7 @@ func indexCmd(args []string) int {
 		return codeindex.Graph(root, out)
 	case "find", "search", "refs", "outline", "impls":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[0] {
 		case "find":
@@ -917,8 +1021,7 @@ func indexCmd(args []string) int {
 			pos = append(pos, args[i])
 		}
 		if len(pos) != 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return codeindex.Rename(root, pos[0], pos[1], at, out)
 	case "impact":
@@ -931,8 +1034,7 @@ func indexCmd(args []string) int {
 	case "stats":
 		return codeindex.Stats(root, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -959,37 +1061,32 @@ func backlogCmd(args []string) int {
 	switch args[0] {
 	case "milestone":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Milestone(root, strings.Join(args[1:], " "), out)
 	case "epic":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Epic(root, strings.Join(pos, " "), ms, out)
 	case "story":
 		epic, pos := flagVal("--epic", args[1:])
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Story(root, strings.Join(pos, " "), epic, out)
 	case "bug":
 		epic, pos := flagVal("--epic", args[1:])
 		severity, pos := flagVal("--severity", pos)
 		if len(pos) == 0 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Bug(root, strings.Join(pos, " "), epic, severity, out)
 	case "seed":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) != 1 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.Seed(root, pos[0], ms, out)
 	case "list":
@@ -998,8 +1095,7 @@ func backlogCmd(args []string) int {
 		return backlog.Board(root, out)
 	case "close":
 		if len(args) < 3 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		switch args[1] {
 		case "story":
@@ -1010,22 +1106,18 @@ func backlogCmd(args []string) int {
 			}, suiteCheck(root), out)
 		case "epic":
 			if len(args) != 3 {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			return backlog.CloseEpic(root, args[2], out)
 		case "milestone":
 			if len(args) != 3 {
-				fmt.Fprint(os.Stderr, usage)
-				return 2
+				return usageErr(os.Stderr)
 			}
 			return backlog.CloseMilestone(root, args[2], out)
 		}
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1036,20 +1128,17 @@ func sprintCmd(args []string) int {
 	switch args[0] {
 	case "open":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintOpen(root, strings.Join(args[1:], " "), out)
 	case "pull":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintPull(root, args[1:], out)
 	case "carry":
 		if len(args) < 3 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return backlog.SprintCarry(root, args[1], strings.Join(args[2:], " "), out)
 	case "status":
@@ -1057,8 +1146,7 @@ func sprintCmd(args []string) int {
 	case "close":
 		return backlog.SprintClose(root, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1094,14 +1182,12 @@ func todoCmd(args []string) int {
 		return 0
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todo.Add(root, strings.Join(args[1:], " "), out)
 	case "show":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		path, err := todo.File(root, args[1])
 		if err != nil {
@@ -1117,15 +1203,13 @@ func todoCmd(args []string) int {
 		return 0
 	case "close":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return todo.CloseWith(root, args[1], func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
 		}, suiteCheck(root), out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1138,8 +1222,7 @@ func planCmd(args []string) int {
 		return plan.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return plan.PrintTemplate(args[1], out)
 	case "check":
@@ -1149,8 +1232,7 @@ func planCmd(args []string) int {
 		}
 		return plan.Check(root, name, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 
@@ -1163,8 +1245,7 @@ func specCmd(args []string) int {
 		return spec.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			fmt.Fprint(os.Stderr, usage)
-			return 2
+			return usageErr(os.Stderr)
 		}
 		return spec.PrintTemplate(args[1], out)
 	case "check":
@@ -1174,8 +1255,7 @@ func specCmd(args []string) int {
 		}
 		return spec.Check(root, name, out)
 	default:
-		fmt.Fprint(os.Stderr, usage)
-		return 2
+		return usageErr(os.Stderr)
 	}
 }
 

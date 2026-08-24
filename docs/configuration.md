@@ -204,6 +204,20 @@ where the code is:
   is a deliberate decision, written only by `bench --save`, and a
   baseline recorded on another GOOS/GOARCH compares with a warning.
 
+Three of these are written by procoder into the repository it governs and
+belong in `.gitignore`. `procoder git` names any that are missing:
+
+```gitignore
+.procoder/index/
+.procoder/state/
+.lycheecache
+```
+
+The last is lychee's link cache, left behind by `procoder docs
+--external`. The rest of `.procoder/` is committed on purpose — it is the
+repository's own rules, specs and backlog, and a teammate who clones
+without them gets a different gate.
+
 ## `[security]`
 
 | key              | values                     | default | meaning                                         |

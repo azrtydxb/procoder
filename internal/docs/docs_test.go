@@ -575,3 +575,77 @@ func TestAnUnreadableTargetYieldsNoAnchorVerdict(t *testing.T) {
 		t.Errorf("an unreadable target must produce no anchor verdict, got %+v", got)
 	}
 }
+
+// The version check reads two JSON files by default, and a polyglot
+// repository declares versions in several manifests. The fixture campaign
+// hit this: a Go project carrying a package.json for its tooling was
+// blocked because its README did not mention the npm package's 0.1.0 —
+// a true statement about a number the project never meant as its own,
+// with no way to say so. D-OVERRIDE says the repository's own rules win.
+//
+// proved by: made VersionSync ignore rules.VersionSources and use the
+// built-in pair — this test then reports 0.1.0 from package.json instead
+// of 9.9.9 from the file the repository named.
+func TestARepositoryNamesItsOwnVersionSource(t *testing.T) {
+	root := t.TempDir()
+	write := func(p, body string) {
+		t.Helper()
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("package.json", `{"version":"0.1.0"}`)
+	write("meta/release.json", `{"release":"9.9.9"}`)
+	write("README.md", "# fixture\n\nversion 9.9.9\n")
+	write(RulesPath, "## version source\n\n- meta/release.json:release\n")
+
+	if got := VersionSync(root); len(got) != 0 {
+		t.Errorf("the README carries the version the repository named: %+v", got)
+	}
+}
+
+// `none` is listed FIRST, with a real source after it — otherwise the test
+// proves nothing: a source path that does not resolve already produces no
+// finding, so an opt-out written as a bare unreadable name would pass with
+// the arm deleted. Here the arm is the only thing standing between the
+// repository and package.json.
+//
+// proved by: replacing the `none` comparison with `false` — this test then
+// gets the blocking finding the repository opted out of.
+func TestARepositoryCanSayItsVersionIsNotProcodersBusiness(t *testing.T) {
+	root := t.TempDir()
+	for p, body := range map[string]string{
+		"package.json": `{"version":"0.1.0"}`,
+		"README.md":    "# fixture\n\nno version here\n",
+		RulesPath:      "## version source\n\n- none\n- package.json:version\n",
+	} {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := VersionSync(root); len(got) != 0 {
+		t.Errorf("the repository opted out and was checked anyway: %+v", got)
+	}
+}
+
+// The default must not move: this repository, and every one that has said
+// nothing, is still held to plugin.json then package.json.
+//
+// proved by: reordering the two defaults — this test then reads the npm
+// version where the plugin's should win.
+func TestTheDefaultVersionSourceIsUnchanged(t *testing.T) {
+	want := []string{".claude-plugin/plugin.json:version", "package.json:version"}
+	got := defaultRules().VersionSources
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("default version sources changed: got %q want %q", got, want)
+	}
+}

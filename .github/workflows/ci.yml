@@ -171,7 +171,11 @@ jobs:
           echo "https://archive.ubuntu.com/ubuntu/	priority:1" | sudo tee /etc/apt/apt-mirrors.txt
           echo 'Acquire::Retries "3"; Acquire::http::Timeout "15";' | sudo tee /etc/apt/apt.conf.d/99procoder-fastfail
           sudo apt-get update -q
-          sudo apt-get install -y -q shfmt shellcheck gitleaks universal-ctags
+          # gitleaks is NOT here: apt ships whatever the distro froze (8.16.0
+          # on noble), and the gate's secret verdict must not depend on that.
+          # It is downloaded at the pinned version below, like the other
+          # tools whose answers the gate reports.
+          sudo apt-get install -y -q shfmt shellcheck universal-ctags
       # The versions are pinned, so a download that already happened has
       # nothing new to fetch. Suggested in #142, which was wrong about the
       # cost (measured: 1s on a healthy day) and right that a pinned
@@ -187,7 +191,7 @@ jobs:
           # file: keyed on the file, a RUFF or PRETTIER bump would throw
           # away five unchanged binaries and download them again, which
           # is not the "once per pin" this step claims to be.
-          key: gate-relbins-${{ runner.os }}-${{ env.OSV_SCANNER }}-${{ env.GOLANGCI_LINT }}-${{ env.ACTIONLINT }}-${{ env.LYCHEE }}-${{ env.SCIP }}
+          key: gate-relbins-${{ runner.os }}-${{ env.OSV_SCANNER }}-${{ env.GOLANGCI_LINT }}-${{ env.ACTIONLINT }}-${{ env.LYCHEE }}-${{ env.SCIP }}-${{ env.GITLEAKS }}
       - name: released binaries, downloaded rather than compiled
         if: steps.relbins.outputs.cache-hit != 'true'
         run: |
@@ -197,6 +201,7 @@ jobs:
           mkdir -p /tmp/procoder-bins
           cd /tmp
           curl -sSfL -o /tmp/procoder-bins/osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER}/osv-scanner_linux_amd64"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS}/gitleaks_${GITLEAKS}_linux_x64.tar.gz" | tar xz -C /tmp/procoder-bins gitleaks
           curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT}/golangci-lint-${GOLANGCI_LINT}-linux-amd64.tar.gz" | tar xz
           mv "golangci-lint-${GOLANGCI_LINT}-linux-amd64/golangci-lint" /tmp/procoder-bins/golangci-lint
           curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT}/actionlint_${ACTIONLINT}_linux_amd64.tar.gz" | tar xz actionlint
@@ -214,7 +219,7 @@ jobs:
       # say so, but a broken install should not get that far.
       - name: released binaries onto PATH
         run: |
-          for b in osv-scanner golangci-lint actionlint lychee scip; do
+          for b in osv-scanner gitleaks golangci-lint actionlint lychee scip; do
             test -s "/tmp/procoder-bins/$b" || { echo "$b missing from the binary cache" >&2; exit 1; }
             sudo install -m 0755 "/tmp/procoder-bins/$b" "/usr/local/bin/$b"
           done

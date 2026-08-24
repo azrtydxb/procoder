@@ -372,12 +372,19 @@ Dead-code candidates from the index's precise tier, cyclomatic complexity
 and function length from isolated linter runs. Nothing blocks; thresholds
 are the repo's to set (`[maintain]` in config.toml).
 
-#### `procoder docs [--external]`
+#### `procoder docs [--external] [--ack <reason>]`
 
 Broken relative references and non-compiling Mermaid diagrams block; doc
 drift, missing API doc comments, required docs, badges, README structure,
 version-tracked pages, and command coverage report. `--external` adds
 lychee link checking and GitHub Pages health.
+
+`--ack <reason>` prints the one line that clears the documentation
+obligation for a change that genuinely needs no documentation. When a
+commit adds an exported symbol and touches no documentation file, the gate
+blocks and names this command; the agent puts the printed line in the
+commit message, where a reviewer sees the decision and its reason instead
+of a silent skip. The binary prints the line — it never edits the message.
 
 #### `procoder ci [--runs]`
 
@@ -385,6 +392,21 @@ Workflow hygiene: actions pinned to mutable refs (report by default,
 `[ci] pin_actions_policy = "block"` to block), missing per-job
 `timeout-minutes`, missing concurrency cancellation, and pipelines without
 tests.
+
+`--runs` asks GitHub about this branch instead: the newest run of each
+workflow, its conclusion, its age, and — when it failed — which jobs
+failed. It then answers the question the report exists for, which is
+whether that verdict is about the commit in your working tree: a run older
+than HEAD is named stale, an unpushed HEAD is named as one CI cannot have
+seen, and a branch with no runs at all is called an absence of evidence
+rather than a green verdict.
+
+It always exits 0, including when the run failed. `--runs` reports what a
+remote system said; it is not a verdict on your tree, and the two tiers are
+kept apart deliberately — the gate answers about the change, CI answers
+about the tree. Read the text, not the exit code: `procoder ci --runs |
+grep failure` is the shape a script wants, and nothing here will ever
+answer "green" by staying quiet.
 
 #### `procoder infra`
 
@@ -544,7 +566,19 @@ not learned. An unreadable ledger exits 2.
 #### `procoder copilot-leak [--since <dur>] [--quiet] [--from-copilot]`
 
 What GitHub Copilot's auto-review caught that this repository's gates did
-not. Findings are sanitised before anything is shown or sent — fenced and
+not, from both places it says it. **Issues**: those authored by
+`copilot[bot]` or `copilot-preview[bot]`, those carrying the
+`auto-copilot` label, and those whose body quotes a review with
+`> **Copilot**`. And **pull request review comments**, which is where the
+inline review actually lands — matched on a Bot account whose login begins
+with `copilot`, because the review path posts as `Copilot` with no `[bot]`
+suffix at all.
+
+Both sources must answer. If either query fails the command reports NOT
+checked rather than a count, because "0 findings" from one source and
+silence from the other is indistinguishable from a clean review.
+
+Findings are sanitised before anything is shown or sent — fenced and
 indented code stripped, secrets redacted, absolute paths made relative — so
 what leaves the machine is metadata about a failure, never the source that
 failed. Nothing is published without an explicit yes on a terminal; with no
@@ -560,10 +594,11 @@ cannot parse, it reports NOT checked and exits 2 rather than reporting zero.
 A repository with no GitHub remote is a different case: there are no
 auto-reviews to ask about, so the empty answer is real and the exit is 0.
 
-#### `procoder principles`
+#### `procoder principles [--hook]`
 
-Prints the engineering principles each session starts with (a SessionStart
-hook injects them): build-ladder first — reuse, stdlib, platform, then the
+Prints the engineering principles each session starts with (`--hook` is
+how the SessionStart hook asks for them, wrapped in the envelope its host
+reads; without it the same content goes to the terminal): build-ladder first — reuse, stdlib, platform, then the
 minimum code that works — the delegation discipline (independent work
 fans out to parallel subagents under a clear contract, nothing started
 that somebody else is already on, watched as it
@@ -598,6 +633,14 @@ single-topic answers left plain. A repo replaces them wholesale with
   picks one definition when the name is defined more than once.
 
 ### Setup and plumbing
+
+#### `procoder config`
+
+Every setting Procoder is actually running under: its value, and where
+that value came from — a line in `.procoder/config.toml`, with the line
+number, or Procoder's own default. A policy set weaker than the default
+is marked as relaxed, so a repository that quietly turned a gate down
+says so out loud rather than looking like a repository that never had one.
 
 #### `procoder doctor`
 

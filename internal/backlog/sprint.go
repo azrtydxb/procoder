@@ -256,8 +256,15 @@ func SprintStatus(root string, out func(string)) int {
 		return 1
 	}
 	if !ok {
+		// Exit 0, not 1, and only here. ADR 0003 reserves 1 for findings
+		// or a refusal: pulling, carrying and closing with no sprint open
+		// are refusals and keep it, but ASKING which sprint is running is
+		// a question, and "none" is its answer — the way `todo list`
+		// answers "no tasks" with 0. The two disagreed until the fixture
+		// campaign put them side by side, so a script asking whether a
+		// sprint was running read a normal state as a failure.
 		out("no active sprint — `procoder sprint open <goal>` starts one")
-		return 1
+		return 0
 	}
 	out("sprint " + active.ID + "  " + active.Title)
 	committed, carried := sprintStories(root, active.ID)

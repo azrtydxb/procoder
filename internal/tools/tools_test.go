@@ -371,3 +371,58 @@ func TestCsharpierNeverUsesTheCache(t *testing.T) {
 		t.Errorf("csharpier must run with --no-cache: %v", args)
 	}
 }
+
+// procoder's own instruction for phpstan is `composer global require
+// phpstan/phpstan`, which installs into ~/.composer/vendor/bin and puts
+// nothing on PATH. So somebody followed procoder's advice exactly, and
+// procoder went on reporting phpstan missing with no clue why. The same
+// shape as `gem install` into a per-user gem dir.
+//
+// proved by: removing the .composer/vendor/bin entry from the search dirs
+// — this test then finds the tool unresolvable.
+func TestAToolInstalledWhereProcoderSaidToPutItIsFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the layouts under test are unix package-manager conventions")
+	}
+	for _, dir := range []string{
+		filepath.Join(".composer", "vendor", "bin"),
+		filepath.Join(".config", "composer", "vendor", "bin"),
+		filepath.Join(".gem", "bin"),
+	} {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("PATH", t.TempDir()) // empty: nothing resolves off PATH
+		full := filepath.Join(home, dir)
+		if err := os.MkdirAll(full, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(full, "exampletool")
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		got := Resolve(&Tool{Name: "exampletool"}, "")
+
+		if got != bin {
+			t.Errorf("a tool in %s was not found: got %q want %q", dir, got, bin)
+		}
+	}
+}
+
+// The gem directory a brewed Ruby uses carries a version component, so it
+// is globbed. This asserts the shape rather than the contents: on a
+// machine with no brewed Ruby the glob is legitimately empty, and a test
+// that demanded otherwise would fail for the wrong reason.
+//
+// proved by: replacing the glob patterns with a literal path containing no
+// wildcard — this test then finds a returned directory that does not exist.
+func TestGemBinDirsOnlyReturnsDirectoriesThatExist(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no homebrew ruby on windows")
+	}
+	for _, d := range gemBinDirs() {
+		if _, err := os.Stat(d); err != nil {
+			t.Errorf("gemBinDirs returned %s, which is not there: %v", d, err)
+		}
+	}
+}

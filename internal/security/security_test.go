@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -248,7 +249,7 @@ func TestSecretsScannerFailureIsNotChecked(t *testing.T) {
 		t.Errorf("must say NOT checked: %q", got[0].Message)
 	}
 	if !strings.Contains(got[0].Message, "failed to load config: bad toml") {
-		t.Errorf("must quote the scanner's first line: %q", got[0].Message)
+		t.Errorf("must quote the scanner's diagnosis: %q", got[0].Message)
 	}
 	if strings.Contains(got[0].Message, "second line of noise") {
 		t.Errorf("only the first line belongs in the finding: %q", got[0].Message)
@@ -393,8 +394,11 @@ func TestSastUnreadableOutputIsNotRun(t *testing.T) {
 	if len(got) != 1 || !got[0].Blocking {
 		t.Fatalf("a crashed semgrep must block, got %+v", got)
 	}
-	if !strings.Contains(got[0].Message, "NOT run") || !strings.Contains(got[0].Message, "Traceback") {
-		t.Errorf("must say NOT run and quote the first line: %q", got[0].Message)
+	// "boom", not "Traceback (most recent call last):" — a traceback's
+	// header is not its reason, and semgrep, like every scanner here,
+	// puts what went wrong on the last line.
+	if !strings.Contains(got[0].Message, "NOT run") || !strings.Contains(got[0].Message, "boom") {
+		t.Errorf("must say NOT run and quote the tool's diagnosis: %q", got[0].Message)
 	}
 }
 
@@ -531,5 +535,171 @@ func TestFirstLineAndShortCheck(t *testing.T) {
 	}
 	if got := shortCheck("plain"); got != "plain" {
 		t.Errorf("shortCheck(\"plain\") = %q, want \"plain\"", got)
+	}
+}
+
+// The defect: pyproject.toml sat in DepManifests, osv-scanner has no
+// extractor for it — it declares ranges, not pinned versions — and osv
+// exits 127 emitting NO json at all. One unscannable manifest therefore
+// took every other manifest in the same invocation down with it, so a
+// repository with a pyproject.toml was told "output unreadable" while a
+// CVE-carrying go.mod sat beside it unexamined.
+//
+// proved by: putting "pyproject.toml" back in DepManifests — this test
+// then finds it in the argv.
+func TestPyprojectTomlIsNeverPassedToOsvAsALockfile(t *testing.T) {
+	stub(t, "osv-scanner", "echo \"$@\" > args.txt\nprintf '{\"results\":[]}'\nexit 0\n")
+	root := t.TempDir()
+	for _, f := range []string{"go.mod", "pyproject.toml"} {
+		if err := os.WriteFile(filepath.Join(root, f), []byte("dependencies = []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	Deps(root)
+
+	raw, err := os.ReadFile(filepath.Join(root, "args.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := string(raw)
+	if strings.Contains(args, "pyproject.toml") {
+		t.Errorf("osv has no extractor for pyproject.toml and aborts the whole run on it: %s", args)
+	}
+	if !strings.Contains(args, "-L go.mod") {
+		t.Errorf("the manifests osv CAN read must still be scanned: %s", args)
+	}
+}
+
+// Dropping pyproject.toml from the scan without saying so would trade a
+// loud failure for a silent one: a Python repository reported clean by a
+// scanner that never looked. It gets the same honest gap a bare
+// package.json gets.
+//
+// proved by: made pythonGaps return nil — this test then finds no gap
+// reported for a pyproject.toml with dependencies and no lock file.
+func TestAPyprojectWithDependenciesAndNoLockFileIsAnHonestGap(t *testing.T) {
+	stub(t, "osv-scanner", "printf '{\"results\":[]}'\nexit 0\n")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"),
+		[]byte("[project]\nname = \"x\"\ndependencies = [\"requests==2.0.0\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Deps(root)
+
+	found := false
+	for _, f := range got {
+		if strings.Contains(f.Message, "python dependencies NOT checked") {
+			found = true
+			if !f.Blocking {
+				t.Error("a dependency set nothing scanned must block, like the npm one")
+			}
+			if f.File != "pyproject.toml" {
+				t.Errorf("the gap must name the file, got %q", f.File)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no gap reported for a pyproject.toml nothing can scan: %+v", got)
+	}
+}
+
+// An empty declaration is not a dependency set. The first version of this
+// check matched the word "dependencies" anywhere in the file, so a project
+// with `dependencies = []` was told its dependencies had not been checked
+// — a gap reported about nothing at all. The fixture caught it.
+//
+// proved by: matching the bare word instead of the regexp — every empty
+// case below then reports a gap.
+func TestAnEmptyDependencyDeclarationIsNotADependencySet(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"pep621 empty", "[project]\ndependencies = []\n", false},
+		{"pep621 one", "[project]\ndependencies = [\"requests==2.0.0\"]\n", true},
+		{"pep621 multiline", "[project]\ndependencies = [\n  \"requests\",\n]\n", true},
+		{"poetry empty table", "[tool.poetry.dependencies]\n", false},
+		{"poetry one", "[tool.poetry.dependencies]\nrequests = \"^2.0\"\n", true},
+		{"groups empty", "[dependency-groups]\n", false},
+		{"groups one", "[dependency-groups]\ndev = [\"pytest\"]\n", true},
+		{"only prose", "# this project lists no dependencies anywhere\n", false},
+		// Copilot's review found these: the key half was `[a-zA-Z0-9_-]+`,
+		// so ANY non-empty list counted and a project with no dependencies
+		// at all was blocked. Eight cases here missed it because not one
+		// of them carried a second list.
+		{"keywords beside an empty dependencies", "[project]\nkeywords = [\"cli\"]\ndependencies = []\n", false},
+		{"classifiers only", "[project]\nclassifiers = [\"Programming Language :: Python\"]\n", false},
+		{"authors table", "[project]\nauthors = [{name = \"A\"}]\n", false},
+		{"optional-dependencies list", "[project]\noptional-dependencies = [\"pytest\"]\n", true},
+		{"poetry group table", "[tool.poetry.group.dev.dependencies]\npytest = \"^8\"\n", true},
+		{"poetry group empty", "[tool.poetry.group.dev.dependencies]\n", false},
+		{"optional-dependencies table", "[project.optional-dependencies]\ntest = [\"pytest\"]\n", true},
+		{"a tool table that merely mentions it", "[tool.ruff]\nselect = [\"E\"]\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "pyproject.toml"), []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := hasPythonDepsWithoutLockfile(root); got != c.want {
+				t.Errorf("%s: got %v want %v for:\n%s", c.name, got, c.want, c.body)
+			}
+		})
+	}
+}
+
+// proved by: made hasPythonDepsWithoutLockfile ignore the lock files —
+// this test then reports a gap for a repository that pinned its versions.
+func TestAPyprojectWithALockFileBesideItIsNotAGap(t *testing.T) {
+	stub(t, "osv-scanner", "printf '{\"results\":[]}'\nexit 0\n")
+	root := t.TempDir()
+	for _, f := range []string{"pyproject.toml", "poetry.lock"} {
+		if err := os.WriteFile(filepath.Join(root, f),
+			[]byte("[project]\ndependencies = [\"requests==2.0.0\"]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, f := range Deps(root) {
+		if strings.Contains(f.Message, "python dependencies NOT checked") {
+			t.Errorf("poetry.lock is beside it and osv reads that: %+v", f)
+		}
+	}
+}
+
+// A scanner prints its progress first and the reason it gave up last, so
+// reporting the FIRST line of stderr told the reader "dependencies were
+// NOT checked: Starting filesystem walk for root: /" — which is alarming,
+// is not the reason, and gives a person nothing to act on.
+//
+// proved by: changing lastLine back to firstLine's behaviour — this test
+// then gets the progress line instead of the diagnostic.
+func TestAFailedToolIsReportedByItsDiagnosticNotItsProgress(t *testing.T) {
+	stderr := "Starting filesystem walk for root: /\n" +
+		"Scanned /repo/go.mod file and found 1 package\n" +
+		"could not determine extractor suitable to this file: \"/repo/pyproject.toml\"\n"
+
+	got := why(stderr, errors.New("exit status 127"))
+
+	if !strings.Contains(got, "could not determine extractor") {
+		t.Errorf("the reason is the last line, got %q", got)
+	}
+	if strings.Contains(got, "filesystem walk") {
+		t.Errorf("progress is not a diagnosis, got %q", got)
+	}
+	if strings.Contains(got, "exit status") {
+		t.Errorf("the exit status is the fallback, not the answer, got %q", got)
+	}
+	// A tool that failed without a word still has to explain itself, so
+	// the exit status is what is left to say.
+	if got := why("", errors.New("exit status 127")); got != "exit status 127" {
+		t.Errorf("silent tool must fall back to the status, got %q", got)
+	}
+	if got := why("   \n  \n", nil); got != "no output" {
+		t.Errorf("whitespace is not a diagnosis, got %q", got)
 	}
 }

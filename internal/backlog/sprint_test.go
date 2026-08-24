@@ -2,6 +2,7 @@ package backlog
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -207,10 +208,56 @@ func TestSprintStatusCountsDoneAndCarried(t *testing.T) {
 	}
 }
 
-func TestSprintStatusWithoutActiveSprint(t *testing.T) {
+// Having no sprint open is the answer to the question, not a finding and
+// not a refusal, so it is exit 0 — the same verdict `todo list` gives for
+// "no tasks". They disagreed until the fixture campaign put them side by
+// side, and a script asking whether a sprint was running read a perfectly
+// normal state as a failure.
+//
+// proved by: returning 1 from the !ok branch of SprintStatus — this test
+// then reports the exit code it used to have.
+func TestSprintStatusWithoutActiveSprintIsNotAFailure(t *testing.T) {
 	out, lines := collect()
-	if code := SprintStatus(t.TempDir(), out); code != 1 {
-		t.Fatalf("no active sprint is exit 1: exit %d %v", code, *lines)
+	if code := SprintStatus(t.TempDir(), out); code != 0 {
+		t.Fatalf("no active sprint is the answer, not a finding: exit %d %v", code, *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "no active sprint") {
+		t.Errorf("and it still has to say so: %v", *lines)
+	}
+}
+
+// A sprint directory that cannot be read is a different thing entirely,
+// and stays exit 1: procoder does not know whether a sprint is running.
+//
+// proved by: returning 0 from the error branch — this test then sees an
+// unreadable backlog reported as "no sprint".
+func TestAnUnreadableSprintIsStillAFailure(t *testing.T) {
+	// Windows does not make a directory unreadable through a mode of 0,
+	// so the sprint stays readable there and the branch under test is
+	// never entered. The branch is not platform-specific; the way of
+	// provoking it is.
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory mode of 0 does not deny reads on Windows")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, ".procoder", "backlog", "sprints")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "001-x.md"), []byte("# x\n\nStatus: active\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Skip("cannot drop read permission here")
+	}
+	defer os.Chmod(dir, 0o755)
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything")
+	}
+
+	out, lines := collect()
+	if code := SprintStatus(root, out); code != 1 {
+		t.Fatalf("an unreadable sprint directory is not an answer: exit %d %v", code, *lines)
 	}
 }
 
