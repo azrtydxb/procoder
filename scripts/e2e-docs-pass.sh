@@ -151,6 +151,12 @@ digest() {
 		sort -z | xargs -0 shasum 2>/dev/null | shasum | cut -d' ' -f1
 }
 
+# `bench` and `release` are in the list because they are the two commands
+# that legitimately CAN write — bench saves a baseline under --save, and
+# release exists to prepare a tag. Without the flag and without readiness
+# neither may touch anything, and they were the obvious P-CONTROL targets
+# that the loop did not cover.
+
 # An UNFORMATTED file, planted before the loop. Running `procoder format`
 # only on files that are already clean tests nothing: the unformatted
 # branch — the one that prints a whole rewritten file — never executes, so
@@ -162,7 +168,8 @@ for cmd in "status" "check" "git" "ci" "lint" "maintain" "security" "debt" "docs
 	"config" "doctor" "init" "principles" "agents" "templates" "lessons" "review" \
 	"backlog board" "sprint status" "todo list" "spec list" "plan list" "analyze list" \
 	"format greet/greet.go" "format main.go" "format greet/untidy.go" \
-	"check greet/untidy.go" "lint greet/untidy.go"; do
+	"check greet/untidy.go" "lint greet/untidy.go" \
+	"bench" "release 0.9.9"; do
 	before=$(digest)
 	# shellcheck disable=SC2086
 	"$PC" $cmd >/dev/null 2>&1
