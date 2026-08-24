@@ -895,7 +895,8 @@ func PagesHealth(root string) []gitx.Finding {
 		if strings.Contains(errb.String(), "Not Found") {
 			return []gitx.Finding{{Message: "GitHub Pages is not enabled for this repository — the docs site is not being served"}}
 		}
-		return []gitx.Finding{{Message: "GitHub Pages NOT checked: " + textutil.FirstLine(errb.String())}}
+		return []gitx.Finding{{Blocking: true,
+			Message: "GitHub Pages NOT checked: " + textutil.FirstLine(errb.String())}}
 	}
 	status := strings.TrimSpace(buf.String())
 	if status != "built" {

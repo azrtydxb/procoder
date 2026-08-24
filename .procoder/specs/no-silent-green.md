@@ -180,3 +180,18 @@ policy` already exists to separate a judgement from a fact; "no linter
   other lint finding does. D-1's rule stands for every case it was
   written for — a tool procoder ships that is not installed still blocks
   regardless of policy.
+
+- **D-8: `LeakReminder`'s findings never block, even the one that says
+  NOT checked.** Found the same way as D-7 — invisible to the audit
+  before #153 widened it, because the literal uses the elided-type slice
+  shape. Unlike D-7 this is not a new decision: the function's own doc
+  comment already argued it, predating this spec — offline by design (it
+  reads a ledger already on disk rather than asking GitHub, because the
+  gate runs on every commit, in CI, and on aeroplanes), and explicitly
+  "never blocks: an unwritten adaptation is work to do, not a broken
+  tree." A ledger that cannot be read is the same kind of non-urgent
+  news as a ledger with unwritten adaptations in it — reported so
+  someone eventually looks, not withheld the way `notChecked` in
+  domain 1 or domain 9 is. D-1 governs whether a required check ran;
+  this is a reminder that was never a check, and recording that here is
+  what stops the next audit widening from relitigating it as a bug.

@@ -8,9 +8,17 @@ import (
 	"testing"
 )
 
-// findingLiteral matches a gitx.Finding composite literal with no nested
-// braces — the shape every domain uses to report one problem.
-var findingLiteral = regexp.MustCompile(`(?s)gitx\.Finding\{[^{}]*?\}`)
+// findingLiteral matches a gitx.Finding composite literal, permitting
+// exactly one level of brace nesting inside it — Go's elided-type slice
+// form, `[]gitx.Finding{{...}}`, opens with a second brace the flat
+// pattern this replaced could not see past at all: not matched-and-
+// passed, structurally invisible, so seven genuine "must always block"
+// findings written that way were unexercised by this audit (#153). A
+// literal referring to the bare, unqualified `Finding{}` — only possible
+// from inside package gitx itself — is still outside what this can see;
+// nothing there emits a "NOT checked"/"NOT run"/"NOT linted" message
+// today, so it is a known boundary rather than a proven gap.
+var findingLiteral = regexp.MustCompile(`(?s)gitx\.Finding\{(?:[^{}]|\{[^{}]*\})*?\}`)
 
 // blocking matches "a check that did not run always blocks", which means
 // Blocking: true literally — not a caller-supplied variable, however it
@@ -29,12 +37,22 @@ var blocking = regexp.MustCompile(`Blocking:\s*true\b`)
 // gate MEANS, and one domain quietly exempting itself brings the whole
 // meaning down with it.
 //
-// One deliberate exception, named rather than matched by pattern: D-7 in
-// .procoder/specs/no-silent-green.md governs a language procoder formats
-// and has no linter for AT ALL, where there is no `procoder init` remedy
-// to point at. unlinted.go is the only source of "NOT linted", so it is
-// excluded by path — a second such finding appearing anywhere else is
-// exactly the drift this audit exists to catch, and stays caught.
+// Two deliberate exceptions, named rather than matched by pattern —
+// widening this audit's own regex (#153) made both visible for the first
+// time, and each is a decision recorded in
+// .procoder/specs/no-silent-green.md rather than a hole to close:
+//
+//   - lint/unlinted.go (D-7): a language procoder formats and has no
+//     linter for AT ALL, where there is no `procoder init` remedy to
+//     point at, so [lint] policy governs it like any other lint finding.
+//   - lessons/copilot.go (D-8): LeakReminder is deliberately the gate's
+//     offline half of the Copilot loop — a reminder that an adaptation
+//     is unwritten, never a check that something is broken — and its own
+//     doc comment already said so before this spec existed.
+//
+// A second, unrelated "NOT checked" appearing in either file is exactly
+// the drift this audit exists to catch, and stays caught: the exemption
+// is per file, and each file has exactly one such literal today.
 //
 // This is a source audit rather than a behavioural test on purpose: the
 // failure it guards against is a NEW domain, or a new branch of an old one,
@@ -45,33 +63,19 @@ var blocking = regexp.MustCompile(`Blocking:\s*true\b`)
 // whole suite otherwise stayed green.
 func TestNoDomainReportsAnUnrunCheckAsMerelyInformational(t *testing.T) {
 	root := filepath.Join("..", "..", "internal")
-	const exemptD7 = "lint/unlinted.go"
 	var offenders []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
-		if strings.HasSuffix(filepath.ToSlash(path), exemptD7) {
+		if isExempt(path) {
 			return nil
 		}
 		raw, rerr := os.ReadFile(path)
 		if rerr != nil {
 			return rerr
 		}
-		src := string(raw)
-		for _, lit := range findingLiteral.FindAllStringIndex(src, -1) {
-			text := src[lit[0]:lit[1]]
-			if !strings.Contains(text, "NOT checked") &&
-				!strings.Contains(text, "NOT run") &&
-				!strings.Contains(text, "NOT linted") {
-				continue
-			}
-			if blocking.MatchString(text) {
-				continue
-			}
-			offenders = append(offenders,
-				filepath.ToSlash(path)+":"+itoa(strings.Count(src[:lit[0]], "\n")+1))
-		}
+		offenders = append(offenders, offendersIn(filepath.ToSlash(path), string(raw))...)
 		return nil
 	})
 	if err != nil {
@@ -80,6 +84,72 @@ func TestNoDomainReportsAnUnrunCheckAsMerelyInformational(t *testing.T) {
 	if len(offenders) > 0 {
 		t.Errorf("a check that did not happen must block, not inform:\n  %s",
 			strings.Join(offenders, "\n  "))
+	}
+}
+
+// exempt are the two paths D-7 and D-8 name — see the decision comment on
+// findingLiteral and blocking above.
+var exempt = []string{"lint/unlinted.go", "lessons/copilot.go"}
+
+func isExempt(path string) bool {
+	for _, e := range exempt {
+		if strings.HasSuffix(filepath.ToSlash(path), e) {
+			return true
+		}
+	}
+	return false
+}
+
+// offendersIn is the walk's per-file check, pulled out so it can be proven
+// against a source string directly rather than only through the real tree
+// — the real tree cannot demonstrate what the widened regex in #153 was
+// FOR, because every genuine offender the widening found has since been
+// fixed (docs.go, infra.go — see the fix commit). A synthetic fixture is
+// what is left to show the narrow regex would still be blind to this
+// shape today.
+func offendersIn(path, src string) []string {
+	var out []string
+	for _, lit := range findingLiteral.FindAllStringIndex(src, -1) {
+		text := src[lit[0]:lit[1]]
+		if !strings.Contains(text, "NOT checked") &&
+			!strings.Contains(text, "NOT run") &&
+			!strings.Contains(text, "NOT linted") {
+			continue
+		}
+		if blocking.MatchString(text) {
+			continue
+		}
+		out = append(out, path+":"+itoa(strings.Count(src[:lit[0]], "\n")+1))
+	}
+	return out
+}
+
+// The regex this audit scans with has to see through Go's elided-type
+// slice-literal shape, `[]gitx.Finding{{...}}` — a second, immediately-
+// following brace the narrower pattern this replaced could not match at
+// all. Proven against a synthetic fixture rather than the real tree: every
+// real offender the widening found (docs.go, infra.go) is already fixed,
+// so the tree alone cannot show what the narrow regex would still miss.
+// proved by: reverting findingLiteral to
+// `gitx\.Finding\{[^{}]*?\}` — this fixture's non-blocking "NOT checked"
+// literal, written in the nested slice shape, goes unseen and the test
+// passes on code that should fail it.
+func TestFindingLiteralSeesTheNestedSliceLiteralShape(t *testing.T) {
+	src := `package fake
+
+import "procoder/internal/gitx"
+
+func probe() []gitx.Finding {
+	return []gitx.Finding{{File: "x",
+		Message: "NOT checked — pretend tool is not installed"}}
+}
+`
+	got := offendersIn("internal/fake/probe.go", src)
+	if len(got) != 1 {
+		t.Fatalf("a non-blocking NOT-checked finding in the nested slice shape must be caught: %v", got)
+	}
+	if !strings.Contains(got[0], "probe.go:6") {
+		t.Errorf("the offender must name its file and line: %v", got)
 	}
 }
 
