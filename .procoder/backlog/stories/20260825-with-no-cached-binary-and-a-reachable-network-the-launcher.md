@@ -1,6 +1,6 @@
 # The fetch: get it, verify it, cache it, run it
 
-Status: open
+Status: done 2026-08-25
 Created: 2026-08-25
 Epic: ci-built-binaries
 Sprint: 019-the-launcher-fetches-verifies-and-caches-its-own-binary
