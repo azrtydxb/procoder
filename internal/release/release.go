@@ -8,6 +8,7 @@ package release
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,9 +33,10 @@ const changelogName = "CHANGELOG.md"
 // controller reuses the same verdicts `procoder check` and the todo closer
 // use — the disciplines can never disagree. suite is nil when the repo does
 // not block on tests. Exit 0 ship / 1 blocked / 2 usage.
-// distTimeout is the budget for asking one shipped binary its version. It
-// is a local exec of a file in this repository, so a second is generous;
-// the point of the timeout is that a corrupt binary hangs nothing.
+// distTimeout is the budget for asking one shipped binary its version. A
+// local exec answers in milliseconds, so ten seconds is not a deadline
+// anything healthy approaches — it is the ceiling that stops a corrupt or
+// wedged binary hanging the release.
 const distTimeout = 10 * time.Second
 
 func Run(root, version string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
@@ -200,13 +202,28 @@ const DistDir = "dist"
 func staleDist(root, version string) []string {
 	dir := filepath.Join(root, DistDir)
 	if _, err := os.Stat(dir); err != nil {
-		return nil // a repository that ships no binaries has none to check
+		if os.IsNotExist(err) {
+			return nil // a repository that ships no binaries has none to check
+		}
+		// Present but unreadable is not absent. Treating every Stat error
+		// as "no dist" would let a permissions problem pass a release that
+		// nothing checked — unknown is never clean.
+		return []string{fmt.Sprintf("%s could not be read (%v) — the shipped binaries were NOT checked", DistDir, err)}
 	}
 	bin := filepath.Join(dir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
 	if _, err := os.Stat(bin); err != nil {
+		if !os.IsNotExist(err) {
+			// Unreadable is not missing, here as much as for the directory
+			// above: "rebuild it" is the wrong instruction for a
+			// permissions problem, and reporting a check as done when it
+			// could not be performed is the failure this whole release is
+			// about.
+			return []string{fmt.Sprintf("the shipped binary for %s could not be read (%v) — it was NOT checked",
+				runtime.GOOS+"-"+runtime.GOARCH, err)}
+		}
 		return []string{fmt.Sprintf("%s carries no binary for this platform (%s) — rebuild it with scripts/build-dist.sh",
 			DistDir, runtime.GOOS+"-"+runtime.GOARCH)}
 	}
@@ -214,8 +231,12 @@ func staleDist(root, version string) []string {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, "version").Output() // nosemgrep -- a path under the repository's own dist/, not user input
 	if err != nil {
-		return []string{fmt.Sprintf("the shipped binary %s would not answer `version` (%v) — rebuild it with scripts/build-dist.sh",
-			filepath.ToSlash(filepath.Join(DistDir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")), err)}
+		// `%v` on an ExitError is "exit status 1" and nothing else, while
+		// the binary's own complaint sits in ExitError.Stderr. Reporting
+		// only the status repeats the mistake this release fixed in the
+		// scanner messages: a refusal whose reason is not the reason.
+		return []string{fmt.Sprintf("the shipped binary %s would not answer `version` (%s) — rebuild it with scripts/build-dist.sh",
+			filepath.ToSlash(filepath.Join(DistDir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")), execReason(err))}
 	}
 	got := strings.TrimSpace(string(out))
 	if got != version {
@@ -223,6 +244,34 @@ func staleDist(root, version string) []string {
 			got, version, DistDir)}
 	}
 	return nil
+}
+
+// execReason is what a failed exec actually said. The error alone gives
+// the exit status; the process's stderr, which an ExitError carries, gives
+// the sentence a person can act on.
+func execReason(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if msg := strings.TrimSpace(string(ee.Stderr)); msg != "" {
+			return lastLine(msg) + " — " + err.Error()
+		}
+	}
+	return err.Error()
+}
+
+// lastLine is the last non-empty line: a tool prints its progress first
+// and the reason it gave up last.
+func lastLine(s string) string {
+	out := ""
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			out = t
+		}
+	}
+	if len(out) > 160 {
+		out = out[:160]
+	}
+	return out
 }
 
 // tagExists reports the release already having a tag. git failing to

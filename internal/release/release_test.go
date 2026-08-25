@@ -1,6 +1,7 @@
 package release
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -419,8 +420,82 @@ func writeShippedBinary(t *testing.T, root, version string) {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
+	// Fatal, not Skip. This suite runs under `go test`, so a Go toolchain
+	// is present by construction — a build failure here is a real problem,
+	// and skipping would take the release controller's only end-to-end
+	// check with it silently. NOT run is never green, in this repository's
+	// own tests least of all.
 	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, name), src)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("cannot build a fixture binary here: %v\n%s", err, out)
+		t.Fatalf("could not build the fixture binary, which `go test` proves is possible: %v\n%s", err, out)
+	}
+}
+
+// A dist/ that exists and cannot be read is not a dist/ that is absent.
+// Treating every Stat error as "no binaries to check" would let a
+// permissions problem pass a release nothing looked at.
+//
+// proved by: returning nil for every Stat error — this test then sees an
+// unreadable dist/ pass as a repository that ships nothing.
+func TestAnUnreadableDistIsNotAnAbsentOne(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory mode of 0 does not deny reads on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, DistDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Skip("cannot drop read permission here")
+	}
+	defer os.Chmod(dir, 0o755)
+
+	got := staleDist(root, "3.0.0")
+
+	if len(got) == 0 {
+		t.Fatal("an unreadable dist/ passed as one that ships no binaries")
+	}
+	if !strings.Contains(got[0], "NOT checked") {
+		t.Errorf("the message must say the binaries were not checked, got %q", got[0])
+	}
+}
+
+// A failed exec's own words live in ExitError.Stderr; `%v` gives only the
+// exit status. Reporting the status alone repeats the mistake this release
+// fixed in the scanner messages — a refusal whose reason is not the reason.
+//
+// proved by: returning err.Error() unconditionally from execReason — this
+// test then loses the binary's complaint.
+func TestAFailedExecIsReportedByWhatItSaid(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture is a POSIX shell script")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "loud")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 'progress' >&2\necho 'the real reason' >&2\nexit 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := exec.Command(script).Output()
+	if err == nil {
+		t.Fatal("the fixture was supposed to fail")
+	}
+
+	got := execReason(err)
+
+	if !strings.Contains(got, "the real reason") {
+		t.Errorf("the diagnosis is the last line of stderr, got %q", got)
+	}
+	if strings.Contains(got, "progress") {
+		t.Errorf("progress is not a diagnosis, got %q", got)
+	}
+	if !strings.Contains(got, "exit status 3") {
+		t.Errorf("the status is still worth keeping beside it, got %q", got)
+	}
+	if execReason(errors.New("plain")) != "plain" {
+		t.Errorf("a non-exec error is passed through, got %q", execReason(errors.New("plain")))
 	}
 }
