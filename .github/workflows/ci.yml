@@ -17,11 +17,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
+      # A shallow checkout, now that nothing here needs history. This job
+      # used to fetch the whole repository so the reproducibility check
+      # could rebuild dist/ at the commit that last touched it; that check
+      # is gone with the committed binaries it existed to verify, and every
+      # test that touches git builds its own repository in t.TempDir().
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
-        with:
-          # The reproducibility check below rebuilds dist/ at the commit that
-          # last touched it, which a depth-1 checkout does not contain.
-          fetch-depth: 0
       # v6 is the first major that reads go.mod's toolchain directive; v5
       # matched only the `go` line and installed the newest patch of it, so
       # the pin in go.mod would have been ignored here. v6+ also exports
@@ -80,42 +81,6 @@ jobs:
           got=$(hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
           test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
           echo "launcher resolved procoder $got under $(uname -s)"
-      - name: the committed binaries rebuild from their source
-        # The version-string check this replaces proved a binary printed the
-        # expected string. It did not prove the binary came from the tree it
-        # claims — and the plugin auto-executes these on every session start,
-        # every Bash call and every Write. Rebuilding and comparing digests is
-        # the difference between trusting the committer and checking.
-        #
-        # The rebuild happens at the commit that last touched dist/, not at
-        # HEAD. dist/ is refreshed at release, so between releases it lags
-        # main by design: comparing it against HEAD would demand 35MB of
-        # rebuilt binaries in every feature branch and would turn a real
-        # check into a chore people learn to re-run without reading. What
-        # matters is that the committed digests are reproducible from the
-        # source they were built from, and that is what this checks.
-        #
-        # Linux only: one cross-compiling host covers all five targets, and
-        # running it on three would compare the same bytes three times.
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          commit=$(git log -1 --format=%H -- dist/)
-          if [ -z "$commit" ]; then
-            echo "no commit in history touches dist/ — cannot verify the binaries" >&2
-            exit 1
-          fi
-          echo "dist/ was last built at $commit"
-          tree=$(mktemp -d)
-          git worktree add --detach "$tree" "$commit" >/dev/null
-          recorded=$(git show "$commit:dist/SHA256SUMS")
-          (cd "$tree" && ./scripts/build-dist.sh >/dev/null)
-          if ! diff <(echo "$recorded") "$tree/dist/SHA256SUMS"; then
-            echo "dist/ does not rebuild from $commit — run scripts/build-dist.sh and commit the result" >&2
-            exit 1
-          fi
-          echo "all five binaries rebuild byte-for-byte from $commit"
-
   gate:
     # procoder's own gate over its own tree: the dogfood job. Formatting
     # gaps, git hygiene, and workflow lint all fail this leg.
@@ -357,6 +322,18 @@ jobs:
             } >> /tmp/notes.md
           fi
           cat /tmp/notes.md
+      - name: build the binaries this release publishes
+        env:
+          # The pinned toolchain builds what people download, the same way
+          # it builds what the tests run against.
+          GOTOOLCHAIN: local
+        run: |
+          # BUILT here, not copied from the tree. They used to be committed,
+          # which cost 39MB of history per release and shipped the previous
+          # version's binaries once — every manifest green, the gate green,
+          # and the plugin installing something that reported one version
+          # and behaved like another. Nothing is built by a person any more.
+          ./scripts/build-dist.sh
       - name: stage the binaries under names that do not collide
         run: |
           # gh takes an asset's NAME from the file name; `path#text` sets only
@@ -379,10 +356,20 @@ jobs:
             exit 1
           fi
           # After the count, so the check above keeps meaning "five binaries".
-          # self-upgrade verifies every download against this file and refuses
-          # to install without it: a release published without SHA256SUMS is a
-          # release nobody can upgrade to.
+          # Every launcher on every machine verifies its download against
+          # this file and refuses to run anything that does not match, so a
+          # release without it is a release nobody can install — not merely
+          # one nobody can upgrade to, which is what it used to mean.
           cp dist/SHA256SUMS /tmp/assets/SHA256SUMS
+          # Non-empty, and the right size. An empty or truncated manifest
+          # publishes a release that looks finished and fails every install,
+          # which is worse than a red job somebody has to look at.
+          lines=$(grep -c . /tmp/assets/SHA256SUMS || true)
+          if [ "${lines:-0}" -ne 5 ]; then
+            echo "SHA256SUMS has $lines line(s), expected 5 — refusing to publish" >&2
+            cat /tmp/assets/SHA256SUMS >&2
+            exit 1
+          fi
           find /tmp/assets -type f -exec ls -l {} +
       - name: publish the release with the platform binaries
         env:

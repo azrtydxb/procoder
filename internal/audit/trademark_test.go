@@ -1,7 +1,10 @@
 package audit
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -158,5 +161,56 @@ func TestEveryShippedCommandIsDiscoverable(t *testing.T) {
 				t.Errorf("`procoder %s` is dispatched but absent from docs/commands.md", name)
 			}
 		}
+	}
+}
+
+// The per-platform binaries are no longer committed: CI builds them at the
+// tag and the launcher fetches the one this machine needs. That cost 39MB
+// of git history per release, shipped the previous version's binaries
+// once, and put a manual build step in the middle of every release.
+//
+// This is the assertion that keeps them out. Not a note in CONTRIBUTING —
+// the next convenient exception puts them back a release at a time, and a
+// note does not fail.
+//
+// Executables specifically, by magic bytes, rather than "anything binary":
+// the repository legitimately tracks PNG logos, and a test that failed on
+// those would be deleted rather than obeyed.
+//
+// proved by: `git add -f dist/` after a build — this test then names every
+// binary it finds.
+func TestNoExecutableIsCommitted(t *testing.T) {
+	root := filepath.Join("..", "..")
+	out, err := exec.Command("git", "-C", root, "ls-files").Output()
+	if err != nil {
+		t.Skipf("git could not list the tracked files: %v", err)
+	}
+	// ELF, Mach-O (32/64, both endiannesses), universal binaries, and PE.
+	magic := [][]byte{
+		{0x7f, 'E', 'L', 'F'},
+		{0xfe, 0xed, 0xfa, 0xce}, {0xce, 0xfa, 0xed, 0xfe},
+		{0xfe, 0xed, 0xfa, 0xcf}, {0xcf, 0xfa, 0xed, 0xfe},
+		{0xca, 0xfe, 0xba, 0xbe},
+		{'M', 'Z'},
+	}
+	found := 0
+	for _, name := range strings.Fields(string(out)) {
+		f, err := os.Open(filepath.Join(root, name))
+		if err != nil {
+			continue // deleted in the working tree, or unreadable: not this test's subject
+		}
+		head := make([]byte, 4)
+		n, _ := io.ReadFull(f, head)
+		f.Close()
+		for _, m := range magic {
+			if n >= len(m) && bytes.Equal(head[:len(m)], m) {
+				t.Errorf("%s is a committed executable; CI builds those now", name)
+				found++
+				break
+			}
+		}
+	}
+	if found > 0 {
+		t.Logf("%d executable(s) tracked — run `git rm -r --cached dist` and check .gitignore", found)
 	}
 }

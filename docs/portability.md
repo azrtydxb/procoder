@@ -163,7 +163,7 @@ the setting.
 
 All tiers assume the `procoder` binary is reachable. Claude Code gets it
 via the plugin automatically; for every other host, put the right
-`dist/<platform>/procoder` on PATH (or `go install`). The instruction
+`procoder` from the release on PATH (or `go install`). The instruction
 tier degrades gracefully: without the binary the rules still shape
 behaviour, and the agent is told what to install.
 
@@ -174,7 +174,8 @@ other platform uses. Claude Code — and Codex CLI, which shares the hooks
 file — runs hook commands through Git Bash, where `uname -s` answers
 `MINGW64_NT-10.0-26200`; MSYS2 and Cygwin shells answer in the same
 family. The launcher matches `MINGW*`, `MSYS*` and `CYGWIN*` and
-resolves `dist/windows-amd64/procoder.exe`, so every hook and every
+resolves the cached `dist/windows-amd64/procoder.exe`, fetching it once
+if it is not there yet, so every hook and every
 slash command works with no manifest change and no per-host wiring.
 
 Copilot CLI is the exception on Windows only: `hooks/copilot-hooks.json`

@@ -37,9 +37,16 @@ flowchart LR
 
 The binary is the whole engine. Skills are instructions _about_ calling
 it; hooks are fixed lifecycle points that call it; adapters for other
-agents point at the same files. Cross-compiled per platform into
-`dist/`, committed with the plugin: no npm, no network at hook time,
-air-gapped installs included.
+agents point at the same files. Cross-compiled per platform by CI at
+each tag and published with the release. The launcher fetches the one
+binary this machine needs on first use, verifies it against the published
+`SHA256SUMS`, and caches it beside the plugin; every run after that execs
+it directly, with no network at hook time.
+
+The binaries used to be committed, which made the install offline and cost
+39MB of git history per release. ADR 0004 records the trade: a first run
+now needs the network once, and a hook that cannot fetch warns and lets the
+session continue rather than failing it.
 
 ## Contract 1 — P-CONTROL: the agent stays in control
 

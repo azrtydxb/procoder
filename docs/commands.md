@@ -248,21 +248,14 @@ The pre-tag controller: verifies in one pass that every file in
 `[release] files` (config.toml) carries the version, CHANGELOG.md has
 the `## <version>` entry, the working tree is clean (untracked
 included), the gate is clean, the suite is green under
-`[test] policy`, the version is not already tagged, **the binaries under
-`dist/` report the version being cut**, and **every contributor the entry
-credits actually opened one of the issues or pull requests that paragraph
-cites**.
+`[test] policy`, the version is not already tagged, and **every
+contributor the entry credits actually opened one of the issues or pull
+requests that paragraph cites**.
 
-`dist/` matters because it is what the plugin executes on every session
-start and what `self-upgrade` downloads — version-sync reads the text
-manifests, and a binary is not text. 3.0.0 was tagged once with 2.0.1
-binaries still committed, every other check green. The controller runs
-the shipped binary for the host platform and refuses when it answers with
-a different version; a binary that will not run is a refusal too, since
-the reason for asking it is that the manifests cannot answer for it. Only
-the host's platform can be executed locally — CI rebuilds all five and
-compares digests, which is the half that covers the rest. Rebuild with
-`scripts/build-dist.sh`.
+The shipped binaries are no longer among the things it checks. They are
+not committed any more: CI builds them at the tag and the launcher fetches
+what it needs (ADR 0004), so there is nothing local for this controller to
+find stale.
 
 That last one asks GitHub, which the test suite deliberately cannot —
 the suite runs offline on every commit. This controller can, because the

@@ -10,7 +10,7 @@
 #
 # This replaces a design contract that read "marketplace install, no runtime,
 # no network". The first run now needs the network. What that buys is in
-# ADR 0009; what it costs is a first run that can fail, and everything below
+# ADR 0004; what it costs is a first run that can fail, and everything below
 # is about that failing safely.
 #
 # Two rules shape the failure handling, and only one of them is obvious:

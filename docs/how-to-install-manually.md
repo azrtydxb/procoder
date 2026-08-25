@@ -10,17 +10,28 @@ page applies.
 
 ## 1. Put the binary on PATH
 
-The repository ships a prebuilt binary per platform under `dist/`. No
-runtime, no npm, no network at hook time.
+Each release publishes a binary per platform. Download the one for your
+machine, check it against the published checksums, and put it on PATH. No
+runtime, no npm.
 
-```
-git clone https://github.com/azrtydxb/procoder
-export PATH="$PWD/procoder/dist/darwin-arm64:$PATH"
-procoder version
+```sh
+V=3.1.0   # the release you want
+P=darwin-arm64   # or darwin-amd64, linux-amd64, linux-arm64, windows-amd64
+B=https://github.com/azrtydxb/procoder/releases/download/v$V
+
+curl -sSfL -o procoder "$B/procoder-$P"
+curl -sSfL -o SHA256SUMS "$B/SHA256SUMS"
+
+# verify before running it — the whole point of the manifest
+grep " procoder-$P\$" SHA256SUMS | sed "s/procoder-$P/procoder/" | shasum -a 256 -c -
+
+chmod +x procoder && ./procoder version
 ```
 
-Pick the directory that matches your machine: `darwin-arm64`,
-`darwin-amd64`, `linux-amd64`, `linux-arm64`, or `windows-amd64`.
+The binaries are no longer committed to the repository: cloning gets you
+an empty `dist/`, because CI builds them at the tag and publishes them
+there instead (ADR 0004). If you use the plugin, none of this applies —
+its launcher does exactly the above for you, once, and caches the result.
 
 Make the `PATH` line permanent in your shell profile, or copy the binary
 somewhere already on `PATH`.
