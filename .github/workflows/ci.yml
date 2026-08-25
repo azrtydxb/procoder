@@ -74,11 +74,25 @@ jobs:
         # find procoder.exe.
         shell: bash
         run: |
-          # Resolution is the whole question: the launcher runs the COMMITTED
-          # dist binary, whose version is deliberately not the source's and
-          # is checked against the manifest by the next step. What must hold
-          # here is that this shell's uname resolves to a binary at all.
-          got=$(hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
+          # Resolution is the whole question: does THIS shell's uname map to
+          # a path the launcher finds and execs. A stub is planted at that
+          # path first, so the step never reaches the fetch.
+          #
+          # It must never reach it. On a tag build this job runs BEFORE the
+          # release job that publishes the assets, so a launcher left to
+          # fetch would look for a release that does not exist yet and fail
+          # every release — and would pass on pull requests only because the
+          # PREVIOUS version's release happens to be published, which is a
+          # green that depends on history rather than on this commit.
+          case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*) plat="windows-amd64"; ext=".exe" ;;
+            Darwin) plat="darwin-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+            *)      plat="linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+          esac
+          mkdir -p "dist/$plat"
+          printf '#!/bin/sh\nprintf "%%s\\n" stub-resolved\n' > "dist/$plat/procoder$ext"
+          chmod +x "dist/$plat/procoder$ext"
+          got=$(PROCODER_NO_FETCH=1 hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
           test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
           echo "launcher resolved procoder $got under $(uname -s)"
   gate:

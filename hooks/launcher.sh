@@ -103,7 +103,7 @@ fail_window=300
 
 now="$(date +%s 2>/dev/null || echo 0)"
 if [ -f "$fail_marker" ]; then
-	then_at="$(head -1 "$fail_marker" 2>/dev/null || echo 0)"
+	then_at="$(head -n 1 "$fail_marker" 2>/dev/null || echo 0)"
 	why="$(tail -n +2 "$fail_marker" 2>/dev/null)"
 	case "$then_at" in
 	'' | *[!0-9]*) then_at=0 ;;
@@ -130,7 +130,7 @@ remember_failure() {
 manifest="$dir/.claude-plugin/plugin.json"
 [ -f "$manifest" ] || remember_failure "no $manifest — cannot tell which version to fetch"
 
-version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -1)"
+version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)"
 [ -n "$version" ] || remember_failure "no version in $manifest — cannot tell which version to fetch"
 
 base="${PROCODER_RELEASE_BASE:-https://github.com/azrtydxb/procoder/releases/download}"

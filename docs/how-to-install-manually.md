@@ -22,8 +22,10 @@ B=https://github.com/azrtydxb/procoder/releases/download/v$V
 curl -sSfL -o procoder "$B/procoder-$P"
 curl -sSfL -o SHA256SUMS "$B/SHA256SUMS"
 
-# verify before running it — the whole point of the manifest
-grep " procoder-$P\$" SHA256SUMS | sed "s/procoder-$P/procoder/" | shasum -a 256 -c -
+# verify before running it — the whole point of the manifest.
+# sha256sum on most Linux, shasum on macOS: use whichever you have.
+sum() { command -v sha256sum >/dev/null && sha256sum "$@" || shasum -a 256 "$@"; }
+grep " procoder-$P\$" SHA256SUMS | sed "s/procoder-$P/procoder/" | sum -c -
 
 chmod +x procoder && ./procoder version
 ```

@@ -101,13 +101,13 @@ the rest.
 
 ## Interfaces
 
-| Surface                             | Behaviour                                                                                                                                                                                                                                       |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hooks/launcher.sh`                 | Resolves, fetches when absent, verifies, execs.                                                                                                                                                                                                 |
-| `<plugin>/bin/<os>-<arch>/procoder` | Where a fetched binary is cached. Version-scoped by the plugin directory itself.                                                                                                                                                                |
-| `PROCODER_BIN`                      | An absolute path to a binary to use instead. **Bypasses verification** — it is the caller's own file and the launcher checks nothing about it. Exists for a mirror, a bisect, and for the tests, which need to point the launcher at a fixture. |
-| `PROCODER_NO_FETCH`                 | Set, the launcher never downloads; absence is reported as it would be offline. This is how S-2 is asserted: with a binary cached, sabotaging the fetch must change nothing.                                                                     |
-| GitHub release assets               | `procoder-<os>-<arch>` and `SHA256SUMS`, both published by CI.                                                                                                                                                                                  |
+| Surface                              | Behaviour                                                                                                                                                                                                                                       |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hooks/launcher.sh`                  | Resolves, fetches when absent, verifies, execs.                                                                                                                                                                                                 |
+| `<plugin>/dist/<os>-<arch>/procoder` | Where a fetched binary is cached. Version-scoped by the plugin directory itself.                                                                                                                                                                |
+| `PROCODER_BIN`                       | An absolute path to a binary to use instead. **Bypasses verification** — it is the caller's own file and the launcher checks nothing about it. Exists for a mirror, a bisect, and for the tests, which need to point the launcher at a fixture. |
+| `PROCODER_NO_FETCH`                  | Set, the launcher never downloads; absence is reported as it would be offline. This is how S-2 is asserted: with a binary cached, sabotaging the fetch must change nothing.                                                                     |
+| GitHub release assets                | `procoder-<os>-<arch>` and `SHA256SUMS`, both published by CI.                                                                                                                                                                                  |
 
 ## Data
 
