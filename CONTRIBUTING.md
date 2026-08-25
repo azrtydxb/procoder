@@ -44,7 +44,11 @@ anything red there blocks the merge.
 
 A few repo-specific rules:
 
-- **Don't rebuild `dist/`.** The per-platform binaries under `dist/` are
+- **Don't rebuild `dist/`.** (When you are the maintainer doing it at
+  release time: run `scripts/build-dist.sh` as the LAST step before the
+  commit. CI rebuilds those binaries from the commit that carries them, so
+  ones built before a later source edit fail the check with five changed
+  hashes and no obvious cause.) The per-platform binaries under `dist/` are
   stamped with the release version and rebuilt by the maintainer at release
   time; a PR that touches them will be asked to drop those changes.
 - **Don't bump versions.** The version lives in several manifests at once

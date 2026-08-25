@@ -7,12 +7,16 @@
 package release
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"time"
 
 	"procoder/internal/config"
 )
@@ -29,6 +33,12 @@ const changelogName = "CHANGELOG.md"
 // controller reuses the same verdicts `procoder check` and the todo closer
 // use — the disciplines can never disagree. suite is nil when the repo does
 // not block on tests. Exit 0 ship / 1 blocked / 2 usage.
+// distTimeout is the budget for asking one shipped binary its version. A
+// local exec answers in milliseconds, so ten seconds is not a deadline
+// anything healthy approaches — it is the ceiling that stops a corrupt or
+// wedged binary hanging the release.
+const distTimeout = 10 * time.Second
+
 func Run(root, version string, gateClean func() bool, suite func() (bool, string), out func(string)) int {
 	if version == "" {
 		v, err := newestChangelogVersion(root)
@@ -103,7 +113,16 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 		failures = append(failures, msg)
 	}
 
-	// 7. the credits in the entry about to be published. GitHub is asked
+	// 7. the binaries this release actually ships. The manifests are text
+	// and version-sync reads them; dist/ is what the plugin executes on
+	// every session start and what `self-upgrade` downloads, and nothing
+	// looked at it. 3.0.0 was tagged with dist/ still holding 2.0.1
+	// binaries — every manifest said 3.0.0, the gate was green, the suite
+	// was green, and the plugin would have installed a version that
+	// reported one number and behaved like another.
+	failures = append(failures, staleDist(root, version)...)
+
+	// 8. the credits in the entry about to be published. GitHub is asked
 	// who actually opened each cited issue, which the suite cannot do —
 	// it runs offline on every commit — and which this controller can,
 	// because the tag it is preparing gets published by a job that talks
@@ -167,6 +186,94 @@ func changelogHasVersion(root, version string) bool {
 // dirtyTree returns a failure line when the working tree is not clean, or
 // when git cannot say — unknown counts as dirty, because a release must not
 // depend on state nobody committed.
+// DistDir holds the per-platform binaries the plugin runs and the release
+// publishes.
+const DistDir = "dist"
+
+// staleDist reports any shipped binary that does not answer with the
+// version being released, and any that cannot be asked. A binary that
+// will not run is not a binary that passed — the whole point of asking it
+// is that the manifests cannot answer for it.
+//
+// Only the host's own platform can be executed here; the others are
+// checked by CI, which rebuilds dist/ and compares hashes. That split is
+// stated rather than hidden: a check that silently covers one of five
+// files is one somebody will later believe covered all five.
+func staleDist(root, version string) []string {
+	dir := filepath.Join(root, DistDir)
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil // a repository that ships no binaries has none to check
+		}
+		// Present but unreadable is not absent. Treating every Stat error
+		// as "no dist" would let a permissions problem pass a release that
+		// nothing checked — unknown is never clean.
+		return []string{fmt.Sprintf("%s could not be read (%v) — the shipped binaries were NOT checked", DistDir, err)}
+	}
+	bin := filepath.Join(dir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if _, err := os.Stat(bin); err != nil {
+		if !os.IsNotExist(err) {
+			// Unreadable is not missing, here as much as for the directory
+			// above: "rebuild it" is the wrong instruction for a
+			// permissions problem, and reporting a check as done when it
+			// could not be performed is the failure this whole release is
+			// about.
+			return []string{fmt.Sprintf("the shipped binary for %s could not be read (%v) — it was NOT checked",
+				runtime.GOOS+"-"+runtime.GOARCH, err)}
+		}
+		return []string{fmt.Sprintf("%s carries no binary for this platform (%s) — rebuild it with scripts/build-dist.sh",
+			DistDir, runtime.GOOS+"-"+runtime.GOARCH)}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), distTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "version").Output() // nosemgrep -- a path under the repository's own dist/, not user input
+	if err != nil {
+		// `%v` on an ExitError is "exit status 1" and nothing else, while
+		// the binary's own complaint sits in ExitError.Stderr. Reporting
+		// only the status repeats the mistake this release fixed in the
+		// scanner messages: a refusal whose reason is not the reason.
+		return []string{fmt.Sprintf("the shipped binary %s would not answer `version` (%s) — rebuild it with scripts/build-dist.sh",
+			filepath.ToSlash(filepath.Join(DistDir, runtime.GOOS+"-"+runtime.GOARCH, "procoder")), execReason(err))}
+	}
+	got := strings.TrimSpace(string(out))
+	if got != version {
+		return []string{fmt.Sprintf("the shipped binary reports %s, not %s — rebuild %s with scripts/build-dist.sh",
+			got, version, DistDir)}
+	}
+	return nil
+}
+
+// execReason is what a failed exec actually said. The error alone gives
+// the exit status; the process's stderr, which an ExitError carries, gives
+// the sentence a person can act on.
+func execReason(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if msg := strings.TrimSpace(string(ee.Stderr)); msg != "" {
+			return lastLine(msg) + " — " + err.Error()
+		}
+	}
+	return err.Error()
+}
+
+// lastLine is the last non-empty line: a tool prints its progress first
+// and the reason it gave up last.
+func lastLine(s string) string {
+	out := ""
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			out = t
+		}
+	}
+	if len(out) > 160 {
+		out = out[:160]
+	}
+	return out
+}
+
 // tagExists reports the release already having a tag. git failing to
 // answer is NOT "no tag", for the same reason an unreadable tree is not a
 // clean one — unknown is never clean.

@@ -9,6 +9,14 @@
 # done by code rather than trust.
 set -euo pipefail
 
+# Run this LAST, after every source change is in place and before the
+# commit. dist/ is built from the working tree, and CI rebuilds it from
+# the COMMIT that carries it — so binaries built before a later edit do
+# not match the source they ship beside, and the reproducibility check
+# fails with five different hashes and no obvious cause. That is not a
+# reproducibility problem; it is a sequencing one, and it cost a release
+# tag to learn.
+
 cd "$(dirname "$0")/.."
 
 # The two usual sources of non-determinism, removed: a linked host libc, and
