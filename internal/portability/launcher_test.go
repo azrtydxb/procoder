@@ -201,21 +201,27 @@ func TestLauncherRejectsUnknownOS(t *testing.T) {
 // proved by: renaming one asset in ci.yml's staging step — this test then
 // names the platform the launcher would ask for and CI would not publish.
 func TestEveryPlatformTheLauncherResolvesIsPublished(t *testing.T) {
-	ci, err := os.ReadFile(filepath.Join(repoRoot(t), ".github/workflows/ci.yml"))
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), ".github/workflows/ci.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Line endings normalised before anything is matched. Windows checks
+	// out with CRLF, and an anchored `$` sits before the \n but after the
+	// \r, so a pattern ending in `\\?$` matched nothing there and the
+	// uploaded set came back empty — on Windows only, while Linux and
+	// macOS were green.
+	ci := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	// Staged and uploaded are read SEPARATELY and required to agree. A
 	// single scan of the file passes when only one of the two is renamed,
 	// which is the mismatch worth catching: staged as X and uploaded as Y
 	// fails the release with a missing file, at the one moment nobody is
 	// watching a green pipeline.
 	staged := map[string]bool{}
-	for _, m := range regexp.MustCompile(`cp\s+\S+\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)`).FindAllStringSubmatch(string(ci), -1) {
+	for _, m := range regexp.MustCompile(`cp\s+\S+\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)`).FindAllStringSubmatch(ci, -1) {
 		staged[m[1]] = true
 	}
 	uploaded := map[string]bool{}
-	for _, m := range regexp.MustCompile(`(?m)^\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)\s*\\?$`).FindAllStringSubmatch(string(ci), -1) {
+	for _, m := range regexp.MustCompile(`(?m)^\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)\s*\\?$`).FindAllStringSubmatch(ci, -1) {
 		uploaded[m[1]] = true
 	}
 	if len(staged) == 0 || len(uploaded) == 0 {
