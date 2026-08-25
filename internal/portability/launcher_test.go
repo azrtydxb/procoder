@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -183,15 +184,64 @@ func TestLauncherRejectsUnknownOS(t *testing.T) {
 	}
 }
 
-// TestLauncherWindowsBinaryIsShipped closes the loop between the name the
-// launcher resolves and the tree the plugin actually ships: a windows arm the
-// repository has no binary for would still leave Windows users with nothing.
+// The same loop this used to close against the committed tree, closed
+// against what CI publishes instead: every asset name the launcher can
+// ask for must be one the release job actually uploads. A launcher arm
+// with no matching asset leaves those users with nothing, which was true
+// when the binaries were committed and is true now that they are fetched.
 //
-// proved by: deleting dist/windows-amd64/procoder.exe.
-func TestLauncherWindowsBinaryIsShipped(t *testing.T) {
-	path := filepath.Join(repoRoot(t), "dist/windows-amd64/procoder.exe")
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("launcher resolves windows-amd64/procoder.exe but it is not shipped: %v", err)
+// It reads ci.yml rather than a list written here, because a list written
+// here is a third place to forget.
+//
+// The old version of this test stat'd dist/windows-amd64/procoder.exe. It
+// passed locally after the binaries were untracked — an ignored working
+// copy was still on disk — and failed on CI's clean checkout. Reading the
+// two sources against each other cannot pass for that reason.
+//
+// proved by: renaming one asset in ci.yml's staging step — this test then
+// names the platform the launcher would ask for and CI would not publish.
+func TestEveryPlatformTheLauncherResolvesIsPublished(t *testing.T) {
+	ci, err := os.ReadFile(filepath.Join(repoRoot(t), ".github/workflows/ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Staged and uploaded are read SEPARATELY and required to agree. A
+	// single scan of the file passes when only one of the two is renamed,
+	// which is the mismatch worth catching: staged as X and uploaded as Y
+	// fails the release with a missing file, at the one moment nobody is
+	// watching a green pipeline.
+	staged := map[string]bool{}
+	for _, m := range regexp.MustCompile(`cp\s+\S+\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)`).FindAllStringSubmatch(string(ci), -1) {
+		staged[m[1]] = true
+	}
+	uploaded := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\s+/tmp/assets/(procoder-[a-z0-9-]+(?:\.exe)?)\s*\\?$`).FindAllStringSubmatch(string(ci), -1) {
+		uploaded[m[1]] = true
+	}
+	if len(staged) == 0 || len(uploaded) == 0 {
+		t.Fatalf("read %d staged and %d uploaded asset names from ci.yml — this check proved nothing", len(staged), len(uploaded))
+	}
+	for name := range staged {
+		if !uploaded[name] {
+			t.Errorf("%s is staged and never uploaded", name)
+		}
+	}
+	for name := range uploaded {
+		if !staged[name] {
+			t.Errorf("%s is uploaded and never staged — the release would fail on a missing file", name)
+		}
+	}
+	published := uploaded
+	// The five arms hooks/launcher.sh can resolve, spelled as it spells
+	// them: procoder-<os>-<arch>, with .exe on windows.
+	for _, want := range []string{
+		"procoder-darwin-arm64", "procoder-darwin-amd64",
+		"procoder-linux-amd64", "procoder-linux-arm64",
+		"procoder-windows-amd64.exe",
+	} {
+		if !published[want] {
+			t.Errorf("the launcher can ask for %s and the release job does not publish it", want)
+		}
 	}
 }
 
