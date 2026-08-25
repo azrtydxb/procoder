@@ -1,6 +1,6 @@
 # The checks that guarded committed binaries go with them
 
-Status: open
+Status: done 2026-08-25
 Created: 2026-08-25
 Epic: ci-built-binaries
 Sprint: 020-the-binaries-leave-the-tree-and-ci-builds-them

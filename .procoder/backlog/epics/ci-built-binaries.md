@@ -1,6 +1,6 @@
 # ci-built-binaries
 
-Status: open
+Status: done 2026-08-25
 Created: 2026-08-25
 Spec: ci-built-binaries
 
