@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-25
 Epic: ci-built-binaries
-Sprint: -
+Sprint: 019-the-launcher-fetches-verifies-and-caches-its-own-binary
 
 ## Description
 
