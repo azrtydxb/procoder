@@ -18,8 +18,18 @@ fast.
 
 ## Acceptance criteria
 
-- [ ] With the binary already cached, the launcher makes no network call:
+- [x] With the binary already cached, the launcher makes no network call:
       asserted by running it with fetching sabotaged and requiring
       success.
 
 ## Evidence
+
+- `TestACachedBinaryIsRunWithoutAskingTheNetwork`: with a binary present
+  the launcher execs it and the stub server records **zero** requests.
+  Counting requests proves the fetch was never reached, rather than merely
+  that it was quick.
+- The cached branch is the first thing after the platform arms, so it
+  costs one `[ -x ]` test and an `exec` — what it cost when the binary was
+  committed.
+- proved by: moving the cached-binary check below the fetch — the request
+  count becomes one.

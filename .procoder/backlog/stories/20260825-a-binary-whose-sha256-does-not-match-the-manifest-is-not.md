@@ -16,9 +16,19 @@ absence of a problem.
 
 ## Acceptance criteria
 
-- [ ] A binary whose sha256 does not match the manifest is not executed
+- [x] A binary whose sha256 does not match the manifest is not executed
       and is not left behind, for a hook as much as for a command.
-- [ ] A `SHA256SUMS` with no line for this platform is treated as a failed
+- [x] A `SHA256SUMS` with no line for this platform is treated as a failed
       verification rather than as nothing to check.
 
 ## Evidence
+
+- `TestAChecksumMismatchIsNeverExecuted` for the mismatch, and
+  `TestAnAssetWithNoChecksumLineIsNotRun` for a manifest that downloads
+  but carries no line for this platform — the absence of a checksum is
+  treated as a failed verification, never as nothing to check.
+- proved by: treating an empty expected hash as success — an unlisted
+  asset is then run unverified. When that guard alone is removed the
+  checksum comparison still refuses, with a vaguer message, and the test
+  fails on the message: the layers are independent and the accurate one is
+  pinned.

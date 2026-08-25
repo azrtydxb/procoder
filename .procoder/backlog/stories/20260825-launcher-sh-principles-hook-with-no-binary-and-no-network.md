@@ -19,10 +19,20 @@ narrowing fails rather than ships.
 
 ## Acceptance criteria
 
-- [ ] `launcher.sh principles --hook` with no binary and no network exits
+- [x] `launcher.sh principles --hook` with no binary and no network exits
       0 and writes nothing to stdout.
-- [ ] Every invocation named in `hooks/claude-hooks.json` is covered by a
+- [x] Every invocation named in `hooks/claude-hooks.json` is covered by a
       case, so the test fails if a new hook shape is wired without being
       considered here.
 
 ## Evidence
+
+- The `principles --hook` subtest of
+  `TestEveryWiredHookShapeDegradesInsteadOfBreakingTheSession`: exit 0,
+  stdout empty.
+- Every shape in `hooks/claude-hooks.json` is a subtest, so wiring a new
+  hook without considering this split fails here rather than in somebody's
+  session.
+- **proved by: deleting the `--hook` arm from the `is_hook` test — the
+  principles subtest exits 1 with the failure on stderr.** That mutation
+  was run: this is the trap the story was written for, and it was real.

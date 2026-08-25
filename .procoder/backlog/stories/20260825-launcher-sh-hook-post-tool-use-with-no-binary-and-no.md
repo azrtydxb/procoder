@@ -18,9 +18,19 @@ user can see the gate is not running; they are not stopped from working.
 
 ## Acceptance criteria
 
-- [ ] `launcher.sh hook post-tool-use` with no binary and no network
+- [x] `launcher.sh hook post-tool-use` with no binary and no network
       writes nothing to stdout, writes the reason to stderr, and exits 0.
-- [ ] The same holds for `hook pre-tool-use` and `hook stop`, so no
+- [x] The same holds for `hook pre-tool-use` and `hook stop`, so no
       registered hook can take a session down.
 
 ## Evidence
+
+- `TestEveryWiredHookShapeDegradesInsteadOfBreakingTheSession` covers
+  `hook post-tool-use`, `hook pre-tool-use`, `hook stop` and `principles
+--hook` — every invocation wired in `hooks/claude-hooks.json`. Each
+  exits 0, writes nothing to stdout, and says on stderr that the gate is
+  not running.
+- Empty stdout is deliberate: it is "no decision" to PreToolUse and "no
+  context" to PostToolUse, so the host proceeds normally.
+- proved by: making `give_up` exit 1 for hooks — every subtest then
+  reports the exit code the host stops a session on.

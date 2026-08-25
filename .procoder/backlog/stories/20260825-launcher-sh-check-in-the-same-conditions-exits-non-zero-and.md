@@ -19,10 +19,21 @@ checksum that did not match, a directory it could not write.
 
 ## Acceptance criteria
 
-- [ ] `launcher.sh check` with no binary and no network exits non-zero and
+- [x] `launcher.sh check` with no binary and no network exits non-zero and
       names the reason.
-- [ ] The reason distinguishes the causes — unreachable, no such release,
+- [x] The reason distinguishes the causes — unreachable, no such release,
       checksum mismatch, unwritable cache — rather than one message for
       all of them.
 
 ## Evidence
+
+- `TestACommandThatCannotFetchRefuses` covers `check`, `security`,
+  `release` and `version`: each exits non-zero and names the reason.
+- The causes are distinguishable rather than one message for all: no
+  network or no such release, a manifest with no line for this platform, a
+  checksum mismatch, a directory that could not be written, and no version
+  declared at all — each has its own sentence, asserted in the tests for
+  those paths.
+- proved by: making `give_up` exit 0 unconditionally — every command then
+  passes without running, which is the silent green this criterion exists
+  to prevent.

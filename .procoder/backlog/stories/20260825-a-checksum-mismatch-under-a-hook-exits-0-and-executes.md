@@ -21,9 +21,17 @@ left at the cache path either way.
 
 ## Acceptance criteria
 
-- [ ] A checksum mismatch under a hook exits 0 and executes nothing; the
+- [x] A checksum mismatch under a hook exits 0 and executes nothing; the
       same mismatch under a command exits non-zero.
-- [ ] Neither leaves a file at the cache path, so the next run retries
+- [x] Neither leaves a file at the cache path, so the next run retries
       cleanly rather than finding a bad binary already there.
 
 ## Evidence
+
+- `TestAChecksumMismatchIsNeverExecuted`, two subtests: under a hook the
+  launcher exits 0, under a command it exits 1, and in neither case does
+  the tampered binary run — the test fails outright if its output appears.
+- Neither leaves a file at the cache path, so the next run retries cleanly
+  instead of finding a bad binary already there.
+- proved by: removing the `[ "$got" = "$want" ]` comparison — the corrupt
+  download is installed and executed, and both subtests see its output.

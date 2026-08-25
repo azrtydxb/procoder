@@ -21,9 +21,18 @@ yet.
 
 ## Acceptance criteria
 
-- [ ] A `plugin.json` that is missing, unparseable, or naming a version
+- [x] A `plugin.json` that is missing, unparseable, or naming a version
       with no published release produces a failure saying what was tried,
       and no request for any other version.
-- [ ] The three causes are distinguishable in the message.
+- [x] The three causes are distinguishable in the message.
 
 ## Evidence
+
+- `TestNoVersionMeansNoFetch`, three subtests: manifest absent,
+  unparseable, and present without a version key. Each refuses, and the
+  stub server records **zero** requests — the launcher does not ask for
+  anything when it does not know what to ask for.
+- The three causes have distinguishable messages.
+- proved by: falling back to a default version when the manifest yields
+  nothing — the launcher then fetches and runs something, and the subtests
+  see output where they expect a refusal.

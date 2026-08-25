@@ -21,9 +21,18 @@ this project is built to catch.
 
 ## Acceptance criteria
 
-- [ ] A second invocation inside the failure window makes no network call
+- [x] A second invocation inside the failure window makes no network call
       and still reports the reason, asserted by counting requests against
       a stub server.
-- [ ] After the window ages out, the next invocation tries again.
+- [x] After the window ages out, the next invocation tries again.
 
 ## Evidence
+
+- `TestAFailedFetchIsRememberedRatherThanRetriedEveryTime`: the first
+  invocation requests and fails; the second makes **no** further request,
+  still exits non-zero, and still prints why — including how long until it
+  retries.
+- The record is a memory, not a silence. That distinction is asserted: the
+  test fails if the second invocation says nothing.
+- proved by: removing the failure-marker write — the second invocation
+  makes its own request and the count rises.

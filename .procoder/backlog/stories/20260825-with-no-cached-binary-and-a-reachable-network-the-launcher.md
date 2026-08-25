@@ -22,12 +22,24 @@ answers about the launcher and not about the network.
 
 ## Acceptance criteria
 
-- [ ] With no cached binary and a reachable network, the launcher fetches
+- [x] With no cached binary and a reachable network, the launcher fetches
       the asset for its platform, verifies it against the release's
       `SHA256SUMS`, caches it, and execs it — asserted end to end against
       a stub server rather than the real GitHub.
-- [ ] The verification uses the repository's existing portable sha256
+- [x] The verification uses the repository's existing portable sha256
       approach, and a mismatch is detectable by the test rather than
       merely assumed to work.
 
 ## Evidence
+
+- `TestTheLauncherFetchesVerifiesAndCachesItsBinary`: with an empty
+  `dist/`, the launcher fetches, verifies and execs, and the binary is
+  found at the cache path afterwards. Against `httptest`, never GitHub.
+- Verification reuses the repository's portable approach — `sha256sum`
+  where it exists, `shasum -a 256` otherwise — the same shape
+  `scripts/build-dist.sh` already carries.
+- A mismatch is detectable by the test rather than assumed: the same
+  server serves a deliberately wrong manifest in
+  `TestAChecksumMismatchIsNeverExecuted`, and the download is refused.
+- proved by: removing the `mv -f` install — the binary is fetched,
+  verified, and never placed where the next run can find it.
