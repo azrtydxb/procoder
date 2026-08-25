@@ -3,7 +3,7 @@
 Status: open
 Created: 2026-08-25
 Epic: ci-built-binaries
-Sprint: -
+Sprint: 020-the-binaries-leave-the-tree-and-ci-builds-them
 
 ## Description
 
