@@ -2,7 +2,7 @@
 
 Status: done 2026-08-25
 Created: 2026-08-25
-Spec: ci-built-binaries
+Spec: ci-built-binaries @ 78dbaa5ae1d9
 
 ## Description
 
