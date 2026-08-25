@@ -20,8 +20,19 @@ is worse than a red job somebody has to look at.
 
 ## Acceptance criteria
 
-- [ ] The release job builds all five targets from the tagged source and
+- [x] The release job builds all five targets from the tagged source and
       attaches them with a `SHA256SUMS` generated in that job.
-- [ ] The job fails rather than publishing a release with no assets.
+- [x] The job fails rather than publishing a release with no assets.
 
 ## Evidence
+
+- `.github/workflows/ci.yml` gains a "build the binaries this release
+  publishes" step that runs `scripts/build-dist.sh` under the pinned
+  toolchain, before staging. The staging step still copies from `dist/` —
+  but from a `dist/` this job just built, not one a person committed.
+- The job refuses to publish a release without a complete manifest: it
+  requires `SHA256SUMS` to carry five lines and fails, printing the file,
+  otherwise. A release with no assets used to mean nobody could upgrade;
+  now it means nobody can install, so it is worth a red job.
+- The existing five-distinct-names check is unchanged and still runs
+  before the manifest is staged, so it keeps meaning "five binaries".
