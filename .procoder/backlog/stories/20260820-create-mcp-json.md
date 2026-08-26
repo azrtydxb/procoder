@@ -21,4 +21,3 @@ Create a portable MCP server configuration file (`mcp.json`) at the plugin root.
 - [ ] JSON parses without errors
 
 ## Evidence
-

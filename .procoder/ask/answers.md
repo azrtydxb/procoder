@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-26 08:33 UTC. procoder reads this
+Written 2026-08-26 08:50 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -24,6 +24,21 @@ Key: 32f242effa43
 Question: Which of #177 and #181 is next, given #172 and #175 are both in review?
 
 Answer: #181 (procoder prune) — already specified with guardrails agreed, start immediately
+
+## [decision] decisions.md
+
+Key: 3e59374380b3
+Question: Scope of v3.1.1: does it wait for #186 and #188?
+
+Answered by the maintainer on 2026-08-26: yes, all of them, and the tag is
+theirs to make.
+
+- everything first: #186 (specs validated for truth) and #188 (the
+  kubeconform network flake) are fixed before the release is tagged.
+- defer the two: NOT what was asked. Recorded so a later session does not
+  read the earlier recommendation and act on it.
+
+Answer: yes — do #186 and #188 too. The maintainer tags, not me.
 
 ## (no longer asked)
 

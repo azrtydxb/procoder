@@ -18,4 +18,3 @@ Update `.procoder/config.toml` `[release] files` list to include all new version
 - [ ] No existing version-bearing files are removed from sync
 
 ## Evidence
-

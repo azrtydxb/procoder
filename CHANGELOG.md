@@ -54,6 +54,36 @@ Rules that earn their place:
 _procoder stops applying its own conventions to repositories that never
 adopted it, and reclaims the gigabyte that updating in place left behind._
 
+**Fixed — the attribution finding says which commit carries the trailer.**
+([#187](https://github.com/azrtydxb/procoder/pull/187)) The gate refused
+every commit with "commit message carries an AI-attribution line", against
+a message that plainly did not carry one. The check runs over every
+UNPUSHED commit, not over the message being written, so one trailer three
+commits back blocked every commit after it — and the wording made it read
+as being about the commit in your hand. It could not be argued with, and
+`git commit --amend` amends the wrong commit, so `--no-verify` was the only
+way through. The finding now names the commit, quotes its subject, and
+gives the rebase that works.
+
+**Added — specs are checked for truth, not only for completeness.**
+([#187](https://github.com/azrtydxb/procoder/pull/187)) Every controller in
+the chain was structural, and a spec could be complete and wrong: `spec
+check` now refuses a draft that cites a symbol, path or command which does
+not exist, and one whose acceptance criteria name no way to observe them.
+A criterion whose observable has a prerequisite — the documentation domain
+needs a built index — must name it, because without it the criterion passes
+whatever the code does. Drafts are refused, completed specs get notes: the
+point is to catch a deviation before the sprint opens, not to retrofit a
+rule onto an archive nobody will rewrite.
+
+**Fixed — a test whose verdict depended on reaching GitHub.**
+([#187](https://github.com/azrtydxb/procoder/pull/187)) `kubeconform`
+fetches its schemas over the network, so the Kubernetes manifest test could
+fail under a parallel run because a download was rate-limited rather than
+because anything was wrong. It is stubbed now, the way the gate tests
+already stub their scanners, with the real-binary check kept as an opt-in
+so a change in the tool's output is still something the suite can find out.
+
 **Fixed — the gate no longer answers for code procoder was never given.**
 ([#187](https://github.com/azrtydxb/procoder/pull/187)) A contributor
 cloned an upstream project, changed two files, and was handed nineteen

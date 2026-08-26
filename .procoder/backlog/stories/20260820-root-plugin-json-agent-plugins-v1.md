@@ -19,4 +19,3 @@ The current root `plugin.json` has only `{"name": "procoder"}`. It must be rewri
 - [ ] `procoder release` includes this file in sync verification
 
 ## Evidence
-

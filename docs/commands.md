@@ -463,6 +463,40 @@ interviews the gaps closed; the binary judges completeness.
   to `complete` — a note, never a gap. A complete spec seeds the todo
   list — one task per criterion group.
 
+**Claims are checked, not only counted.** Everything above is structural:
+sections present, questions closed, ids covered. All of it can be satisfied
+by a spec that asserts things the code does not do and promises criteria no
+fixture can produce. Two further checks ask whether the document is TRUE.
+
+A **citation** that does not resolve is refused. A backticked `pkg.Symbol`,
+a repository path, or a `procoder <command>` named in In scope,
+Constraints, Interfaces or Decisions must exist. Code fences are excluded,
+and Edge cases and Failure modes are left alone — they describe what WOULD
+happen and name things hypothetically. Nothing judges prose: a machine can
+check that `gitx.Attribution` exists and cannot check that "the gate runs
+formatting first" is true. Requiring the claim to name something turns the
+second into the first for the claims that matter.
+
+An **acceptance criterion that names no observable** is refused. Say the
+command that runs it, the test that asserts it, or the file it inspects — a
+criterion nobody can run is an agreement, not a test. A criterion whose
+observable has a known prerequisite must name it: the documentation domain
+needs a built index, and without one it reports `public surface NOT
+computed` and never reaches a finding, so the criterion passes whatever the
+code does.
+
+Both refuse only while the spec is a `draft` — deliberately the moment
+before the sprint opens, when a deviation is cheap. A spec already marked
+`complete` gets notes instead, because retrofitting a rule onto an archive
+nobody will rewrite is how a check gets switched off. `backlog close story`
+reports the same criterion faults as notes, never as refusals, for the same
+reason.
+
+Known limitation, stated rather than discovered: only the top-level command
+resolves. `procoder backlog check` passes because `backlog` exists, though
+`check` is not one of its subcommands — and that exact citation was in the
+spec for this feature.
+
 **Scope coverage.** Every `## In scope` bullet carries an id — `- [S-1]
 …` — and at least one acceptance criterion must cite it: `- [ ] [S-1]
 …`. One criterion may cite several ids where it genuinely covers them.

@@ -316,6 +316,26 @@ func checkOne(root, path string, out func(string)) int {
 			strings.Join(uncovered, ", ")))
 	}
 
+	// The truth checks: does what this says CITE anything checkable, and
+	// can each criterion be observed at all. See internal/spec/truth.go.
+	//
+	// Only while the spec is a draft. That is deliberately the moment
+	// before the sprint opens, which is the whole point of #186 —
+	// deviations found here are cheap and the same deviation found
+	// mid-sprint costs a restructure. A spec already marked complete
+	// describes work that is done, and refusing it now would retrofit a
+	// rule onto an archive nobody is going to rewrite; those are reported
+	// as notes so the information is not lost.
+	if truth := TruthGaps(root, text); len(truth) > 0 {
+		if statusOf(text) == "complete" {
+			for _, t := range truth {
+				notes = append(notes, "  note: "+t)
+			}
+		} else {
+			gaps = append(gaps, truth...)
+		}
+	}
+
 	criteria := textutil.Section(text, "Acceptance criteria")
 	boxes := checkboxRe.FindAllStringSubmatch(criteria, -1)
 	if strings.Contains(text, "## Acceptance criteria") && len(boxes) == 0 {

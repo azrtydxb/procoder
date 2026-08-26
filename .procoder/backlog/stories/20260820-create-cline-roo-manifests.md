@@ -20,4 +20,3 @@ Create formal plugin manifests for Cline and Roo Code under `cline/` and `roo/` 
 - [ ] JSON files have consistent metadata (matching other manifests)
 
 ## Evidence
-

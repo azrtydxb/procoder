@@ -36,8 +36,11 @@ func completeSpec() string {
 			b.WriteString("- [S-1] the offline report\n")
 			b.WriteString("- [S-2] the suite it has to keep green\n")
 		case "Acceptance criteria":
-			b.WriteString("- [ ] [S-1] report renders with the network cable pulled\n")
-			b.WriteString("- [ ] [S-2] go test ./... exits 0\n")
+			// Each names its observable: since #186 a criterion that says
+			// only what should be true, without saying how anybody would
+			// see it, is refused.
+			b.WriteString("- [ ] [S-1] `procoder check` renders the report with the network cable pulled, exit 0\n")
+			b.WriteString("- [ ] [S-2] `go test ./...` exits 0\n")
 		case "Open questions":
 			// none — every decision resolved
 		default:
@@ -75,14 +78,14 @@ func TestCheckBlocksOnGaps(t *testing.T) {
 			return s + "\n- OPEN: which database?\n"
 		}, "unresolved OPEN:"},
 		{"no checkboxes", func(s string) string {
-			s = strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled\n", "renders offline\n", 1)
-			return strings.Replace(s, "- [ ] [S-2] go test ./... exits 0\n", "", 1)
+			s = strings.Replace(s, "- [ ] [S-1] `procoder check` renders the report with the network cable pulled, exit 0\n", "renders offline\n", 1)
+			return strings.Replace(s, "- [ ] [S-2] `go test ./...` exits 0\n", "", 1)
 		}, "no checkboxes"},
 		{"placeholder criterion", func(s string) string {
-			return strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled", "- [ ] ...", 1)
+			return strings.Replace(s, "- [ ] [S-1] `procoder check` renders the report with the network cable pulled, exit 0", "- [ ] ...", 1)
 		}, "placeholder"},
 		{"untestable criterion", func(s string) string {
-			return strings.Replace(s, "- [ ] [S-1] report renders with the network cable pulled",
+			return strings.Replace(s, "- [ ] [S-1] `procoder check` renders the report with the network cable pulled, exit 0",
 				"- [ ] the UI is user-friendly", 1)
 		}, "untestable criterion"},
 	}

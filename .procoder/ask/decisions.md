@@ -58,3 +58,13 @@ Standing instruction from the maintainer on 2026-08-26: no.
   maintainer's call and waits for them to say so.
 - tag when merged: NOT what was asked. Recorded so a later session cannot
   read "merge both, then cut v3.1.1" from earlier in the day and act on it.
+
+## Scope of v3.1.1: does it wait for #186 and #188?
+
+Answered by the maintainer on 2026-08-26: yes, all of them, and the tag is
+theirs to make.
+
+- everything first: #186 (specs validated for truth) and #188 (the
+  kubeconform network flake) are fixed before the release is tagged.
+- defer the two: NOT what was asked. Recorded so a later session does not
+  read the earlier recommendation and act on it.

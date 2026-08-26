@@ -18,4 +18,3 @@ All existing rules directories (`.cursor/rules/`, `.windsurf/rules/`, `.roo/rule
 - [ ] No orphaned rule files from removed integrations
 
 ## Evidence
-

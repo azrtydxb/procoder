@@ -405,3 +405,33 @@ func TestCloseStoriesOfOneMatchesTheSingleForm(t *testing.T) {
 func closeStory(root, id string, gateClean func() bool, out func(string)) int {
 	return CloseStoryWith(root, id, gateClean, nil, out)
 }
+
+// S-4 of specs-checked-for-truth: the close controller says when a
+// criterion names no observable — the criteria it is about to ask for
+// evidence against.
+//
+// It REPORTS rather than refuses, and that is the design. The refusal
+// belongs at the draft spec, before the sprint opens; refusing here would
+// apply a rule written today to every story already in flight, which is
+// the retrofit that change deliberately does not do (#186).
+//
+// proved by: the `spec.UncheckableCriteria` loop removed from close — the
+// note disappears and the test names it.
+func TestAStoryCriterionWithNoObservableIsCalledOut(t *testing.T) {
+	root := t.TempDir()
+	// The same solid story, with its criterion replaced by one that says
+	// only what should be true.
+	story := strings.Replace(solidStory, "- [x]", "- [x] the gate is correct —", 1)
+	writeItem(t, root, KindStory, "s", story)
+
+	out, lines := collect()
+	CloseStoryWith(root, "s", func() bool { return true }, nil, out)
+	joined := strings.Join(*lines, "\n")
+	if !strings.Contains(joined, "names no observable") {
+		t.Fatalf("a criterion nobody can run was not called out:\n%s", joined)
+	}
+	// And it is a note, not a refusal reason.
+	if strings.Contains(joined, "stays OPEN") && !strings.Contains(joined, "note:") {
+		t.Errorf("the criterion rule refused rather than reporting:\n%s", joined)
+	}
+}
