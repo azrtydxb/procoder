@@ -186,3 +186,42 @@ func TestADecisionHandedOverWithoutAQuestionMarkStillBlocks(t *testing.T) {
 		}
 	}
 }
+
+// Unknown is not none. A decisions file that exists and cannot be read, or
+// holds content in a shape procoder does not recognise, means whether a
+// decision was recorded is UNKNOWN — and blocking a turn on not knowing is
+// a block nobody can act on, which is the thing this hook exists to
+// prevent rather than to cause.
+//
+// The spec said so in its edge cases and the first implementation did the
+// opposite: PendingDecisions discarded the notes decisionQuestions
+// produces for exactly these cases, so unknown arrived as none and the
+// turn was blocked. Raised in review on #215; reproduced before fixing.
+//
+// proved by: the `len(notes) > 0` test dropped from unaskedDecision — the
+// malformed file blocks again.
+func TestAnUnreadableDecisionsFileDoesNotBlock(t *testing.T) {
+	root := askRepo(t)
+	recordDecision(t, root, "I need to decide whether to merge first.\n")
+	if code, reason := runStop(t, root, "Done. Should I tag it now?"); code != 0 {
+		t.Errorf("an unparseable decisions file blocked the turn (exit %d) — procoder cannot tell whether a decision was recorded:\n%s", code, reason)
+	}
+}
+
+// And the neighbouring case, which is NOT unknown: a file that exists and
+// is empty says plainly that nothing was recorded. That is a fact, and the
+// turn should still block.
+//
+// Written after the first version of the test above lumped the two
+// together and failed — an empty file is not an unreadable one.
+//
+// proved by: the `strings.TrimSpace(string(raw)) != ""` test in
+// decisionQuestions inverted, so an empty file produces a note — the turn
+// then stops blocking and a buried decision gets through.
+func TestAnEmptyDecisionsFileStillBlocks(t *testing.T) {
+	root := askRepo(t)
+	recordDecision(t, root, "   \n")
+	if code, _ := runStop(t, root, "Done. Should I tag it now?"); code != 2 {
+		t.Fatalf("an empty decisions file did not block (exit %d) — empty means nothing was recorded", code)
+	}
+}

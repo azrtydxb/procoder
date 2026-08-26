@@ -94,10 +94,17 @@ func unaskedDecision(root, message string) (bool, string) {
 	if !decisionInProse(message) {
 		return false, ""
 	}
-	pending, err := ask.PendingDecisions(root)
-	if err != nil || len(pending) > 0 {
-		// Unreadable, or the agent already recorded one. Either way this
-		// hook has nothing to add.
+	pending, notes, err := ask.PendingDecisions(root)
+	if err != nil || len(notes) > 0 || len(pending) > 0 {
+		// Three reasons to say nothing, and only one of them is "the agent
+		// already recorded a decision".
+		//
+		// A note means the decisions file exists and could not be read, or
+		// holds something in a shape procoder does not recognise. Whether a
+		// decision was recorded is then UNKNOWN, and blocking a turn on not
+		// knowing is a block nobody can act on — the thing this hook exists
+		// to prevent, not to cause. Raised in review on #215, where the
+		// notes were being discarded and unknown read as none.
 		return false, ""
 	}
 	if alreadyBlocked(root, message) {

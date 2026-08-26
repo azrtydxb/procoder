@@ -96,7 +96,7 @@ Question: Which is the next piece of work?
   `internal/runcmd/runcmd.go:172` execs argv the repository declares, so an
   agent writing a launch command under injection is a live path. The only
   security-shaped items in the set.
-- #195, the context.md glossary: small, self-contained, pays offevery session.
+- #195, the context.md glossary: small, self-contained, pays off every session.
 
 Answer: #193, merge-conflict discipline
 
