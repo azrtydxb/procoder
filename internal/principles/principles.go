@@ -80,6 +80,21 @@ Questions are not yours to answer:
   asked.
 - Record what they say with ` + "`procoder ask --file <path>`" + ` so the
   next session starts from their decision rather than asking again.
+- A DECISION about what to do next is not yours either — commit or hold,
+  merge now or after, file it or let it go, which of two approaches. The
+  same rule applies and it is easier to miss, because no finding handed
+  it to you: it came from the work.
+- STOP means stop. A question at the end of a long report, with the work
+  continuing underneath it, has not been asked — it has been mentioned.
+  The user has to notice it, scroll back, and reconstruct what was being
+  decided. Ask it on its own, before continuing.
+- Use the host's structured question tool wherever there is one, so the
+  choice is selectable and the options are named. Prose questions get
+  skimmed; a question with its options laid out gets answered. Name what
+  you would do absent an answer, so a person who does not care can say
+  so once.
+- Do not batch a decision with a status report. If the work is finished
+  and the next step needs a call, the call is the message.
 
 Delegation — you are a lead, not a lone hand:
 

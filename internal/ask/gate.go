@@ -18,7 +18,8 @@ import (
 // repository that wants the harder rule.
 //
 // A collection that cannot run says nothing rather than guessing: the
-// questions are gathered from four domains, and a gate that reported "no
+// questions are gathered from five sources — four the repository computes,
+// plus the decisions the agent recorded — and a gate that reported "no
 // questions" because it could not read the answers file would be claiming
 // something it does not know.
 func GateFindings(root string) []gitx.Finding {

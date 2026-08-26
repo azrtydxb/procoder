@@ -52,8 +52,12 @@ func WriteQuestions(root string, qs []Question, now time.Time) error {
 	for i, q := range qs {
 		fmt.Fprintf(&b, "\n%sQ%d: %s\n\n", answers.HeadingPrefix, i+1, q.Label())
 		b.WriteString(answers.KeyPrefix + q.Key() + "\n")
-		b.WriteString("Question: " + q.Text + "\n")
-		b.WriteString(answers.AnswerPrefix + "\n")
+		b.WriteString("Question: " + q.Text + "\n\n")
+		// TrimRight, because "Answer: " with nothing after it is trailing
+		// whitespace and a formatter strips it — which would make the file
+		// procoder just wrote fail procoder's own formatting check. The
+		// parser trims each line, so the space is not load-bearing.
+		b.WriteString(strings.TrimRight(answers.AnswerPrefix, " ") + "\n")
 	}
 	return write(Path(root, QuestionsFile), b.String())
 }
@@ -92,7 +96,7 @@ func WriteAnswers(root string, qs []Question, store Answers, now time.Time) erro
 			// nobody could interpret.
 			b.WriteString(answers.QuestionPrefix + question + "\n")
 		}
-		b.WriteString(answers.AnswerPrefix + entry.Answer + "\n")
+		b.WriteString("\n" + answers.AnswerPrefix + entry.Answer + "\n")
 	}
 	return write(Path(root, answers.File), b.String())
 }

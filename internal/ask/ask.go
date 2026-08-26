@@ -54,6 +54,12 @@ func Collect(root string) ([]Question, []string) {
 	var notes []string
 	var qs []Question
 	qs = append(qs, specQuestions(root)...)
+	// The fifth source, and the only one the repository does not compute:
+	// what the agent wrote down because it was not its call. Collected
+	// before the changed-file read below, so a git failure cannot lose it.
+	decisions, decisionNotes := decisionQuestions(root)
+	qs = append(qs, decisions...)
+	notes = append(notes, decisionNotes...)
 	changed, err := gitx.ChangedFiles(root)
 	if err != nil {
 		// Three of the four domains work from the changed set. Losing them

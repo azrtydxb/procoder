@@ -534,6 +534,30 @@ wording changed is asked again, because the old answer belonged to a
 different question. Exit 1 means something is still unanswered, 0 means
 nothing is.
 
+**Decisions.** The four sources above are computed from the repository —
+each comes from a finding. A decision does not: commit or hold, merge now
+or after, which of two approaches. It comes from the work, when the next
+step forks and the fork is not the agent's to pick.
+
+The agent writes those to `.procoder/ask/decisions.md`, and `procoder ask`
+collects them with the rest. One `## ` heading is one decision; the lines
+under it are its options:
+
+```markdown
+## Merge #187 before or after #181?
+
+- before: the gate fix lands first, #181 rebases onto it
+- after: one release, but #181 is written against the old gate
+```
+
+Procoder never writes that file — the agent does, and procoder reads it.
+That is P-CONTROL, and it is why there is no `--raise` flag: it would read
+better on the command line and break the rule the tool rests on.
+
+A file that exists but cannot be read, or one with content and no `## `
+heading, produces a note naming it. Silence there would leave decisions
+sitting on disk that nobody is ever asked.
+
 A flagged secret's value never appears in the question, the files, or the
 terminal: what a human is asked is whether the flag is real, and answering
 that does not need the credential.
