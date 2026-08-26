@@ -276,6 +276,16 @@ func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
 		// rather than be rediscovered the same way.
 		"TAKE THE SNAPSHOT IMMEDIATELY BEFORE EACH MUTATION",
 		"untested by definition",
+		// Merge-conflict discipline (#193). The last clause is the one
+		// that came from a real failure here: git split a conflict through
+		// the middle of a function, "keep both sides" truncated a test,
+		// and only the compiler noticed.
+		"resolved hunk by hunk",
+		"middle of a function",
+		// Relaying procoder's own findings, and the override that keeps
+		// brevity away from consequences.
+		"Relaying a procoder report",
+		"never for consequences",
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("the principles no longer say %q — the rule is the deliverable", phrase)

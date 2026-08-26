@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-26 13:00 UTC. procoder reads this
+Written 2026-08-26 14:01 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -32,12 +32,55 @@ Question: Does the decisions queue and its principles change ship in v3.1.1, or 
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
 
+## [decision] decisions.md
+
+Key: 612a37231e9b
+Question: Label #209 and #211 roadmap alongside #194?
+
+All three are documentation-positioning work: an evidence bibliography, a
+comparable-projects doc, and the docs-hardening issue already labelled
+roadmap. They are one cluster and none is small.
+
+- label both roadmap: the cluster reads as direction rather than queued
+  work, which is what the label was created for.
+- leave them unlabelled: they stay in the ordinary queue.
+
+Answer: yes, label both
+
 ## (no longer asked)
 
 Key: 6617364d8670
 Question: Which of #177 and #181 is next, given #172 and #175 are both in review?
 
 Answer: #181 (procoder prune) — already specified with guardrails agreed, start immediately
+
+## [decision] decisions.md
+
+Key: 815c92a8de33
+Question: Close #206, whose premise does not hold for procoder?
+
+#206 asks for ReDoS defence — bounded, sandboxed regex evaluation — because
+procoder "evaluates regex in several places that ultimately read
+repo-controlled or config-controlled text".
+
+Checked rather than taken on trust, the way #201's premise was:
+
+- there is no `regexp.Compile` anywhere in the tree;
+- the only two `MustCompile` calls with a non-literal argument build their
+  pattern from constants in source (`gitx.aiIdentities`,
+  `security.pyDeps`);
+- `.procoder/lint/RULES.md`'s `checks` list is passed to clang-tidy as its
+  `--checks` value. It never reaches a Go regex engine.
+
+So no repository- or config-controlled text becomes a pattern procoder
+compiles. The exposure the issue describes is not there.
+
+- close it, with the evidence recorded, and reopen if a runtime-compiled
+  pattern is ever introduced.
+- keep it open as a standing constraint on future work — a reminder not to
+  add one.
+
+Answer: not yet — do a deep analysis first, and close only if it is 100% certain
 
 ## (no longer asked)
 
@@ -46,34 +89,17 @@ Question: Does the decisions queue and its principles change ship in v3.1.1, or 
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: aa8ea1f17c0c
 Question: Do the four large features stay open as a roadmap?
 
-#189 SKILL.md redesign, #190 `procoder learn`, #192 `procoder wizard`, #194
-docs hardening. Each is a release of its own; two add new commands.
-
-- keep open: a roadmap that says what procoder might become.
-- close until wanted: an open issue nobody is going to start reads as a
-  commitment, and twenty-three of them read as a plan.
-
 Answer: keep open, but label them roadmap/large so they stop reading as queued work
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: b55269facb93
 Question: Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
-
-Today's release overtook two of them, and two pairs are the same idea filed
-twice. Left alone, somebody rebuilds what already exists.
-
-- rescope and merge now: #198 loses its unfalsifiable-criteria half (shipped
-  as `CriteriaWithoutFalsifiers`) and keeps fixed-output, hedgy vocabulary
-  and unmeasured thresholds; #191 keeps board visibility and shared
-  blockers and drops "there is no decisions file", because there is one now.
-- leave them: the overlap is discoverable by whoever picks one up, at the
-  cost of them finding out after starting.
 
 Answer: yes — rescope and merge now, before anyone starts on a duplicate
 
@@ -84,21 +110,31 @@ Question: Does `procoder prune` delete, or print what it would delete?
 
 Answer: report by default, delete on --apply — the safe thing stays the default and the reclaim still happens in one command
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: c9c26deda0a7
 Question: Which is the next piece of work?
 
-- #193, merge-conflict discipline: the failure happened here today — git
-  split a conflict through a function, "keep both sides" truncated a test,
-  and only the compiler caught it. Concrete evidence, and the fix is prose.
-- #201 + #200, the execute path: verified, not assumed —
-  `internal/runcmd/runcmd.go:172` execs argv the repository declares, so an
-  agent writing a launch command under injection is a live path. The only
-  security-shaped items in the set.
-- #195, the context.md glossary: small, self-contained, pays off every session.
-
 Answer: #193, merge-conflict discipline
+
+## [decision] decisions.md
+
+Key: e721d4e97e3f
+Question: Do #210 now, before #193?
+
+`docs/influences.md` credits superpowers, ponytail and serena. BMad appears
+in it zero times, while `internal/planning/bmad.go` has shipped since 2.0.0
+and `[planning] method = "bmad"` reads BMad's own artifacts. Verified: the
+integration is real and the doc gap is real.
+
+Small, factual, and the trademark constraint is already understood — BMad
+is named to describe interoperation, never as a procoder feature name.
+
+- do it now: ten minutes, and it closes a verified gap in a provenance
+  record that is currently wrong by omission.
+- after #193: #193 was already chosen as the next piece of work.
+
+Answer: no — #193 as planned
 
 ## (no longer asked)
 

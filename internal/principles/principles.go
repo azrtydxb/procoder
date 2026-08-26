@@ -73,6 +73,15 @@ Rules:
 - Which points at the real guard: a feature whose only trace is a comment
   is untested by definition, and untested code can vanish between two
   green runs without anything saying so. Write the test with the code.
+- A merge conflict is resolved hunk by hunk, by what each side was trying
+  to do — not by which lines differ. ` + "`--abort`" + ` is not a resolution: it
+  erases the attempt and the next person starts from nothing. Stuck is a
+  thing to say, not a thing to undo. Say which side's intent won where it
+  is not obvious, so a reviewer does not have to work it out from the
+  result. Read the resolved file rather than trusting its shape: git
+  splits a conflict wherever the texts diverge, including through the
+  middle of a function, so "keep both sides" can leave one of them without
+  its closing lines and still look plausible.
 - Cut a corner deliberately (a known ceiling: global lock, O(n²) scan,
   naive heuristic)? Mark it in a comment with the configured debt marker
   (default ` + "`debt:`" + `), naming the ceiling AND the condition to
@@ -197,6 +206,13 @@ the ND formatting for that response and answer in plain prose.
   explicit versions rather than one compromise
 - Code: full blocks only, not partial snippets with "add this part"
 - Tables for comparisons; prose where structure does not add value
+- Relaying a procoder report: lead with what blocks and how to clear it,
+  not with which command ran. Past about five findings, give the count and
+  the command that lists the rest instead of pasting all of them. No
+  preamble before the answer and no offer of further help after it.
+- Those caps come off for anything destructive or irreversible, and for a
+  finding a person has already asked to see in full: brevity is for
+  reports, never for consequences.
 `
 
 // Effective returns the principles text for this repo: the override file

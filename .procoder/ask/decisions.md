@@ -1,36 +1,48 @@
 # Decisions waiting on a human
 
-Written by the agent, read by `procoder ask`. One `## ` heading per
-decision; the lines under it are its options.
+## Close #206, whose premise does not hold for procoder?
 
-## Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
+#206 asks for ReDoS defence — bounded, sandboxed regex evaluation — because
+procoder "evaluates regex in several places that ultimately read
+repo-controlled or config-controlled text".
 
-Today's release overtook two of them, and two pairs are the same idea filed
-twice. Left alone, somebody rebuilds what already exists.
+Checked rather than taken on trust, the way #201's premise was:
 
-- rescope and merge now: #198 loses its unfalsifiable-criteria half (shipped
-  as `CriteriaWithoutFalsifiers`) and keeps fixed-output, hedgy vocabulary
-  and unmeasured thresholds; #191 keeps board visibility and shared
-  blockers and drops "there is no decisions file", because there is one now.
-- leave them: the overlap is discoverable by whoever picks one up, at the
-  cost of them finding out after starting.
+- there is no `regexp.Compile` anywhere in the tree;
+- the only two `MustCompile` calls with a non-literal argument build their
+  pattern from constants in source (`gitx.aiIdentities`,
+  `security.pyDeps`);
+- `.procoder/lint/RULES.md`'s `checks` list is passed to clang-tidy as its
+  `--checks` value. It never reaches a Go regex engine.
 
-## Which is the next piece of work?
+So no repository- or config-controlled text becomes a pattern procoder
+compiles. The exposure the issue describes is not there.
 
-- #193, merge-conflict discipline: the failure happened here today — git
-  split a conflict through a function, "keep both sides" truncated a test,
-  and only the compiler caught it. Concrete evidence, and the fix is prose.
-- #201 + #200, the execute path: verified, not assumed —
-  `internal/runcmd/runcmd.go:172` execs argv the repository declares, so an
-  agent writing a launch command under injection is a live path. The only
-  security-shaped items in the set.
-- #195, the context.md glossary: small, self-contained, pays off every session.
+- close it, with the evidence recorded, and reopen if a runtime-compiled
+  pattern is ever introduced.
+- keep it open as a standing constraint on future work — a reminder not to
+  add one.
 
-## Do the four large features stay open as a roadmap?
+## Do #210 now, before #193?
 
-#189 SKILL.md redesign, #190 `procoder learn`, #192 `procoder wizard`, #194
-docs hardening. Each is a release of its own; two add new commands.
+`docs/influences.md` credits superpowers, ponytail and serena. BMad appears
+in it zero times, while `internal/planning/bmad.go` has shipped since 2.0.0
+and `[planning] method = "bmad"` reads BMad's own artifacts. Verified: the
+integration is real and the doc gap is real.
 
-- keep open: a roadmap that says what procoder might become.
-- close until wanted: an open issue nobody is going to start reads as a
-  commitment, and twenty-three of them read as a plan.
+Small, factual, and the trademark constraint is already understood — BMad
+is named to describe interoperation, never as a procoder feature name.
+
+- do it now: ten minutes, and it closes a verified gap in a provenance
+  record that is currently wrong by omission.
+- after #193: #193 was already chosen as the next piece of work.
+
+## Label #209 and #211 roadmap alongside #194?
+
+All three are documentation-positioning work: an evidence bibliography, a
+comparable-projects doc, and the docs-hardening issue already labelled
+roadmap. They are one cluster and none is small.
+
+- label both roadmap: the cluster reads as direction rather than queued
+  work, which is what the label was created for.
+- leave them unlabelled: they stay in the ordinary queue.
