@@ -638,7 +638,7 @@ func run(args []string) int {
 		return portability.Agents(doctor.Root(), printLine)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
-			return principles.RunHook(doctor.Root(), printLine)
+			return principles.RunHook(doctor.Root(), os.Stdin, printLine)
 		}
 		return principles.Run(doctor.Root(), printLine)
 	case "templates":

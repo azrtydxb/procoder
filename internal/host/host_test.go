@@ -1,6 +1,11 @@
 package host
 
-import "testing"
+import (
+	"io"
+	"strings"
+	"testing"
+	"time"
+)
 
 // clear blanks every variable Detect consults, so a case declares its whole
 // world. The test process itself runs under an AI agent that may well export
@@ -117,5 +122,76 @@ func TestHostNamesAreTheWireValues(t *testing.T) {
 		if string(c.got) != c.want {
 			t.Errorf("host constant = %q, want %q", c.got, c.want)
 		}
+	}
+}
+
+// The SessionStart payload carries why the session started. procoder needs
+// it because the principles injection is ~7KB re-sent on every matched
+// start, and on resume/compact that text is already in the conversation —
+// one day of resumed sessions measured ~187k tokens of repetition (#175).
+//
+// proved by: returning the raw payload string instead of the parsed
+// `source` — every case below then reports the whole JSON as the source.
+func TestSessionSourceReadsWhyTheSessionStarted(t *testing.T) {
+	for _, c := range []struct{ name, payload, want string }{
+		{"startup", `{"hook_event_name":"SessionStart","source":"startup"}`, "startup"},
+		{"resume", `{"source":"resume"}`, "resume"},
+		{"compact", `{"source":"compact"}`, "compact"},
+		{"clear", `{"source":"clear"}`, "clear"},
+		{"mixed case", `{"source":"Resume"}`, "resume"},
+		{"padded", `{"source":"  compact  "}`, "compact"},
+		{"no source field", `{"hook_event_name":"SessionStart"}`, ""},
+		{"not json", `this is not a payload`, ""},
+		{"empty", ``, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := SessionSource(strings.NewReader(c.payload)); got != c.want {
+				t.Errorf("SessionSource(%q) = %q, want %q", c.payload, got, c.want)
+			}
+		})
+	}
+	if got := SessionSource(nil); got != "" {
+		t.Errorf("a nil reader is not a source, got %q", got)
+	}
+}
+
+// Only the two starts that already carry the earlier context count as
+// resumed. Everything else — including a source that could not be read —
+// is a fresh start, because the fallback has to be sending the rules
+// rather than a pointer to rules nobody sent.
+//
+// proved by: adding "" to the resumed set — the unknown case then gets a
+// pointer, and a session whose payload failed to parse runs ungoverned.
+func TestOnlyResumeAndCompactCountAsResumed(t *testing.T) {
+	for _, c := range []struct {
+		source string
+		want   bool
+	}{
+		{"resume", true}, {"compact", true},
+		{"startup", false}, {"clear", false}, {"", false}, {"unknown", false},
+	} {
+		if got := Resumed(c.source); got != c.want {
+			t.Errorf("Resumed(%q) = %v, want %v", c.source, got, c.want)
+		}
+	}
+}
+
+// A SessionStart hook runs before the session can begin. A host that opens
+// the pipe and sends nothing must not hold it open.
+//
+// proved by: removing the deadline from SessionSource — this test then
+// hangs instead of returning.
+func TestSessionSourceDoesNotWaitForeverOnASilentHost(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	done := make(chan string, 1)
+	go func() { done <- SessionSource(pr) }()
+	select {
+	case got := <-done:
+		if got != "" {
+			t.Errorf("a silent host has no source, got %q", got)
+		}
+	case <-time.After(sessionSourceDeadline + 3*time.Second):
+		t.Fatal("SessionSource did not give up on a host that sent nothing")
 	}
 }
