@@ -2,6 +2,7 @@ package hook
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -39,6 +40,11 @@ const notesHint = `<!-- Yours. What you were doing, what you decided, what comes
 // repository state only.
 type stopPayload struct {
 	Cwd string `json:"cwd"`
+	// LastAssistantMessage is the final assistant text of the turn. The
+	// host supplies it on Stop precisely so a hook does not read the
+	// transcript, which it documents as written asynchronously and lagging
+	// the current turn.
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 // Stop writes the handoff note at the end of a session (or before a
@@ -59,8 +65,26 @@ func Stop(stdin io.Reader, root string) int {
 	old, _ := os.ReadFile(path) // absent is the first handoff, not an error
 	// a note that could not be written is a lost note, never a broken session
 	_ = os.WriteFile(path, []byte(handoff(root, string(old))), 0o644)
+
+	// The note is written first, on every path including this one: a
+	// blocked turn must not also lose its handoff.
+	//
+	// A decision put to the user in prose does not end the turn. The rule
+	// shipped in 3.2.0 and was broken the same day by the agent that wrote
+	// it, which is the whole argument — a rule that depends on remembering
+	// fails on the day somebody is busy.
+	var p stopPayload
+	_ = json.Unmarshal(raw, &p)
+	if blocked, reason := unaskedDecision(root, p.LastAssistantMessage); blocked {
+		fmt.Fprintln(Stderr, reason)
+		return 2 // the host's documented way for a Stop hook to continue the conversation
+	}
 	return 0
 }
+
+// Stderr is where a blocking reason goes, and a variable so a test can
+// read it. The host feeds this back to the model.
+var Stderr io.Writer = os.Stderr
 
 // rootFromPayload falls back to the host's working directory, then the
 // process's, so a caller with no root still writes the note in the right

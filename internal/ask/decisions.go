@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/answers"
 	"strings"
 )
 
@@ -89,4 +90,25 @@ func decisionQuestions(root string) ([]Question, []string) {
 			filepath.ToSlash(filepath.Join(Dir, DecisionsFile)))}
 	}
 	return qs, nil
+}
+
+// PendingDecisions is the decisions the agent recorded and nobody has
+// answered yet.
+//
+// Deliberately narrow. Pending() runs the whole collection — git, the lint
+// pass, the secret scan — because it answers "what is outstanding
+// anywhere". A Stop hook asking only "did the agent write a decision down"
+// cannot afford that: it runs at the end of every turn, under a ten-second
+// timeout, and a check that makes a session hang is worse than the rule it
+// enforces.
+func PendingDecisions(root string) ([]Question, error) {
+	qs, _ := decisionQuestions(root)
+	if len(qs) == 0 {
+		return nil, nil
+	}
+	store, err := answers.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	return Unanswered(qs, store), nil
 }

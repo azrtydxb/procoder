@@ -1,20 +1,13 @@
 # What a human decided
 
-Written 2026-08-26 08:50 UTC. procoder reads this
+Written 2026-08-26 13:00 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: 0489b93052fa
 Question: Is v3.1.1 tagged once the PRs are merged?
-
-Standing instruction from the maintainer on 2026-08-26: no.
-
-- merge only: land #184 and #187 on main and stop there. The tag is the
-  maintainer's call and waits for them to say so.
-- tag when merged: NOT what was asked. Recorded so a later session cannot
-  read "merge both, then cut v3.1.1" from earlier in the day and act on it.
 
 Answer: merge only — do NOT tag. The maintainer will say when.
 
@@ -25,18 +18,10 @@ Question: Which of #177 and #181 is next, given #172 and #175 are both in review
 
 Answer: #181 (procoder prune) — already specified with guardrails agreed, start immediately
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: 3e59374380b3
 Question: Scope of v3.1.1: does it wait for #186 and #188?
-
-Answered by the maintainer on 2026-08-26: yes, all of them, and the tag is
-theirs to make.
-
-- everything first: #186 (specs validated for truth) and #188 (the
-  kubeconform network flake) are fixed before the release is tagged.
-- defer the two: NOT what was asked. Recorded so a later session does not
-  read the earlier recommendation and act on it.
 
 Answer: yes — do #186 and #188 too. The maintainer tags, not me.
 
@@ -47,63 +32,77 @@ Question: Does the decisions queue and its principles change ship in v3.1.1, or 
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: 6617364d8670
 Question: Which of #177 and #181 is next, given #172 and #175 are both in review?
 
-- #181 (`procoder prune`): already specified in the issue with guardrails
-  agreed, so it can start immediately.
-- #177: not yet read this session. Reading it first may change the answer.
-
 Answer: #181 (procoder prune) — already specified with guardrails agreed, start immediately
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: a3f73c3bc2de
 Question: Does the decisions queue and its principles change ship in v3.1.1, or wait?
-
-Context: v3.1.1 was scoped to #172, #175, #177 and #181. This work is none
-of them — it came out of a correction during the sprint.
-
-- in v3.1.1: it is small, tested, and the principles half is worth having
-  in agents' hands sooner rather than later. ADR 0003 governs what makes a
-  change major, and 2.0.1 already shipped new enforcement in a patch.
-- hold for v3.2.0: keeps v3.1.1 exactly the four issues that were scoped,
-  which is easier to describe in a changelog and to review.
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
 
 ## [decision] decisions.md
 
+Key: aa8ea1f17c0c
+Question: Do the four large features stay open as a roadmap?
+
+#189 SKILL.md redesign, #190 `procoder learn`, #192 `procoder wizard`, #194
+docs hardening. Each is a release of its own; two add new commands.
+
+- keep open: a roadmap that says what procoder might become.
+- close until wanted: an open issue nobody is going to start reads as a
+  commitment, and twenty-three of them read as a plan.
+
+Answer: keep open, but label them roadmap/large so they stop reading as queued work
+
+## [decision] decisions.md
+
+Key: b55269facb93
+Question: Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
+
+Today's release overtook two of them, and two pairs are the same idea filed
+twice. Left alone, somebody rebuilds what already exists.
+
+- rescope and merge now: #198 loses its unfalsifiable-criteria half (shipped
+  as `CriteriaWithoutFalsifiers`) and keeps fixed-output, hedgy vocabulary
+  and unmeasured thresholds; #191 keeps board visibility and shared
+  blockers and drops "there is no decisions file", because there is one now.
+- leave them: the overlap is discoverable by whoever picks one up, at the
+  cost of them finding out after starting.
+
+Answer: yes — rescope and merge now, before anyone starts on a duplicate
+
+## (no longer asked)
+
 Key: bdef8e3588e5
 Question: Does `procoder prune` delete, or print what it would delete?
-
-P-CONTROL says the binary prints and never modifies files. That rule is
-about repository content, and the plugin cache is not that — but a command
-that removes 1.1 GB irreversibly is the largest exception the tool would
-have, and it is worth being deliberate rather than assuming the rule does
-not reach here.
-
-- deletes, behind an explicit flag: `procoder prune` reports what it would
-  remove and exits; `procoder prune --apply` does it. One command, the
-  reclaim actually happens, and the default is still a report.
-- prints only, strictly: procoder emits the exact `rm -rf` lines and the
-  human or agent runs them. P-CONTROL holds without exception, nothing is
-  ever deleted by procoder, and the user sees precisely what will go.
-- deletes by default with `--dry-run` to preview: shortest path to the
-  reclaim, and the one most likely to surprise somebody.
 
 Answer: report by default, delete on --apply — the safe thing stays the default and the reclaim still happens in one command
 
 ## [decision] decisions.md
 
+Key: c9c26deda0a7
+Question: Which is the next piece of work?
+
+- #193, merge-conflict discipline: the failure happened here today — git
+  split a conflict through a function, "keep both sides" truncated a test,
+  and only the compiler caught it. Concrete evidence, and the fix is prose.
+- #201 + #200, the execute path: verified, not assumed —
+  `internal/runcmd/runcmd.go:172` execs argv the repository declares, so an
+  agent writing a launch command under injection is a live path. The only
+  security-shaped items in the set.
+- #195, the context.md glossary: small, self-contained, pays offevery session.
+
+Answer: #193, merge-conflict discipline
+
+## (no longer asked)
+
 Key: f4733ae6d75a
 Question: How many cached plugin versions does `procoder prune` keep?
-
-- 3 (active + 2 previous): reclaims 1.01 GB here, two rollback targets.
-- 2 (active + 1 previous): reclaims 1.05 GB, one rollback target — the
-  minimum that still counts as a rollback.
-- 5 (active + 4 previous): reclaims 0.92 GB, a longer rollback window.
 
 Answer: 2 — active + 1 previous
