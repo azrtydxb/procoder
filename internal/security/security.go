@@ -476,7 +476,7 @@ func npmGaps(root string) []string {
 		if info.Name() != "package.json" {
 			return nil
 		}
-		if hasNpmDepsWithoutLockfile(filepath.Dir(p)) {
+		if hasNpmDepsWithoutLockfile(root, filepath.Dir(p)) {
 			if rel, ok := gitx.RepoRel(root, p); ok {
 				out = append(out, rel)
 			}
@@ -488,14 +488,27 @@ func npmGaps(root string) []string {
 }
 
 // hasNpmDepsWithoutLockfile answers for ONE directory: a package.json
-// there declaring dependencies with no lockfile beside it.
-func hasNpmDepsWithoutLockfile(root string) bool {
-	for _, lock := range []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
-		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
-			return false
-		}
+// there declaring dependencies that nothing can pin, so osv cannot scan
+// them.
+//
+// A lockfile beside it answers that. So does a workspace root ABOVE it:
+// pnpm, npm and yarn all keep ONE lockfile at the workspace root and none
+// in the members, so a member declaring dependencies without a lockfile of
+// its own is the normal layout, not a gap - the root lockfile resolves it
+// and IS scanned. Reporting it anyway told a pnpm monorepo its packages
+// were unchecked when every one of them had been, and the advice that came
+// with it ("generate package-lock.json") would have put a second, npm
+// lockfile next to the pnpm one.
+//
+// Walking up without checking membership would be wrong the other way: a
+// nested package that the root does NOT list as a member is not covered by
+// that lockfile, and staying silent about it would report a scan that never
+// happened.
+func hasNpmDepsWithoutLockfile(repoRoot, dir string) bool {
+	if npmLockfileIn(dir) {
+		return false
 	}
-	raw, err := os.ReadFile(filepath.Join(root, "package.json"))
+	raw, err := os.ReadFile(filepath.Join(dir, "package.json"))
 	if err != nil {
 		return false
 	}
@@ -506,7 +519,192 @@ func hasNpmDepsWithoutLockfile(root string) bool {
 	if json.Unmarshal(raw, &m) != nil {
 		return true // unparseable manifest: assume deps, stay honest
 	}
-	return len(m.Dependencies)+len(m.DevDependencies) > 0
+	if len(m.Dependencies)+len(m.DevDependencies) == 0 {
+		return false
+	}
+	return !npmWorkspaceCovers(repoRoot, dir)
+}
+
+// npmLockfileIn: one of the three npm-family lockfiles sits in this
+// directory. osv-scanner reads all three.
+func npmLockfileIn(dir string) bool {
+	for _, lock := range []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, lock)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// npmWorkspaceCovers: some ancestor of dir, at or below the repository
+// root, holds a lockfile AND lists dir among its workspace members. The
+// walk stops at repoRoot so a lockfile outside the repository - a parent
+// checkout, the user's home - never silences a finding inside it.
+func npmWorkspaceCovers(repoRoot, dir string) bool {
+	rel, err := filepath.Rel(repoRoot, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false // dir is the root itself, or not under it at all
+	}
+	for anc := filepath.Dir(dir); ; anc = filepath.Dir(anc) {
+		if npmLockfileIn(anc) {
+			if member, err := filepath.Rel(anc, dir); err == nil &&
+				workspaceGlobsMatch(npmWorkspaceGlobs(anc), filepath.ToSlash(member)) {
+				return true
+			}
+		}
+		// stop at the repository root; the second guard is for a repoRoot
+		// this walk somehow never meets, which must not spin forever
+		if anc == repoRoot || filepath.Dir(anc) == anc {
+			return false
+		}
+	}
+}
+
+// npmWorkspaceGlobs reads the member patterns a directory declares, in
+// whichever of the three shapes its package manager uses. Nil when the
+// directory is not a workspace root.
+func npmWorkspaceGlobs(dir string) []string {
+	var globs []string
+	// pnpm keeps them in their own file, and accepts either extension.
+	for _, name := range []string{"pnpm-workspace.yaml", "pnpm-workspace.yml"} {
+		if raw, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			globs = append(globs, pnpmWorkspacePackages(string(raw))...)
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err != nil {
+		return globs
+	}
+	// npm and yarn take the plain array; yarn also takes an object with
+	// the array under "packages", which fails the array unmarshal whole,
+	// hence two attempts rather than one.
+	var flat struct {
+		Workspaces []string `json:"workspaces"`
+	}
+	if json.Unmarshal(raw, &flat) == nil {
+		return append(globs, flat.Workspaces...)
+	}
+	var nested struct {
+		Workspaces struct {
+			Packages []string `json:"packages"`
+		} `json:"workspaces"`
+	}
+	if json.Unmarshal(raw, &nested) == nil {
+		return append(globs, nested.Workspaces.Packages...)
+	}
+	return globs
+}
+
+// pnpmWorkspacePackages pulls the `packages:` entries out of a
+// pnpm-workspace.yaml. Hand-rolled because procoder carries no
+// dependencies, and this file's shape is a list of strings under one
+// known key - both the block form and the inline flow form.
+func pnpmWorkspacePackages(text string) []string {
+	var out []string
+	inList := false
+	for _, line := range strings.Split(text, "\n") {
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !inList {
+			rest, ok := strings.CutPrefix(trimmed, "packages:")
+			if !ok {
+				continue
+			}
+			rest = strings.TrimSpace(rest)
+			if strings.HasPrefix(rest, "[") {
+				for _, item := range strings.Split(strings.Trim(rest, "[]"), ",") {
+					if v := unquoteYAMLScalar(item); v != "" {
+						out = append(out, v)
+					}
+				}
+				continue
+			}
+			inList = true
+			continue
+		}
+		if item, ok := strings.CutPrefix(trimmed, "-"); ok {
+			if v := unquoteYAMLScalar(item); v != "" {
+				out = append(out, v)
+			}
+			continue
+		}
+		// an unindented line is the next top-level key: the list ended
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			inList = false
+		}
+	}
+	return out
+}
+
+// unquoteYAMLScalar strips the surrounding whitespace and the one layer of
+// quotes a workspace pattern may carry.
+func unquoteYAMLScalar(s string) string {
+	s = strings.TrimSpace(s)
+	for _, q := range []string{`"`, "'"} {
+		if len(s) >= 2 && strings.HasPrefix(s, q) && strings.HasSuffix(s, q) {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+// workspaceGlobsMatch: rel names a member of this workspace. A pattern
+// starting with "!" excludes, and excluding wins however the patterns are
+// ordered - pnpm and npm both read the negations as a filter over the
+// whole set, not as a step in sequence.
+func workspaceGlobsMatch(globs []string, rel string) bool {
+	matched := false
+	for _, g := range globs {
+		if neg, ok := strings.CutPrefix(g, "!"); ok {
+			if matchWorkspaceGlob(neg, rel) {
+				return false
+			}
+			continue
+		}
+		if matchWorkspaceGlob(g, rel) {
+			matched = true
+		}
+	}
+	return matched
+}
+
+// matchWorkspaceGlob matches one workspace pattern against a path relative
+// to the workspace root. path.Match cannot do it alone: it has no "**", and
+// its "*" would happily match across a separator here.
+func matchWorkspaceGlob(pattern, rel string) bool {
+	pattern = strings.TrimPrefix(pattern, "./")
+	pattern = strings.Trim(pattern, "/")
+	if pattern == "" {
+		return false
+	}
+	return matchGlobSegments(strings.Split(pattern, "/"), strings.Split(rel, "/"))
+}
+
+func matchGlobSegments(pattern, segments []string) bool {
+	if len(pattern) == 0 {
+		return len(segments) == 0
+	}
+	if pattern[0] == "**" {
+		// "**" spans zero or more segments, so every split has to be tried
+		for i := 0; i <= len(segments); i++ {
+			if matchGlobSegments(pattern[1:], segments[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(segments) == 0 {
+		return false
+	}
+	if ok, err := path.Match(pattern[0], segments[0]); err != nil || !ok {
+		return false
+	}
+	return matchGlobSegments(pattern[1:], segments[1:])
 }
 
 // pythonGaps finds every pyproject.toml declaring dependencies with no

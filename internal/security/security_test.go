@@ -107,20 +107,151 @@ func TestNpmManifestWithoutLockfile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"x"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if hasNpmDepsWithoutLockfile(root) {
+	if hasNpmDepsWithoutLockfile(root, root) {
 		t.Error("no dependencies -> nothing to check, no finding")
 	}
 	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"dependencies":{"left-pad":"1.0.0"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !hasNpmDepsWithoutLockfile(root) {
+	if !hasNpmDepsWithoutLockfile(root, root) {
 		t.Error("deps without lockfile -> must surface as unscannable")
 	}
 	if err := os.WriteFile(filepath.Join(root, "package-lock.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if hasNpmDepsWithoutLockfile(root) {
+	if hasNpmDepsWithoutLockfile(root, root) {
 		t.Error("a lockfile exists -> osv scans it, no gap")
+	}
+}
+
+// A workspace member has no lockfile of its own by design: pnpm, npm and
+// yarn all keep exactly one at the workspace root. Reporting each member as
+// unscannable told a monorepo its packages were unchecked when the root
+// lockfile had resolved and scanned every one of them - and the advice that
+// rode along, "generate package-lock.json", would have planted a second,
+// npm lockfile beside the pnpm one.
+//
+// proved by: made npmWorkspaceCovers return false unconditionally - every
+// member is a blocking gap again, which is the defect this fixes.
+func TestWorkspaceMemberIsCoveredByTheRootLockfile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+	writeFile(t, filepath.Join(root, "pnpm-workspace.yaml"), "packages:\n  - \"apps/*\"\n  - \"packages/*\"\n")
+	writeFile(t, filepath.Join(root, "package.json"), `{"name":"root","private":true}`)
+
+	member := filepath.Join(root, "apps", "web")
+	writeFile(t, filepath.Join(member, "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	if hasNpmDepsWithoutLockfile(root, member) {
+		t.Error("a pnpm workspace member is resolved by the root lockfile -> not a gap")
+	}
+}
+
+// The walk up must not be generous: a nested package the root does NOT list
+// is not in that lockfile, so silence about it would report a scan that
+// never happened - the exact "silent green" the tool exists to prevent.
+//
+// proved by: dropped the workspaceGlobsMatch call from npmWorkspaceCovers so
+// any lockfile above counts - the outsider then reads as covered.
+func TestNestedPackageOutsideTheWorkspaceIsStillAGap(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+	writeFile(t, filepath.Join(root, "pnpm-workspace.yaml"), "packages:\n  - \"apps/*\"\n")
+	writeFile(t, filepath.Join(root, "package.json"), `{"name":"root","private":true}`)
+
+	outsider := filepath.Join(root, "tools", "scratch")
+	writeFile(t, filepath.Join(outsider, "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	if !hasNpmDepsWithoutLockfile(root, outsider) {
+		t.Error("tools/scratch is no workspace member -> the root lockfile does not cover it")
+	}
+}
+
+// npm and yarn declare members in package.json rather than a file of their
+// own, and yarn accepts an object as well as an array. All three shapes have
+// to be read, or the fix helps pnpm alone.
+//
+// proved by: deleted the nested-object unmarshal from npmWorkspaceGlobs -
+// the yarn object form stops parsing and its member reads as a gap.
+func TestNpmAndYarnWorkspaceShapesAreBothRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		lock string
+		root string
+	}{
+		{"npm array", "package-lock.json", `{"workspaces":["apps/*"]}`},
+		{"yarn object", "yarn.lock", `{"workspaces":{"packages":["apps/*"]}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, tc.lock), "\n")
+			writeFile(t, filepath.Join(root, "package.json"), tc.root)
+			member := filepath.Join(root, "apps", "web")
+			writeFile(t, filepath.Join(member, "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+			if hasNpmDepsWithoutLockfile(root, member) {
+				t.Errorf("%s: member is covered by the root lockfile", tc.name)
+			}
+		})
+	}
+}
+
+// "**" spans depths that "*" cannot, and an excluding "!" pattern has to
+// win wherever it sits in the list. Both appear in real workspace files, and
+// getting either wrong flips a verdict.
+//
+// proved by: made matchGlobSegments treat "**" as one segment - the
+// two-deep member under "packages/**" stops matching.
+func TestWorkspaceGlobsSpanDepthAndHonourExclusions(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+	writeFile(t, filepath.Join(root, "pnpm-workspace.yaml"),
+		"packages:\n  - \"packages/**\"\n  - \"!packages/legacy/**\"\n")
+	writeFile(t, filepath.Join(root, "package.json"), `{"name":"root","private":true}`)
+
+	deep := filepath.Join(root, "packages", "group", "child")
+	writeFile(t, filepath.Join(deep, "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+	if hasNpmDepsWithoutLockfile(root, deep) {
+		t.Error(`"packages/**" must reach a member two levels down`)
+	}
+
+	excluded := filepath.Join(root, "packages", "legacy", "old")
+	writeFile(t, filepath.Join(excluded, "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+	if !hasNpmDepsWithoutLockfile(root, excluded) {
+		t.Error(`"!packages/legacy/**" excludes it -> the root lockfile does not resolve it`)
+	}
+}
+
+// Deps is the entry point the gate calls; a fix that only holds when the
+// helper is exercised directly is the trap tests.instructions.md names.
+//
+// proved by: passed the package directory as the repository root in npmGaps,
+// leaving the walk up nowhere to go, which is what the one-argument helper
+// did. The member surfaces as a blocking finding again.
+func TestDepsReportsNoGapForAWorkspaceMember(t *testing.T) {
+	stub(t, "osv-scanner", "printf '{\"results\":[]}'\n")
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+	writeFile(t, filepath.Join(root, "pnpm-workspace.yaml"), "packages:\n  - \"apps/*\"\n")
+	writeFile(t, filepath.Join(root, "package.json"), `{"name":"root","private":true}`)
+	writeFile(t, filepath.Join(root, "apps", "web", "package.json"), `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	for _, f := range Deps(root) {
+		if strings.Contains(f.Message, "npm dependencies NOT checked") {
+			t.Errorf("workspace member reported as unscannable: %+v", f)
+		}
+	}
+}
+
+// writeFile creates the parent directories a fixture needs and fails the
+// test rather than the assertion when the write itself goes wrong.
+func writeFile(t *testing.T, p, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
