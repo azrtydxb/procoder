@@ -267,6 +267,10 @@ func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
 		"A DECISION about what to do next is not yours",
 		"STOP means stop",
 		"structured question tool",
+		// The queue is useless if nothing tells an agent the file exists.
+		// docs/commands.md documents it, but an agent reads the principles
+		// at session start and the docs never.
+		".procoder/ask/decisions.md",
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("the principles no longer say %q — the rule is the deliverable", phrase)

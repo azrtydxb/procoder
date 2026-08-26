@@ -43,3 +43,9 @@ not reach here.
 - 2 (active + 1 previous): reclaims 1.05 GB, one rollback target — the
   minimum that still counts as a rollback.
 - 5 (active + 4 previous): reclaims 0.92 GB, a longer rollback window.
+
+## How is v3.1.1 landed, and does procoder prune --apply run on this machine?
+
+- Landing: merge #184 (#175) and #187 (#172, #181, decisions queue) once CI
+  is green, then tag v3.1.1. #177 already landed via PR #178.
+- The sweep: whether to reclaim the 1.03 GB here, which is irreversible.

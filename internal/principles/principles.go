@@ -95,6 +95,12 @@ Questions are not yours to answer:
   so once.
 - Do not batch a decision with a status report. If the work is finished
   and the next step needs a call, the call is the message.
+- Write the decision to ` + "`.procoder/ask/decisions.md`" + ` before you ask —
+  one ` + "`## `" + ` heading per decision, its options as a list beneath.
+  ` + "`procoder ask`" + ` collects it with everything else, so the gate reports
+  an outstanding decision and an answered one survives the session that
+  answered it. Asking without recording means the question dies at the
+  next compaction and gets answered by whoever is around, which is you.
 
 Delegation — you are a lead, not a lone hand:
 

@@ -49,6 +49,104 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.1.1 — 2026-08-26
+
+_procoder stops applying its own conventions to repositories that never
+adopted it, and reclaims the gigabyte that updating in place left behind._
+
+**Fixed — the gate no longer answers for code procoder was never given.**
+([#187](https://github.com/azrtydxb/procoder/pull/187)) A contributor
+cloned an upstream project, changed two files, and was handed nineteen
+findings. Seventeen were procoder's own conventions applied to a project
+that had never heard of it: its `AGENTS.md` was reported as "drifted" from
+templates procoder never wrote it from, its missing pull-request template
+was a finding, its formatter is Biome and procoder disagreed with it. The
+eighteenth was a constant whose name ends in `_STORE_KEY`, on line 4,423 of
+a file whose change sat 2,500 lines away. The project's own gate was green
+throughout, and the only way to commit was `--no-verify`.
+
+That is the real cost. The escape hatch is all-or-nothing, so a gate that
+is wrong seventeen times out of nineteen teaches you to switch off the two
+that were right.
+
+procoder now decides, from the repository in front of it and never from
+your machine, whether that repository has adopted it — a `.procoder/`
+directory, or an `AGENTS.md` that names procoder. If it has, everything
+runs exactly as before; nothing an adopting repository was told has
+changed. If it has not, only the checks that are true anywhere run: a
+credential, an oversized blob, a conflict marker, a junk file, and an
+AI-attribution trailer nobody wrote.
+
+In somebody else's repository the checks that read file content see only
+the lines your commit wrote. A secret four thousand lines from your diff is
+not yours to answer for. Checks about a file's existence — oversized,
+junk — do not narrow, because a file your commit introduces is your
+commit's, all of it.
+
+Formatting is scoped too, which is the least obvious part of this. gofmt
+looks universal and is not: the repository may run gofumpt, or Biome, or
+nothing, and rewriting somebody's files to procoder's taste is exactly the
+overreach that was reported.
+
+Every run says which mode it was in, and the reduced gate reports how many
+files went unchecked rather than "0 clean" over files nothing looked at. A
+quieter gate that does not say it is quieter is indistinguishable from a
+clean one. Force either mode with `[gate] scope` in
+`.procoder/config.toml`, or `PROCODER_GATE_SCOPE` for a fork that cannot
+carry configuration. Reported by
+[@ToberoCat](https://github.com/ToberoCat). The reasoning is in ADR 0005.
+
+**Added — `procoder prune` reclaims the plugin cache.**
+([#187](https://github.com/azrtydxb/procoder/pull/187)) `claude plugin
+update` writes each new version into its own directory and removes none of
+the previous ones, and `claude plugin prune` does not cover it. On the
+maintainer's machine that had reached 55 versions and 1.11 GB, one of them
+in use.
+
+`procoder prune` reports what could go and removes nothing; `procoder prune
+--apply` removes it. Typing the command to find out what it does must not
+cost you a gigabyte. The version in use is protected twice and
+independently — it is named in `installed_plugins.json`, and it is the
+directory the running binary executes from — because either check alone
+leaves a way to delete what you are running. The window keeps the active
+version and one previous, so repointing `installed_plugins.json` at the
+directory below is still a rollback.
+
+procoder refuses rather than guesses: a record that is absent, unparseable
+or does not list procoder means the version in use is unknown, and unknown
+is never a licence to delete. Nothing calls this from a hook.
+
+**Fixed — a resumed session gets a pointer, not the principles again.**
+([#184](https://github.com/azrtydxb/procoder/pull/184)) The full 6,870-byte
+principles payload re-fired on every resume and compaction. It is now 144
+bytes on resume — a reminder that they are already active and how to read
+them in full. A session whose origin cannot be determined still gets the
+whole text, because an unknown origin is not a resumed one.
+
+**Fixed — a workspace member is covered by its root lockfile.**
+([#178](https://github.com/azrtydxb/procoder/pull/178)) In a pnpm, npm or
+yarn workspace the lockfile lives at the root and resolves every member,
+which is where the tooling puts it and the only place it exists. procoder
+reported each member as unscannable and blocked the commit, telling you to
+generate a lockfile the workspace deliberately does not have. Contributed
+by [@ToberoCat](https://github.com/ToberoCat).
+
+**Added — a decision the agent cannot make now reaches you, and
+survives.** ([#187](https://github.com/azrtydxb/procoder/pull/187)) The
+principles said questions are not the agent's to answer and `procoder ask`
+collected them, but both were true only for questions arising from a
+finding. A decision — commit or hold, merge now or after, which of two
+approaches — came from the work instead, and nothing collected it,
+recorded it, or noticed when it went unasked.
+
+The agent now writes those to `.procoder/ask/decisions.md` and `procoder
+ask` collects them alongside the rest, so an outstanding decision is
+visible to the gate and an answered one survives the session that answered
+it. procoder reads that file and never writes it. The principles gained the
+rule that was missing: a decision is not yours, STOP means asking before
+continuing rather than mentioning at the end, and use the host's structured
+question tool where there is one.
+
 ## 3.1.0 — 2026-08-26
 
 _The per-platform binaries are no longer committed. CI builds them at the
