@@ -97,7 +97,9 @@ it carries; the repository is judged on all of it.
 <p class="procoder-stop__why">The handoff. What the next session inherits is written down rather than reconstructed from scrollback.</p>
 <ul class="procoder-checks">
 <li><span class="procoder-verdict procoder-verdict--info">Info</span><span><b>handoff note</b><i>Written to state. A note that cannot be written is a lost note, never a broken session.</i></span></li>
+<li><span class="procoder-verdict procoder-verdict--block">Blocks</span><span><b>an unasked decision</b><i>A turn ending with a decision put to the user in prose, and none recorded in <code>.procoder/ask/decisions.md</code>, does not end. The hook reads <code>last_assistant_message</code> from the host and exits 2, which continues the conversation.</i></span></li>
 </ul>
+<p class="procoder-stop__why">The detector is deliberately conservative: an explicit ask, never a bare question mark, and an interrogative phrase only counts with a question mark in the same sentence — otherwise narration about a decision already taken reads as a new one. The same message never blocks twice, and the handoff note is written first, on every path including the blocking one.</p>
 </div>
 </section>
 

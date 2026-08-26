@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/answers"
 	"strings"
 )
 
@@ -89,4 +90,34 @@ func decisionQuestions(root string) ([]Question, []string) {
 			filepath.ToSlash(filepath.Join(Dir, DecisionsFile)))}
 	}
 	return qs, nil
+}
+
+// PendingDecisions is the decisions the agent recorded and nobody has
+// answered yet.
+//
+// Deliberately narrow. Pending() runs the whole collection — git, the lint
+// pass, the secret scan — because it answers "what is outstanding
+// anywhere". A Stop hook asking only "did the agent write a decision down"
+// cannot afford that: it runs at the end of every turn, under a ten-second
+// timeout, and a check that makes a session hang is worse than the rule it
+// enforces.
+// The notes are returned, not discarded. decisionQuestions produces one
+// when the file exists and cannot be read, or holds content in a shape it
+// does not recognise — cases where "no decisions were recorded" is not a
+// fact, it is an absence of information.
+//
+// Dropping them made a caller unable to tell the two apart, and the Stop
+// hook then blocked a turn because it could not read a file. That is
+// unknown treated as none, which is the failure this project keeps
+// finding. Raised in review on #215.
+func PendingDecisions(root string) (qs []Question, notes []string, err error) {
+	qs, notes = decisionQuestions(root)
+	if len(qs) == 0 {
+		return nil, notes, nil
+	}
+	store, loadErr := answers.Load(root)
+	if loadErr != nil {
+		return nil, notes, loadErr
+	}
+	return Unanswered(qs, store), notes, nil
 }

@@ -647,6 +647,19 @@ under it are its options:
 ```
 
 Procoder never writes that file — the agent does, and procoder reads it.
+
+The Stop hook makes the rule bind rather than depend on remembering. A turn
+ending with a decision put to the user in prose, and none recorded here,
+does not end: the hook reads `last_assistant_message` from the host and
+exits 2, which is the documented way a Stop hook continues the
+conversation. `ask.PendingDecisions` is the cheap query behind it — the
+whole collection runs git, the lint pass and the secret scan, which a hook
+firing at the end of every turn under a ten-second timeout cannot afford.
+
+It fires on an explicit ask, never on a question mark, and never twice on
+the same message. That asymmetry is deliberate: a missed burial costs one
+prose question, while a check that interrupts correct work at the end of
+every turn is one people route around.
 That is P-CONTROL, and it is why there is no `--raise` flag: it would read
 better on the command line and break the rule the tool rests on.
 
