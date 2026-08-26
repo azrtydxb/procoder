@@ -37,7 +37,7 @@ func hookOutput(t *testing.T, want, root string) string {
 	t.Helper()
 	hostEnv(t, want)
 	var got []string
-	if code := RunHook(root, func(s string) { got = append(got, s) }); code != 0 {
+	if code := RunHook(root, nil, func(s string) { got = append(got, s) }); code != 0 {
 		t.Fatalf("hook exit %d — a SessionStart hook must never fail the session", code)
 	}
 	return strings.Join(got, "\n")
@@ -124,7 +124,7 @@ func TestSessionStartStaysInsideTheBudget(t *testing.T) {
 	defer func() { releases.APIHost, Version, Stderr = prevHost, prevVer, prevErr }()
 
 	start := time.Now()
-	RunHook("../..", func(string) {})
+	RunHook("../..", nil, func(string) {})
 	elapsed := time.Since(start)
 	if elapsed > status.Budget {
 		t.Fatalf("SessionStart took %s — the budget is %s", elapsed, status.Budget)
@@ -159,7 +159,7 @@ func TestTheVersionCheckNeverHoldsTheSessionOpen(t *testing.T) {
 	var lines []string
 	var firstOut time.Duration
 	start := time.Now()
-	if code := RunHook(root, func(s string) {
+	if code := RunHook(root, nil, func(s string) {
 		if len(lines) == 0 {
 			firstOut = time.Since(start)
 		}
@@ -202,7 +202,7 @@ func TestTheVersionWarningStaysOutOfTheHookPayload(t *testing.T) {
 	defer func() { Stderr = prevErr }()
 
 	var lines []string
-	RunHook(t.TempDir(), func(s string) { lines = append(lines, s) })
+	RunHook(t.TempDir(), nil, func(s string) { lines = append(lines, s) })
 	if !strings.Contains(buf.String(), "9.9.9") {
 		t.Errorf("the warning must reach stderr: %q", buf.String())
 	}
@@ -234,7 +234,7 @@ func TestTheConfigKnobSilencesTheCheckEntirely(t *testing.T) {
 	prevErr := Stderr
 	Stderr = &buf
 	defer func() { Stderr = prevErr }()
-	RunHook(root, func(string) {})
+	RunHook(root, nil, func(string) {})
 	if buf.Len() != 0 {
 		t.Errorf("check = off says nothing: %q", buf.String())
 	}
@@ -279,6 +279,66 @@ func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("the principles no longer say %q — the rule is the deliverable", phrase)
+		}
+	}
+}
+
+// The principles block is ~7KB and SessionStart fires on startup, resume,
+// clear and compact. On resume and compact the text is already in the
+// conversation, so sending it again pays for telling the model what it can
+// already read — ~187k tokens across one day of resumed sessions (#175).
+//
+// proved by: dropping the host.Resumed branch from RunHook — the resumed
+// cases then emit the full text and this test sees it.
+func TestAResumedSessionGetsAPointerNotTheWholeText(t *testing.T) {
+	root := t.TempDir()
+	full := func(payload string) string {
+		var b strings.Builder
+		RunHook(root, strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
+		return b.String()
+	}
+
+	startup := full(`{"source":"startup"}`)
+	resumed := full(`{"source":"resume"}`)
+	compacted := full(`{"source":"compact"}`)
+
+	if len(startup) < 1000 {
+		t.Fatalf("a fresh start must carry the whole text, got %d bytes", len(startup))
+	}
+	for name, got := range map[string]string{"resume": resumed, "compact": compacted} {
+		if len(got) >= len(startup) {
+			t.Errorf("%s sent %d bytes against startup's %d — it is not a pointer", name, len(got), len(startup))
+		}
+		if !strings.Contains(got, "procoder principles") {
+			t.Errorf("%s must still say the rules are in force: %q", name, got)
+		}
+		if !strings.Contains(got, "procoder principles`") && !strings.Contains(got, "`procoder principles`") {
+			t.Errorf("%s must say where to read them: %q", name, got)
+		}
+	}
+}
+
+// Everything that is not a resume or a compact gets the whole text,
+// including a payload that could not be read at all. Saying too much costs
+// tokens; saying too little leaves a session governed by rules nobody sent,
+// and only one of those is recoverable by the reader.
+//
+// proved by: treating an unknown source as resumed — the last three cases
+// then get a pointer to rules that were never sent.
+func TestAnythingOtherThanAResumeGetsTheWholeText(t *testing.T) {
+	root := t.TempDir()
+	for _, payload := range []string{
+		`{"source":"startup"}`,
+		`{"source":"clear"}`,
+		`{"source":"something-new"}`,
+		`not json at all`,
+		``,
+	} {
+		var b strings.Builder
+		RunHook(root, strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
+		if len(b.String()) < 1000 {
+			t.Errorf("payload %q got %d bytes — the rules must arrive in full when the start is not known to be resumed",
+				payload, b.Len())
 		}
 	}
 }

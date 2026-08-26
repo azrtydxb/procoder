@@ -227,13 +227,26 @@ func hookText(root string) string {
 // RunHook prints the principles in the shape the running host's
 // SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
 // and Qoder each want a JSON envelope. One hooks file serves them all.
-func RunHook(root string, out func(string)) int {
+func RunHook(root string, stdin io.Reader, out func(string)) int {
 	// The version check runs alongside the payload, never in front of it:
 	// the hook's stdout is parsed as JSON by three of the four hosts, so the
 	// warning goes to stderr (R-07), and a slow or absent GitHub cannot hold
 	// a session start open (N-02, N-03).
 	done := versionWarning(root)
+
+	// The full text goes out once per session. On a resume or a compact it
+	// is already in the conversation, so sending it again pays ~7KB to tell
+	// the model what it can already read — measured at ~187k tokens across
+	// one day of resumed sessions (#175). Those two starts get a pointer.
+	//
+	// Every other case, including a payload that could not be read, gets
+	// the full text. Saying too much costs tokens; saying too little leaves
+	// a session governed by rules nobody sent, and only one of those is
+	// recoverable by the reader.
 	text := hookText(root)
+	if host.Resumed(host.SessionSource(stdin)) {
+		text = resumeReminder
+	}
 	switch h := host.Detect(); h {
 	case host.Claude:
 		out(strings.TrimRight(text, "\n"))
@@ -252,6 +265,12 @@ func RunHook(root string, out func(string)) int {
 	done()
 	return 0
 }
+
+// resumeReminder is what a resumed session gets instead of the whole text:
+// enough to know the rules are in force and where to read them, and not a
+// second copy of what is already above it in the transcript.
+const resumeReminder = "procoder principles are active for this repository — " +
+	"they were injected earlier in this session. Run `procoder principles` for the full text."
 
 // versionWarning starts the check and returns the function that reports it.
 // Splitting the two is what keeps the check off the session's critical path:
