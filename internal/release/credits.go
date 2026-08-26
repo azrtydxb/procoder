@@ -173,3 +173,128 @@ func EntryFor(root, version string) string {
 	}
 	return strings.Join(lines[start+1:], "\n")
 }
+
+// origin is one cited number, resolved: who opened it, and whether it is a
+// pull request or an issue.
+type origin struct {
+	number int
+	login  string
+	isPR   bool
+}
+
+// resolveOrigin asks GitHub who opened a number and which kind it is.
+// One API call answers both: the issues endpoint serves pull requests too
+// and carries a `pull_request` key when it is one.
+func resolveOrigin(root string, number int) (origin, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "api",
+		fmt.Sprintf("repos/azrtydxb/procoder/issues/%d", number), // nosemgrep -- a number, formatted from an int
+		"--jq", `[.user.login, (.pull_request != null)] | @tsv`)
+	cmd.Dir = root
+	raw, err := cmd.Output()
+	if err != nil {
+		return origin{}, fmt.Errorf("%v", firstLine(err))
+	}
+	parts := strings.Fields(strings.TrimSpace(string(raw)))
+	if len(parts) < 2 {
+		return origin{}, fmt.Errorf("unreadable answer for #%d", number)
+	}
+	return origin{number: number, login: parts[0], isPR: parts[1] == "true"}, nil
+}
+
+// releaser is whoever is cutting this release. They are excluded from the
+// credits: thanking yourself in your own release notes is noise, and a
+// rule that demanded it would be ignored within one release.
+func releaser(root string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
+	cmd.Dir = root
+	raw, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// MissingCredits reports contributors a paragraph OWES a credit and does
+// not give, and names the handle to add.
+//
+// VerifyCredits already catches a handle that opened none of what its
+// paragraph cites. That is only half the question, and the cheaper half: a
+// wrong credit is loud, and the person it was taken from is silent. This
+// is the other half — who should be here and is not — and it is what makes
+// the rule mechanical rather than a reminder to be careful.
+//
+// The rule, which is the maintainer's:
+//
+//   - a cited ISSUE owes its author a credit;
+//   - a cited PULL REQUEST owes its author a credit;
+//   - when the same person did both, that is one credit, not two;
+//   - when they are different people, BOTH are owed one — the report and
+//     the fix are separate contributions and crediting only the second
+//     quietly erases the first.
+//
+// Whoever is cutting the release is excluded. GitHub not answering is not
+// a pass: it is reported and blocks, like everything else here that could
+// not run.
+func MissingCredits(root, entry string) []string {
+	return missingCreditsWith(entry, releaser(root), func(n int) (origin, error) {
+		return resolveOrigin(root, n)
+	})
+}
+
+// missingCreditsWith is the rule with its two GitHub questions injected,
+// so the logic can be tested without a network — the suite runs offline on
+// every commit, and a rule this fiddly is exactly the kind that needs
+// tests rather than one live run that happened to look right.
+func missingCreditsWith(entry, me string, resolve func(int) (origin, error)) []string {
+	var gaps []string
+	for _, para := range strings.Split(entry, "\n\n") {
+		var nums []int
+		for _, m := range citedNumber.FindAllStringSubmatch(para, -1) {
+			var n int
+			fmt.Sscanf(m[1], "%d", &n)
+			nums = append(nums, n)
+		}
+		if len(nums) == 0 {
+			continue
+		}
+		credited := map[string]bool{}
+		for _, m := range linkedHandle.FindAllStringSubmatch(para, -1) {
+			credited[strings.ToLower(m[1])] = true
+		}
+		// Owed, in the order the numbers appear, so the report reads the
+		// way the paragraph does.
+		var owed []origin
+		seen := map[string]bool{}
+		for _, n := range nums {
+			o, err := resolve(n)
+			if err != nil {
+				gaps = append(gaps, fmt.Sprintf("#%d could not be resolved (%v) — who to credit is unknown, and unknown is not a pass", n, err))
+				continue
+			}
+			if o.login == "" || strings.EqualFold(o.login, me) || seen[strings.ToLower(o.login)] {
+				// Same person for issue and PR collapses here: one credit,
+				// not two.
+				seen[strings.ToLower(o.login)] = true
+				continue
+			}
+			seen[strings.ToLower(o.login)] = true
+			owed = append(owed, o)
+		}
+		for _, o := range owed {
+			if credited[strings.ToLower(o.login)] {
+				continue
+			}
+			kind := "reported"
+			if o.isPR {
+				kind = "contributed"
+			}
+			gaps = append(gaps, fmt.Sprintf("@%s %s #%d and is not credited in the paragraph citing it — add `%s by [@%s](https://github.com/%s)`",
+				o.login, kind, o.number, kind[:1]+kind[1:], o.login, o.login))
+		}
+	}
+	return gaps
+}

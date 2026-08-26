@@ -263,7 +263,27 @@ not committed any more: CI builds them at the tag and the launcher fetches
 what it needs (ADR 0004), so there is nothing local for this controller to
 find stale.
 
-That last one asks GitHub, which the test suite deliberately cannot —
+**Credits are computed, not proofread.** Two questions, and the second is
+the one that used to be nobody's job:
+
+- a handle credited in a paragraph must have opened something that
+  paragraph cites, or the credit is wrong;
+- everybody a paragraph OWES a credit must have one, or somebody's work is
+  going unacknowledged.
+
+The rule for who is owed is mechanical. A cited **issue** owes its author a
+credit. A cited **pull request** owes its author a credit. When one person
+did both, that is one credit and not two. When the reporter and the fixer
+are different people, **both** are owed — crediting only the pull request
+quietly erases whoever found the problem. Whoever is cutting the release is
+excluded; thanking yourself in your own notes is noise, and a rule that
+demanded it would be ignored within one release.
+
+The report names the handle and hands over the line to paste, because a
+check that says "this is wrong" and leaves you to work out the right answer
+is one you satisfy by deleting the credit.
+
+That last pair asks GitHub, which the test suite deliberately cannot —
 the suite runs offline on every commit. This controller can, because the
 tag it prepares is published by a job that talks to the same API, so the
 network was already a precondition. A misattributed credit hands one

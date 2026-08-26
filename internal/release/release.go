@@ -112,6 +112,13 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 	for _, p := range VerifyCredits(root, EntryFor(root, version)) {
 		failures = append(failures, p)
 	}
+	// And the other half: who is OWED a credit and does not have one.
+	// VerifyCredits catches a wrong handle, which is the loud failure —
+	// the person it was taken from says nothing, and neither did anything
+	// else until this. See MissingCredits for the rule.
+	for _, p := range MissingCredits(root, EntryFor(root, version)) {
+		failures = append(failures, p)
+	}
 
 	if len(failures) > 0 {
 		out(fmt.Sprintf("release %s is NOT ready:", version))
