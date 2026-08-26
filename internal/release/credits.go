@@ -251,22 +251,30 @@ func releaser(root string) (string, error) {
 // a pass: it is reported and blocks, like everything else here that could
 // not run.
 func MissingCredits(root, entry string) []string {
-	me, err := releaser(root)
-	return missingCreditsWith(entry, me, err, func(n int) (origin, error) {
-		return resolveOrigin(root, n)
-	})
+	return missingCreditsWith(entry,
+		func() (string, error) { return releaser(root) },
+		func(n int) (origin, error) { return resolveOrigin(root, n) })
 }
 
 // missingCreditsWith is the rule with its two GitHub questions injected,
 // so the logic can be tested without a network — the suite runs offline on
 // every commit, and a rule this fiddly is exactly the kind that needs
 // tests rather than one live run that happened to look right.
-func missingCreditsWith(entry, me string, meErr error, resolve func(int) (origin, error)) []string {
+func missingCreditsWith(entry string, who func() (string, error), resolve func(int) (origin, error)) []string {
+	// Nothing cited anywhere means nothing is owed, and asking GitHub who
+	// is releasing would be a network call to answer a question nobody
+	// asked. VerifyCredits returns early for the same reason — and without
+	// this, every offline release test started failing on a guard that was
+	// working exactly as intended. Found by CI.
+	if !citedNumber.MatchString(entry) {
+		return nil
+	}
 	// The releaser guard lives HERE rather than in the networked caller, so
 	// a test can reach it. An empty handle excludes nobody, so proceeding
 	// would quietly turn the exclusion off and start demanding the
 	// maintainer credit themselves — the rule silently not applying, which
 	// is the failure this file exists to end.
+	me, meErr := who()
 	if meErr != nil || me == "" {
 		reason := "gh returned no login"
 		if meErr != nil {
@@ -321,4 +329,42 @@ func missingCreditsWith(entry, me string, meErr error, resolve func(int) (origin
 		}
 	}
 	return gaps
+}
+
+// Credits runs the two credit checks alone and nothing else.
+//
+// It exists so CI can ENFORCE them. Until now the rule ran only when
+// somebody typed `procoder release` on their own machine, which means it
+// ran when they remembered — and "remember to check" is precisely what
+// kept failing, which is why the rule was written in the first place.
+//
+// The rest of the controller asks about the working tree, the tag and the
+// version files. None of that means anything on a pull request, and all of
+// it would fail for reasons unrelated to whether anybody is credited.
+func Credits(root, version string, out func(string)) int {
+	if version == "" {
+		v, err := newestChangelogVersion(root)
+		if err != nil {
+			out("no version to check — " + err.Error())
+			return 2
+		}
+		version = v
+	}
+	entry := EntryFor(root, version)
+	if strings.TrimSpace(entry) == "" {
+		out(fmt.Sprintf("no changelog entry for %s — nothing to check credits against", version))
+		return 2
+	}
+	var problems []string
+	problems = append(problems, VerifyCredits(root, entry)...)
+	problems = append(problems, MissingCredits(root, entry)...)
+	if len(problems) == 0 {
+		out(fmt.Sprintf("credits for %s: every contributor the entry cites is credited, and every credit traces to something they opened", version))
+		return 0
+	}
+	out(fmt.Sprintf("credits for %s are NOT right:", version))
+	for _, p := range problems {
+		out("  " + p)
+	}
+	return 1
 }

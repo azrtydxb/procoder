@@ -39,7 +39,7 @@ func fake(m map[int]origin) func(int) (origin, error) {
 func TestAnUncreditedIssueAuthorIsReported(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{42}),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{42: {number: 42, login: "reporter", isPR: false}}),
 	)
 	if len(got) != 1 {
@@ -63,7 +63,7 @@ func TestAnUncreditedIssueAuthorIsReported(t *testing.T) {
 func TestOnePersonWhoDidBothIsCreditedOnce(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{7, 8}),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{
 			7: {number: 7, login: "tobero", isPR: false},
 			8: {number: 8, login: "tobero", isPR: true},
@@ -83,7 +83,7 @@ func TestOnePersonWhoDidBothIsCreditedOnce(t *testing.T) {
 func TestAReporterAndADifferentFixerAreBothOwed(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{10, 11}),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{
 			10: {number: 10, login: "finder", isPR: false},
 			11: {number: 11, login: "fixer", isPR: true},
@@ -112,7 +112,7 @@ func TestAReporterAndADifferentFixerAreBothOwed(t *testing.T) {
 func TestAnAlreadyCreditedContributorIsSilent(t *testing.T) {
 	if got := missingCreditsWith(
 		para("a thing", []int{9}, "tobero"),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{9: {number: 9, login: "tobero", isPR: true}}),
 	); len(got) != 0 {
 		t.Fatalf("a paragraph that already credits its contributor was refused: %v", got)
@@ -128,7 +128,7 @@ func TestAnAlreadyCreditedContributorIsSilent(t *testing.T) {
 func TestTheReleaserIsNotOwedACredit(t *testing.T) {
 	if got := missingCreditsWith(
 		para("a thing", []int{1}),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{1: {number: 1, login: "maintainer", isPR: false}}),
 	); len(got) != 0 {
 		t.Fatalf("the releaser was asked to credit themselves: %v", got)
@@ -143,7 +143,7 @@ func TestTheReleaserIsNotOwedACredit(t *testing.T) {
 func TestAnUnresolvableNumberBlocks(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{99}),
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{}),
 	)
 	if len(got) != 1 {
@@ -165,7 +165,7 @@ func TestAnUnresolvableNumberBlocks(t *testing.T) {
 func TestAParagraphCitingNothingOwesNothing(t *testing.T) {
 	if got := missingCreditsWith(
 		"**Changed — something.** Prose with no citations at all.",
-		"maintainer", nil,
+		func() (string, error) { return "maintainer", nil },
 		fake(map[int]origin{}),
 	); len(got) != 0 {
 		t.Fatalf("a paragraph citing nothing produced findings: %v", got)
@@ -194,7 +194,7 @@ func TestAnUnknownReleaserBlocks(t *testing.T) {
 	} {
 		got := missingCreditsWith(
 			para("a thing", []int{1}),
-			tc.me, tc.err,
+			func() (string, error) { return tc.me, tc.err },
 			fake(map[int]origin{1: {number: 1, login: "maintainer", isPR: false}}),
 		)
 		if len(got) != 1 {
@@ -205,4 +205,28 @@ func TestAnUnknownReleaserBlocks(t *testing.T) {
 		}
 	}
 	// Which is why MissingCredits refuses before calling this at all.
+}
+
+// Nothing cited anywhere means nothing is owed, and asking GitHub who is
+// releasing would be a network call to answer a question nobody asked.
+//
+// This is not a nicety. Without it, every offline release test failed on a
+// guard that was working exactly as designed — the releaser lookup ran
+// before anything had established there was a credit to check, and CI has
+// no `gh` auth. Found by CI, not by me.
+//
+// The releaser lookup here panics if called, so the test asserts the call
+// does not happen rather than merely that the result looks right.
+//
+// proved by: the `!citedNumber.MatchString(entry)` early return removed —
+// the lookup runs and the panic fires.
+func TestNothingCitedAsksGitHubNothing(t *testing.T) {
+	got := missingCreditsWith(
+		"# changelog\n\n## 0.2.0\n\n- a thing with no citations at all\n",
+		func() (string, error) { panic("the releaser was looked up with nothing to check") },
+		func(int) (origin, error) { panic("a citation was resolved when none exist") },
+	)
+	if len(got) != 0 {
+		t.Fatalf("an entry citing nothing produced findings: %v", got)
+	}
 }

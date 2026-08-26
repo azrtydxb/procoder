@@ -283,6 +283,14 @@ The report names the handle and hands over the line to paste, because a
 check that says "this is wrong" and leaves you to work out the right answer
 is one you satisfy by deleting the credit.
 
+`procoder release --credits` runs those two checks and nothing else, and CI
+runs it on every commit with a token. That is the difference between a rule
+and a habit: until it ran in CI it ran only when whoever cut the release
+remembered to type the command — and "remember to check" is exactly what
+kept failing, which is why the rule exists. The rest of the controller asks
+about the working tree, the tag and the version files, none of which mean
+anything on a pull request.
+
 That last pair asks GitHub, which the test suite deliberately cannot —
 the suite runs offline on every commit. This controller can, because the
 tag it prepares is published by a job that talks to the same API, so the

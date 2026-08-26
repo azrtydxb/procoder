@@ -33,6 +33,7 @@ var knownFlags = map[string][]string{
 	"lint":         {"--types"},
 	"principles":   {"--hook"},
 	"prune":        {"--apply"},
+	"release":      {"--credits"},
 	"review":       {"--lens", "--perspectives"},
 	"run":          {"--exec"},
 	"security":     {"--deep"},
