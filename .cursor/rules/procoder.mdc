@@ -31,6 +31,13 @@ back, and a file it could not check is never reported as clean.
 - Run `procoder test` before claiming anything works. NOT run is never
   green. Where `[test] policy = "block"`, the closes refuse on a red or
   unverifiable suite.
+- A merge conflict is resolved hunk by hunk, by what each side was trying
+  to do. `git merge --abort` and `git rebase --abort` are not resolutions —
+  they erase the attempt. Being stuck is a thing to say, not a thing to
+  undo. Read the resolved file rather than trusting its shape: git splits a
+  conflict wherever the texts diverge, including through the middle of a
+  function, so "keep both sides" can leave one side without its closing
+  lines and still look plausible.
 - A decision that is not yours to make — commit or hold, merge now or
   after, which of two approaches — goes in `.procoder/ask/decisions.md`,
   one `## ` heading per decision with its options beneath, and then you
