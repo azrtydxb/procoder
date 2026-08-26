@@ -496,3 +496,53 @@ func TestACriterionNamingNeitherIsStillCaught(t *testing.T) {
 		t.Fatalf("a criterion naming neither a test nor a falsifier was not caught: %+v", got)
 	}
 }
+
+// #198's remaining half, after 3.2.0 took the unfalsifiable case. Three
+// ways a criterion looks measured and is not.
+//
+// proved by: each of the three regexps in turn made to match nothing —
+// the case it covers is named here as unreported.
+func TestWeakOraclesAreReported(t *testing.T) {
+	for name, tc := range map[string]struct{ criterion, want string }{
+		"fixed output": {
+			"- [ ] [S-1] `echo ok` prints ok after the change; fails if it does not.",
+			"no failing branch",
+		},
+		"hedged": {
+			"- [ ] [S-1] `procoder check` mostly reports the right findings; fails if it regresses.",
+			"hedged",
+		},
+		"unmeasured": {
+			"- [ ] [S-1] `procoder check` runs fast enough on a large repo; fails if it slows down.",
+			"without giving one",
+		},
+	} {
+		doc := truthSpec(map[string]string{"Acceptance criteria": tc.criterion})
+		got := WeakOracles(doc)
+		if len(got) != 1 {
+			t.Errorf("%s: want 1 finding, got %d: %+v", name, len(got), got)
+			continue
+		}
+		if !strings.Contains(got[0].Why, tc.want) {
+			t.Errorf("%s: the finding does not explain the fault: %q", name, got[0].Why)
+		}
+	}
+}
+
+// And a criterion that measures something real is silent — the rule is
+// worthless if it fires on the criteria it is meant to encourage.
+//
+// proved by: `hedged` widened to match any word — every good criterion is
+// refused and the checker becomes noise.
+func TestAMeasuredCriterionIsSilent(t *testing.T) {
+	for _, c := range []string{
+		"- [ ] [S-1] `procoder check` exits 1 over the fixture; fails if the branch is made unconditional.",
+		"- [ ] [S-2] The report names all three findings, asserted by `TestAllThree`.",
+		"- [ ] [S-3] `procoder prune --apply` reclaims 1.03 GB on the fixture; fails if the sweep is skipped.",
+	} {
+		doc := truthSpec(map[string]string{"Acceptance criteria": c})
+		if got := WeakOracles(doc); len(got) != 0 {
+			t.Errorf("a measured criterion was refused: %q -> %+v", c, got)
+		}
+	}
+}
