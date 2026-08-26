@@ -21,4 +21,3 @@ The skills/procoder/SKILL.md file currently has YAML frontmatter but needs to be
 - [ ] `allowed-tools` added to frontmatter
 
 ## Evidence
-

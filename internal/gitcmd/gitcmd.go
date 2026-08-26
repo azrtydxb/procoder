@@ -105,6 +105,9 @@ func CollectFor(root string, cfg config.Config, changed []string, commitMessage 
 	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
 	// and CI can never disagree about documentation health either.
 	out = append(out, docs.CollectOfflineFor(root, changed, commitMessage, cfg.DocsBlock)...)
+	// Same in an adopting repository: the unpushed range catches a trailer
+	// that landed, this catches one before it does.
+	out = append(out, gitx.AttributionInMessage(commitMessage)...)
 	return append(out, templateFindings(root)...)
 }
 
@@ -138,8 +141,9 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	out = append(out, lessons.LeakReminder(root)...)
 	out = append(out, ask.GateFindings(root)...)
 
+	commits := gitx.UnpushedCommits(root)
+	out = append(out, gitx.AttributionIn(commits)...)
 	msgs := gitx.UnpushedMessages(root)
-	out = append(out, gitx.Attribution(msgs)...)
 	out = append(out, gitx.SubjectShape(msgs)...)
 
 	var workflows []string
@@ -307,4 +311,35 @@ func orUnknown(s string) string {
 		return "unknown"
 	}
 	return s
+}
+
+// CollectUniversal is the half of the git-hygiene domain that is true in
+// anybody's repository: a conflict marker, a junk file, an oversized blob,
+// and an attribution trailer nobody wrote. No repository wants any of
+// them, whatever its house style.
+//
+// Everything CollectFor adds beyond this is procoder's opinion — the agent
+// layer, the planning chain, release and documentation hygiene, its own
+// templates, the default-branch habit, the ignore-coverage advice, the
+// commit-subject shape, workflow discipline. A project that never adopted
+// procoder did not ask for any of it, and telling it anyway is what made a
+// two-file change in an upstream clone produce nineteen findings (#172).
+//
+// The attribution check stays, and that is a deliberate line: it is not
+// procoder's taste but a claim of authorship the committer did not make.
+//
+// Conflict markers are NOT here. They read file content, and outside an
+// adopting repository content checks narrow to the lines this commit
+// wrote — the gate does that itself, with the diff it already has.
+func CollectUniversal(root string, cfg config.Config, changed []string, commitMessage string) []gitx.Finding {
+	var out []gitx.Finding
+	out = append(out, gitx.JunkFiles(changed)...)
+	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
+	out = append(out, gitx.AttributionIn(gitx.UnpushedCommits(root))...)
+	// The message about to be written, which the unpushed range cannot see
+	// yet. At a pre-commit hook this is the only place a trailer appears,
+	// and the only moment it can still be removed by editing the message
+	// instead of rewriting history.
+	out = append(out, gitx.AttributionInMessage(commitMessage)...)
+	return out
 }

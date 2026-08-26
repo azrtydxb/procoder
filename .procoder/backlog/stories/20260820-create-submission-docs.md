@@ -22,4 +22,3 @@ Create a documentation file tracking all marketplace submissions made and their 
 - [ ] Evidence links present for accepted submissions
 
 ## Evidence
-

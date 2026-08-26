@@ -149,21 +149,59 @@ func HasRef(root, ref string) bool {
 // no basis for "unpushed", so the last commit alone is checked: better one
 // honest data point than a guess.
 func UnpushedMessages(root string) []string {
+	var msgs []string
+	for _, c := range UnpushedCommits(root) {
+		msgs = append(msgs, c.Message)
+	}
+	return msgs
+}
+
+// Commit is one unpushed commit: its abbreviated sha and its message.
+//
+// The sha exists so a finding can say WHICH commit it is about. Without it
+// the attribution check reported "commit message carries an
+// AI-attribution line" while the commit being written was clean and the
+// offending one was three back — unarguable, and unfixable by the
+// `--amend` the finding suggested. The only way past was `--no-verify`,
+// which switches off everything else too (#185).
+type Commit struct {
+	SHA     string
+	Subject string
+	Message string
+}
+
+// UnpushedCommits is every commit this branch has that its upstream does
+// not. With no upstream it is the last commit alone — the same fallback
+// UnpushedMessages has always used, because a branch with no upstream has
+// no answerable range.
+func UnpushedCommits(root string) []Commit {
 	rangeSpec := "@{upstream}..HEAD"
 	if _, err := git(root, "rev-parse", "--verify", "@{upstream}"); err != nil {
 		rangeSpec = "-1"
 	}
-	out, err := git(root, "log", "--format=%B%x00", rangeSpec)
+	// %h and %B, separated by a unit byte so a message containing anything
+	// at all cannot be mistaken for the delimiter.
+	out, err := git(root, "log", "--format=%h%x1f%B%x00", rangeSpec)
 	if err != nil {
 		return nil
 	}
-	var msgs []string
-	for _, m := range strings.Split(out, "\x00") {
-		if m = strings.TrimSpace(m); m != "" {
-			msgs = append(msgs, m)
+	var commits []Commit
+	for _, rec := range strings.Split(out, "\x00") {
+		if strings.TrimSpace(rec) == "" {
+			continue
 		}
+		sha, msg, found := strings.Cut(strings.TrimLeft(rec, "\n"), "\x1f")
+		if !found {
+			continue
+		}
+		if msg = strings.TrimSpace(msg); msg == "" {
+			continue
+		}
+		commits = append(commits, Commit{
+			SHA: strings.TrimSpace(sha), Subject: firstLineOf(msg), Message: msg,
+		})
 	}
-	return msgs
+	return commits
 }
 
 // --- the checks -------------------------------------------------------------
@@ -420,16 +458,47 @@ var aiMatchers = func() []*regexp.Regexp {
 const attributionRemedyURL = "https://procoder.azrty.com/portability/#the-trailer-your-host-adds"
 
 // Attribution finds AI-attribution lines in the given commit messages.
+//
+// Kept for callers that have only text. Where the commits are available,
+// AttributionIn says which one — see the note on Commit.
 func Attribution(messages []string) []Finding {
-	var out []Finding
+	commits := make([]Commit, 0, len(messages))
 	for _, m := range messages {
+		commits = append(commits, Commit{Message: m, Subject: firstLineOf(m)})
+	}
+	return AttributionIn(commits)
+}
+
+// AttributionIn finds AI-attribution lines and names the commit carrying
+// each one.
+//
+// Naming it is the whole point. The check runs over every unpushed commit,
+// so a trailer three commits back blocks every commit after it — and the
+// finding used to open "commit message carries an AI-attribution line",
+// which reads as being about the commit you are writing. People read that
+// against a clean message, could not argue with it, and could not fix it
+// with the `--amend` it suggested, because the offending commit was not
+// the one being amended. `--no-verify` was the only way through, and it
+// switches off everything else too (#185).
+func AttributionIn(commits []Commit) []Finding {
+	var out []Finding
+	for _, c := range commits {
 		// The finding names the identity as well as the line, so someone who
 		// believes it is wrong can say which entry is wrong and argue with it,
 		// instead of reading a blocked commit as the gate being mysterious.
-		if name, loc := matchAIIdentity(m); loc != "" {
-			out = append(out, Finding{Blocking: true,
-				Message: fmt.Sprintf("commit message carries an AI-attribution line crediting %s: %q — the work is the author's; remove it (git commit --amend / rebase). If the host added it, it will add it again on the next commit — turn it off at the source: %s", name, strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)})
+		name, loc := matchAIIdentity(c.Message)
+		if loc == "" {
+			continue
 		}
+		where := "the commit message"
+		fix := "remove it (git commit --amend)"
+		if c.SHA != "" {
+			where = fmt.Sprintf("commit %s (%q)", c.SHA, strings.TrimSpace(c.Subject))
+			fix = fmt.Sprintf("rewrite that commit (git rebase -i %s^) — amending HEAD will not clear it unless HEAD is the one named", c.SHA)
+		}
+		out = append(out, Finding{Blocking: true,
+			Message: fmt.Sprintf("%s carries an AI-attribution line crediting %s: %q — the work is the author's; %s. If the host added it, it will add it again on the next commit — turn it off at the source: %s",
+				where, name, strings.TrimSpace(firstLineOf(loc)), fix, attributionRemedyURL)})
 	}
 	return out
 }
@@ -443,6 +512,35 @@ func matchAIIdentity(text string) (name, line string) {
 		}
 	}
 	return "", ""
+}
+
+// AttributionInMessage checks the message a commit is ABOUT to be made
+// with, rather than the messages of commits already made.
+//
+// Both halves are needed and they catch different things. The unpushed
+// range catches a trailer that already landed; this catches one before it
+// does, which is the only moment it can still be removed by editing the
+// message rather than by rewriting history.
+//
+// Missing this is what made #185 as bad as it was: the trailer was never
+// stopped on the way in, so it landed, and then blocked every subsequent
+// commit from the far side. Raised in review on #187.
+func AttributionInMessage(message string) []Finding {
+	if strings.TrimSpace(message) == "" {
+		return nil
+	}
+	name, loc := matchAIIdentity(message)
+	if loc == "" {
+		return nil
+	}
+	// Its own wording rather than AttributionIn's. `git commit --amend` is
+	// the right advice for a commit that exists and the wrong advice for
+	// one that does not — and telling somebody to amend a commit they have
+	// not made is the kind of unfollowable instruction that teaches
+	// `--no-verify` (#185).
+	return []Finding{{Blocking: true,
+		Message: fmt.Sprintf("the commit message being written carries an AI-attribution line crediting %s: %q — the work is the author's; remove the line from the message before committing. If the host added it, it will add it again on the next commit — turn it off at the source: %s",
+			name, strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)}}
 }
 
 // ScrubText applies the same attribution patterns to arbitrary text — the PR

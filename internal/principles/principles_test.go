@@ -240,6 +240,49 @@ func TestTheConfigKnobSilencesTheCheckEntirely(t *testing.T) {
 	}
 }
 
+// S-5: the decision rule is the deliverable, so its absence must fail here
+// rather than be noticed months later by somebody wondering why the agent
+// never asks.
+//
+// The rule exists because of a concrete failure: two decisions were put to
+// the user as prose at the end of a long status report while the work
+// continued underneath them, and the user's response was that they had not
+// been asked. Nothing in the principles covered a decision — only questions
+// arising from findings — so nothing had gone wrong by the rules as
+// written. That is what this pins.
+//
+// Phrases, not the whole paragraph: pinning the prose would make every
+// wording change a test failure, and the rule would get weakened to keep
+// the suite green.
+//
+// proved by: deleted the decision bullets from the principles text — each
+// missing phrase is named.
+func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
+	// Default, not Effective: what is pinned is the rule procoder SHIPS.
+	// Effective would read this repository's own override if it had one,
+	// and the test would then pass on a machine where the shipped text had
+	// lost the rule entirely.
+	text := Default
+	for _, phrase := range []string{
+		"A DECISION about what to do next is not yours",
+		"STOP means stop",
+		"structured question tool",
+		// The queue is useless if nothing tells an agent the file exists.
+		// docs/commands.md documents it, but an agent reads the principles
+		// at session start and the docs never.
+		".procoder/ask/decisions.md",
+		// The mutation-restore rule. It exists because a feature was lost
+		// exactly that way in this repository, so its absence must fail
+		// rather than be rediscovered the same way.
+		"TAKE THE SNAPSHOT IMMEDIATELY BEFORE EACH MUTATION",
+		"untested by definition",
+	} {
+		if !strings.Contains(text, phrase) {
+			t.Errorf("the principles no longer say %q — the rule is the deliverable", phrase)
+		}
+	}
+}
+
 // The principles block is ~7KB and SessionStart fires on startup, resume,
 // clear and compact. On resume and compact the text is already in the
 // conversation, so sending it again pays for telling the model what it can

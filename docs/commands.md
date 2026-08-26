@@ -84,6 +84,12 @@ lint, CI hygiene, infrastructure hygiene, lint findings, secrets (blocking),
 docs checks, and the change's blast radius from the index. Exit 1 on any
 blocking finding.
 
+That full list is what a repository that has **adopted** Procoder gets. In
+somebody else's repository — no `.procoder/`, no `AGENTS.md` naming
+Procoder — only the checks that are true anywhere run, and the content
+checks see only the lines the commit wrote. The run says which mode it was
+in; see [Adopted and universal repositories](configuration.md#adopted-and-universal-repositories).
+
 #### `procoder review [--lens <name>[,<name>]] [paths...]`
 
 The judgment half of the gate. Every other check Procoder runs is
@@ -457,6 +463,64 @@ interviews the gaps closed; the binary judges completeness.
   to `complete` — a note, never a gap. A complete spec seeds the todo
   list — one task per criterion group.
 
+**Claims are checked, not only counted.** Everything above is structural:
+sections present, questions closed, ids covered. All of it can be satisfied
+by a spec that asserts things the code does not do and promises criteria no
+fixture can produce. Two further checks ask whether the document is TRUE.
+
+A **citation** that does not resolve is refused. A backticked `pkg.Symbol`,
+a repository path, or a `procoder <command>` named in In scope,
+Constraints, Interfaces or Decisions must exist. Code fences are excluded,
+and Edge cases and Failure modes are left alone — they describe what WOULD
+happen and name things hypothetically. Nothing judges prose: a machine can
+check that `gitx.Attribution` exists and cannot check that "the gate runs
+formatting first" is true. Requiring the claim to name something turns the
+second into the first for the claims that matter.
+
+An **acceptance criterion that names no observable** is refused. Say the
+command that runs it, the test that asserts it, or the file it inspects — a
+criterion nobody can run is an agreement, not a test. A criterion whose
+observable has a known prerequisite must name it: the documentation domain
+needs a built index, and without one it reports `public surface NOT
+computed` and never reaches a finding, so the criterion passes whatever the
+code does.
+
+A **promise that names a domain and cites nothing** is refused. If a bullet
+in In scope says something about formatting, linting, the docs domain or
+the suite, it must cite where that lives. The rule does not verify the
+claim — nothing here judges prose. It puts the author in the file, which is
+where the discovery happens: sprint 021's In-scope listed formatting among
+nine domains, cited nothing, and nobody noticed the format loop ran before
+the scope decision until the sprint was underway.
+
+An **acceptance criterion that never says what would make it fail** is
+refused. This is the mutation discipline `procoder test` already expects of
+a test, applied to the criterion. `fails if`, `proved by`, `breaks if` and
+several other phrasings count — and naming the test that asserts it counts
+too, because a test carries its own `proved by:` and asking here as well
+would be the same question twice. You cannot state the falsifier without
+constructing the case that separates pass from fail — and when you cannot,
+that is the answer. Two of sprint 021's deviations were criteria that could
+not fail at all: one describing a narrowing that cannot happen, one on a
+fixture where the two outcomes were indistinguishable.
+
+All four refuse only while the spec is a `draft` — deliberately the moment
+before the sprint opens, when a deviation is cheap. A spec already marked
+`complete` gets notes instead, because retrofitting a rule onto an archive
+nobody will rewrite is how a check gets switched off. `backlog close story`
+reports the same criterion faults as notes, never as refusals, for the same
+reason.
+
+Of the four, the falsifier rule asks the most — but naming the test you
+would write, which a good criterion does anyway, satisfies it. It costs
+nothing where the work is already scoped, and bites exactly where nobody
+has asked what would break the promise.
+
+Known limitation, stated rather than discovered: only the top-level command
+resolves. `procoder backlog check` passes because `backlog` exists, though
+`check` is not one of its subcommands — and that exact citation was in the
+spec for this feature.
+
 **Scope coverage.** Every `## In scope` bullet carries an id — `- [S-1]
 …` — and at least one acceptance criterion must cite it: `- [ ] [S-1]
 …`. One criterion may cite several ids where it genuinely covers them.
@@ -527,6 +591,30 @@ question text. An unchanged question is never asked twice; a question whose
 wording changed is asked again, because the old answer belonged to a
 different question. Exit 1 means something is still unanswered, 0 means
 nothing is.
+
+**Decisions.** The four sources above are computed from the repository —
+each comes from a finding. A decision does not: commit or hold, merge now
+or after, which of two approaches. It comes from the work, when the next
+step forks and the fork is not the agent's to pick.
+
+The agent writes those to `.procoder/ask/decisions.md`, and `procoder ask`
+collects them with the rest. One `## ` heading is one decision; the lines
+under it are its options:
+
+```markdown
+## Merge #187 before or after #181?
+
+- before: the gate fix lands first, #181 rebases onto it
+- after: one release, but #181 is written against the old gate
+```
+
+Procoder never writes that file — the agent does, and procoder reads it.
+That is P-CONTROL, and it is why there is no `--raise` flag: it would read
+better on the command line and break the rule the tool rests on.
+
+A file that exists but cannot be read, or one with content and no `## `
+heading, produces a note naming it. Silence there would leave decisions
+sitting on disk that nobody is ever asked.
 
 A flagged secret's value never appears in the question, the files, or the
 terminal: what a human is asked is whether the flag is real, and answering
@@ -696,6 +784,50 @@ The write hook's entry point — reads a PostToolUse payload on stdin and
 answers with findings for the file just written. Wired by the plugin;
 rarely invoked by hand.
 
+#### `procoder prune [--apply]`
+
+The cached plugin versions that can go. `claude plugin update` writes each
+new version into its own directory and removes none of the previous ones;
+`claude plugin prune` does not cover it, so they accumulate. On the
+maintainer's machine that reached 55 versions and 1.11 GB, one of them in
+use.
+
+Bare `prune` reports and removes nothing:
+
+```
+  would remove  2.0.1
+  ...
+prune: 53 version(s) can go, reclaiming 1.03 GB
+  keeping 3.1.0, 3.0.0 (3.1.0 is active)
+  run `procoder prune --apply` to remove them
+```
+
+`--apply` removes them and reports what actually went, summing the
+reclaimed figure from the directories that were removed rather than from
+the ones that were planned. Deletion is the one thing here that cannot be
+undone, so it is the one thing that is not the default: typing `procoder
+prune` to find out what it does must not cost you a gigabyte.
+
+The version in use is protected twice, independently — it is named in
+`installed_plugins.json`, and it is the directory the running binary
+executes from. Either check alone leaves a way to delete what is in use.
+The retention window keeps the active version and one previous, because
+repointing `installed_plugins.json` at the directory below is the only
+cheap rollback there is and a window of one leaves none.
+
+procoder refuses rather than guesses. A registry that is absent,
+unparseable, or does not list procoder means the active version is unknown,
+and unknown is never a licence to delete: exit 2, nothing removed. A
+directory whose name is not a version — a partial download, an editor's
+backup — cannot be ranked, so it is kept and named rather than guessed at.
+An active version that is not on disk stops the sweep entirely. A cache
+directory that does not exist is not an error at all: procoder may be
+installed from a release binary rather than the marketplace.
+
+Nothing calls this from a hook, and a test asserts that by reading the hook
+sources — a delete of this size is a deliberate action a person takes, not
+something that happens to them while they are typing.
+
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
 Bare `version` prints one line and asks nobody anything.
@@ -746,4 +878,3 @@ and prints that manager's own upgrade command instead, because overwriting
 a file a package database believes it owns is a change the manager will
 silently revert. The detection is a path heuristic and errs toward
 refusing; `--force` is the way past it when the install really is yours.
-

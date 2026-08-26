@@ -42,6 +42,7 @@ import (
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/plan"
+	"procoder/internal/plugincache"
 	"procoder/internal/portability"
 	"procoder/internal/principles"
 	"procoder/internal/release"
@@ -379,6 +380,11 @@ const usage = `usage: procoder <command> [args]
                        an explicit yes. Refuses to move backwards, and
                        steps aside from a package manager's install unless
                        --force says the file is really yours
+  prune [--apply]      the cached plugin versions that can go. Reports and
+                       removes nothing; --apply removes them. Keeps the
+                       active version and one previous, protects the
+                       version in use twice, and refuses rather than
+                       guesses when the install record cannot be read
 `
 
 func main() {
@@ -678,9 +684,79 @@ func run(args []string) int {
 			force = true
 		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
+	case "prune":
+		apply := false
+		for _, a := range args[1:] {
+			if a != "--apply" {
+				printLine("prune: unknown argument " + a)
+				return 2
+			}
+			apply = true
+		}
+		return pruneCmd(apply, printLine)
 	default:
 		return usageErr(os.Stderr)
 	}
+}
+
+// pruneCmd reports which cached plugin versions could go, and removes them
+// only when asked twice — once by typing the command, once by --apply.
+//
+// Somebody typing `procoder prune` to find out what it does must not lose
+// a gigabyte discovering the answer. Deletion is the one thing here that
+// cannot be undone, so it is the one thing that is not the default (#181).
+func pruneCmd(apply bool, out func(string)) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		out("prune: your home directory could not be determined (" + err.Error() + ") — refusing to guess where the plugin cache is")
+		return 2
+	}
+	// The running binary's own directory: the second, independent
+	// protection on the version in use. An error here is not fatal — it
+	// makes this check contribute nothing, and the registry check still
+	// stands — so it is deliberately not a refusal.
+	running := ""
+	if exe, err := os.Executable(); err == nil {
+		running = filepath.Dir(exe)
+	}
+
+	plan, err := plugincache.Compute(home, running)
+	if err != nil {
+		out("prune: " + err.Error())
+		return 2
+	}
+	for _, n := range plan.Notes {
+		out("  note  " + n)
+	}
+	if len(plan.Removable) == 0 {
+		out("prune: nothing to remove — " + strconv.Itoa(len(plan.Kept)) + " cached version(s), all of them kept")
+		return 0
+	}
+	if !apply {
+		for _, v := range plan.Removable {
+			out("  would remove  " + v)
+		}
+		out("prune: " + strconv.Itoa(len(plan.Removable)) + " version(s) can go, reclaiming " + plugincache.Human(plan.Bytes))
+		out("  keeping " + strings.Join(plan.Kept, ", ") + " (" + plan.Active + " is active)")
+		out("  run `procoder prune --apply` to remove them")
+		return 0
+	}
+
+	removed, reclaimed, failures := plugincache.Apply(home, plan)
+	for _, v := range removed {
+		out("  removed  " + v)
+	}
+	for _, f := range failures {
+		out("  " + f)
+	}
+	// The reclaimed figure is summed from what actually went, never from
+	// the plan: a sweep that removed nothing must not report a number.
+	out("prune: removed " + strconv.Itoa(len(removed)) + " version(s), reclaimed " + plugincache.Human(reclaimed))
+	out("  keeping " + strings.Join(plan.Kept, ", ") + " (" + plan.Active + " is active)")
+	if len(failures) > 0 {
+		return 1
+	}
+	return 0
 }
 
 // indexCmd dispatches the index subcommands; every query prints through one

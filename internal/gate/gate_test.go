@@ -68,6 +68,19 @@ func stubSemgrep(t *testing.T) {
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// adopt marks a fixture as a repository that has adopted procoder.
+//
+// It has to be said explicitly now. Since #172 a bare directory is
+// somebody else's repository, and the gate deliberately runs less there —
+// so a test about formatting, linting or any other house rule must state
+// that its fixture asked for them, or it is testing the wrong mode.
+func adopt(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, ".procoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGateFailsOnUnformattedAndPassesAfter(t *testing.T) {
 	if _, err := exec.LookPath("gofmt"); err != nil {
 		t.Skip("gofmt not installed")
@@ -76,6 +89,7 @@ func TestGateFailsOnUnformattedAndPassesAfter(t *testing.T) {
 	stubLinter(t)
 	stubSemgrep(t)
 	dir := t.TempDir()
+	adopt(t, dir)
 	p := filepath.Join(dir, "a.go")
 	if err := os.WriteFile(p, []byte("package main\nfunc  main( ){}\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -95,6 +109,7 @@ func TestGateFailsOnUnformattedAndPassesAfter(t *testing.T) {
 
 func TestUncheckedFailsTheGateLikeUnformatted(t *testing.T) {
 	dir := t.TempDir()
+	adopt(t, dir)
 	p := filepath.Join(dir, "a.go")
 	if err := os.WriteFile(p, []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -113,6 +128,7 @@ func TestOutOfScopeIsCountedNotFailed(t *testing.T) {
 	stubGitleaks(t)
 	stubSemgrep(t)
 	dir := t.TempDir()
+	adopt(t, dir)
 	p := filepath.Join(dir, "notes.txt")
 	if err := os.WriteFile(p, []byte("hi\n"), 0o644); err != nil {
 		t.Fatal(err)

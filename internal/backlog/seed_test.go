@@ -158,10 +158,13 @@ func TestACommentedCriterionCoversNothing(t *testing.T) {
 func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 	root := t.TempDir()
 	body := completeSpec("auth",
-		"- [ ] login accepts a valid token and rejects an expired one\n"+
-			"- [x] logout clears the session cookie on every platform\n"+
+		// The observable goes at the END: a criterion must name one since
+		// #186, and the slug is taken from the front, so prefixing it
+		// would rename every story this test is about.
+		"- [ ] login accepts a valid token and rejects an expired one, per `procoder check`; fails if expiry is ignored\n"+
+			"- [x] logout clears the session cookie on every platform, per `procoder check`; fails if the cookie survives\n"+
 			"- [ ] the audit log records each login with a UTC\n"+
-			"      timestamp")
+			"      timestamp, per `procoder check`; fails if the clock is local")
 	specPath := writeSpec(t, root, "auth", body)
 	mustBeComplete(t, root, "auth")
 
@@ -203,9 +206,9 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 	}
 	date := time.Now().UTC().Format("20060102")
 	for _, want := range []string{
-		filepath.ToSlash(filepath.Join(Dir, KindStory, date+"-login-accepts-a-valid-token-and-rejects-an-expired-one.md")),
-		"- [ ] logout clears the session cookie on every platform",
-		"- [ ] the audit log records each login with a UTC timestamp",
+		filepath.ToSlash(filepath.Join(Dir, KindStory, date+"-login-accepts-a-valid-token-and-rejects-an-expired-one-per.md")),
+		"- [ ] logout clears the session cookie on every platform, per `procoder check`",
+		"- [ ] the audit log records each login with a UTC timestamp, per `procoder check`",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in:\n%s", want, joined)
@@ -220,7 +223,7 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 
 func TestSeedRefusesExistingEpic(t *testing.T) {
 	root := t.TempDir()
-	writeSpec(t, root, "auth", completeSpec("auth", "- [ ] login accepts a valid token"))
+	writeSpec(t, root, "auth", completeSpec("auth", "- [ ] login accepts a valid token, per `procoder check`; fails if the validator is bypassed"))
 	mustBeComplete(t, root, "auth")
 	writeItem(t, root, KindEpic, "auth", "# auth\n\nStatus: open\n")
 	out, lines := collect()
@@ -278,7 +281,11 @@ func TestFingerprintTracksCriteriaNotProse(t *testing.T) {
 func TestTwoCriteriaThatSlugAlikeGetSeparateStories(t *testing.T) {
 	root := t.TempDir()
 	writeSpec(t, root, "widget", completeSpec("widget",
-		"- [ ] the loader reads foo.bar and reports it\n- [ ] the loader reads foo-bar and reports it"))
+		// Each names its observable: since #186 a criterion that says only
+		// what should be true is refused. The slug collision this test is
+		// about is unaffected — punctuation is still a boundary.
+		"- [ ] the loader reads foo.bar and reports it, per `procoder check`; fails if the reader is dropped\n"+
+			"- [ ] the loader reads foo-bar and reports it, per `procoder check`; fails if the reader is dropped"))
 	mustBeComplete(t, root, "widget")
 
 	out, lines := collect()

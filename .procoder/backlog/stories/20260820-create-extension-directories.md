@@ -20,4 +20,3 @@ Create the formal extension directory structure under reverse-domain namespaces.
 - [ ] All JSON files parse without errors
 
 ## Evidence
-

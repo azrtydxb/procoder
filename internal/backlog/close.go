@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/spec"
 	"strings"
 	"time"
 
@@ -98,6 +99,19 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 	if n := len(uncheckedRe.FindAllString(criteria, -1)); n > 0 {
 		missing = append(missing, fmt.Sprintf("%d acceptance criterion(s) unchecked", n))
 	}
+	// A criterion nobody can run is an agreement, not a test (#186). Said
+	// here, not refused here.
+	//
+	// The refusal belongs at the spec, while it is still a draft and
+	// before the sprint opens — which is where it is. A story is closed
+	// once, at the end of the work, and refusing then would apply a rule
+	// written today to every story already in flight: the retrofit this
+	// change deliberately does not do. So the controller says it, the
+	// person reads it, and the next spec is written better.
+	var criterionNotes []string
+	for _, f := range spec.UncheckableCriteria("## Acceptance criteria\n" + criteria) {
+		criterionNotes = append(criterionNotes, "a criterion "+f.Why)
+	}
 	if m := typeRe.FindStringSubmatch(text); m != nil && m[1] == "bug" {
 		// A defect without a severity was never triaged — the header is
 		// part of a bug's rigor, exactly like evidence.
@@ -120,6 +134,9 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		if ok, summary := suite(); !ok {
 			missing = append(missing, "the test suite is not green — "+summary)
 		}
+	}
+	for _, n := range criterionNotes {
+		out("  note: " + n)
 	}
 	if len(missing) > 0 {
 		out("story " + id + " stays OPEN — the quality controller found:")

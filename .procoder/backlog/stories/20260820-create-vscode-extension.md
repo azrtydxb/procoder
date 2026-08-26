@@ -29,4 +29,3 @@ Create a VS Code extension scaffold under `vscode/` that enables Procoder to be 
 - [ ] All JSON files parse without errors
 
 ## Evidence
-

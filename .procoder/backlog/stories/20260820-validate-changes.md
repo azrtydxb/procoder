@@ -21,4 +21,3 @@ Run the full procoder gate and test suite to validate all changes from tasks 1-1
 - [ ] No new conflicts with existing `.procoder/` state
 
 ## Evidence
-

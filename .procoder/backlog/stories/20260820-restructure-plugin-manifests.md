@@ -21,4 +21,3 @@ Update all existing plugin manifest files (`.claude-plugin/plugin.json`, `.codex
 - [ ] All JSON files parse without errors
 
 ## Evidence
-

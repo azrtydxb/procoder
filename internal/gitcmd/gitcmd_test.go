@@ -411,3 +411,61 @@ func TestStatusPrintsTheCountsAndExitsOnBlockingFindings(t *testing.T) {
 		t.Fatalf("a clean tree has no blocks:\n%s", got)
 	}
 }
+
+// Raised in review on #187: the commit message being written was never
+// checked for an attribution trailer. The unpushed range catches one that
+// already landed; nothing caught one on the way in.
+//
+// The two halves matter differently. Before the commit, the line can be
+// removed by editing the message. After it, only by rewriting history —
+// and until that happens it blocks every subsequent commit, which is what
+// made #185 as bad as it was.
+//
+// proved by: the gitx.AttributionInMessage call removed from
+// CollectUniversal — the trailer passes on the way in.
+func TestTheCommitMessageBeingWrittenIsCheckedForAttribution(t *testing.T) {
+	root := t.TempDir()
+	msg := "feat: a thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+
+	for _, tc := range []struct {
+		name string
+		got  []gitx.Finding
+	}{
+		{"universal", CollectUniversal(root, config.Config{}, nil, msg)},
+		{"adopted", CollectFor(root, config.Config{}, nil, msg)},
+	} {
+		found := false
+		for _, f := range tc.got {
+			if strings.Contains(f.Message, "AI-attribution") && f.Blocking {
+				found = true
+				// The fix must be the one that applies at this moment.
+				if !strings.Contains(f.Message, "before committing") {
+					t.Errorf("%s: the finding tells you to rewrite history for a commit that does not exist yet: %s", tc.name, f.Message)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: a trailer in the message being written was not caught: %+v", tc.name, tc.got)
+		}
+	}
+}
+
+// And a clean message is silent, so the check above cannot pass by
+// flagging everything.
+//
+// The empty-message guard in AttributionInMessage is an early return, not
+// the protection — matchAIIdentity finds nothing in an empty string
+// anyway. Verified: removing it does not fail this test.
+//
+// proved by: AttributionInMessage made to return a finding
+// unconditionally — every message is flagged and the test names it.
+func TestACleanCommitMessageIsSilent(t *testing.T) {
+	root := t.TempDir()
+	for _, msg := range []string{"", "feat: an ordinary message\n\nWith a body."} {
+		for _, f := range CollectUniversal(root, config.Config{}, nil, msg) {
+			if strings.Contains(f.Message, "AI-attribution") {
+				t.Errorf("a clean message was flagged (%q): %s", msg, f.Message)
+			}
+		}
+	}
+}

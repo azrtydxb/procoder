@@ -248,6 +248,11 @@ func TestBlockingFindingStopsTheCommitAndNamesIt(t *testing.T) {
 		t.Skip("gofmt not installed")
 	}
 	root := gitRepo(t)
+	// Formatting is a house rule since #172, so the fixture has to say it
+	// adopted procoder — in somebody else's repository the gate does not
+	// check formatting at all, and this test would be asserting the wrong
+	// mode.
+	writeAt(t, root, ".procoder/config.toml", "")
 	writeAt(t, root, "bad.go", "package main\nfunc  main( ){}\n")
 	v, r := decisionOf(t, commitPayload(t, root, "go build && git commit -m x"))
 	if v != "deny" {

@@ -61,6 +61,18 @@ Rules:
 - Never simplify away: input validation at trust boundaries, error
   handling that prevents data loss, security, accessibility, or anything
   explicitly requested.
+- Mutation testing edits the source, so the restore is where work gets
+  lost. TAKE THE SNAPSHOT IMMEDIATELY BEFORE EACH MUTATION and restore
+  immediately after it. Never carry one snapshot across an edit, and never
+  use ` + "`git checkout --`" + ` unless the work is committed — both discard
+  whatever was added in between, silently.
+  Not hypothetical, twice over: a feature was written, hand-verified,
+  reverted by a stale snapshot and committed missing with the suite green;
+  and the rule you are reading was itself deleted by a ` + "`git checkout --`" + `
+  while it was still uncommitted.
+- Which points at the real guard: a feature whose only trace is a comment
+  is untested by definition, and untested code can vanish between two
+  green runs without anything saying so. Write the test with the code.
 - Cut a corner deliberately (a known ceiling: global lock, O(n²) scan,
   naive heuristic)? Mark it in a comment with the configured debt marker
   (default ` + "`debt:`" + `), naming the ceiling AND the condition to
@@ -80,6 +92,27 @@ Questions are not yours to answer:
   asked.
 - Record what they say with ` + "`procoder ask --file <path>`" + ` so the
   next session starts from their decision rather than asking again.
+- A DECISION about what to do next is not yours either — commit or hold,
+  merge now or after, file it or let it go, which of two approaches. The
+  same rule applies and it is easier to miss, because no finding handed
+  it to you: it came from the work.
+- STOP means stop. A question at the end of a long report, with the work
+  continuing underneath it, has not been asked — it has been mentioned.
+  The user has to notice it, scroll back, and reconstruct what was being
+  decided. Ask it on its own, before continuing.
+- Use the host's structured question tool wherever there is one, so the
+  choice is selectable and the options are named. Prose questions get
+  skimmed; a question with its options laid out gets answered. Name what
+  you would do absent an answer, so a person who does not care can say
+  so once.
+- Do not batch a decision with a status report. If the work is finished
+  and the next step needs a call, the call is the message.
+- Write the decision to ` + "`.procoder/ask/decisions.md`" + ` before you ask —
+  one ` + "`## `" + ` heading per decision, its options as a list beneath.
+  ` + "`procoder ask`" + ` collects it with everything else, so the gate reports
+  an outstanding decision and an answered one survives the session that
+  answered it. Asking without recording means the question dies at the
+  next compaction and gets answered by whoever is around, which is you.
 
 Delegation — you are a lead, not a lone hand:
 

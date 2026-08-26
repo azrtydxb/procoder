@@ -42,6 +42,12 @@ back, and a file it could not check is never reported as clean.
 - Run `procoder test` before claiming anything works. NOT run is never
   green. Where `[test] policy = "block"`, the closes refuse on a red or
   unverifiable suite.
+- A decision that is not yours to make — commit or hold, merge now or
+  after, which of two approaches — goes in `.procoder/ask/decisions.md`,
+  one `## ` heading per decision with its options beneath, and then you
+  ask. `procoder ask` collects it with everything else. Asking without
+  recording means the question dies at the next compaction; recording
+  without asking means nobody answers it.
 
 ## The work chain
 

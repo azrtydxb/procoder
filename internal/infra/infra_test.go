@@ -67,23 +67,101 @@ func TestSloppyDockerfileIsReported(t *testing.T) {
 	}
 }
 
-func TestInvalidK8sManifestIsReported(t *testing.T) {
-	if tools.Resolve(Kubeconform, "") == "" {
-		t.Skip("kubeconform not installed")
+// stubKubeconform puts a kubeconform on PATH that prints a fixed report.
+//
+// The real one fetches its schemas from raw.githubusercontent.com, so under
+// a full parallel suite run that fetch can fail and Check returns nothing —
+// making this test's verdict depend on whether GitHub answered rather than
+// on whether procoder reported the manifest (#188). The gate tests stub
+// gitleaks, semgrep and golangci-lint for exactly this reason; the infra
+// tests did not.
+//
+// What is under test here is procoder's half: that it parses what the tool
+// said. Whether the tool still says it that way is TestRealKubeconform.
+func stubKubeconform(t *testing.T, output string) {
+	t.Helper()
+	bin := t.TempDir()
+	name, script := "kubeconform", "#!/bin/sh\ncat <<'REPORT'\n"+output+"\nREPORT\nexit 1\n"
+	if runtime.GOOS == "windows" {
+		name = "kubeconform.cmd"
+		script = "@echo off\r\n"
+		for _, line := range strings.Split(output, "\n") {
+			script += "echo " + line + "\r\n"
+		}
+		script += "exit /b 1\r\n"
 	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// An invalid manifest is reported, with the same verdict whether or not
+// this machine can reach GitHub.
+//
+// proved by: the ` is invalid:` filter in kubernetes() changed to
+// ` is valid:` — nothing is reported and the test says so.
+func TestInvalidK8sManifestIsReported(t *testing.T) {
 	root := t.TempDir()
+	// A message the real kubeconform would never produce. Asserting it
+	// below is what proves the stub shadowed the installed binary rather
+	// than the test happening to pass because the real one was reachable.
+	stubKubeconform(t, "deploy/svc.yaml - Service x is invalid: STUBBED-VERDICT-NOT-FROM-THE-NETWORK")
 	write(t, root, "deploy/svc.yaml",
 		"apiVersion: v1\nkind: Service\nmetadata:\n  name: x\nspec:\n  ports:\n    - port: \"eighty\"\n")
 	got := Check(root)
 	found := false
 	for _, f := range got {
-		if strings.Contains(f.Message, "is invalid") {
+		if strings.Contains(f.Message, "STUBBED-VERDICT-NOT-FROM-THE-NETWORK") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("the invalid manifest must be reported: %+v", got)
+		t.Fatalf("the stub's verdict was not what procoder reported — either the finding was lost or the real binary ran: %+v", got)
 	}
+}
+
+// The stub must not be so loose that it passes whatever procoder does. A
+// tool that reports nothing must produce no finding — otherwise the test
+// above would pass against an implementation that invented findings.
+//
+// proved by: kubernetes() made to append a finding unconditionally — this
+// test then fails while the one above still passes, which is the pair's
+// whole purpose.
+func TestAValidManifestProducesNoInvalidFinding(t *testing.T) {
+	root := t.TempDir()
+	stubKubeconform(t, "deploy/svc.yaml - Service x is valid")
+	write(t, root, "deploy/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: x\n")
+	for _, f := range Check(root) {
+		if strings.Contains(f.Message, "is invalid") {
+			t.Fatalf("a finding was reported for a manifest the tool called valid: %+v", f)
+		}
+	}
+}
+
+// The real binary, kept so that "kubeconform's output shape changed" is
+// still something the suite can find out — which a stub can never tell you.
+//
+// Opt-in rather than skipped-when-missing: a test that silently skips is
+// one nobody notices has stopped running. PROCODER_TOOL_E2E=1 asks for it,
+// and it is not part of the default suite precisely because its verdict
+// depends on the network.
+func TestRealKubeconformStillSpeaksTheShapeWeParse(t *testing.T) {
+	if os.Getenv("PROCODER_TOOL_E2E") != "1" {
+		t.Skip("set PROCODER_TOOL_E2E=1 to run the real-tool check (needs network)")
+	}
+	if tools.Resolve(Kubeconform, "") == "" {
+		t.Fatal("PROCODER_TOOL_E2E=1 was set but kubeconform is not installed")
+	}
+	root := t.TempDir()
+	write(t, root, "deploy/svc.yaml",
+		"apiVersion: v1\nkind: Service\nmetadata:\n  name: x\nspec:\n  ports:\n    - port: \"eighty\"\n")
+	for _, f := range Check(root) {
+		if strings.Contains(f.Message, "is invalid") {
+			return
+		}
+	}
+	t.Fatal("the real kubeconform no longer produces the ' is invalid:' shape procoder parses")
 }
 
 func TestMissingToolsSayNotChecked(t *testing.T) {

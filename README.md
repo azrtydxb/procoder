@@ -61,7 +61,10 @@ Two modes, one principle:
 - **Forced** — hooks at fixed lifecycle points (every write, every
   session start) the agent cannot skip.
 - **P-CONTROL** — the binary computes and reports; the agent acts.
-  Nothing modifies code, files, or state behind the agent's back.
+  Nothing modifies code, files, or state behind the agent's back. The one
+  exception is `procoder prune --apply`, which removes superseded copies of
+  the plugin from your cache — not repository content, and never without
+  being asked twice.
 
 ## What's inside
 
@@ -72,6 +75,14 @@ project's config always wins), git hygiene (conflict markers, junk, oversized
 files, AI-attribution lines), secrets, lint, ci and infra hygiene, and
 documentation health, all through one code path so `check`, `git`, and
 CI can never disagree.
+
+That full set is what a repository that has **adopted** procoder gets — one
+with a `.procoder/` directory, or an `AGENTS.md` naming procoder. In
+somebody else's repository only the checks that are true anywhere run
+(secrets, oversized files, conflict markers, junk, AI-attribution lines),
+and the ones that read file content see only the lines your commit wrote.
+procoder does not apply its conventions to a project that never asked for
+them, and every run says which mode it was in.
 
 **The quality chain** — thinking before code, with a refusing controller
 at every link: a **spec** interview closes design gaps before anything is

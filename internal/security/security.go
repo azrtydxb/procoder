@@ -938,3 +938,10 @@ func manifestsIn(root string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// SecretsInDiff is SecretsChangedFiles narrowed to the lines this commit
+// wrote — the form the gate uses in a repository that never adopted
+// procoder. See gitx.NarrowToDiff for why.
+func SecretsInDiff(root string, paths []string) []gitx.Finding {
+	return gitx.NarrowToDiff(root, paths, SecretsChangedFiles(root, paths))
+}

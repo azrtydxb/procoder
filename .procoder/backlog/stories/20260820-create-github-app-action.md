@@ -23,4 +23,3 @@ Create a GitHub App manifest and a GitHub Action workflow that enables Procoder 
 - [ ] README documents the GitHub App workflow
 
 ## Evidence
-
