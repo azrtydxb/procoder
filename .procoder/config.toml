@@ -21,6 +21,12 @@ max_file_mb = 10
 policy = "block"
 
 [release]
+# The handles the changelog's credit rule does not ask about: whose
+# release notes these are. Configured rather than discovered, because
+# `gh api user` answers only where a person is logged in — in CI the
+# token is an app installation token with no user behind it, and asking
+# returns 403.
+maintainers = ["piwi3910"]
 # The version-bearing files `procoder release` verifies stay in sync.
 files = ["plugin.yaml", "package.json", "gemini-extension.json", "README.md", ".claude-plugin/plugin.json", "docs/index.md", ".github/plugin/marketplace.json", ".codex-plugin/plugin.json", ".github/plugin/plugin.json"]
 

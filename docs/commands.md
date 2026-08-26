@@ -283,6 +283,16 @@ The report names the handle and hands over the line to paste, because a
 check that says "this is wrong" and leaves you to work out the right answer
 is one you satisfy by deleting the credit.
 
+Who counts as "yours" comes from `[release] maintainers` in
+`.procoder/config.toml`, not from who is running the command. `gh api user`
+answers only where a person is logged in — in CI the token is an app
+installation token with no user behind it and returns 403, which made the
+check unrunnable in the one place it most needed to run. Falling back to
+whoever triggered the workflow would be worse: on a contributor's pull
+request that is the contributor, who would then be excluded from the credit
+they are owed. With nothing configured it asks `gh` locally, so a
+repository that has set nothing still gets the rule by hand.
+
 `procoder release --credits` runs those two checks and nothing else, and CI
 runs it on every commit with a token. That is the difference between a rule
 and a habit: until it ran in CI it ran only when whoever cut the release

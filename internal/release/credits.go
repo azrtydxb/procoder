@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/config"
 	"regexp"
 	"strings"
 	"time"
@@ -203,30 +204,38 @@ func resolveOrigin(root string, number int) (origin, error) {
 	return origin{number: number, login: parts[0], isPR: parts[1] == "true"}, nil
 }
 
-// releaser is whoever is cutting this release. They are excluded from the
-// credits: thanking yourself in your own release notes is noise, and a
-// rule that demanded it would be ignored within one release.
+// excluded is the handles the credit rule does not ask about: the people
+// whose release notes these are. Thanking yourself in your own notes is
+// noise, and a rule that demanded it would be ignored inside one release.
 //
-// The error is returned rather than swallowed. An empty handle excludes
-// nobody, so a `gh` that cannot answer would quietly turn the exclusion
-// off and start demanding the maintainer credit themselves — the rule
-// silently not applying, which is the failure this file exists to end.
-// Raised in review on #213: the policy was already "unknown is not a
-// pass", and it was applied to the citation lookup and not to this one.
-func releaser(root string) (string, error) {
+// Configuration first, and configuration is the answer that works
+// everywhere. `gh api user` answers only where a person is logged in — in
+// CI the token is an app installation token with no user behind it, and
+// asking returns 403. That made the check unrunnable in the one place it
+// most needed to run, which is how it was found. And "whoever triggered
+// the workflow" is worse than useless: on a contributor's pull request
+// that is the contributor, who would then be excluded from the credit
+// they are owed.
+//
+// The local fallback stays, so a repository that has configured nothing
+// still gets the rule when a person runs it by hand.
+func excluded(root string) ([]string, error) {
+	if names := config.Load(root).Maintainers; len(names) > 0 {
+		return names, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
 	cmd.Dir = root
 	raw, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("%v", firstLine(err))
+		return nil, fmt.Errorf("%v — set `[release] maintainers` in .procoder/config.toml, which is the answer that works in CI too", firstLine(err))
 	}
 	login := strings.TrimSpace(string(raw))
 	if login == "" {
-		return "", fmt.Errorf("gh answered with no login")
+		return nil, fmt.Errorf("gh answered with no login — set `[release] maintainers` in .procoder/config.toml")
 	}
-	return login, nil
+	return []string{login}, nil
 }
 
 // MissingCredits reports contributors a paragraph OWES a credit and does
@@ -252,7 +261,7 @@ func releaser(root string) (string, error) {
 // not run.
 func MissingCredits(root, entry string) []string {
 	return missingCreditsWith(entry,
-		func() (string, error) { return releaser(root) },
+		func() ([]string, error) { return excluded(root) },
 		func(n int) (origin, error) { return resolveOrigin(root, n) })
 }
 
@@ -260,7 +269,7 @@ func MissingCredits(root, entry string) []string {
 // so the logic can be tested without a network — the suite runs offline on
 // every commit, and a rule this fiddly is exactly the kind that needs
 // tests rather than one live run that happened to look right.
-func missingCreditsWith(entry string, who func() (string, error), resolve func(int) (origin, error)) []string {
+func missingCreditsWith(entry string, who func() ([]string, error), resolve func(int) (origin, error)) []string {
 	// Nothing cited anywhere means nothing is owed, and asking GitHub who
 	// is releasing would be a network call to answer a question nobody
 	// asked. VerifyCredits returns early for the same reason — and without
@@ -274,13 +283,17 @@ func missingCreditsWith(entry string, who func() (string, error), resolve func(i
 	// would quietly turn the exclusion off and start demanding the
 	// maintainer credit themselves — the rule silently not applying, which
 	// is the failure this file exists to end.
-	me, meErr := who()
-	if meErr != nil || me == "" {
-		reason := "gh returned no login"
+	mine, meErr := who()
+	if meErr != nil || len(mine) == 0 {
+		reason := "no maintainer handle available"
 		if meErr != nil {
 			reason = meErr.Error()
 		}
-		return []string{fmt.Sprintf("who is cutting this release could not be determined (%s) — the exclusion cannot be applied, and a credit rule that silently stops applying is worse than none", reason)}
+		return []string{fmt.Sprintf("who these release notes belong to could not be determined (%s) — the exclusion cannot be applied, and a credit rule that silently stops applying is worse than none", reason)}
+	}
+	isMine := map[string]bool{}
+	for _, m := range mine {
+		isMine[strings.ToLower(m)] = true
 	}
 	var gaps []string
 	for _, para := range strings.Split(entry, "\n\n") {
@@ -307,7 +320,7 @@ func missingCreditsWith(entry string, who func() (string, error), resolve func(i
 				gaps = append(gaps, fmt.Sprintf("#%d could not be resolved (%v) — who to credit is unknown, and unknown is not a pass", n, err))
 				continue
 			}
-			if o.login == "" || strings.EqualFold(o.login, me) || seen[strings.ToLower(o.login)] {
+			if o.login == "" || isMine[strings.ToLower(o.login)] || seen[strings.ToLower(o.login)] {
 				// Same person for issue and PR collapses here: one credit,
 				// not two.
 				seen[strings.ToLower(o.login)] = true

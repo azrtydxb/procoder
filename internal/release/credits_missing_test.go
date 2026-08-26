@@ -39,7 +39,7 @@ func fake(m map[int]origin) func(int) (origin, error) {
 func TestAnUncreditedIssueAuthorIsReported(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{42}),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{42: {number: 42, login: "reporter", isPR: false}}),
 	)
 	if len(got) != 1 {
@@ -63,7 +63,7 @@ func TestAnUncreditedIssueAuthorIsReported(t *testing.T) {
 func TestOnePersonWhoDidBothIsCreditedOnce(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{7, 8}),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{
 			7: {number: 7, login: "tobero", isPR: false},
 			8: {number: 8, login: "tobero", isPR: true},
@@ -83,7 +83,7 @@ func TestOnePersonWhoDidBothIsCreditedOnce(t *testing.T) {
 func TestAReporterAndADifferentFixerAreBothOwed(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{10, 11}),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{
 			10: {number: 10, login: "finder", isPR: false},
 			11: {number: 11, login: "fixer", isPR: true},
@@ -112,7 +112,7 @@ func TestAReporterAndADifferentFixerAreBothOwed(t *testing.T) {
 func TestAnAlreadyCreditedContributorIsSilent(t *testing.T) {
 	if got := missingCreditsWith(
 		para("a thing", []int{9}, "tobero"),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{9: {number: 9, login: "tobero", isPR: true}}),
 	); len(got) != 0 {
 		t.Fatalf("a paragraph that already credits its contributor was refused: %v", got)
@@ -128,7 +128,7 @@ func TestAnAlreadyCreditedContributorIsSilent(t *testing.T) {
 func TestTheReleaserIsNotOwedACredit(t *testing.T) {
 	if got := missingCreditsWith(
 		para("a thing", []int{1}),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{1: {number: 1, login: "maintainer", isPR: false}}),
 	); len(got) != 0 {
 		t.Fatalf("the releaser was asked to credit themselves: %v", got)
@@ -143,7 +143,7 @@ func TestTheReleaserIsNotOwedACredit(t *testing.T) {
 func TestAnUnresolvableNumberBlocks(t *testing.T) {
 	got := missingCreditsWith(
 		para("a thing", []int{99}),
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{}),
 	)
 	if len(got) != 1 {
@@ -165,7 +165,7 @@ func TestAnUnresolvableNumberBlocks(t *testing.T) {
 func TestAParagraphCitingNothingOwesNothing(t *testing.T) {
 	if got := missingCreditsWith(
 		"**Changed — something.** Prose with no citations at all.",
-		func() (string, error) { return "maintainer", nil },
+		func() ([]string, error) { return []string{"maintainer"}, nil },
 		fake(map[int]origin{}),
 	); len(got) != 0 {
 		t.Fatalf("a paragraph citing nothing produced findings: %v", got)
@@ -181,20 +181,26 @@ func TestAParagraphCitingNothingOwesNothing(t *testing.T) {
 // The policy was already "unknown is not a pass". It was applied to the
 // citation lookup and not to this one.
 //
-// proved by: the `meErr != nil || me == ""` guard removed — the fixture
-// then reports the maintainer as owed a credit instead of blocking.
-func TestAnUnknownReleaserBlocks(t *testing.T) {
+// The 403 in the fixture is the real one: in CI the token is an app
+// installation token with no user behind it, so `gh api user` cannot
+// answer. That is why the handles are configured rather than discovered —
+// and why this test uses the error CI actually produced.
+//
+// proved by: the `meErr != nil || len(mine) == 0` guard removed — the
+// fixture then reports the maintainer as owed a credit instead of
+// blocking.
+func TestAnUnknownMaintainerSetBlocks(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		me   string
+		me   []string
 		err  error
 	}{
-		{"gh failed", "", fmt.Errorf("gh: not authenticated")},
-		{"gh answered with nothing", "", nil},
+		{"lookup failed", nil, fmt.Errorf("gh: Resource not accessible by integration (HTTP 403)")},
+		{"lookup answered with nothing", nil, nil},
 	} {
 		got := missingCreditsWith(
 			para("a thing", []int{1}),
-			func() (string, error) { return tc.me, tc.err },
+			func() ([]string, error) { return tc.me, tc.err },
 			fake(map[int]origin{1: {number: 1, login: "maintainer", isPR: false}}),
 		)
 		if len(got) != 1 {
@@ -223,10 +229,48 @@ func TestAnUnknownReleaserBlocks(t *testing.T) {
 func TestNothingCitedAsksGitHubNothing(t *testing.T) {
 	got := missingCreditsWith(
 		"# changelog\n\n## 0.2.0\n\n- a thing with no citations at all\n",
-		func() (string, error) { panic("the releaser was looked up with nothing to check") },
+		func() ([]string, error) { panic("the maintainer set was looked up with nothing to check") },
 		func(int) (origin, error) { panic("a citation was resolved when none exist") },
 	)
 	if len(got) != 0 {
 		t.Fatalf("an entry citing nothing produced findings: %v", got)
+	}
+}
+
+// Several maintainers, because a project can have more than one and the
+// rule must not credit any of them in their own notes.
+//
+// proved by: `isMine` built from only the first handle — the second
+// maintainer is reported as owed a credit.
+func TestEveryConfiguredMaintainerIsExcluded(t *testing.T) {
+	got := missingCreditsWith(
+		para("a thing", []int{1, 2}),
+		func() ([]string, error) { return []string{"alice", "bob"}, nil },
+		fake(map[int]origin{
+			1: {number: 1, login: "alice", isPR: false},
+			2: {number: 2, login: "bob", isPR: true},
+		}),
+	)
+	if len(got) != 0 {
+		t.Fatalf("a configured maintainer was asked to credit themselves: %v", got)
+	}
+}
+
+// And an outside contributor is still owed, or the exclusion has swallowed
+// the rule.
+//
+// proved by: `isMine` made to return true for everything — nobody is ever
+// owed and the check does nothing.
+func TestAContributorIsStillOwedAlongsideMaintainers(t *testing.T) {
+	got := missingCreditsWith(
+		para("a thing", []int{1, 2}),
+		func() ([]string, error) { return []string{"alice"}, nil },
+		fake(map[int]origin{
+			1: {number: 1, login: "alice", isPR: false},
+			2: {number: 2, login: "outsider", isPR: true},
+		}),
+	)
+	if len(got) != 1 || !strings.Contains(got[0], "@outsider") {
+		t.Fatalf("the outside contributor was not reported as owed: %v", got)
 	}
 }

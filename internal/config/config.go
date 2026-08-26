@@ -73,6 +73,19 @@ type Config struct {
 	// SprintRetroOff disables the retro gate: without it, opening a new
 	// sprint refuses while the last closed sprint's retro is empty.
 	SprintRetroOff bool
+	// Maintainers are the handles excluded from the changelog's credit
+	// rule — the people whose own release notes these are. Thanking
+	// yourself in them is noise.
+	//
+	// Configured rather than discovered. `gh api user` answers only where
+	// a person is logged in: in CI the token is an app installation token
+	// with no user behind it at all, which returns 403 and made the check
+	// unrunnable exactly where it most needed to run. And "whoever
+	// triggered the workflow" is worse than useless — on a contributor's
+	// pull request that is the contributor, who would then be excluded
+	// from the credit they are owed.
+	Maintainers []string
+
 	// ReleaseFiles are the version-bearing files `procoder release`
 	// verifies; unset means the version-sync leg verifies nothing (said).
 	ReleaseFiles []string
@@ -215,6 +228,8 @@ func Load(root string) Config {
 			cfg.TestBlock = value == "block"
 		case "sprint.retro":
 			cfg.SprintRetroOff = value == "off"
+		case "release.maintainers":
+			cfg.Maintainers = parseList(value)
 		case "release.files":
 			cfg.ReleaseFiles = parseList(value)
 		case "bench.threshold":
