@@ -49,6 +49,57 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.1.0 — 2026-08-26
+
+_The per-platform binaries are no longer committed. CI builds them at the
+tag and the launcher fetches the one your machine needs, once._
+
+**Changed — procoder's binaries are built by CI and fetched on first
+use.** ([#176](https://github.com/azrtydxb/procoder/pull/176)) They used to
+be committed: five binaries, 39MB, rewritten at every release and
+permanent in history — which is most of why `.git` had reached 690MB. They
+were also built by hand, and that failed twice in a single day: 3.0.0 was
+tagged carrying 2.0.1's binaries with every manifest, the gate and the
+suite green, and the corrected build then failed the reproducibility check
+because it predated its own source.
+
+Now the release job builds all five from the tagged source and publishes
+them with checksums it generated, and `hooks/launcher.sh` fetches the one
+binary for your platform on first use, verifies it against those
+checksums, caches it beside the plugin and execs it. Every run after that
+execs the cached binary directly, with no network — the path that fires on
+every session start, every Bash call and every write is unchanged.
+
+Nothing is built locally any more, by anyone.
+
+**Changed — a first run now needs the network, and fails gracefully when
+it cannot.** ([#176](https://github.com/azrtydxb/procoder/pull/176)) This
+replaces a stated property: the launcher's own comment used to read
+"marketplace install, no runtime, no network". A hook that cannot fetch
+warns on stderr, writes nothing to stdout and exits 0, so the session
+stays usable and you can see the gate is not running. Every other
+invocation refuses and exits non-zero, because a launcher that exited 0
+having run nothing would be a silent green underneath every check in the
+tool.
+
+Set `PROCODER_BIN` to an absolute path to use your own binary and skip all
+of this — it is your file, and nothing about it is checked. `PROCODER_NO_FETCH`
+disables the download entirely.
+
+**Removed — the checks whose subject was a committed binary.**
+([#176](https://github.com/azrtydxb/procoder/pull/176)) CI's
+reproducibility job rebuilt the committed binaries and compared digests;
+`procoder release` refused to tag when the shipped binary reported a
+different version; a test compared the committed checksums to the
+committed files. All three answered questions about a thing that no longer
+exists, and all three are gone with their tests rather than left asserting
+a world that has ended.
+
+What that spends is written down in ADR 0004 rather than discovered later:
+with nothing committed there is nothing to rebuild against, so nobody
+outside CI can independently confirm the published bytes. That is the
+trust already extended to every other CI-published artifact.
+
 ## 3.0.0 — 2026-08-24
 
 _Procoder was run against a repository it had never seen, and against a
