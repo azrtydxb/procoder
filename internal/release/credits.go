@@ -206,16 +206,27 @@ func resolveOrigin(root string, number int) (origin, error) {
 // releaser is whoever is cutting this release. They are excluded from the
 // credits: thanking yourself in your own release notes is noise, and a
 // rule that demanded it would be ignored within one release.
-func releaser(root string) string {
+//
+// The error is returned rather than swallowed. An empty handle excludes
+// nobody, so a `gh` that cannot answer would quietly turn the exclusion
+// off and start demanding the maintainer credit themselves — the rule
+// silently not applying, which is the failure this file exists to end.
+// Raised in review on #213: the policy was already "unknown is not a
+// pass", and it was applied to the citation lookup and not to this one.
+func releaser(root string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gh", "api", "user", "--jq", ".login")
 	cmd.Dir = root
 	raw, err := cmd.Output()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("%v", firstLine(err))
 	}
-	return strings.TrimSpace(string(raw))
+	login := strings.TrimSpace(string(raw))
+	if login == "" {
+		return "", fmt.Errorf("gh answered with no login")
+	}
+	return login, nil
 }
 
 // MissingCredits reports contributors a paragraph OWES a credit and does
@@ -240,7 +251,8 @@ func releaser(root string) string {
 // a pass: it is reported and blocks, like everything else here that could
 // not run.
 func MissingCredits(root, entry string) []string {
-	return missingCreditsWith(entry, releaser(root), func(n int) (origin, error) {
+	me, err := releaser(root)
+	return missingCreditsWith(entry, me, err, func(n int) (origin, error) {
 		return resolveOrigin(root, n)
 	})
 }
@@ -249,7 +261,19 @@ func MissingCredits(root, entry string) []string {
 // so the logic can be tested without a network — the suite runs offline on
 // every commit, and a rule this fiddly is exactly the kind that needs
 // tests rather than one live run that happened to look right.
-func missingCreditsWith(entry, me string, resolve func(int) (origin, error)) []string {
+func missingCreditsWith(entry, me string, meErr error, resolve func(int) (origin, error)) []string {
+	// The releaser guard lives HERE rather than in the networked caller, so
+	// a test can reach it. An empty handle excludes nobody, so proceeding
+	// would quietly turn the exclusion off and start demanding the
+	// maintainer credit themselves — the rule silently not applying, which
+	// is the failure this file exists to end.
+	if meErr != nil || me == "" {
+		reason := "gh returned no login"
+		if meErr != nil {
+			reason = meErr.Error()
+		}
+		return []string{fmt.Sprintf("who is cutting this release could not be determined (%s) — the exclusion cannot be applied, and a credit rule that silently stops applying is worse than none", reason)}
+	}
 	var gaps []string
 	for _, para := range strings.Split(entry, "\n\n") {
 		var nums []int
