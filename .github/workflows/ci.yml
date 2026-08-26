@@ -248,6 +248,16 @@ jobs:
         run: procoder docs --external
         env:
           GH_TOKEN: ${{ github.token }}
+      # Credits, enforced here rather than trusted to whoever cuts the
+      # release. The rule ran only when somebody typed `procoder release`
+      # on their own machine — which means it ran when they remembered,
+      # and "remember to check" is the thing that kept failing and is why
+      # the rule exists at all. Needs the API, so it needs the token; the
+      # step above already established that pattern.
+      - name: every contributor the newest changelog entry owes is credited
+        run: procoder release --credits
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: the whole-tree pass — maintain, debt, deps
         # The gate answers about the change; these answer about the
         # repository. Dependency freshness, the debt ledger and complexity

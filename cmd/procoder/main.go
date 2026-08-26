@@ -334,10 +334,13 @@ const usage = `usage: procoder <command> [args]
                        as analyst, architect, implementer and reviewer in
                        turn; a lens that could not be loaded is a refusal,
                        never a review that silently happened
-  release [<version>]  the pre-tag controller: version-sync across [release]
+  release [<version>] [--credits]
+                       the pre-tag controller: version-sync across [release]
                        files, the changelog entry, a clean tree, the gate, and
                        the suite under [test] policy — every failure listed,
-                       and on success the tag command printed, never run
+                       and on success the tag command printed, never run.
+                       --credits runs only the contributor checks, which is
+                       what CI enforces on every commit
   run [--exec]         how to run this project: the launch command(s) it
                        declares, with the file that declared each; --exec runs
                        a single non-server candidate for you
@@ -391,6 +394,7 @@ func main() {
 	// The principles hook reports what is newer than this build; the version
 	// is stamped here at link time, so this is the only place that knows it.
 	principles.Version = version
+	config.Version = version
 	releases.Running = version
 
 	os.Exit(run(os.Args[1:]))
@@ -507,8 +511,21 @@ func run(args []string) int {
 	case "release":
 		root := doctor.Root()
 		version := ""
-		if len(args) > 1 {
-			version = args[1]
+		creditsOnly := false
+		for _, a := range args[1:] {
+			if a == "--credits" {
+				creditsOnly = true
+				continue
+			}
+			version = a
+		}
+		if creditsOnly {
+			// The credit checks alone, so CI can enforce them. The rest of
+			// the controller asks about the working tree, the tag and the
+			// version files — all of which are meaningless on a pull
+			// request and would fail for reasons that have nothing to do
+			// with whether somebody is credited.
+			return release.Credits(root, version, printLine)
 		}
 		return release.Run(root, version, func() bool {
 			return gate.Run(nil, root, io.Discard) == 0

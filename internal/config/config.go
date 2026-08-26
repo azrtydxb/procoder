@@ -73,6 +73,19 @@ type Config struct {
 	// SprintRetroOff disables the retro gate: without it, opening a new
 	// sprint refuses while the last closed sprint's retro is empty.
 	SprintRetroOff bool
+	// Maintainers are the handles excluded from the changelog's credit
+	// rule — the people whose own release notes these are. Thanking
+	// yourself in them is noise.
+	//
+	// Configured rather than discovered. `gh api user` answers only where
+	// a person is logged in: in CI the token is an app installation token
+	// with no user behind it at all, which returns 403 and made the check
+	// unrunnable exactly where it most needed to run. And "whoever
+	// triggered the workflow" is worse than useless — on a contributor's
+	// pull request that is the contributor, who would then be excluded
+	// from the credit they are owed.
+	Maintainers []string
+
 	// ReleaseFiles are the version-bearing files `procoder release`
 	// verifies; unset means the version-sync leg verifies nothing (said).
 	ReleaseFiles []string
@@ -215,6 +228,8 @@ func Load(root string) Config {
 			cfg.TestBlock = value == "block"
 		case "sprint.retro":
 			cfg.SprintRetroOff = value == "off"
+		case "release.maintainers":
+			cfg.Maintainers = parseList(value)
 		case "release.files":
 			cfg.ReleaseFiles = parseList(value)
 		case "bench.threshold":
@@ -265,8 +280,19 @@ func Load(root string) Config {
 		default:
 			// A key procoder does not know is a key that does nothing, and
 			// a writer who mistypes `policy` believes their policy is set.
+			// So it still blocks.
+			//
+			// But "procoder does not know it" has TWO causes, and the
+			// finding used to name only one. A typo is the writer's to
+			// fix. A key added in a later release is not: the reader has
+			// spelled it correctly, this build is simply older, and
+			// telling them the name does not exist is an instruction
+			// nobody can follow — which is how `--no-verify` becomes
+			// muscle memory (#172, #185). It happened here: a key added
+			// in one commit was reported unknown by the installed plugin
+			// binary from the release before it.
 			cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
-				Reason: "no setting by this name — it has no effect"})
+				Reason: unknownKeyReason()})
 			continue
 		}
 		seen[key] = Setting{Key: key, Value: value,
@@ -346,4 +372,19 @@ func atoiOr(s string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// Version is the build's version, set by main so the config layer can say
+// which procoder is doing the not-knowing. Empty in tests and in a dev
+// build, where the sentence simply omits it.
+var Version string
+
+// unknownKeyReason names both causes and the route out of each.
+func unknownKeyReason() string {
+	running := ""
+	if Version != "" {
+		running = " (this build is " + Version + ")"
+	}
+	return "no setting by this name — it has no effect" + running +
+		"; if it is a typo, fix the spelling — if the setting was added in a later release, `procoder self-upgrade` and re-run, because a correctly spelled key an older build does not know is not something you can fix in the file"
 }

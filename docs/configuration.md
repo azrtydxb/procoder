@@ -69,6 +69,16 @@ policy = "report"
 retro = "off"
 
 [release]
+# The handles the changelog's credit rule does not ask about: whose
+# release notes these are. Thanking yourself in your own notes is noise.
+#
+# Configured rather than discovered. `gh api user` answers only where a
+# person is logged in; in CI the token is an app installation token with
+# no user behind it and returns 403, which made the check unrunnable in
+# the one place it most needed to run. "Whoever triggered the workflow"
+# is worse — on a contributor's pull request that is the contributor,
+# who would then be excluded from the credit they are owed.
+maintainers = ["your-handle"]
 # The version-bearing files `procoder release` verifies stay in sync.
 # Unset, the version-sync leg reports that it verified nothing.
 files = ["README.md", "docs/index.md"]
@@ -104,6 +114,23 @@ policy = "report"
 # upgrade is built on.
 check = "warn"
 ```
+
+## A setting procoder does not know
+
+An unrecognised key blocks. A key that does nothing while its writer
+believes it is in force is the failure this whole feature would otherwise
+introduce, so silence is not an option.
+
+The finding names both reasons a key can be unrecognised, because only one
+of them is yours to fix. A **typo** is: correct the spelling. A key **added
+in a later release** is not — you spelled it correctly, this build is
+simply older, and no edit to the file will help. The finding says which
+build is doing the not-knowing and points at `procoder self-upgrade`.
+
+That distinction is not cosmetic. An instruction nobody can follow is how
+`--no-verify` becomes muscle memory, which is the failure behind both #172
+and #185 — and it happened here, with a key added in one commit reported
+unknown by the plugin binary from the release before it.
 
 ## Adopted and universal repositories
 

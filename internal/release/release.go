@@ -109,7 +109,17 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 	// because the tag it is preparing gets published by a job that talks
 	// to the same API. A misattributed credit hands one person's thanks
 	// to another, permanently, in notes GitHub publishes verbatim.
-	for _, p := range VerifyCredits(root, EntryFor(root, version)) {
+	// One read of the changelog entry for both credit checks. Raised in
+	// review on #213.
+	entry := EntryFor(root, version)
+	for _, p := range VerifyCredits(root, entry) {
+		failures = append(failures, p)
+	}
+	// And the other half: who is OWED a credit and does not have one.
+	// VerifyCredits catches a wrong handle, which is the loud failure —
+	// the person it was taken from says nothing, and neither did anything
+	// else until this. See MissingCredits for the rule.
+	for _, p := range MissingCredits(root, entry) {
 		failures = append(failures, p)
 	}
 

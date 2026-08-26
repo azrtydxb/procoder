@@ -263,7 +263,45 @@ not committed any more: CI builds them at the tag and the launcher fetches
 what it needs (ADR 0004), so there is nothing local for this controller to
 find stale.
 
-That last one asks GitHub, which the test suite deliberately cannot —
+**Credits are computed, not proofread.** Two questions, and the second is
+the one that used to be nobody's job:
+
+- a handle credited in a paragraph must have opened something that
+  paragraph cites, or the credit is wrong;
+- everybody a paragraph OWES a credit must have one, or somebody's work is
+  going unacknowledged.
+
+The rule for who is owed is mechanical. A cited **issue** owes its author a
+credit. A cited **pull request** owes its author a credit. When one person
+did both, that is one credit and not two. When the reporter and the fixer
+are different people, **both** are owed — crediting only the pull request
+quietly erases whoever found the problem. Whoever is cutting the release is
+excluded; thanking yourself in your own notes is noise, and a rule that
+demanded it would be ignored within one release.
+
+The report names the handle and hands over the line to paste, because a
+check that says "this is wrong" and leaves you to work out the right answer
+is one you satisfy by deleting the credit.
+
+Who counts as "yours" comes from `[release] maintainers` in
+`.procoder/config.toml`, not from who is running the command. `gh api user`
+answers only where a person is logged in — in CI the token is an app
+installation token with no user behind it and returns 403, which made the
+check unrunnable in the one place it most needed to run. Falling back to
+whoever triggered the workflow would be worse: on a contributor's pull
+request that is the contributor, who would then be excluded from the credit
+they are owed. With nothing configured it asks `gh` locally, so a
+repository that has set nothing still gets the rule by hand.
+
+`procoder release --credits` runs those two checks and nothing else, and CI
+runs it on every commit with a token. That is the difference between a rule
+and a habit: until it ran in CI it ran only when whoever cut the release
+remembered to type the command — and "remember to check" is exactly what
+kept failing, which is why the rule exists. The rest of the controller asks
+about the working tree, the tag and the version files, none of which mean
+anything on a pull request.
+
+That last pair asks GitHub, which the test suite deliberately cannot —
 the suite runs offline on every commit. This controller can, because the
 tag it prepares is published by a job that talks to the same API, so the
 network was already a precondition. A misattributed credit hands one
