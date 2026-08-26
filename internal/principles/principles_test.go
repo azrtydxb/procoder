@@ -281,6 +281,12 @@ func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
 		// the middle of a function, "keep both sides" truncated a test,
 		// and only the compiler noticed.
 		"resolved hunk by hunk",
+		// Both commands named, not a bare --abort: the shipped text must
+		// be as specific as AGENTS.md and the generated rule files, or the
+		// same rule says two different things depending where it is read.
+		// Raised in review on #216.
+		"git merge --abort",
+		"git rebase --abort",
 		"middle of a function",
 		// Relaying procoder's own findings, and the override that keeps
 		// brevity away from consequences.

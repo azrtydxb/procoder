@@ -74,11 +74,12 @@ Rules:
   is untested by definition, and untested code can vanish between two
   green runs without anything saying so. Write the test with the code.
 - A merge conflict is resolved hunk by hunk, by what each side was trying
-  to do — not by which lines differ. ` + "`--abort`" + ` is not a resolution: it
-  erases the attempt and the next person starts from nothing. Stuck is a
-  thing to say, not a thing to undo. Say which side's intent won where it
-  is not obvious, so a reviewer does not have to work it out from the
-  result. Read the resolved file rather than trusting its shape: git
+  to do — not by which lines differ. ` + "`git merge --abort`" + ` and
+  ` + "`git rebase --abort`" + ` are not resolutions: they erase the attempt
+  and the next person starts from nothing. Stuck is a thing to say, not a
+  thing to undo. Say which side's intent won where it is not obvious, so a
+  reviewer does not have to work it out from the result.
+  Read the resolved file rather than trusting its shape: git
   splits a conflict wherever the texts diverge, including through the
   middle of a function, so "keep both sides" can leave one of them without
   its closing lines and still look plausible.
