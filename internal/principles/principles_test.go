@@ -271,6 +271,11 @@ func TestThePrinciplesCarryTheDecisionRule(t *testing.T) {
 		// docs/commands.md documents it, but an agent reads the principles
 		// at session start and the docs never.
 		".procoder/ask/decisions.md",
+		// The mutation-restore rule. It exists because a feature was lost
+		// exactly that way in this repository, so its absence must fail
+		// rather than be rediscovered the same way.
+		"TAKE THE SNAPSHOT IMMEDIATELY BEFORE EACH MUTATION",
+		"untested by definition",
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("the principles no longer say %q — the rule is the deliverable", phrase)

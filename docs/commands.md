@@ -485,12 +485,36 @@ needs a built index, and without one it reports `public surface NOT
 computed` and never reaches a finding, so the criterion passes whatever the
 code does.
 
-Both refuse only while the spec is a `draft` — deliberately the moment
+A **promise that names a domain and cites nothing** is refused. If a bullet
+in In scope says something about formatting, linting, the docs domain or
+the suite, it must cite where that lives. The rule does not verify the
+claim — nothing here judges prose. It puts the author in the file, which is
+where the discovery happens: sprint 021's In-scope listed formatting among
+nine domains, cited nothing, and nobody noticed the format loop ran before
+the scope decision until the sprint was underway.
+
+An **acceptance criterion that never says what would make it fail** is
+refused. This is the mutation discipline `procoder test` already expects of
+a test, applied to the criterion. `fails if`, `proved by`, `breaks if` and
+several other phrasings count — and naming the test that asserts it counts
+too, because a test carries its own `proved by:` and asking here as well
+would be the same question twice. You cannot state the falsifier without
+constructing the case that separates pass from fail — and when you cannot,
+that is the answer. Two of sprint 021's deviations were criteria that could
+not fail at all: one describing a narrowing that cannot happen, one on a
+fixture where the two outcomes were indistinguishable.
+
+All four refuse only while the spec is a `draft` — deliberately the moment
 before the sprint opens, when a deviation is cheap. A spec already marked
 `complete` gets notes instead, because retrofitting a rule onto an archive
 nobody will rewrite is how a check gets switched off. `backlog close story`
 reports the same criterion faults as notes, never as refusals, for the same
 reason.
+
+Of the four, the falsifier rule asks the most — but naming the test you
+would write, which a good criterion does anyway, satisfies it. It costs
+nothing where the work is already scoped, and bites exactly where nobody
+has asked what would break the promise.
 
 Known limitation, stated rather than discovered: only the top-level command
 resolves. `procoder backlog check` passes because `backlog` exists, though

@@ -61,6 +61,18 @@ Rules:
 - Never simplify away: input validation at trust boundaries, error
   handling that prevents data loss, security, accessibility, or anything
   explicitly requested.
+- Mutation testing edits the source, so the restore is where work gets
+  lost. TAKE THE SNAPSHOT IMMEDIATELY BEFORE EACH MUTATION and restore
+  immediately after it. Never carry one snapshot across an edit, and never
+  use ` + "`git checkout --`" + ` unless the work is committed — both discard
+  whatever was added in between, silently.
+  Not hypothetical, twice over: a feature was written, hand-verified,
+  reverted by a stale snapshot and committed missing with the suite green;
+  and the rule you are reading was itself deleted by a ` + "`git checkout --`" + `
+  while it was still uncommitted.
+- Which points at the real guard: a feature whose only trace is a comment
+  is untested by definition, and untested code can vanish between two
+  green runs without anything saying so. Write the test with the code.
 - Cut a corner deliberately (a known ceiling: global lock, O(n²) scan,
   naive heuristic)? Mark it in a comment with the configured debt marker
   (default ` + "`debt:`" + `), naming the ceiling AND the condition to

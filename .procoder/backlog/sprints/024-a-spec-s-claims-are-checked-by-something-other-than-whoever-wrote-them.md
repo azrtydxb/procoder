@@ -34,11 +34,24 @@ something:
 - Its own first false positive: `AGENTS.md` parsed as the `pkg.Symbol`
   shape, so a real file in the repository root was refused.
 
-## Honest reach
+## Reach: all five
 
-Of the five sprint-021 deviations that motivated this, it catches the two
-that are criteria-with-no-observable. The other three — a claim about
-where the code decides something, a criterion describing an impossible
-failure, and a zero-value collision that makes a fixture unable to
-distinguish two outcomes — are not mechanically reachable and are recorded
-as such in the story evidence rather than quietly counted as covered.
+Four rules, and between them every one of the five sprint-021 deviations
+is reported against the spec it came from — asserted by line and by class
+in `TestAllFiveMotivatingDefectsAreReported`, so a rule that stopped
+working cannot be hidden by another still firing.
+
+- Defects 3 and 4, criteria naming an observable no fixture produces:
+  caught by the observable rule and the prerequisite table.
+- Defect 1, the formatting claim nobody looked up: caught by requiring a
+  promise that names a domain to cite where it lives. The rule does not
+  verify the claim — it puts the author in the file, which is where the
+  discovery happens.
+- Defects 2 and 5, criteria that cannot fail: caught by requiring each
+  criterion to say what would make it fail. You cannot state that without
+  constructing the case that separates pass from fail, and when you
+  cannot, that is the answer.
+
+The falsifier rule is the heaviest of the four and the cost is real: every
+criterion in every new draft carries a clause it did not before. Drafts
+only, so nothing existing is rewritten.

@@ -45,6 +45,17 @@ var fenceRe = regexp.MustCompile("(?s)```.*?```")
 // routinely name things hypothetically, so they are left alone.
 var claimSections = []string{"In scope", "Constraints", "Interfaces", "Decisions"}
 
+// commandRe matches a cited procoder command: `procoder spec check`,
+// `procoder prune --apply`.
+//
+// Known limitation, stated rather than discovered later: only the
+// top-level command is resolved. `procoder backlog check` passes because
+// `backlog` exists, though `check` is not one of its subcommands — and
+// that exact citation was in this checker's own spec. Resolving
+// subcommands needs a table of them, which is a second thing to keep in
+// step with the code and a new way for a true citation to read as false.
+var commandRe = regexp.MustCompile("`procoder ([a-z-]+)")
+
 // Citation is one reference a spec makes to something in the repository.
 type Citation struct {
 	Text string
@@ -74,6 +85,12 @@ func UnresolvedCitations(root, text string) []Citation {
 					continue
 				}
 				out = append(out, Citation{Text: cite, Line: lineOf(text, section, i)})
+			}
+			for _, m := range commandRe.FindAllStringSubmatch(line, -1) {
+				if Commands[m[1]] {
+					continue
+				}
+				out = append(out, Citation{Text: "procoder " + m[1], Line: lineOf(text, section, i)})
 			}
 		}
 	}
@@ -284,7 +301,14 @@ func containsAny(s string, words []string) bool {
 }
 
 // sectionOf returns a `## `-delimited section's body.
+//
+// Line endings are normalised first. A Windows checkout has CRLF, the
+// marker is then "## Name\r\n", the lookup for "## Name\n" finds nothing,
+// and every check above reports a clean document — a silent green that
+// passed on three platforms and failed on the fourth. Found by CI, which
+// is what CI is for.
 func sectionOf(text, name string) string {
+	text = normaliseEOL(text)
 	marker := "## " + name + "\n"
 	i := strings.Index(text, marker)
 	if i < 0 {
@@ -301,6 +325,7 @@ func sectionOf(text, name string) string {
 // whole document, so a refusal can point at the line rather than at the
 // section.
 func lineOf(text, section string, withinSection int) int {
+	text = normaliseEOL(text)
 	marker := "## " + section + "\n"
 	i := strings.Index(text, marker)
 	if i < 0 {
@@ -319,6 +344,12 @@ func TruthGaps(root, text string) []string {
 			c.Line, c.Text))
 	}
 	for _, f := range UncheckableCriteria(text) {
+		gaps = append(gaps, fmt.Sprintf("line %d: the criterion %s", f.Line, f.Why))
+	}
+	for _, f := range UncitedClaims(text) {
+		gaps = append(gaps, fmt.Sprintf("line %d: the promise %s", f.Line, f.Why))
+	}
+	for _, f := range CriteriaWithoutFalsifiers(text) {
 		gaps = append(gaps, fmt.Sprintf("line %d: the criterion %s", f.Line, f.Why))
 	}
 	return gaps
@@ -342,4 +373,154 @@ func joinWrapped(lines []string, start int) string {
 		parts = append(parts, strings.TrimSpace(next))
 	}
 	return strings.Join(parts, " ")
+}
+
+// domainWords name a procoder domain. A claim that a domain does or does
+// not do something is a claim about code that exists, and the author can
+// check it — but only if they are made to look.
+//
+// This is the mechanical form of the deviation that cost sprint 021 most.
+// Its S-3 listed nine domains, formatting among them, and cited nothing.
+// Nobody looked at where the code decides formatting, so nobody noticed
+// the format loop ran BEFORE the scope decision; honouring that one word
+// meant restructuring `RunWith` and repairing four fixtures, discovered
+// mid-sprint. Requiring the citation does not verify the claim — it puts
+// the author in the file, which is where the discovery happens.
+var domainWords = []string{
+	"formatting", "linting", "the linter", "documentation", "docs domain",
+	"the planning chain", "planning", "the agent layer", "agents drift",
+	"maintainability", "complexity", "debt", "the suite", "the test suite",
+	"templates", "release hygiene", "secrets", "the secret scan",
+	"conflict markers", "junk files", "oversized files",
+}
+
+// UncitedClaims returns the In-scope promises that name a domain and cite
+// nothing, so nobody had to look at the code to write them.
+func UncitedClaims(text string) []CriterionFault {
+	body := sectionOf(text, "In scope")
+	if body == "" {
+		return nil
+	}
+	body = fenceRe.ReplaceAllString(body, "")
+	var out []CriterionFault
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "- [S-") {
+			continue
+		}
+		bullet := joinWrapped(lines, i)
+		named := domainsNamedIn(strings.ToLower(bullet))
+		if len(named) == 0 {
+			continue
+		}
+		if citationRe.MatchString(bullet) || commandRe.MatchString(bullet) {
+			continue
+		}
+		out = append(out, CriterionFault{Text: bullet, Line: lineOf(text, "In scope", i),
+			Why: fmt.Sprintf("names %s and cites nothing — cite where that lives (`pkg.Symbol`, a path, or the command), so the claim is one somebody had to open the file to write",
+				strings.Join(named, ", "))})
+	}
+	return out
+}
+
+func domainsNamedIn(lower string) []string {
+	var found []string
+	for _, d := range domainWords {
+		if strings.Contains(lower, d) {
+			found = append(found, d)
+		}
+	}
+	if len(found) > 3 {
+		found = found[:3]
+	}
+	return found
+}
+
+// falsifierRe recognises a criterion that says what would make it fail.
+//
+// This is the project's own mutation discipline, applied to the criterion
+// rather than to the test. A criterion nobody has asked "what would break
+// this?" about is one that may not be able to fail at all, and two of
+// sprint 021's five deviations were exactly that: a criterion about
+// narrowing junk findings to the diff, describing a failure that cannot
+// happen because those findings carry no line number; and one about a
+// typo falling back to detection, on a fixture where an accepted typo and
+// a correct fallthrough are indistinguishable because `parseScope`
+// returns Adopted as its zero value.
+//
+// Writing the falsifier is what surfaces both. You cannot state what
+// change would make the criterion fail without constructing the case that
+// distinguishes pass from fail — and when you cannot, that is the answer.
+var falsifierRe = regexp.MustCompile(`(?i)\b(fails? if|falsified by|proved by|breaks? if|breaks? when|regresses? if|would pass if|cannot fail)\b`)
+
+// namesATest matches a cited Go test function.
+var namesATest = regexp.MustCompile("`Test[A-Za-z0-9_]+")
+
+// CriteriaWithoutFalsifiers returns the criteria that never say what would
+// make them fail.
+func CriteriaWithoutFalsifiers(text string) []CriterionFault {
+	body := sectionOf(text, "Acceptance criteria")
+	if body == "" {
+		return nil
+	}
+	var out []CriterionFault
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "- [") {
+			continue
+		}
+		criterion := joinWrapped(lines, i)
+		if falsifierRe.MatchString(criterion) {
+			continue
+		}
+		// A criterion that names a test already carries the discipline:
+		// the test itself must name the mutation that makes it fail, and
+		// `procoder test` is what asks for that. Demanding the clause here
+		// as well would be the same question twice, and a rule that asks
+		// twice is the one people learn to satisfy by pasting.
+		//
+		// This is what keeps the rule affordable. Name the test you would
+		// write — which a good criterion does anyway — and there is
+		// nothing further to add. It costs nothing where the work is
+		// already done, and bites exactly where nobody has asked what
+		// would break the promise: sprint 021's junk-narrowing and
+		// scope-override criteria named no test, and are still caught.
+		if namesATest.MatchString(criterion) {
+			continue
+		}
+		out = append(out, CriterionFault{Text: criterion, Line: lineOf(text, "Acceptance criteria", i),
+			Why: "never says what would make it fail — name the test that asserts it (`TestSomething`, which carries its own `proved by:`) or add `fails if <the change that breaks it>`; a criterion nobody has asked that about may not be able to fail at all, which is how a promise gets ticked without ever being tested"})
+	}
+	return out
+}
+
+// Commands is the set a spec may cite. It mirrors the list the
+// docs-coverage check keeps, duplicated rather than imported because
+// internal/docs imports this package's neighbours.
+//
+// A command missing here makes a true citation read as false, which is the
+// failure direction that teaches people to ignore the checker — so
+// TestCommandsMatchTheDocsCoverageList pins the two together.
+var Commands = map[string]bool{
+	"adr": true, "agents": true, "analyze": true, "ask": true, "audit": true,
+	"backlog": true, "bench": true, "check": true, "ci": true, "config": true,
+	"copilot-leak": true, "debt": true, "deps": true, "docs": true,
+	"doctor": true, "env": true, "format": true, "git": true, "hook": true,
+	"index": true, "infra": true, "init": true, "lessons": true, "lint": true,
+	"maintain": true, "plan": true, "principles": true, "prune": true,
+	"release": true, "review": true, "run": true, "scrub": true,
+	"security": true, "self-upgrade": true, "spec": true, "sprint": true,
+	"status": true, "templates": true, "test": true, "todo": true,
+	"version": true,
+}
+
+// normaliseEOL makes CRLF and CR read as LF, so a document parses the same
+// on every platform. Cheap, and the alternative is every reader here
+// carrying its own \r handling and one of them forgetting.
+func normaliseEOL(s string) string {
+	if !strings.ContainsRune(s, '\r') {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }

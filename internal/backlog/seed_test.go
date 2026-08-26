@@ -161,10 +161,10 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 		// The observable goes at the END: a criterion must name one since
 		// #186, and the slug is taken from the front, so prefixing it
 		// would rename every story this test is about.
-		"- [ ] login accepts a valid token and rejects an expired one, per `procoder check`\n"+
-			"- [x] logout clears the session cookie on every platform, per `procoder check`\n"+
+		"- [ ] login accepts a valid token and rejects an expired one, per `procoder check`; fails if expiry is ignored\n"+
+			"- [x] logout clears the session cookie on every platform, per `procoder check`; fails if the cookie survives\n"+
 			"- [ ] the audit log records each login with a UTC\n"+
-			"      timestamp, per `procoder check`")
+			"      timestamp, per `procoder check`; fails if the clock is local")
 	specPath := writeSpec(t, root, "auth", body)
 	mustBeComplete(t, root, "auth")
 
@@ -223,7 +223,7 @@ func TestSeedPrintsEpicAndOneStoryPerCriterion(t *testing.T) {
 
 func TestSeedRefusesExistingEpic(t *testing.T) {
 	root := t.TempDir()
-	writeSpec(t, root, "auth", completeSpec("auth", "- [ ] login accepts a valid token, per `procoder check`"))
+	writeSpec(t, root, "auth", completeSpec("auth", "- [ ] login accepts a valid token, per `procoder check`; fails if the validator is bypassed"))
 	mustBeComplete(t, root, "auth")
 	writeItem(t, root, KindEpic, "auth", "# auth\n\nStatus: open\n")
 	out, lines := collect()
@@ -284,8 +284,8 @@ func TestTwoCriteriaThatSlugAlikeGetSeparateStories(t *testing.T) {
 		// Each names its observable: since #186 a criterion that says only
 		// what should be true is refused. The slug collision this test is
 		// about is unaffected — punctuation is still a boundary.
-		"- [ ] the loader reads foo.bar and reports it, per `procoder check`\n"+
-			"- [ ] the loader reads foo-bar and reports it, per `procoder check`"))
+		"- [ ] the loader reads foo.bar and reports it, per `procoder check`; fails if the reader is dropped\n"+
+			"- [ ] the loader reads foo-bar and reports it, per `procoder check`; fails if the reader is dropped"))
 	mustBeComplete(t, root, "widget")
 
 	out, lines := collect()

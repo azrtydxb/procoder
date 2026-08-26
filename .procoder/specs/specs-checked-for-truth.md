@@ -46,14 +46,25 @@ Whoever implements it, who pays for the deviation.
   refused. Naming the command, the test, or the artifact is what makes a
   criterion checkable rather than agreeable.
 - [S-3] A criterion whose observable has a known prerequisite — the docs
-  domain needs a built index, the suite leg needs tests, the dependency
-  scan needs a lockfile — is refused unless the criterion names that
+  domain needs a built index (`procoder index build`), the suite leg needs
+  tests (`procoder test`), the dependency scan needs a lockfile
+  (`procoder deps`) — is refused unless the criterion names that
   prerequisite, because without it the criterion passes whatever the code
   does.
 - [S-4] The same criterion rules apply to stories, since a story's
   criteria are what the closer asks for evidence against.
 - [S-5] Every refusal names what to do about it. A checker that refuses
   without a route is a gate people learn to route around.
+- [S-7] A promise that names a procoder domain — formatting, linting,
+  the docs domain, the suite — and cites nothing is refused. The rule does
+  not verify the claim; it puts the author in the file, which is where the
+  discovery happens. `internal/gate/gate.go` is where sprint 021's
+  formatting claim would have led.
+- [S-8] An acceptance criterion that never says what would make it fail is
+  refused. This is the mutation discipline `procoder test` already expects
+  of a test, applied to the criterion: you cannot state the falsifier
+  without constructing the case that separates pass from fail, and when
+  you cannot, that is the answer.
 - [S-6] The checks are mechanical. Nothing here judges whether prose is
   true; it checks that claims are CITED and criteria are OBSERVABLE, which
   a machine can do and an author reliably cannot do about their own work.
@@ -122,34 +133,42 @@ prerequisite table is a constant in the checker.
 
 - [ ] [S-1] `procoder spec check` over a fixture spec citing
       `nosuchpkg.NoSuchSymbol` and `internal/nowhere/absent.go` refuses,
-      exits 2, and names both citations with their line numbers.
+      exits 2, and names both citations with their line numbers; fails if the check is removed.
 - [ ] [S-1] The same command over a spec citing `gitx.Attribution` and
       `internal/gate/gate.go` — both of which exist — is silent about
-      citations.
+      citations; fails if the check is removed.
 - [ ] [S-2] `procoder spec check` over a fixture whose criterion reads "the
       gate is correct" refuses, naming that criterion and saying a
-      criterion must name the command, test or artifact that observes it.
+      criterion must name the command, test or artifact that observes it; fails if the check is removed.
 - [ ] [S-2] A criterion naming `procoder check` or a `Test...` function is
-      accepted.
+      accepted; fails if the check is removed.
 - [ ] [S-3] A criterion mentioning the docs domain without naming a built
       index is refused, and the refusal names the index as the missing
       prerequisite; the same criterion with `procoder index build` named is
-      accepted.
+      accepted; fails if the check is removed.
 - [ ] [S-4] `procoder backlog close story <id>` says so when a criterion
       names no observable, asserted by
       `TestAStoryCriterionWithNoObservableIsCalledOut`. It reports rather
       than refuses: the refusal belongs at the draft spec, before the
       sprint opens, and refusing at close would retrofit the rule onto
-      every story already in flight.
+      every story already in flight; fails if the check is removed.
 - [ ] [S-5] Every refusal introduced here carries a fix in its text,
       asserted by `TestEveryRefusalNamesTheFix`, which reads the messages
-      rather than trusting inspection.
+      rather than trusting inspection; fails if the check is removed.
 - [ ] [S-6] Run against `.procoder/specs/adoption-aware-gate.md` — the
-      spec whose deviations motivated this — the check reports the
-      criteria that name no observable. Which of the five defects are
-      mechanically reachable is stated in the evidence rather than
-      assumed, so a defect this cannot reach is recorded as such rather
-      than quietly dropped.
+      spec whose deviations motivated this — all five of its deviations
+      are reported, each asserted by line and by class in
+      `TestAllFiveMotivatingDefectsAreReported`; fails if any one of the
+      three checks is made to return nil.
+- [ ] [S-7] A promise naming a domain and citing nothing is refused by
+      `procoder spec check`, and one that cites is accepted, per
+      `TestAPromiseNamingADomainMustCiteIt` and
+      `TestACitedDomainPromiseIsAccepted`; fails if the citation test in
+      `UncitedClaims` is negated.
+- [ ] [S-8] A criterion with no falsifier is refused, in any of the
+      accepted phrasings, per `TestACriterionWithNoFalsifierIsReported`
+      and `TestACriterionNamingItsFalsifierIsAccepted`; fails if
+      `falsifierRe` is cut to a single phrasing.
 
 ## Open questions
 

@@ -72,7 +72,15 @@ check` now refuses a draft that cites a symbol, path or command which does
 not exist, and one whose acceptance criteria name no way to observe them.
 A criterion whose observable has a prerequisite — the documentation domain
 needs a built index — must name it, because without it the criterion passes
-whatever the code does. Drafts are refused, completed specs get notes: the
+whatever the code does. A promise that names a domain must cite where that
+domain lives, which does not verify the claim but does put the author in
+the file. And every criterion must say what would make it fail — the
+mutation discipline procoder already expects of a test, applied to the
+promise: you cannot state the falsifier without constructing the case that
+separates pass from fail, and when you cannot, that is the answer.
+
+Measured against the spec whose deviations motivated it, all five are now
+reported. Drafts are refused, completed specs get notes: the
 point is to catch a deviation before the sprint opens, not to retrofit a
 rule onto an archive nobody will rewrite.
 
