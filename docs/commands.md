@@ -328,8 +328,15 @@ calls things, which is not always what the code calls them.
 describing something already named, which costs a reader the work of
 noticing they are the same thing.
 
-**Everything here reports and nothing refuses.** A glossary that stopped
-work over a wording disagreement would be worse than not having one. It is
+**The checks report; nothing blocks the gate over vocabulary.** `list` and
+`check` never fail a build, and `spec check`'s cross-reference is a note. A
+glossary that stopped work over a wording disagreement would be worse than
+not having one.
+
+`add` is the exception and refuses two things: an entry with no definition,
+and a term already defined under another spelling. Neither is a wording
+judgement — one is an incomplete entry, the other is the duplication a
+glossary exists to prevent — and both exit 2 so a script notices. It is
 also not an ADR — an ADR is a decision with reasoning; this is vocabulary —
 and not generated from code, because the value is what a team agreed to
 call something, which is not always its identifier.

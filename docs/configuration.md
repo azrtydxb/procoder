@@ -138,9 +138,16 @@ The project's shared vocabulary: a `## <term>` heading per entry with a
 one-paragraph definition beneath. Written by hand or by an agent, never
 generated — the value is what the team agreed to call something.
 
-`procoder context` reads and checks it; `procoder spec check` notes when a
-spec seems to be describing a term already defined. Both report; neither
-refuses.
+`procoder context list` and `check` read it, and `procoder spec check` notes
+when a spec seems to be describing a term already defined. None of those
+blocks anything — vocabulary is not grounds for failing a build.
+
+`procoder context add` does refuse an entry with no definition, or a term
+already defined under another spelling. Neither is a wording judgement, and
+both exit 2.
+
+A glossary that exists and cannot be read is reported as such, never as an
+absent one.
 
 ## Adopted and universal repositories
 

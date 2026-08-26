@@ -341,8 +341,15 @@ func checkOne(root, path string, out func(string)) int {
 	// describing something the project already has a word for costs a
 	// reader the work of noticing they are the same thing — and a glossary
 	// that refused over wording would be worse than not having one.
-	if near := glossary.Near(glossary.Load(root), text); len(near) > 0 {
-		for _, t := range near {
+	if vocab, gerr := glossary.Load(root); gerr != nil {
+		// A glossary that exists and cannot be read is not the same as no
+		// glossary, and reporting it as none would make this feature go
+		// quiet exactly where it is meant to help. Raised in review on
+		// #217.
+		notes = append(notes, fmt.Sprintf("  note: %s could not be read (%v) — this spec was not cross-referenced against the project's vocabulary",
+			glossary.Path, gerr))
+	} else {
+		for _, t := range glossary.Near(vocab, text) {
 			notes = append(notes, fmt.Sprintf("  note: this spec may be describing %q, which %s already defines — using the term is shorter to write and unambiguous to read",
 				t.Name, glossary.Path))
 		}

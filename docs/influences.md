@@ -75,7 +75,11 @@ reviewed.
 [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) was not, and
 the choice was deliberate: procoder learned the half it had never built,
 and separately learned to get out of the way for repositories that would
-rather run the real thing. Both halves shipped in 2.0.0.
+rather run the real thing. Both halves shipped in 2.0.0 —
+[#131](https://github.com/azrtydxb/procoder/issues/131) asked which it
+should be, and
+[#165](https://github.com/azrtydxb/procoder/issues/165) and
+[#166](https://github.com/azrtydxb/procoder/issues/166) built the answer.
 
 So this section is credit without a migration note. If you run BMad Method,
 keep running it — `[planning] method = "bmad"` exists so that the two do
