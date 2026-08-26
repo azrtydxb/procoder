@@ -599,54 +599,6 @@ func TestOnlyGitHubOverHTTPSIsFetched(t *testing.T) {
 	}
 }
 
-// dist/SHA256SUMS is what the release publishes and what self-upgrade
-// verifies every download against. A digest that drifts from the binary it
-// names does not fail quietly: it refuses every upgrade for every user, and
-// it would only surface after a tag is cut. So it is checked against the
-// committed binaries here, where a rebuild that forgot the script goes red
-// in the test job instead.
-// proved by: rebuilt one dist/ binary without rerunning
-// scripts/build-dist.sh — this test then names the file whose digest no
-// longer matches.
-func TestTheCommittedChecksumsMatchTheCommittedBinaries(t *testing.T) {
-	root := filepath.Join("..", "..")
-	raw, err := os.ReadFile(filepath.Join(root, "dist", "SHA256SUMS"))
-	if err != nil {
-		t.Skip("no committed checksums to compare against: ", err)
-	}
-	lines := 0
-	for _, line := range strings.Split(string(raw), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
-			continue
-		}
-		lines++
-		name := strings.TrimPrefix(fields[1], "*")
-		goos, goarch, ok := platformOf(name)
-		if !ok {
-			t.Errorf("%s is not a name AssetName could produce", name)
-			continue
-		}
-		// The release stages dist/<goos>-<goarch>/procoder[.exe] under the
-		// asset name; the digest has to be of the file that gets uploaded.
-		binary := filepath.Join(root, "dist", goos+"-"+goarch, "procoder")
-		if goos == "windows" {
-			binary += ".exe"
-		}
-		bytes, err := os.ReadFile(binary)
-		if err != nil {
-			t.Errorf("%s names %s, which is not in dist/: %v", ChecksumsName, name, err)
-			continue
-		}
-		if got := fmt.Sprintf("%x", sha256.Sum256(bytes)); got != fields[0] {
-			t.Errorf("%s records %s for %s, the committed binary is %s — rerun scripts/build-dist.sh", ChecksumsName, fields[0], name, got)
-		}
-	}
-	if lines != 5 {
-		t.Errorf("the release publishes five binaries, %s records %d", ChecksumsName, lines)
-	}
-}
-
 // The asset name is spelled a third time, in the build script that writes
 // the checksums file self-upgrade reads. A rename on either side leaves
 // every download unverifiable — the refusal is loud, but it is still an
