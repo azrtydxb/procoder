@@ -68,6 +68,20 @@ func SessionSource(stdin io.Reader) string {
 	if stdin == nil {
 		return ""
 	}
+	// A terminal never sends EOF, so io.ReadAll below would sit there
+	// until the deadline expired — measured at 2.06s — and then return
+	// nothing anyway. That is pure cost: a hook payload always arrives on
+	// a pipe, so a character device means nobody is sending one.
+	//
+	// It matters beyond somebody typing the command to see what it does.
+	// A host that invoked the hook with a terminal attached would pay the
+	// deadline on every single session start, for an answer that was
+	// never coming. Raised in review on #184.
+	if f, ok := stdin.(interface{ Stat() (os.FileInfo, error) }); ok {
+		if info, err := f.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+			return ""
+		}
+	}
 	type readResult struct {
 		data []byte
 		err  error

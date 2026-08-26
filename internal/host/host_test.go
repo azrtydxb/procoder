@@ -2,6 +2,7 @@ package host
 
 import (
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -195,3 +196,35 @@ func TestSessionSourceDoesNotWaitForeverOnASilentHost(t *testing.T) {
 		t.Fatal("SessionSource did not give up on a host that sent nothing")
 	}
 }
+
+// A terminal never sends EOF, so reading it costs the whole deadline and
+// returns nothing anyway. Raised in review on #184: a host that invoked the
+// hook with a terminal attached would pay 2s on every session start.
+//
+// The fake reports a character-device mode without needing a real tty,
+// which no CI runner reliably has.
+//
+// proved by: the ModeCharDevice check removed from SessionSource — the
+// test then takes the full deadline and fails the elapsed assertion.
+func TestSessionSourceDoesNotReadATerminal(t *testing.T) {
+	start := time.Now()
+	if got := SessionSource(charDevice{}); got != "" {
+		t.Errorf("SessionSource(terminal) = %q, want \"\"", got)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("reading a terminal took %s — the deadline was paid for an answer that was never coming", elapsed)
+	}
+}
+
+// charDevice is a reader that says it is a terminal and blocks forever if
+// anybody actually reads it — so a test that passes cannot be passing by
+// having read it quickly.
+type charDevice struct{}
+
+func (charDevice) Read([]byte) (int, error) { select {} }
+
+func (charDevice) Stat() (os.FileInfo, error) { return charDeviceInfo{}, nil }
+
+type charDeviceInfo struct{ os.FileInfo }
+
+func (charDeviceInfo) Mode() os.FileMode { return os.ModeCharDevice | 0o620 }
