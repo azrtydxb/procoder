@@ -325,6 +325,26 @@ nothing. Without `[release] files` the version-sync leg says
 it verified nothing. Bare `procoder release` reads the newest changelog
 version and checks that.
 
+**Nothing procoder runs automatically comes from a file an agent wrote.**
+It reads plenty of agent-written state — `.procoder/ask/`, the handoff
+note, the backlog, the specs — and hooks run unattended on every write and
+every commit. `procoder run` is the only surface that executes a command
+the repository declared, and it prints by default, executes only under
+`--exec`, and refuses even then when more than one candidate exists rather
+than guessing. A test in `internal/hook` reads the hook sources and fails
+if any of them reaches that path.
+
+Under `--exec` it also names the binary it resolved:
+
+```
+--exec resolving npm -> /opt/homebrew/bin/npm
+```
+
+The command comes from the repository and the binary comes from `PATH`, so
+the same declared `npm start` is a different program depending on which npm
+is first. Naming it is the difference between consenting to a command and
+consenting to a string.
+
 #### `procoder context <sub>`
 
 The project's shared vocabulary in `.procoder/context.md` — what the team
