@@ -389,3 +389,61 @@ func TestAnUnknownPlanningMethodIsAProblemAndTheDefaultRuns(t *testing.T) {
 		t.Errorf("the unset default is procoder: %q", got)
 	}
 }
+
+// An unknown key still blocks — a writer who mistypes `policy` believes
+// their policy is in force, and that is the failure this whole feature
+// would otherwise introduce.
+//
+// But "procoder does not know it" has two causes and the finding used to
+// name one. A typo is the writer's to fix. A key added in a later release
+// is not: they spelled it correctly, this build is older, and telling them
+// the name does not exist is an instruction nobody can follow — which is
+// how `--no-verify` becomes muscle memory (#172, #185).
+//
+// It happened in this repository: a key added in one commit was reported
+// unknown by the installed plugin binary from the release before it, and
+// the only way past was to skip the gate.
+//
+// proved by: unknownKeyReason reverted to the bare "no setting by this
+// name — it has no effect" — the upgrade route disappears and this names
+// which half is missing.
+func TestAnUnknownKeyNamesBothCausesAndTheirRoutes(t *testing.T) {
+	dir := writeConfig(t, "[git]\nmaintainerz = [\"x\"]\n")
+	cfg := Load(dir)
+	if len(cfg.Problems) != 1 {
+		t.Fatalf("an unknown key must still block, got %+v", cfg.Problems)
+	}
+	reason := cfg.Problems[0].Reason
+	// The typo half, which was already there.
+	if !strings.Contains(reason, "typo") {
+		t.Errorf("the finding does not offer the typo route: %q", reason)
+	}
+	// The half that was missing, and the one the reader cannot work out.
+	if !strings.Contains(reason, "self-upgrade") {
+		t.Errorf("the finding does not offer the upgrade route, so a correctly spelled newer key is unfixable: %q", reason)
+	}
+	// And it still says what is true right now.
+	if !strings.Contains(reason, "no effect") {
+		t.Errorf("the finding no longer says the setting is not applied: %q", reason)
+	}
+}
+
+// The running version is named, so a reader can tell whether their build
+// is plausibly older than the key.
+//
+// proved by: the `Version != ""` guard inverted — the version is never
+// named and a reader cannot judge which cause applies.
+func TestTheUnknownKeyFindingNamesTheRunningBuild(t *testing.T) {
+	prev := Version
+	Version = "9.9.9"
+	defer func() { Version = prev }()
+
+	dir := writeConfig(t, "[git]\nnosuchkey = 1\n")
+	cfg := Load(dir)
+	if len(cfg.Problems) != 1 {
+		t.Fatalf("want one problem, got %+v", cfg.Problems)
+	}
+	if !strings.Contains(cfg.Problems[0].Reason, "9.9.9") {
+		t.Errorf("the finding does not say which build does not know the key: %q", cfg.Problems[0].Reason)
+	}
+}

@@ -280,8 +280,19 @@ func Load(root string) Config {
 		default:
 			// A key procoder does not know is a key that does nothing, and
 			// a writer who mistypes `policy` believes their policy is set.
+			// So it still blocks.
+			//
+			// But "procoder does not know it" has TWO causes, and the
+			// finding used to name only one. A typo is the writer's to
+			// fix. A key added in a later release is not: the reader has
+			// spelled it correctly, this build is simply older, and
+			// telling them the name does not exist is an instruction
+			// nobody can follow — which is how `--no-verify` becomes
+			// muscle memory (#172, #185). It happened here: a key added
+			// in one commit was reported unknown by the installed plugin
+			// binary from the release before it.
 			cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
-				Reason: "no setting by this name — it has no effect"})
+				Reason: unknownKeyReason()})
 			continue
 		}
 		seen[key] = Setting{Key: key, Value: value,
@@ -361,4 +372,19 @@ func atoiOr(s string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// Version is the build's version, set by main so the config layer can say
+// which procoder is doing the not-knowing. Empty in tests and in a dev
+// build, where the sentence simply omits it.
+var Version string
+
+// unknownKeyReason names both causes and the route out of each.
+func unknownKeyReason() string {
+	running := ""
+	if Version != "" {
+		running = " (this build is " + Version + ")"
+	}
+	return "no setting by this name — it has no effect" + running +
+		"; if it is a typo, fix the spelling — if the setting was added in a later release, `procoder self-upgrade` and re-run, because a correctly spelled key an older build does not know is not something you can fix in the file"
 }
