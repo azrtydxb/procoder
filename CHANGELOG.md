@@ -49,7 +49,7 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
-## 3.1.1 — 2026-08-26
+## 3.2.0 — 2026-08-26
 
 _procoder stops applying its own conventions to repositories that never
 adopted it, and reclaims the gigabyte that updating in place left behind._
@@ -131,8 +131,7 @@ files went unchecked rather than "0 clean" over files nothing looked at. A
 quieter gate that does not say it is quieter is indistinguishable from a
 clean one. Force either mode with `[gate] scope` in
 `.procoder/config.toml`, or `PROCODER_GATE_SCOPE` for a fork that cannot
-carry configuration. Reported by
-[@ToberoCat](https://github.com/ToberoCat). The reasoning is in ADR 0005.
+carry configuration. The reasoning is in ADR 0005.
 
 **Added — `procoder prune` reclaims the plugin cache.**
 ([#187](https://github.com/azrtydxb/procoder/pull/187)) `claude plugin
