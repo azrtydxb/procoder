@@ -49,6 +49,53 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.2.1 — 2026-08-26
+
+_The release controller works out who is owed a credit, and CI enforces it,
+so getting attribution wrong stops depending on whoever remembers to look._
+
+**Fixed — a contributor who should be credited and is not now blocks the
+release.** ([#213](https://github.com/azrtydxb/procoder/pull/213))
+`procoder release` already checked that a credited handle had opened
+something its paragraph cites. That is the loud half — a wrong credit is
+visible, and it caught one while 3.2.0 was being assembled. The quiet half
+was nobody's job: whether somebody who _should_ be credited is missing. The
+person a credit is taken from does not complain, and nothing else was going
+to notice.
+
+The rule is mechanical. A cited issue owes its author a credit. A cited
+pull request owes its author a credit. One person who did both is owed one
+credit, not two. A reporter and a different fixer are both owed, because
+crediting only the pull request quietly erases whoever found the problem.
+The finding hands over the line to paste rather than reporting a fault: a
+check that says "this is wrong" and leaves you to work out the right answer
+is one you satisfy by deleting the credit.
+
+Whose release notes these are comes from `[release] maintainers` in
+`.procoder/config.toml`, not from whoever is running the command. That is
+not a preference. `gh api user` answers only where a person is logged in —
+in CI the token is an app installation token with no user behind it and
+returns 403, which made the check unrunnable in the one place it most
+needed to run.
+
+**Added — CI enforces the credit rule.**
+([#213](https://github.com/azrtydxb/procoder/pull/213)) `procoder release
+--credits` runs the two contributor checks and nothing else, and the gate
+job runs it on every commit. Until now the rule ran only when somebody
+typed `procoder release` on their own machine, which means it ran when they
+remembered — and "remember to check" is exactly what the rule was written
+to replace.
+
+**Fixed — an unrecognised configuration key says which of the two causes it
+is.** ([#213](https://github.com/azrtydxb/procoder/pull/213)) An unknown
+key still blocks; a setting that does nothing while its writer believes it
+is in force is the failure that check exists to prevent. But the finding
+named one cause and the reader usually had the other. A typo is yours to
+fix. A key added in a later release is not — you spelled it correctly, your
+build is older, and no edit to the file will help. The finding now names
+the running build and both routes, because an instruction nobody can follow
+is how `--no-verify` becomes muscle memory.
+
 ## 3.2.0 — 2026-08-26
 
 _procoder stops applying its own conventions to repositories that never
