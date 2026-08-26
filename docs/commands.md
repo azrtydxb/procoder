@@ -313,6 +313,27 @@ nothing. Without `[release] files` the version-sync leg says
 it verified nothing. Bare `procoder release` reads the newest changelog
 version and checks that.
 
+#### `procoder context <sub>`
+
+The project's shared vocabulary in `.procoder/context.md` — what the team
+calls things, which is not always what the code calls them.
+
+- `add <term> <definition>` — prints the entry to append. The binary does
+  not write the file.
+- `list` — the vocabulary, alphabetically.
+- `check` — every term has a definition, and no term is defined twice under
+  two spellings.
+
+`procoder spec check` reads it and notes when a spec appears to be
+describing something already named, which costs a reader the work of
+noticing they are the same thing.
+
+**Everything here reports and nothing refuses.** A glossary that stopped
+work over a wording disagreement would be worse than not having one. It is
+also not an ADR — an ADR is a decision with reasoning; this is vocabulary —
+and not generated from code, because the value is what a team agreed to
+call something, which is not always its identifier.
+
 #### `procoder adr <sub>`
 
 Architecture decision records under `.procoder/adr/`, numbered and

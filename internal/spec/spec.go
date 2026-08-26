@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"procoder/internal/analysis"
 	"procoder/internal/answers"
+	"procoder/internal/glossary"
 	"regexp"
 	"sort"
 	"strings"
@@ -333,6 +334,17 @@ func checkOne(root, path string, out func(string)) int {
 			}
 		} else {
 			gaps = append(gaps, truth...)
+		}
+	}
+
+	// The shared vocabulary, reported and never blocking (#195). A spec
+	// describing something the project already has a word for costs a
+	// reader the work of noticing they are the same thing — and a glossary
+	// that refused over wording would be worse than not having one.
+	if near := glossary.Near(glossary.Load(root), text); len(near) > 0 {
+		for _, t := range near {
+			notes = append(notes, fmt.Sprintf("  note: this spec may be describing %q, which %s already defines — using the term is shorter to write and unambiguous to read",
+				t.Name, glossary.Path))
 		}
 	}
 

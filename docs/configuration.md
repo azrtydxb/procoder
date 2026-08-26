@@ -132,6 +132,16 @@ That distinction is not cosmetic. An instruction nobody can follow is how
 and #185 — and it happened here, with a key added in one commit reported
 unknown by the plugin binary from the release before it.
 
+## `.procoder/context.md`
+
+The project's shared vocabulary: a `## <term>` heading per entry with a
+one-paragraph definition beneath. Written by hand or by an agent, never
+generated — the value is what the team agreed to call something.
+
+`procoder context` reads and checks it; `procoder spec check` notes when a
+spec seems to be describing a term already defined. Both report; neither
+refuses.
+
 ## Adopted and universal repositories
 
 Procoder runs two gates, and which one you get is decided from the
