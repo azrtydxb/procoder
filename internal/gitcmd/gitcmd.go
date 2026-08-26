@@ -105,6 +105,9 @@ func CollectFor(root string, cfg config.Config, changed []string, commitMessage 
 	// Domain 5: the offline docs slice rides the same gate so `git`, `check`,
 	// and CI can never disagree about documentation health either.
 	out = append(out, docs.CollectOfflineFor(root, changed, commitMessage, cfg.DocsBlock)...)
+	// Same in an adopting repository: the unpushed range catches a trailer
+	// that landed, this catches one before it does.
+	out = append(out, gitx.AttributionInMessage(commitMessage)...)
 	return append(out, templateFindings(root)...)
 }
 
@@ -333,5 +336,10 @@ func CollectUniversal(root string, cfg config.Config, changed []string, commitMe
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
 	out = append(out, gitx.AttributionIn(gitx.UnpushedCommits(root))...)
+	// The message about to be written, which the unpushed range cannot see
+	// yet. At a pre-commit hook this is the only place a trailer appears,
+	// and the only moment it can still be removed by editing the message
+	// instead of rewriting history.
+	out = append(out, gitx.AttributionInMessage(commitMessage)...)
 	return out
 }

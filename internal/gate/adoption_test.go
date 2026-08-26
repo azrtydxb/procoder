@@ -104,16 +104,22 @@ func TestEnvironmentOverridesDetection(t *testing.T) {
 // A misspelled override must not silently pick a mode. It falls through to
 // detection, which is the answer the repository itself gives.
 //
-// The fixture is a repository detection calls universal, because
-// parseScope's default return value is Adopted — in an adopting repository
-// an accepted typo and a correct fallthrough are indistinguishable.
+// The fixture must be a repository detection calls ADOPTED, because
+// parseScope's default return value is Universal: in a non-adopting
+// repository an accepted typo and a correct fallthrough both give
+// universal and the test would prove nothing.
 //
-// proved by: in parseScope, `return Adopted, false` → `return Adopted, true`
-// (the typo is taken as a mode, want universal got adopted).
+// Which fixture can tell the two apart is decided by that zero value —
+// exactly the shape of the sprint-021 defect this repository now has a
+// spec check for. When the value flipped in review, this fixture had to
+// flip with it.
+//
+// proved by: in parseScope, `return Universal, false` → `return Universal,
+// true` (the typo is taken as a mode, want adopted got universal).
 func TestAnUnreadableOverrideFallsBackToDetection(t *testing.T) {
 	dir := tmp(t)
-	put(t, dir, "main.go", "package main\n")
-	if s, why := ScopeFor(dir, "adoptedd"); s != Universal {
+	put(t, dir, ".procoder/config.toml", "")
+	if s, why := ScopeFor(dir, "adoptedd"); s != Adopted {
 		t.Fatalf("a typo in the override was taken as a mode: got %s (%s)", s, why)
 	}
 }

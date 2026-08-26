@@ -66,7 +66,12 @@ func parseScope(s string) (Scope, bool) {
 	case "universal":
 		return Universal, true
 	}
-	return Adopted, false
+	// Universal, not Adopted, as the value that rides along with false.
+	// Callers check the boolean, but a future one that forgets would treat
+	// an invalid override as "run everything" — and this spec's stated
+	// failure direction is saying LESS about somebody else's code, not
+	// more. Raised in review on #187.
+	return Universal, false
 }
 
 // agentsNamesProcoder reads the repository's AGENTS.md and reports whether

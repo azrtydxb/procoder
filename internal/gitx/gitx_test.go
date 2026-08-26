@@ -562,3 +562,30 @@ func writeTemp(t *testing.T, dir, body string) string {
 	}
 	return p
 }
+
+// The pending-message finding must NOT tell you to amend. `git commit
+// --amend` is right for a commit that exists and wrong for one that does
+// not, and an instruction nobody can follow is what teaches `--no-verify`
+// (#185).
+//
+// The already-made case keeps `--amend` — asserted by
+// TestAttributionFindingNamesTheRemedyNotOnlyTheSymptom — so these two
+// pin the wordings apart from each other.
+//
+// proved by: AttributionInMessage delegating to AttributionIn again, which
+// is how it was first written — `--amend` returns and this test names it.
+func TestThePendingMessageFindingDoesNotSayAmend(t *testing.T) {
+	got := AttributionInMessage("feat: a thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+	if len(got) != 1 {
+		t.Fatalf("want one finding, got %+v", got)
+	}
+	if strings.Contains(got[0].Message, "--amend") {
+		t.Errorf("it tells you to amend a commit that does not exist yet: %q", got[0].Message)
+	}
+	if !strings.Contains(got[0].Message, "before committing") {
+		t.Errorf("it does not say what to do at the moment it fires: %q", got[0].Message)
+	}
+	if !strings.Contains(got[0].Message, attributionRemedyURL) {
+		t.Errorf("the per-host remedy is lost: %q", got[0].Message)
+	}
+}

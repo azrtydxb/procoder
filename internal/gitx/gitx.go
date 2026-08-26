@@ -490,7 +490,7 @@ func AttributionIn(commits []Commit) []Finding {
 		if loc == "" {
 			continue
 		}
-		where := "the commit being written"
+		where := "the commit message"
 		fix := "remove it (git commit --amend)"
 		if c.SHA != "" {
 			where = fmt.Sprintf("commit %s (%q)", c.SHA, strings.TrimSpace(c.Subject))
@@ -512,6 +512,35 @@ func matchAIIdentity(text string) (name, line string) {
 		}
 	}
 	return "", ""
+}
+
+// AttributionInMessage checks the message a commit is ABOUT to be made
+// with, rather than the messages of commits already made.
+//
+// Both halves are needed and they catch different things. The unpushed
+// range catches a trailer that already landed; this catches one before it
+// does, which is the only moment it can still be removed by editing the
+// message rather than by rewriting history.
+//
+// Missing this is what made #185 as bad as it was: the trailer was never
+// stopped on the way in, so it landed, and then blocked every subsequent
+// commit from the far side. Raised in review on #187.
+func AttributionInMessage(message string) []Finding {
+	if strings.TrimSpace(message) == "" {
+		return nil
+	}
+	name, loc := matchAIIdentity(message)
+	if loc == "" {
+		return nil
+	}
+	// Its own wording rather than AttributionIn's. `git commit --amend` is
+	// the right advice for a commit that exists and the wrong advice for
+	// one that does not — and telling somebody to amend a commit they have
+	// not made is the kind of unfollowable instruction that teaches
+	// `--no-verify` (#185).
+	return []Finding{{Blocking: true,
+		Message: fmt.Sprintf("the commit message being written carries an AI-attribution line crediting %s: %q — the work is the author's; remove the line from the message before committing. If the host added it, it will add it again on the next commit — turn it off at the source: %s",
+			name, strings.TrimSpace(firstLineOf(loc)), attributionRemedyURL)}}
 }
 
 // ScrubText applies the same attribution patterns to arbitrary text — the PR
