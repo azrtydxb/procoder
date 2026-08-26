@@ -1,8 +1,22 @@
 # What a human decided
 
-Written 2026-08-26 08:06 UTC. procoder reads this
+Written 2026-08-26 08:33 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
+
+## [decision] decisions.md
+
+Key: 0489b93052fa
+Question: Is v3.1.1 tagged once the PRs are merged?
+
+Standing instruction from the maintainer on 2026-08-26: no.
+
+- merge only: land #184 and #187 on main and stop there. The tag is the
+  maintainer's call and waits for them to say so.
+- tag when merged: NOT what was asked. Recorded so a later session cannot
+  read "merge both, then cut v3.1.1" from earlier in the day and act on it.
+
+Answer: merge only — do NOT tag. The maintainer will say when.
 
 ## (no longer asked)
 

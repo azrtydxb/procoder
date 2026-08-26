@@ -49,3 +49,12 @@ not reach here.
 - Landing: merge #184 (#175) and #187 (#172, #181, decisions queue) once CI
   is green, then tag v3.1.1. #177 already landed via PR #178.
 - The sweep: whether to reclaim the 1.03 GB here, which is irreversible.
+
+## Is v3.1.1 tagged once the PRs are merged?
+
+Standing instruction from the maintainer on 2026-08-26: no.
+
+- merge only: land #184 and #187 on main and stop there. The tag is the
+  maintainer's call and waits for them to say so.
+- tag when merged: NOT what was asked. Recorded so a later session cannot
+  read "merge both, then cut v3.1.1" from earlier in the day and act on it.

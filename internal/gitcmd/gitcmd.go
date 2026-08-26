@@ -138,8 +138,9 @@ func collectHygiene(root string, cfg config.Config, changed []string) []gitx.Fin
 	out = append(out, lessons.LeakReminder(root)...)
 	out = append(out, ask.GateFindings(root)...)
 
+	commits := gitx.UnpushedCommits(root)
+	out = append(out, gitx.AttributionIn(commits)...)
 	msgs := gitx.UnpushedMessages(root)
-	out = append(out, gitx.Attribution(msgs)...)
 	out = append(out, gitx.SubjectShape(msgs)...)
 
 	var workflows []string
@@ -331,6 +332,6 @@ func CollectUniversal(root string, cfg config.Config, changed []string, commitMe
 	var out []gitx.Finding
 	out = append(out, gitx.JunkFiles(changed)...)
 	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
-	out = append(out, gitx.Attribution(gitx.UnpushedMessages(root))...)
+	out = append(out, gitx.AttributionIn(gitx.UnpushedCommits(root))...)
 	return out
 }

@@ -459,3 +459,106 @@ func repoRoot(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// #185: the attribution finding must say WHICH commit carries the trailer.
+//
+// The check runs over every unpushed commit, so a trailer three commits
+// back blocks every commit after it. The finding used to open "commit
+// message carries an AI-attribution line", which reads as being about the
+// commit you are writing — people read that against a clean message, could
+// not argue with it, and could not fix it with the `--amend` it suggested,
+// because the offending commit was not the one being amended.
+//
+// proved by: `where = fmt.Sprintf("commit %s (%q)", ...)` reverted to the
+// bare "commit message" wording — the sha is then absent and the test says
+// so.
+func TestAttributionNamesTheCommitCarryingIt(t *testing.T) {
+	findings := AttributionIn([]Commit{
+		{SHA: "deadbee", Subject: "feat: an earlier commit",
+			Message: "feat: an earlier commit\n\nCo-Authored-By: Claude <noreply@anthropic.com>"},
+	})
+	if len(findings) != 1 {
+		t.Fatalf("want 1 finding, got %d", len(findings))
+	}
+	msg := findings[0].Message
+	for _, want := range []string{"deadbee", "feat: an earlier commit", "rebase -i deadbee^"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the finding does not contain %q — a person cannot act on it:\n%s", want, msg)
+		}
+	}
+	// And it must not tell them to amend HEAD, which is the advice that
+	// made this unfixable.
+	if strings.Contains(msg, "git commit --amend / rebase") {
+		t.Errorf("the finding still suggests amending HEAD for a commit that is not HEAD:\n%s", msg)
+	}
+}
+
+// A clean set produces nothing — so the test above cannot pass by the
+// check firing on everything.
+//
+// proved by: `if loc == "" { continue }` removed (every commit reports).
+func TestAttributionIsSilentOnCleanCommits(t *testing.T) {
+	if f := AttributionIn([]Commit{
+		{SHA: "abc1234", Subject: "feat: a clean commit", Message: "feat: a clean commit\n\nA body."},
+	}); len(f) != 0 {
+		t.Fatalf("a clean commit was flagged: %+v", f)
+	}
+}
+
+// UnpushedCommits must carry the sha AND the full message, or the finding
+// above has nothing to name. The %x1f separator matters: a message
+// containing anything at all must not be mistaken for the delimiter.
+//
+// proved by: the `%h%x1f` format reverted to `%B` alone — the Cut then
+// fails and every commit is skipped, so the range reads as empty.
+func TestUnpushedCommitsCarryShaAndMessage(t *testing.T) {
+	dir := repo(t)
+	commit(t, dir, "chore: seed")
+	// A message with a unit separator's worth of awkwardness in it.
+	// A unit separator in the body, which is the delimiter between sha and
+	// message. NUL is deliberately absent: git refuses it outright ("a NUL
+	// byte in commit log message not allowed"), which is what makes the
+	// %x00 record separator safe by construction.
+	awkward := "feat: a commit\n\nA body with a \x1f-ish thing in it."
+	writeFileAt(t, dir, "x.txt", "x")
+	gitAt(t, dir, "add", "-A")
+	gitAt(t, dir, "commit", "-q", "-F", writeTemp(t, dir, awkward))
+
+	commits := UnpushedCommits(dir)
+	if len(commits) == 0 {
+		t.Fatal("no unpushed commits were read — the format string is not parsing")
+	}
+	top := commits[0]
+	if top.SHA == "" {
+		t.Error("the commit carries no sha, so a finding cannot name it")
+	}
+	if !strings.Contains(top.Message, "A body with a") {
+		t.Errorf("the message was truncated: %q", top.Message)
+	}
+	if top.Subject != "feat: a commit" {
+		t.Errorf("subject = %q, want %q", top.Subject, "feat: a commit")
+	}
+}
+
+func writeFileAt(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gitAt(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func writeTemp(t *testing.T, dir, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "msg.txt")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
