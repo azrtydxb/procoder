@@ -604,7 +604,24 @@ auto-reviews to ask about, so the empty answer is real and the exit is 0.
 
 Prints the engineering principles each session starts with (`--hook` is
 how the SessionStart hook asks for them, wrapped in the envelope its host
-reads; without it the same content goes to the terminal): build-ladder first — reuse, stdlib, platform, then the
+reads; without it the same content goes to the terminal).
+
+`--hook` reads the SessionStart payload on stdin and answers differently
+depending on why the session started. A **resume** or a **compact** gets
+one line saying the rules are in force and where to read them, because the
+full text is already in that conversation and re-sending it pays roughly
+7KB to repeat what the model can already see. Every other start gets the
+whole thing — including one whose payload could not be read, could not be
+parsed, or names a source this version does not recognise. Saying too much
+costs tokens; saying too little leaves a session governed by rules nobody
+sent.
+
+The read gives up after two seconds. A SessionStart hook runs before the
+session can begin, so a host that opens the pipe and sends nothing must not
+hold it open — and the fallback there, as everywhere else, is the full
+text.
+
+The principles themselves: build-ladder first — reuse, stdlib, platform, then the
 minimum code that works — the delegation discipline (independent work
 fans out to parallel subagents under a clear contract, nothing started
 that somebody else is already on, watched as it
