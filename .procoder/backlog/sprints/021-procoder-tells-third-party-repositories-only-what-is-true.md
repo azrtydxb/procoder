@@ -1,6 +1,6 @@
 # procoder tells third-party repositories only what is true anywhere
 
-Status: active
+Status: done
 Created: 2026-08-26
 
 ## Goal

@@ -709,6 +709,50 @@ The write hook's entry point — reads a PostToolUse payload on stdin and
 answers with findings for the file just written. Wired by the plugin;
 rarely invoked by hand.
 
+#### `procoder prune [--apply]`
+
+The cached plugin versions that can go. `claude plugin update` writes each
+new version into its own directory and removes none of the previous ones;
+`claude plugin prune` does not cover it, so they accumulate. On the
+maintainer's machine that reached 55 versions and 1.11 GB, one of them in
+use.
+
+Bare `prune` reports and removes nothing:
+
+```
+  would remove  2.0.1
+  ...
+prune: 53 version(s) can go, reclaiming 1.03 GB
+  keeping 3.1.0, 3.0.0 (3.1.0 is active)
+  run `procoder prune --apply` to remove them
+```
+
+`--apply` removes them and reports what actually went, summing the
+reclaimed figure from the directories that were removed rather than from
+the ones that were planned. Deletion is the one thing here that cannot be
+undone, so it is the one thing that is not the default: typing `procoder
+prune` to find out what it does must not cost you a gigabyte.
+
+The version in use is protected twice, independently — it is named in
+`installed_plugins.json`, and it is the directory the running binary
+executes from. Either check alone leaves a way to delete what is in use.
+The retention window keeps the active version and one previous, because
+repointing `installed_plugins.json` at the directory below is the only
+cheap rollback there is and a window of one leaves none.
+
+procoder refuses rather than guesses. A registry that is absent,
+unparseable, or does not list procoder means the active version is unknown,
+and unknown is never a licence to delete: exit 2, nothing removed. A
+directory whose name is not a version — a partial download, an editor's
+backup — cannot be ranked, so it is kept and named rather than guessed at.
+An active version that is not on disk stops the sweep entirely. A cache
+directory that does not exist is not an error at all: procoder may be
+installed from a release binary rather than the marketplace.
+
+Nothing calls this from a hook, and a test asserts that by reading the hook
+sources — a delete of this size is a deliberate action a person takes, not
+something that happens to them while they are typing.
+
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
 Bare `version` prints one line and asks nobody anything.

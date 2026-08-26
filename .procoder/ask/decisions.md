@@ -19,3 +19,27 @@ of them — it came out of a correction during the sprint.
 - #181 (`procoder prune`): already specified in the issue with guardrails
   agreed, so it can start immediately.
 - #177: not yet read this session. Reading it first may change the answer.
+
+## Does `procoder prune` delete, or print what it would delete?
+
+P-CONTROL says the binary prints and never modifies files. That rule is
+about repository content, and the plugin cache is not that — but a command
+that removes 1.1 GB irreversibly is the largest exception the tool would
+have, and it is worth being deliberate rather than assuming the rule does
+not reach here.
+
+- deletes, behind an explicit flag: `procoder prune` reports what it would
+  remove and exits; `procoder prune --apply` does it. One command, the
+  reclaim actually happens, and the default is still a report.
+- prints only, strictly: procoder emits the exact `rm -rf` lines and the
+  human or agent runs them. P-CONTROL holds without exception, nothing is
+  ever deleted by procoder, and the user sees precisely what will go.
+- deletes by default with `--dry-run` to preview: shortest path to the
+  reclaim, and the one most likely to surprise somebody.
+
+## How many cached plugin versions does `procoder prune` keep?
+
+- 3 (active + 2 previous): reclaims 1.01 GB here, two rollback targets.
+- 2 (active + 1 previous): reclaims 1.05 GB, one rollback target — the
+  minimum that still counts as a rollback.
+- 5 (active + 4 previous): reclaims 0.92 GB, a longer rollback window.
