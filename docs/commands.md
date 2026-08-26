@@ -84,6 +84,12 @@ lint, CI hygiene, infrastructure hygiene, lint findings, secrets (blocking),
 docs checks, and the change's blast radius from the index. Exit 1 on any
 blocking finding.
 
+That full list is what a repository that has **adopted** Procoder gets. In
+somebody else's repository — no `.procoder/`, no `AGENTS.md` naming
+Procoder — only the checks that are true anywhere run, and the content
+checks see only the lines the commit wrote. The run says which mode it was
+in; see [Adopted and universal repositories](configuration.md#adopted-and-universal-repositories).
+
 #### `procoder review [--lens <name>[,<name>]] [paths...]`
 
 The judgment half of the gate. Every other check Procoder runs is
@@ -729,4 +735,3 @@ and prints that manager's own upgrade command instead, because overwriting
 a file a package database believes it owns is a change the manager will
 silently revert. The detection is a path heuristic and errs toward
 refusing; `--force` is the way past it when the install really is yours.
-

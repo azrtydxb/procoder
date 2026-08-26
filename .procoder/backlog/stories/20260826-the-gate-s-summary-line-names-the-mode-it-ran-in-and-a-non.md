@@ -1,9 +1,9 @@
 # A quieter gate says that it is quieter
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -18,7 +18,13 @@ went quiet.
 
 ## Acceptance criteria
 
-- [ ] The gate's summary line names the mode it ran in.
-- [ ] A non-adopting run says how to get the full gate.
+- [x] The gate's summary line names the mode it ran in.
+- [x] A non-adopting run says how to get the full gate.
 
 ## Evidence
+
+`TestTheGateAnnouncesItsScope` — the mode line, the "NOT checked here"
+warning, and the summary. The summary needed its own branch: "0 clean, 0
+unformatted" over files nothing looked at reads as a formatting pass, so
+the universal run says `N file(s) not formatting-checked` instead. That
+assertion was added only after the mutation survived without it.

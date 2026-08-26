@@ -308,3 +308,29 @@ func orUnknown(s string) string {
 	}
 	return s
 }
+
+// CollectUniversal is the half of the git-hygiene domain that is true in
+// anybody's repository: a conflict marker, a junk file, an oversized blob,
+// and an attribution trailer nobody wrote. No repository wants any of
+// them, whatever its house style.
+//
+// Everything CollectFor adds beyond this is procoder's opinion — the agent
+// layer, the planning chain, release and documentation hygiene, its own
+// templates, the default-branch habit, the ignore-coverage advice, the
+// commit-subject shape, workflow discipline. A project that never adopted
+// procoder did not ask for any of it, and telling it anyway is what made a
+// two-file change in an upstream clone produce nineteen findings (#172).
+//
+// The attribution check stays, and that is a deliberate line: it is not
+// procoder's taste but a claim of authorship the committer did not make.
+//
+// Conflict markers are NOT here. They read file content, and outside an
+// adopting repository content checks narrow to the lines this commit
+// wrote — the gate does that itself, with the diff it already has.
+func CollectUniversal(root string, cfg config.Config, changed []string, commitMessage string) []gitx.Finding {
+	var out []gitx.Finding
+	out = append(out, gitx.JunkFiles(changed)...)
+	out = append(out, gitx.Oversized(changed, cfg.MaxFileMB)...)
+	out = append(out, gitx.Attribution(gitx.UnpushedMessages(root))...)
+	return out
+}

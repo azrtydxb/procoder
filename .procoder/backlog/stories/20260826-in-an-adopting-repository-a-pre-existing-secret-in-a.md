@@ -1,9 +1,9 @@
 # Your own repository still hears about your own code
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -17,7 +17,12 @@ this epic does not answer it by accident.
 
 ## Acceptance criteria
 
-- [ ] In an adopting repository a pre-existing secret in a changed file
+- [x] In an adopting repository a pre-existing secret in a changed file
       still blocks, unchanged.
 
 ## Evidence
+
+`TestAPreExistingSecretStillBlocksInAnAdoptingRepository` — the same
+fixture as the story above with `.procoder/` added, same stubbed finding on
+the same untouched line, exit 1. Killed by making the secrets branch
+unconditional.

@@ -1,9 +1,9 @@
 # procoder does not claim a file it never wrote
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -18,8 +18,14 @@ kind: not drift, not missing, nothing.
 
 ## Acceptance criteria
 
-- [ ] A repository carrying its own `AGENTS.md` and
+- [x] A repository carrying its own `AGENTS.md` and
       `.github/copilot-instructions.md`, having not adopted procoder, is
       told nothing about either file.
 
 ## Evidence
+
+`TestANonAdoptingRepositoryIsNeverToldItsFilesDrifted` runs the whole gate
+over a fixture holding somebody else's `AGENTS.md` and
+`.github/copilot-instructions.md`, and requires the word "drift" to appear
+nowhere. Killed by routing the universal branch through
+`gitcmd.CollectFor`.

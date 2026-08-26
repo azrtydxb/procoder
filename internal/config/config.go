@@ -42,6 +42,17 @@ type Config struct {
 	// LintBlock: lint findings block the gate instead of being reported.
 	LintBlock bool
 
+	// GateScope forces how much of procoder this repository is subject to:
+	// "adopted" for everything, "universal" for only the checks that are
+	// true regardless of house style. Empty means procoder decides from
+	// the repository — see internal/gate.ScopeFor.
+	//
+	// Readable only where .procoder/ exists, which is itself adoption, so
+	// this can only ever narrow a repository that already opted in. The
+	// other direction — a repository with no config asking for the full
+	// gate — is what PROCODER_GATE_SCOPE is for.
+	GateScope string
+
 	// PlanningMethod names who owns the planning artifacts: "procoder"
 	// (the default) or "bmad". It moves planning and nothing else — the
 	// gate, the suite, the release controller and the rest read the same
@@ -185,6 +196,8 @@ func Load(root string) Config {
 			cfg.BlockDefaultBranch = value == "block"
 		case "lint.policy":
 			cfg.LintBlock = value == "block"
+		case "gate.scope":
+			cfg.GateScope = value
 		case "planning.method":
 			// A typo here silently decides which methodology governs the
 			// repository, which is more consequential than most keys: a

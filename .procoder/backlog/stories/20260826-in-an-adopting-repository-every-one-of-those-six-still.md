@@ -1,9 +1,9 @@
 # An adopting repository loses nothing
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -18,10 +18,17 @@ is the test lying about what it compared.
 
 ## Acceptance criteria
 
-- [ ] In an adopting repository the unformatted file, missing agent rule
+- [x] In an adopting repository the unformatted file, missing agent rule
       file, README without the version, absent linter, debt marker and
       failing suite all still report, unchanged.
-- [ ] The adopting and non-adopting fixtures are the same tree apart from
+- [x] The adopting and non-adopting fixtures are the same tree apart from
       `.procoder/`.
 
 ## Evidence
+
+`TestTheSameFixtureKeepsItsHouseRulesWhenAdopting`, over the fixture built
+by `houseRuleFixture(t, adopting)` — one function, both runs, so "the same
+tree apart from `.procoder/`" is structural rather than a claim in a
+comment. Formatting, debt, the agent layer, templates and ignore-coverage
+all still report, and the run still exits 1. Killed by removing the
+`houseRules` call.

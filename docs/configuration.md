@@ -17,6 +17,24 @@ max_file_mb = 5
 # "off" skips the check.
 commit_gate = "block"
 
+[gate]
+# How much of Procoder this repository is subject to: "adopted" or
+# "universal". Normally omitted — Procoder decides from the repository
+# itself, and this only forces the answer.
+#
+# "adopted"   everything runs.
+# "universal" only the checks that are true in any repository: secrets,
+#             oversized files, conflict markers, junk files, and AI
+#             attribution in the commit message. Procoder's own
+#             conventions — formatting, linting, the agent layer, the
+#             planning chain, templates, docs, debt, the suite — do not
+#             run, and the content checks see only the lines the commit
+#             wrote.
+#
+# Setting this to "universal" in a repository that HAS adopted Procoder
+# really does reduce the gate; it is not just a label.
+scope = "adopted"
+
 [lint]
 # Lint findings in the gate: "report" (default) or "block".
 policy = "report"
@@ -86,6 +104,46 @@ policy = "report"
 # upgrade is built on.
 check = "warn"
 ```
+
+## Adopted and universal repositories
+
+Procoder runs two gates, and which one you get is decided from the
+repository in front of it — never from the machine, because a contributor's
+laptop looks identical in their own repository and in somebody else's.
+
+A repository has **adopted** Procoder if it has a `.procoder/` directory,
+or an `AGENTS.md` that names Procoder. Everything runs, exactly as it
+always has.
+
+A repository with neither is somebody else's, and gets the **universal**
+gate: a credential, an oversized blob, a conflict marker, a junk file, and
+an AI-attribution trailer nobody wrote. Those are wrong in any repository
+whatever its house style. Procoder's own conventions do not run, because
+that project never asked for them — its formatter may be Biome, its
+`AGENTS.md` is its own, and its test command is not Procoder's business.
+
+In the universal gate the checks that read file **content** see only the
+lines the commit added or changed. A secret four thousand lines from your
+diff is not yours to answer for. Checks about a file's **existence** —
+oversized, junk — do not narrow, because a file the commit introduces is
+the commit's, all of it.
+
+Every run says which mode it was in. A quieter gate that does not announce
+itself is indistinguishable from a clean one:
+
+```
+gate scope: universal (no .procoder/ and no AGENTS.md naming procoder)
+  procoder's own conventions are NOT checked here — this repository has not adopted it.
+  For the full gate: PROCODER_GATE_SCOPE=adopted, or adopt procoder in this repository.
+```
+
+`PROCODER_GATE_SCOPE` takes the same two values as `[gate] scope`, for a
+fork that cannot carry configuration without that itself being a change the
+contributor does not want to make. The config file wins over the
+environment variable: the file is the repository's deliberate choice, the
+variable is whichever shell this happens to be.
+
+The reasoning is in ADR 0005.
 
 ## `.procoder/github/REVIEW.md` and `.procoder/github/LESSONS.md`
 

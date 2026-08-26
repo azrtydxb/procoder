@@ -1,9 +1,9 @@
 # The same narrowing for conflict markers
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -17,7 +17,11 @@ predict.
 
 ## Acceptance criteria
 
-- [ ] In a non-adopting repository a pre-existing conflict marker is
+- [x] In a non-adopting repository a pre-existing conflict marker is
       silent, and one introduced by this commit blocks.
 
 ## Evidence
+
+`TestAPreExistingConflictMarkerIsSilentInANonAdoptingRepository` (upstream
+committed the marker; this commit appends one line — exit 0) and
+`TestUniversalStillBlocksOnAConflictMarkerTheCommitWrote` (exit 1).

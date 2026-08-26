@@ -1,9 +1,9 @@
 # Either mode can be forced
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -18,9 +18,20 @@ make.
 
 ## Acceptance criteria
 
-- [ ] `[gate] scope = "universal"` in an adopting repository reduces it to
+- [x] `[gate] scope = "universal"` in an adopting repository reduces it to
       the universal checks.
-- [ ] `PROCODER_GATE_SCOPE=adopted` in a non-adopting repository runs
+- [x] `PROCODER_GATE_SCOPE=adopted` in a non-adopting repository runs
       everything.
 
 ## Evidence
+
+`TestForcingUniversalInAnAdoptingRepositoryReducesTheGate` — forcing it
+changes the checks, not just the printed word. Plus
+`TestConfigScopeOverridesEverything` and `TestEnvironmentOverridesDetection`
+for the precedence, and `TestAnUnreadableOverrideFallsBackToDetection` for
+a typo.
+
+That last fixture had to be a non-adopting repository: `parseScope` returns
+`Adopted` as its zero value, so in an adopting one an accepted typo and a
+correct fallthrough are indistinguishable. The first version passed for the
+wrong reason. #186.

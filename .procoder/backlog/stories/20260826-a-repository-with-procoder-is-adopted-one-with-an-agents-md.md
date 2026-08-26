@@ -1,9 +1,9 @@
 # Adoption is decided from the repository, never the machine
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -22,10 +22,18 @@ saying less about somebody else's code, not more.
 
 ## Acceptance criteria
 
-- [ ] A repository with `.procoder/` is adopted; one with an `AGENTS.md`
+- [x] A repository with `.procoder/` is adopted; one with an `AGENTS.md`
       naming procoder is adopted; one with neither is not; and one with an
       `AGENTS.md` that never mentions procoder is not.
-- [ ] One function answers this for every caller, so `procoder check` and
+- [x] One function answers this for every caller, so `procoder check` and
       the pre-commit hook cannot disagree.
 
 ## Evidence
+
+`internal/gate/adoption.go` — `ScopeFor` reads the repository and nothing
+else. Proved by `internal/gate/adoption_test.go`:
+`TestProcoderDirectoryMeansAdopted`,
+`TestAgentsFileNamingProcoderMeansAdopted`,
+`TestAgentsFileAboutSomethingElseIsNotAdoption`,
+`TestARepositoryWithNeitherIsUniversal`. Each mutation applied and watched
+to fail.

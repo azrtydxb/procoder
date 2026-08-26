@@ -1,9 +1,9 @@
 # File-level checks do not narrow, and that is deliberate
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -16,7 +16,18 @@ A 12MB blob does not become less yours because you only wrote part of it.
 
 ## Acceptance criteria
 
-- [ ] An oversized file and a junk file that the commit introduces still
+- [x] An oversized file and a junk file that the commit introduces still
       block in a non-adopting repository.
 
 ## Evidence
+
+`TestAJunkFileStillBlocksInANonAdoptingRepository` and
+`TestAnOversizedFileStillBlocksInANonAdoptingRepository`, each killed by
+dropping its check from `CollectUniversal`.
+
+Worth recording: narrowing these was assumed to be a risk and is not.
+`JunkFiles` and `Oversized` findings carry no line number, and
+`NarrowToDiff` keeps line-less findings by construction — verified, not
+assumed, by `TestNarrowToDiffKeepsWholeFileFindings`. Routing them through
+the narrower is a no-op, so the criterion as written could not fail. See
+issue #186.

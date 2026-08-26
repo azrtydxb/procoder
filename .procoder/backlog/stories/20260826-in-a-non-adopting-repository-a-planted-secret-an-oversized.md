@@ -1,9 +1,9 @@
 # The universal checks still block in anybody's repository
 
-Status: open
+Status: done
 Created: 2026-08-26
 Epic: adoption-aware-gate
-Sprint: -
+Sprint: 021-procoder-tells-third-party-repositories-only-what-is-true
 
 ## Description
 
@@ -16,8 +16,13 @@ them into advice it would have traded a noisy gate for a useless one.
 
 ## Acceptance criteria
 
-- [ ] In a non-adopting repository, a planted secret, an oversized file, a
+- [x] In a non-adopting repository, a planted secret, an oversized file, a
       conflict marker, a junk file and an AI-attribution line each still
       block.
 
 ## Evidence
+
+The universal set still blocks: conflict marker
+(`TestUniversalStillBlocksOnAConflictMarkerTheCommitWrote`), junk file,
+oversized blob, and a secret on a written line
+(`TestASecretOnALineTheCommitWroteStillBlocks`). All exit 1.
