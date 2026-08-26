@@ -10,3 +10,8 @@ docs/changelog.md
 .procoder/index/
 .procoder/state/
 .procoder/ask/QA.md
+
+# The per-platform binaries are no longer committed. CI builds them at
+# the tag and publishes them; hooks/launcher.sh fetches the one this
+# machine needs and caches it here. See ADR 0009.
+/dist/
