@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-26 14:01 UTC. procoder reads this
+Written 2026-08-27 16:28 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -95,6 +95,31 @@ Key: aa8ea1f17c0c
 Question: Do the four large features stay open as a roadmap?
 
 Answer: keep open, but label them roadmap/large so they stop reading as queued work
+
+## [decision] decisions.md
+
+Key: b2c54f852d82
+Question: Remove the cached 3.1.0 plugin too, or keep it as the rollback?
+
+**Decided: keep 3.1.0.** The rollback is worth 45 MB; prune's
+active-plus-one-previous policy stands as written.
+
+`procoder prune --apply` removed 3.0.0 and reclaimed 45 MB. It kept 3.1.0
+deliberately: the policy is the active version plus one previous, so a
+release that misbehaves has somewhere to fall back to. Removing 3.1.0 is
+outside what prune will do — it would be a manual `rm -rf` of
+`~/.claude/plugins/cache/procoder/procoder/3.1.0`.
+
+The trade is a fixed ~45 MB against the one-step rollback. Note that 3.1.0
+is now three releases behind and predates `release.maintainers`, so as a
+rollback target it would reintroduce the false positive that blocked the
+3.3.0 release commit.
+
+- keep 3.1.0: prune's own policy, and a rollback that costs 45 MB.
+- remove 3.1.0: reclaims the space; rollback then means reinstalling from
+  the marketplace rather than a local directory.
+
+Answer: Run the per-file scans concurrently. It attacks process startup directly, scans exactly what it scans today, and does not depend on the whole-tree figure I got wrong.
 
 ## (no longer asked)
 
