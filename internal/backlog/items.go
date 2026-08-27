@@ -12,6 +12,7 @@ package backlog
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -301,4 +302,27 @@ func printItem(root, kind, slug, title string, fill func(now string) string, out
 	out("== write this to " + rel + ":")
 	out(fill(time.Now().UTC().Format("2006-01-02")))
 	return 0
+}
+
+// ItemFiles is every backlog item on disk, repository-relative.
+//
+// Stories, epics, milestones and sprints — the things whose progress a
+// person tracks. Used by the stall report, which asks git how each one
+// changed over time and needs paths git will recognise.
+func ItemFiles(root string) []string {
+	var out []string
+	for _, kind := range []string{KindMilestone, KindEpic, KindStory, KindSprint} {
+		dir := filepath.Join(root, filepath.FromSlash(Dir), kind)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue // a repository need not have every kind
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			out = append(out, path.Join(Dir, kind, e.Name()))
+		}
+	}
+	return out
 }
