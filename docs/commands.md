@@ -75,7 +75,7 @@ order. Exit 1 while the repository would fail the gate; the
 
 ### Everyday commands
 
-#### `procoder check [paths...]`
+#### `procoder check [paths...] [--paths-from <file|->]`
 
 The commit gate. Over the changed files (or the given paths): formatting
 (unformatted and unchecked both fail), git hygiene (conflict markers, junk
@@ -106,6 +106,15 @@ lenses are pointed at exactly that. Nothing checks that four passes
 happened — nothing on disk could — so this is a discipline, not a gate.
 What it buys is that thoroughness comes from asking four different
 questions rather than asking the same one harder.
+
+`--paths-from` reads the file list from a file, or from stdin with `-`,
+one path per line. It exists so a whole-tree run is a single invocation:
+`git ls-files | xargs procoder check` looks equivalent and is not, because
+xargs splits a long list into batches and runs the command once per batch —
+each one paying a full semgrep and osv-scanner pass while reporting as
+though it were the only one. A list that cannot be read, or that names no
+files, exits 2 rather than becoming an empty list the gate would call
+clean.
 
 **Known pitfalls.**
 

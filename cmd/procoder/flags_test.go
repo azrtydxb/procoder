@@ -29,8 +29,25 @@ func TestAFlagTheCommandDoesNotImplementIsRefused(t *testing.T) {
 	if !strings.Contains(errb.String(), "--staged") {
 		t.Errorf("the refusal must name the flag: %q", errb.String())
 	}
-	if !strings.Contains(errb.String(), "no flags") {
+	if !strings.Contains(errb.String(), "--paths-from") {
 		t.Errorf("the refusal must say what check does take: %q", errb.String())
+	}
+}
+
+// The other half of the same message. `check` used to be the example of a
+// command taking no flags at all, and stopped being one when --paths-from
+// landed — so the "no flags" wording needs a command that still is, or the
+// branch goes untested the moment any command gains its first flag.
+//
+// proved by: change the empty-allowed branch in checkFlags to print the
+// same sentence as the non-empty one — this fails.
+func TestACommandWithNoFlagsSaysSo(t *testing.T) {
+	var errb bytes.Buffer
+	if _, ok := checkFlags([]string{"doctor", "--nope"}, &errb); ok {
+		t.Fatal("doctor accepted --nope, which it does not implement")
+	}
+	if !strings.Contains(errb.String(), "no flags") {
+		t.Errorf("a command with no flags must say so: %q", errb.String())
 	}
 }
 

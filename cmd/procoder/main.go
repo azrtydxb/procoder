@@ -253,7 +253,8 @@ const usage = `usage: procoder <command> [args]
                        marked and exit 1; --save records a new baseline
   check [paths...]     the commit gate: changed files (or the given paths) must
                        be formatted; unchecked counts as failing, skipped file
-                       types are counted out loud
+                       types are counted out loud. --paths-from <file|-> reads
+                       the list instead, so a whole tree is ONE invocation
   ci [--runs]          workflow hygiene: pinned actions, job timeouts,
                        concurrency cancellation, tests exist; --runs asks gh
                        for this branch's newest run per workflow instead, and
@@ -571,7 +572,21 @@ func run(args []string) int {
 		}
 		return sprintCmd(args[1:])
 	case "check":
-		return gate.Run(args[1:], doctor.Root(), os.Stdout)
+		// --paths-from reads the file list from a file or stdin, so a
+		// whole-tree run is ONE invocation. `git ls-files | xargs procoder
+		// check` looks equivalent and is not: xargs splits a long list
+		// into batches, and each batch pays a full semgrep and
+		// osv-scanner pass while reporting as though it were the only
+		// one. It fits in one batch today at 787 files, silently, which
+		// is the kind of thing that stops being true without telling you.
+		paths, handled, code := pathsFrom(args[1:], os.Stdin, printLine)
+		if handled {
+			return code
+		}
+		if paths == nil {
+			paths = args[1:]
+		}
+		return gate.Run(paths, doctor.Root(), os.Stdout)
 	case "config":
 		return config.Report(doctor.Root(), os.Stdout)
 	case "doctor":

@@ -244,3 +244,28 @@ func TestCheckAllOnNoPathsReturnsNothing(t *testing.T) {
 		t.Errorf("got %d results for no paths", len(got))
 	}
 }
+
+// CI no longer runs `procoder security --deep`: it was a second whole-tree
+// semgrep and osv-scanner pass over what the tracked-tree gate had just
+// scanned. That makes the gate the ONLY place CI gets whole-tree SAST and
+// dependency findings, so these legs disappearing from here would take
+// CI's coverage with them and nothing would say so — the report would
+// simply stop mentioning what it no longer looked for.
+//
+// Source-level on purpose. A behavioural test needs semgrep installed and
+// would pass by reporting "NOT checked" on a machine without it, which is
+// exactly the shape of green this repository refuses.
+//
+// proved by: delete either call from Run/hygieneFor — this fails and names
+// the one that went.
+func TestTheGateStillCarriesTheWholeTreeSecurityLegs(t *testing.T) {
+	src, err := os.ReadFile("gate.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range []string{"security.SastChanged(", "security.DepsChanged("} {
+		if !strings.Contains(string(src), call) {
+			t.Errorf("gate.go no longer calls %s — CI dropped `security --deep` because the gate covered it, so this is CI losing a check silently", call)
+		}
+	}
+}
