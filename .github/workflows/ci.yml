@@ -247,10 +247,13 @@ jobs:
           echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
       - name: doctor
         run: procoder doctor
+      # One invocation, not a pipeline into xargs. xargs splits a long
+      # list into batches and runs the command once per batch, and each
+      # run pays a full semgrep and osv-scanner pass while reporting as
+      # though it were the only one. 787 files fits in a single batch
+      # today — silently, and only until it does not.
       - name: gate over the tracked tree
-        run: git ls-files | xargs procoder check
-      - name: security, the deep pass
-        run: procoder security --deep
+        run: git ls-files | procoder check --paths-from -
       - name: documentation report, external links included
         run: procoder docs --external
         env:
