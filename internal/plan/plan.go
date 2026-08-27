@@ -204,3 +204,8 @@ func planFiles(root string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Files is every plan on disk, as absolute paths. Exported for the
+// surgical-scope check, which reads the `**Files:**` lines a plan already
+// has to carry.
+func Files(root string) []string { return planFiles(root) }

@@ -56,6 +56,7 @@ import (
 	"procoder/internal/spec"
 	"procoder/internal/stall"
 	"procoder/internal/status"
+	"procoder/internal/surgical"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
 	"procoder/internal/tools"
@@ -1260,6 +1261,14 @@ func backlogCmd(args []string) int {
 		return backlog.List(root, out)
 	case "board":
 		return backlog.Board(root, out)
+	case "scope":
+		// Did the change stay where the plans said it would? Report only.
+		changed, cerr := gitx.ChangedFiles(root)
+		if cerr != nil {
+			out("scope NOT checked — the changed files could not be listed (" + cerr.Error() + ")")
+			return 0
+		}
+		return surgical.Check(root, changed, plan.Files(root), out)
 	case "stalled":
 		// Which carried-over items are carried AND untouched. See
 		// internal/stall: the file changing is not the work moving.
