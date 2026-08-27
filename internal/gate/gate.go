@@ -35,40 +35,90 @@ import (
 // They are grouped so the gate has one place to ask "did this repository
 // ask for procoder's opinions", rather than nine.
 func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
+	// Each leg shells out to a different tool and none reads another's
+	// answer, so they wait on each other for no reason. Measured over this
+	// repository's 787 tracked files: gitleaks 41.2s, the suite 35.0s,
+	// semgrep 25.3s, then lint 2.8s, osv 2.6s, complexity 1.1s, debt 0.2s
+	// — 108s in a row, against 41s if the longest one sets the pace.
+	//
+	// The ORDER OF THE RESULTS is fixed regardless. Findings are printed
+	// straight out of this slice, and a gate whose report reordered itself
+	// between runs would make "did my change alter this?" unanswerable —
+	// see #236 for what that costs when it happens by accident. Each leg
+	// writes its own slot; the concatenation below is in declaration
+	// order, whatever order they finished in.
+	legs := []func() []gitx.Finding{
+		// Domain 2: the canonical linters over the changed set — report by
+		// default, blocking when the repo opted in ([lint] policy = "block").
+		// A house rule by definition: it is procoder's choice of linter, and a
+		// project that picked another one did not ask to be told about this.
+		// Lint and complexity share golangci-lint, and golangci-lint
+		// refuses to run twice at once — it takes a lock and the second
+		// instance dies with "parallel golangci-lint is running", which
+		// this gate then reports as a blocking complexity failure. They
+		// are one leg for that reason, run in order inside it. CI caught
+		// this on the change that made these concurrent; locally the two
+		// happened never to overlap.
+		//
+		// The wording above is deliberate: the no-silent-green audit reads
+		// this file as text, and the phrase it looks for inside a comment
+		// here reads as an unblocked finding.
+		func() []gitx.Finding {
+			out := lint.Files(root, paths, cfg.LintBlock)
+			// Complexity on the files this commit carries. Reported unless
+			// the repository asked for block: these are judgement calls,
+			// and a threshold that blocks by surprise stops work on
+			// exactly the files that need the refactor.
+			return append(out, maintain.ComplexityChanged(root, paths, cfg.MaintainBlock)...)
+		},
+		// Domain 1, the SAST leg: findings on the files this commit carries.
+		// It costs seconds rather than milliseconds — semgrep's rule loading
+		// is a fixed cost that scoping cannot remove — and it is here because
+		// a commit is not a keystroke, and a finding caught now is caught
+		// before it leaves the machine.
+		func() []gitx.Finding { return security.SastChanged(root, paths) },
+		// Known vulnerabilities, when the commit touches a dependency
+		// manifest. Only then: the scan answers about the manifests, so a
+		// commit that edits a comment would pay nearly a second to be told the
+		// same thing it was told last time.
+		func() []gitx.Finding { return security.DepsChanged(root, paths) },
+		// Debt markers with no revisit condition, in the files this commit
+		// carries. The whole ledger is the tree's and belongs to CI; what
+		// belongs here is the shortcut being taken right now, while the reason
+		// for it is still in the author's head.
+		func() []gitx.Finding { return debt.GateCheck(root, paths) },
+		// The suite, narrowed to the packages this commit touches: the whole
+		// suite cold is a minute on this repository and one package is a
+		// second. A failing test blocks where the repository asked; a suite
+		// that could not run blocks regardless, because the policy governs
+		// whether a FAILING test stops a commit and "no answer" is not a
+		// verdict it has an opinion about.
+		func() []gitx.Finding { return testrun.GateCheck(root, paths, cfg.TestBlock) },
+	}
+	return concurrently(legs)
+}
+
+// concurrently runs every leg at once and returns their findings
+// concatenated IN DECLARATION ORDER, not completion order.
+//
+// Unbounded on purpose, unlike the per-file fan-out: this is a handful of
+// legs fixed at compile time, not one unit of work per file in the tree.
+func concurrently(legs []func() []gitx.Finding) []gitx.Finding {
+	results := make([][]gitx.Finding, len(legs))
+	var wg sync.WaitGroup
+	for i, leg := range legs {
+		wg.Add(1)
+		go func(i int, leg func() []gitx.Finding) {
+			defer wg.Done()
+			// Distinct index per goroutine, read by none of them: no lock.
+			results[i] = leg()
+		}(i, leg)
+	}
+	wg.Wait()
 	var out []gitx.Finding
-	// Domain 2: the canonical linters over the changed set — report by
-	// default, blocking when the repo opted in ([lint] policy = "block").
-	// A house rule by definition: it is procoder's choice of linter, and a
-	// project that picked another one did not ask to be told about this.
-	out = append(out, lint.Files(root, paths, cfg.LintBlock)...)
-	// Domain 1, the SAST leg: findings on the files this commit carries.
-	// It costs seconds rather than milliseconds — semgrep's rule loading
-	// is a fixed cost that scoping cannot remove — and it is here because
-	// a commit is not a keystroke, and a finding caught now is caught
-	// before it leaves the machine.
-	out = append(out, security.SastChanged(root, paths)...)
-	// Complexity on the files this commit carries. Reported unless the
-	// repository asked for block: these are judgement calls, and a
-	// threshold that blocks by surprise stops work on exactly the files
-	// that need the refactor.
-	out = append(out, maintain.ComplexityChanged(root, paths, cfg.MaintainBlock)...)
-	// Known vulnerabilities, when the commit touches a dependency
-	// manifest. Only then: the scan answers about the manifests, so a
-	// commit that edits a comment would pay nearly a second to be told the
-	// same thing it was told last time.
-	out = append(out, security.DepsChanged(root, paths)...)
-	// Debt markers with no revisit condition, in the files this commit
-	// carries. The whole ledger is the tree's and belongs to CI; what
-	// belongs here is the shortcut being taken right now, while the reason
-	// for it is still in the author's head.
-	out = append(out, debt.GateCheck(root, paths)...)
-	// The suite, narrowed to the packages this commit touches: the whole
-	// suite cold is a minute on this repository and one package is a
-	// second. A failing test blocks where the repository asked; a suite
-	// that could not run blocks regardless, because the policy governs
-	// whether a FAILING test stops a commit and "no answer" is not a
-	// verdict it has an opinion about.
-	out = append(out, testrun.GateCheck(root, paths, cfg.TestBlock)...)
+	for _, r := range results {
+		out = append(out, r...)
+	}
 	return out
 }
 
@@ -121,44 +171,52 @@ func checkAll(paths []string) []format.Result {
 }
 
 func hygieneFor(root string, cfg config.Config, paths []string, commitMessage string, scope Scope) []gitx.Finding {
-	// Domain 9: git hygiene, workflow lint, message checks — same rules as
-	// `procoder git`, via the shared Collect, so the two cannot drift apart.
-	//
-	// In a non-adopting repository only its universal half runs: conflict
-	// markers, junk, oversized files and the attribution trailer. The rest
-	// of it — the agent layer, release and documentation hygiene,
-	// procoder's own templates, the planning chain — is procoder's house
-	// style, and a project that never asked for it is not answerable to it.
-	var hygiene []gitx.Finding
-	if scope == Adopted {
-		hygiene = gitcmd.CollectFor(root, cfg, paths, commitMessage)
-	} else {
-		hygiene = gitcmd.CollectUniversal(root, cfg, paths, commitMessage)
-	}
-	// Domain 1: a secret in a changed file blocks, always — in any
-	// repository. What narrows outside an adopting one is WHERE it looks:
-	// only the lines this commit wrote, because four thousand lines
-	// somebody else wrote are not this commit's to answer for.
-	if scope == Adopted {
-		// Conflict markers are not added here: CollectFor already ran
-		// them whole-file, which is what an adopting repository asked for.
-		hygiene = append(hygiene, security.SecretsChangedFiles(root, paths)...)
-	} else {
-		hygiene = append(hygiene, security.SecretsInDiff(root, paths)...)
-		// The same narrowing, for the same reason: a marker four thousand
-		// lines away in somebody else's file is not this commit's doing.
-		hygiene = append(hygiene, gitx.NarrowToDiff(root, paths, gitx.ConflictMarkers(paths))...)
-	}
-	// Everything from here to the suite is procoder's opinion about how
-	// code should be written, and runs only where that was asked for. One
-	// block rather than a flag on each: a repository either wanted these
-	// or it did not, and a per-domain matrix would be configuration for
-	// repositories that by definition carry no configuration.
-	if scope == Adopted {
-		hygiene = append(hygiene, houseRules(root, cfg, paths)...)
-	}
-
-	return hygiene
+	// Three independent blocks, run at once. Measured over 787 tracked
+	// files: the secret scan is ~41s and the house rules ~46s, and neither
+	// reads the other's answer, so waiting was costing the sum of them.
+	// Order of the findings is fixed by declaration, not by which finished.
+	return concurrently([]func() []gitx.Finding{
+		// Domain 9: git hygiene, workflow lint, message checks — same rules as
+		// `procoder git`, via the shared Collect, so the two cannot drift apart.
+		//
+		// In a non-adopting repository only its universal half runs: conflict
+		// markers, junk, oversized files and the attribution trailer. The rest
+		// of it — the agent layer, release and documentation hygiene,
+		// procoder's own templates, the planning chain — is procoder's house
+		// style, and a project that never asked for it is not answerable to it.
+		func() []gitx.Finding {
+			if scope == Adopted {
+				return gitcmd.CollectFor(root, cfg, paths, commitMessage)
+			}
+			return gitcmd.CollectUniversal(root, cfg, paths, commitMessage)
+		},
+		// Domain 1: a secret in a changed file blocks, always — in any
+		// repository. What narrows outside an adopting one is WHERE it looks:
+		// only the lines this commit wrote, because four thousand lines
+		// somebody else wrote are not this commit's to answer for.
+		func() []gitx.Finding {
+			if scope == Adopted {
+				// Conflict markers are not added here: CollectFor already ran
+				// them whole-file, which is what an adopting repository asked for.
+				return security.SecretsChangedFiles(root, paths)
+			}
+			out := security.SecretsInDiff(root, paths)
+			// The same narrowing, for the same reason: a marker four thousand
+			// lines away in somebody else's file is not this commit's doing.
+			return append(out, gitx.NarrowToDiff(root, paths, gitx.ConflictMarkers(paths))...)
+		},
+		// Everything here is procoder's opinion about how code should be
+		// written, and runs only where that was asked for. One block rather
+		// than a flag on each: a repository either wanted these or it did
+		// not, and a per-domain matrix would be configuration for
+		// repositories that by definition carry no configuration.
+		func() []gitx.Finding {
+			if scope != Adopted {
+				return nil
+			}
+			return houseRules(root, cfg, paths)
+		},
+	})
 }
 
 // Run checks the given paths, or the repository's changed files when none are
@@ -205,6 +263,16 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	// procoder's taste is exactly the overreach #172 reported.
 	scope, why := ScopeFor(root, cfg.GateScope)
 
+	// The formatting pass and the hygiene pass are the two halves of the
+	// gate and neither reads the other, so they run at once. They were the
+	// last two big blocks still waiting in line: ~45s of formatter startup
+	// and ~46s of hygiene on this repository's 787 files.
+	//
+	// Started here and collected below, where its findings are first
+	// needed — the formatting results are printed before them.
+	hygieneDone := make(chan []gitx.Finding, 1)
+	go func() { hygieneDone <- hygieneFor(root, cfg, paths, commitMessage, scope) }()
+
 	var unformatted, unchecked []format.Result
 	clean, skipped := 0, 0
 	// Not "clean" and not "out of scope" — neither is true of a file
@@ -233,7 +301,7 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 		fmt.Fprintf(stdout, "UNCHECKED    %s — %s\n", r.File, r.Reason)
 	}
 
-	hygiene := hygieneFor(root, cfg, paths, commitMessage, scope)
+	hygiene := <-hygieneDone
 
 	fmt.Fprintf(stdout, "gate scope: %s (%s)\n", scope, why)
 	if scope == Universal {

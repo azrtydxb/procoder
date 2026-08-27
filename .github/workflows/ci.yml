@@ -245,6 +245,17 @@ jobs:
         run: |
           echo "{\"executablePath\": \"$(which google-chrome)\", \"args\": [\"--no-sandbox\"], \"timeout\": 120000, \"protocolTimeout\": 180000}" > /tmp/puppeteer.json
           echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
+      # What this runner actually has. Two concurrency changes (#237, #240)
+      # cut the gate's wall time substantially on a ten-core laptop and did
+      # nothing measurable here, and the standing explanation is that the
+      # work is CPU-bound with no spare cores to fan out into. That was a
+      # hypothesis nobody could check, because nothing recorded the machine
+      # the number came from. One line, so the next person comparing a
+      # local timing against a CI one knows what they are comparing.
+      - name: what this runner has
+        run: |
+          echo "cores: $(nproc)"
+          echo "memory: $(free -g 2>/dev/null | awk '/^Mem:/{print $2 " GB"}')"
       - name: doctor
         run: procoder doctor
       # One invocation, not a pipeline into xargs. xargs splits a long
