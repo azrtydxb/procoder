@@ -196,6 +196,14 @@ completeness check — a feature family it stops mentioning blocks the
 gate. No benchmark numbers appear here because none have been run; any
 future number will carry its method alongside it.
 
+Where the rigor costs more than it returns, and where a check is narrower
+than its name, is written down rather than left to be discovered:
+[Honest limits](docs/honest-limits.md). What layer procoder occupies, and
+what it does not try to be: [Where procoder sits](docs/positioning.md).
+
+The external evidence behind each premise, and the premises that have none,
+are separated and labelled in [Research](docs/research.md).
+
 ## Implementation
 
 One Go binary, no runtime dependencies, cross-compiled per platform into
