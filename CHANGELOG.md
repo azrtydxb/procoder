@@ -49,6 +49,111 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.4.0 — 2026-08-27
+
+_Two checks that had quietly stopped doing their job, the six roadmap items
+closed, and a gate that no longer waits on itself._
+
+**Fixed — the linter was choosing which findings to show you, and choosing
+differently each run.** ([#236](https://github.com/azrtydxb/procoder/issues/236))
+golangci-lint caps its own output at fifty issues per linter and three with
+the same text, and it lints packages concurrently — so which issues
+survived depended on which package finished first. Two runs over an
+unchanged tree reported forty-eight findings each and disagreed about their
+members.
+
+Worse than unstable: it was hiding work. `errcheck` emits near-identical
+messages, so three survived and the rest never reached the report at all.
+Both caps are off. The set is now complete and the same twice.
+
+**Fixed — the check that stops a decision being buried had switched itself
+off.** ([#242](https://github.com/azrtydxb/procoder/pull/242)) The rule that questions are the user's to answer is enforced at the
+end of a turn. Its guard asked "did the agent record a decision", and
+answered it by looking for any pending decision at all — so the first one
+ever written to `.procoder/ask/decisions.md` disabled the check for every
+turn after it, in that repository, permanently. An enforcement that goes
+quiet exactly when decisions are piling up unanswered has it backwards. It
+now compares the file across turns, so "recorded" means recorded _now_.
+
+**Added — `procoder learn`: what procoder's own governance costs here.**
+([#190](https://github.com/azrtydxb/procoder/issues/190)) Every other
+domain measures your code. This one measures procoder, which is the claim
+its documentation could not otherwise make: no benchmark of the gate's
+overhead against defects caught had ever been run, and the honest position
+was that nobody knew.
+
+Recording is off until a repository asks for it, and holds a command name,
+a duration and an exit code in gitignored state. `propose` prints
+configuration changes and writes none of them; `verify` reports whether an
+applied change reduced what it targeted, and prints the revert when it did
+not. Every number says where it came from — `measured` for a total over
+recorded runs, `manual claim` for anything projected from them. A proposal
+that suggests relaxing a blocking check always says, in the same breath,
+that the records hold what a check cost and nothing about what it
+prevented.
+
+**Added — `procoder wizard`: walking a human through what procoder cannot
+do.** ([#192](https://github.com/azrtydxb/procoder/issues/192)) Creating an
+account, generating a token, clicking submit in somebody else's dashboard.
+Those are not shell commands, so this executes nothing: `show` prints the
+steps and `run` advances through them one at a time, so none is skipped by
+reading past it. A captured value is shape-checked and never echoed — not
+in the message accepting it, not in the one rejecting it, and not in the
+summary, which names `TOKEN` and never what it held.
+
+**Added — the agent layer says what an agent talks itself into.**
+([#189](https://github.com/azrtydxb/procoder/issues/189)) A
+rationalization table whose every row is a sentence that has actually been
+said, a routing table from where you are to the first command that fits,
+and a five-item checklist with answers rather than prose to nod along to.
+They live in `AGENTS.md` and reach all twelve host rule files. This changes
+what the contract requires, so the skill's `contract` version is now `2`.
+
+**Added — four documents a skeptical adopter can evaluate.**
+([#194](https://github.com/azrtydxb/procoder/issues/194),
+[#209](https://github.com/azrtydxb/procoder/issues/209),
+[#211](https://github.com/azrtydxb/procoder/issues/211)) Known-pitfalls
+sections on five commands, each verified against the code rather than
+recalled. `docs/honest-limits.md` states where the rigor stops paying.
+`docs/positioning.md` states the layer procoder occupies and what it is
+not. `docs/research.md` separates premises with external evidence from
+premises without, cites the sources it read, and leaves the multi-lens
+review premise deliberately uncited because that literature disagrees with
+itself.
+
+`docs/comparable-projects.md` names the projects solving adjacent problems.
+It does not make the independent-convergence argument this repository's own
+issues contradict: five features shipped in 3.3.0 cite unlazy as their
+source, so `docs/influences.md` gains a fifth relationship that says so.
+
+**Fixed — a spec may name the command it introduces.**
+([#230](https://github.com/azrtydxb/procoder/issues/230),
+[#231](https://github.com/azrtydxb/procoder/issues/231)) The citation check
+resolved a cited command against the registry, so a spec proposing a NEW
+command could not name the thing it proposed. A command declared in
+`## Interfaces` is now a forward reference while the spec is a draft, and
+stops being excused once it is marked complete. Separately, a TOML value of
+`= true` inside backticks no longer reads as the shell builtin.
+
+**Changed — the gate stopped waiting on itself.**
+([#237](https://github.com/azrtydxb/procoder/pull/237),
+[#240](https://github.com/azrtydxb/procoder/pull/240),
+[#243](https://github.com/azrtydxb/procoder/pull/243),
+[#244](https://github.com/azrtydxb/procoder/pull/244),
+[#235](https://github.com/azrtydxb/procoder/pull/235),
+[#239](https://github.com/azrtydxb/procoder/pull/239)) Its independent passes
+run at once and the per-file work is fanned out, all drawing on one
+concurrency budget rather than three: 136s to 74s on a ten-core machine
+over this repository's 787 files. Measured in CI it is unchanged, and the
+CI job was fixed a different way — its budget had no headroom and a slow
+run was being reported as a failure.
+
+The gate job also scanned the tree twice. `procoder check` already runs the
+whole-tree SAST and dependency passes, so the separate `security --deep`
+step was repeating them; and the tree is now passed through
+`check --paths-from` in one invocation rather than piped into `xargs`,
+which splits a long list into batches and runs the command once per batch.
+
 ## 3.3.0 — 2026-08-27
 
 _Fifteen ways an agent's work looked finished when it was not — a check
