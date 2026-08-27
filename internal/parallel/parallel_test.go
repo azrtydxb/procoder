@@ -5,21 +5,20 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
-// The whole point: nested fan-outs draw on ONE budget. Three of them each
-// sized NumCPU is what put twenty to thirty external processes on ten
-// cores, made the gate slower than any single change had made it faster,
-// and starved the mermaid checker into a ninety-second timeout that
-// reported two diagrams as NOT checked.
+// The budget is a CAP, and the cap is what makes three fan-outs safe to
+// stack: the formatter pass, the secret scan and the gate's legs all draw
+// on it, so a whole-tree run cannot put thirty external processes on ten
+// cores the way it did before this package existed.
 //
-// proved by: give Do its own semaphore per call instead of the package
-// budget — the outer and inner fan-outs stop sharing, peak concurrency
-// passes the cap, and this fails.
-func TestNestedFanOutsShareOneBudget(t *testing.T) {
+// proved by: give Do its own semaphore per call — every caller then gets
+// the whole machine again and the observed peak passes size().
+func TestDoNeverExceedsTheBudget(t *testing.T) {
 	var live, peak int64
 	var mu sync.Mutex
-	work := func() {
+	Do(200, func(int) {
 		n := atomic.AddInt64(&live, 1)
 		mu.Lock()
 		if n > peak {
@@ -28,28 +27,60 @@ func TestNestedFanOutsShareOneBudget(t *testing.T) {
 		mu.Unlock()
 		runtime.Gosched()
 		atomic.AddInt64(&live, -1)
-	}
-	// An outer fan-out whose every unit opens an inner one, which is the
-	// shape the gate has: legs, and files inside a leg.
-	Do(4, func(int) { Do(8, func(int) { work() }) })
-
-	cap := int64(maxInt(1, runtime.NumCPU()))
-	if peak > cap {
-		t.Errorf("peak concurrency %d exceeded the budget of %d", peak, cap)
+	})
+	if peak > int64(size()) {
+		t.Errorf("peak concurrency %d exceeded the budget of %d", peak, size())
 	}
 	if peak == 0 {
 		t.Error("nothing ran")
 	}
 }
 
-// proved by: drop the `if n <= 0` guard — Do then builds a zero-length
-// channel and the receive loop returns immediately, which is harmless, but
-// a negative n panics on make. This pins the boundary either way.
-func TestDoOnNothingReturns(t *testing.T) {
-	ran := false
-	Do(0, func(int) { ran = true })
-	if ran {
-		t.Error("ran work for zero items")
+// The bug this package shipped with, and the reason it must never be
+// nested. A unit holds its slot while it runs, so an outer fan-out can
+// take every slot and then wait forever for an inner one. It passed on a
+// ten-core laptop, where four outer units left six spare, and deadlocked
+// the whole suite on CI's four cores.
+//
+// The guard is a documented rule rather than a mechanism, so this test
+// demonstrates the hazard on a LOCAL semaphore of the same shape — proving
+// the rule is real without deadlocking the suite to do it.
+//
+// proved by: raise the local budget to 4 or more — the nesting fits, the
+// deadlock disappears, and this stops reporting one.
+func TestNestingASemaphoreOfThisShapeDeadlocks(t *testing.T) {
+	const cap = 2
+	local := make(chan struct{}, cap)
+	// A barrier, because without one this does not reproduce: a single
+	// goroutine that acquires and then acquires again simply takes both
+	// free slots and finishes. The deadlock needs every outer unit to be
+	// HOLDING a slot before any of them reaches for a second, which is
+	// exactly what a real fan-out does.
+	var held sync.WaitGroup
+	held.Add(cap)
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		for i := 0; i < cap; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				local <- struct{}{}
+				defer func() { <-local }()
+				held.Done()
+				held.Wait() // every slot is now taken
+				local <- struct{}{}
+				<-local
+			}()
+		}
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Error("expected the nested acquisition to stall; the hazard this package documents is not real")
+	case <-time.After(200 * time.Millisecond):
+		// stalled, as it must — which is why Do is never called from Do
 	}
 }
 
@@ -63,5 +94,14 @@ func TestEveryIndexIsVisitedExactlyOnce(t *testing.T) {
 		if c != 1 {
 			t.Fatalf("index %d visited %d times, want 1", i, c)
 		}
+	}
+}
+
+// proved by: drop the `if n <= 0` guard — a negative n panics on make.
+func TestDoOnNothingReturns(t *testing.T) {
+	ran := false
+	Do(0, func(int) { ran = true })
+	if ran {
+		t.Error("ran work for zero items")
 	}
 }

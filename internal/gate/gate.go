@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -104,7 +105,21 @@ func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
 // legs fixed at compile time, not one unit of work per file in the tree.
 func concurrently(legs []func() []gitx.Finding) []gitx.Finding {
 	results := make([][]gitx.Finding, len(legs))
-	parallel.Do(len(legs), func(i int) { results[i] = legs[i]() })
+	// Plain goroutines, NOT the shared budget. These are the coarse level
+	// — a handful of legs, fixed at compile time, each mostly waiting on
+	// one subprocess — and the per-file work inside them is what draws on
+	// the budget. A leg that held a budget slot while its own fan-out
+	// waited for one would deadlock, which is how the first version of
+	// internal/parallel hung CI. See that package.
+	var wg sync.WaitGroup
+	for i, leg := range legs {
+		wg.Add(1)
+		go func(i int, leg func() []gitx.Finding) {
+			defer wg.Done()
+			results[i] = leg()
+		}(i, leg)
+	}
+	wg.Wait()
 	var out []gitx.Finding
 	for _, r := range results {
 		out = append(out, r...)

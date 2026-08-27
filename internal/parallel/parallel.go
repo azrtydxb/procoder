@@ -13,6 +13,15 @@
 //
 // One budget, taken once per unit of work, is what makes the fan-outs
 // composable: a caller need not know what else is running.
+//
+// NEVER CALL Do FROM INSIDE Do. A unit holds its slot for as long as it
+// runs, so an outer fan-out whose units open inner ones can take every
+// slot and then wait forever for one. That is not theoretical: the first
+// version of this package did exactly that, passed on a ten-core laptop
+// where four outer units left six slots spare, and deadlocked the whole
+// suite on CI's four cores. The budget belongs at the LEAF — the per-file
+// work — and the coarse structure above it stays plain goroutines, few
+// and fixed in number.
 package parallel
 
 import "runtime"
@@ -20,7 +29,12 @@ import "runtime"
 // budget is the number of units of work that may be in flight. Sized to
 // the machine, at least one — a zero-capacity channel would deadlock, and
 // runtime.NumCPU has returned 0 on constrained containers.
-var budget = make(chan struct{}, maxInt(1, runtime.NumCPU()))
+var budget = make(chan struct{}, size())
+
+// size is how many units may run at once. At least one: runtime.NumCPU has
+// returned 0 on constrained containers, and a zero-capacity channel would
+// deadlock the gate rather than slow it.
+func size() int { return maxInt(1, runtime.NumCPU()) }
 
 func maxInt(a, b int) int {
 	if a > b {
