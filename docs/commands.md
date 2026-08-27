@@ -107,6 +107,23 @@ happened — nothing on disk could — so this is a discipline, not a gate.
 What it buys is that thoroughness comes from asking four different
 questions rather than asking the same one harder.
 
+**Known pitfalls.**
+
+- **The gate answers about the change; CI answers about the tree.** A clean
+  `procoder check` means the files in this commit are clean. It makes no
+  claim about the rest of the repository, and the two are answered by
+  different jobs on purpose.
+- **The attribution check reads unpushed commits, not just this one.** One
+  old trailer sitting in an unpushed commit blocks every later commit,
+  while the message reads as though it were about the change in hand.
+- **An out-of-date binary reports valid configuration as unrecognised.** A
+  config key added in a later release is unknown to an older build, and the
+  finding is a real block on a file that is not wrong. Check the version
+  before editing the config.
+- **In universal scope, content checks narrow to the diff; existence checks
+  do not.** A file the commit never touched can still produce a finding
+  when what is missing is the file itself.
+
 #### `procoder review [--lens <name>[,<name>]] [paths...]`
 
 The judgment half of the gate. Every other check Procoder runs is
@@ -296,6 +313,15 @@ A detection aid, never a verdict. An item can legitimately wait; what this
 reports is that it waited while looking otherwise. A file git cannot answer
 for is reported as NOT checked, never as unstalled.
 
+**Known pitfalls.**
+
+- **An epic that was never seeded is not the same as one that drifted**,
+  and the report says which. Reading "not seeded" as drift sends you
+  looking for a divergence that does not exist.
+- **`backlog scope` compares against what the plans declare.** No plan, or
+  plans declaring no files, reports `scope NOT checked` — genuinely nothing
+  to compare against, which is not the same as a change being surgical.
+
 #### `procoder sprint <sub>`
 
 Scope-boxed sprints over the backlog — a goal plus the stories pulled
@@ -414,6 +440,20 @@ The command comes from the repository and the binary comes from `PATH`, so
 the same declared `npm start` is a different program depending on which npm
 is first. Naming it is the difference between consenting to a command and
 consenting to a string.
+
+**Known pitfalls.**
+
+- **A manifest missing from `[release] files` is never checked.** The list
+  is the whole of what version-sync knows about; a tenth file added to the
+  repo and not to the list drifts silently, release after release. An empty
+  list says `version-sync verified nothing` rather than passing quietly.
+- **Version matching is substring, by design.** A version appears inside
+  longer lines — badges, install commands — and that counts as synced. The
+  cost is that any file already containing the string for an unrelated
+  reason satisfies the check without carrying a real version marker.
+- **`--credits` needs `[release] maintainers` set.** Whose notes these are
+  is configuration, not discovery: `gh api user` returns 403 under CI's app
+  installation token, so the question has no answer where it matters most.
 
 #### `procoder dispatch <sub>`
 
@@ -624,6 +664,17 @@ never echoed, rotation ordered. `--deep` adds semgrep SAST (ERROR blocks)
 and osv-scanner dependency vulnerabilities (CVSS ≥ 7.0 blocks) over the
 repository.
 
+**Known pitfalls.**
+
+- **A missing tool blocks; it does not skip.** No gitleaks means
+  `NOT checked — gitleaks is not installed`, and that finding is blocking.
+  A scan that could not run must never read as one that found nothing, so
+  the honest answer costs you a red gate until `procoder init` fixes it.
+- **The three passes have three different bars.** Secrets block always,
+  SAST blocks at ERROR severity, dependency vulnerabilities block at
+  high/critical. A quiet `security` run is not "no findings" — it is "no
+  findings above those lines".
+
 #### `procoder maintain`
 
 `maintain` is report-only about its findings: complexity and dead code are
@@ -801,6 +852,17 @@ Coverage is **declared, never inferred**. Matching a bullet to a
 criterion by keyword would fail open, and a bullet wrongly judged
 covered is the exact silence this prevents. A spec whose bullets carry
 no ids is reported NOT CHECKED rather than covered.
+
+**Known pitfalls.**
+
+- **A spec marked `complete` stops being checked.** The truth checks —
+  unresolved citations, uncheckable criteria, weak oracles — refuse only
+  while the status is `draft`. On a `complete` spec the same gaps are
+  printed as notes and the verdict stands. That is deliberate: refusing
+  would retrofit a rule onto an archive nobody will rewrite. It also means
+  advancing the status early is how a spec quietly stops being enforced.
+- **The template ships `Status: draft` and nothing advances it**, so a
+  finished spec reads as a draft forever unless you edit the line yourself.
 
 #### `procoder plan <sub>`
 
