@@ -122,6 +122,8 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 	for _, p := range MissingCredits(root, entry) {
 		failures = append(failures, p)
 	}
+	// The skill contract, reported rather than refused — see ContractDrift.
+	contractNotes := ContractDrift(root, previousTag(root))
 
 	if len(failures) > 0 {
 		out(fmt.Sprintf("release %s is NOT ready:", version))
@@ -129,6 +131,9 @@ func Run(root, version string, gateClean func() bool, suite func() (bool, string
 			out("  " + f)
 		}
 		return 1
+	}
+	for _, n := range contractNotes {
+		out("  note: " + n)
 	}
 	out(fmt.Sprintf("release %s is ready — tag it:", version))
 	out(fmt.Sprintf("  git tag -a v%s -m %q", version, version))

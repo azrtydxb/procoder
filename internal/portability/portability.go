@@ -73,9 +73,24 @@ license: Apache-2.0
 metadata:
   category: development
   author: pascal-watteel
+  contract: "` + ContractVersion + `"
 ---
 
 `
+
+// ContractVersion is the version of the BEHAVIOUR this skill asks for, not
+// of procoder. It is bumped when the contract changes — what the gate
+// requires before work is finished, the order the chain enforces, what an
+// agent must do rather than how it is worded (#196).
+//
+// Separate from the release version on purpose. procoder ships often and
+// the contract changes rarely, so tying them together would make every
+// patch look like a behavioural change to anybody depending on this file.
+//
+// `procoder release` reports when the skill body changed since the last
+// tag and this did not, so a contract change cannot ship silently. Bumping
+// it is a deliberate act: see docs/commands.md.
+const ContractVersion = "1"
 
 // versionedManifests are the plugin-tier manifests whose version field
 // must match .claude-plugin/plugin.json — a release where every manifest
@@ -186,6 +201,16 @@ func Agents(root string, out func(string)) int {
 		case normalize(stripFrontmatter(string(raw))) != want:
 			bad++
 			out("== " + c.Host + ": DRIFTED — rewrite " + c.Path + " with:")
+			out(c.Frontmatter + body)
+		case !strings.HasPrefix(string(raw), c.Frontmatter):
+			// The envelope, not just the body. It was compared on body
+			// alone, so a host's frontmatter could sit stale forever —
+			// which made the skill's contract marker (#196) unenforceable:
+			// a version that cannot be checked is a version nobody can
+			// trust. Reported the same way, because the fix is the same
+			// file.
+			bad++
+			out("== " + c.Host + ": FRONTMATTER DRIFTED — rewrite " + c.Path + " with:")
 			out(c.Frontmatter + body)
 		default:
 			out("   " + c.Host + ": ok (" + c.Path + ")")

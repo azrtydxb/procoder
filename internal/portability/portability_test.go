@@ -312,3 +312,40 @@ func TestPluginTwinIsIdentical(t *testing.T) {
 		t.Error(".kilo/plugin/procoder.js is not the .opencode/plugins/procoder.mjs source — copy it across")
 	}
 }
+
+// The envelope is compared, not only the body.
+//
+// It was body-only, which meant a host's frontmatter could sit stale
+// forever — and that made the skill's contract version (#196)
+// unenforceable: a version nothing compares is a string, not a version.
+// Found while adding that marker, when `agents` reported the file as "ok"
+// with the marker absent from it.
+//
+// proved by: the frontmatter case removed from Agents — a file with the
+// right body and the wrong envelope reports ok.
+func TestFrontmatterDriftIsReported(t *testing.T) {
+	root := t.TempDir()
+	master := filepath.Join(root, Master)
+	if err := os.WriteFile(master, []byte("# Rules\n\nBody.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Every copy written with the correct body but no frontmatter at all.
+	for _, c := range Copies {
+		p := filepath.Join(root, c.Path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# Rules\n\nBody.\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var lines []string
+	code := Agents(root, func(s string) { lines = append(lines, s) })
+	joined := strings.Join(lines, "\n")
+	if code == 0 {
+		t.Fatalf("a stale envelope reported clean:\n%s", joined)
+	}
+	if !strings.Contains(joined, "FRONTMATTER DRIFTED") {
+		t.Errorf("the finding does not name what drifted:\n%s", joined)
+	}
+}

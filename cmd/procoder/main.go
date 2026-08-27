@@ -35,6 +35,7 @@ import (
 	"procoder/internal/gate"
 	"procoder/internal/gitcmd"
 	"procoder/internal/gitx"
+	"procoder/internal/glossary"
 	"procoder/internal/hook"
 	"procoder/internal/infra"
 	"procoder/internal/initcmd"
@@ -334,6 +335,10 @@ const usage = `usage: procoder <command> [args]
                        as analyst, architect, implementer and reviewer in
                        turn; a lens that could not be loaded is a refusal,
                        never a review that silently happened
+  context <sub>        the project's shared vocabulary in .procoder/context.md —
+                       add <term> <definition> | list | check. What the team
+                       calls things, which is not always what the code calls
+                       them; reported, never blocking
   release [<version>] [--credits]
                        the pre-tag controller: version-sync across [release]
                        files, the changelog entry, a clean tree, the gate, and
@@ -701,6 +706,24 @@ func run(args []string) int {
 			force = true
 		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
+	case "context":
+		root := doctor.Root()
+		if len(args) < 2 {
+			return usageErr(os.Stderr)
+		}
+		switch args[1] {
+		case "list":
+			return glossary.List(root, printLine)
+		case "check":
+			return glossary.Check(root, printLine)
+		case "add":
+			if len(args) < 4 {
+				printLine("context add <term> <definition>")
+				return 2
+			}
+			return glossary.Add(root, args[2], strings.Join(args[3:], " "), printLine)
+		}
+		return usageErr(os.Stderr)
 	case "prune":
 		apply := false
 		for _, a := range args[1:] {

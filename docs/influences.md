@@ -69,6 +69,31 @@ draws: Procoder computes the change and hands it over; the agent
 reviews it and writes it. A rename you never saw is a change nobody
 reviewed.
 
+## From BMad Method
+
+**A different relationship from the three above.** Those were replaced.
+[BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) was not, and
+the choice was deliberate: procoder learned the half it had never built,
+and separately learned to get out of the way for repositories that would
+rather run the real thing. Both halves shipped in 2.0.0.
+
+So this section is credit without a migration note. If you run BMad Method,
+keep running it — `[planning] method = "bmad"` exists so that the two do
+not compete for the same artifacts.
+
+| Concept                                                                                                   | Where it lives in Procoder                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A phase before the spec that asks whether the _idea_ is good, not only whether the _document_ is complete | `procoder analyze` — `brief`, `where`, `list`, `check`, held to the same non-hollow standard `spec check` holds a spec to                                                                                                                                                                |
+| A repository's planning artifacts can live outside `.procoder/` entirely, governed by their own tool      | `[planning] method = "bmad"` — the seam in `internal/planning/bmad.go`, which reads BMad's own `sprint-status.yaml` and its `output_folder` setting rather than copying them, and reports an unrecognised status by name instead of quietly mapping it to something procoder understands |
+| Governance reaches the same verdict about the same code whichever methodology planned it                  | `TestGovernanceIsUntouchedByThePlanningMethod` in `internal/gitcmd/seam_test.go` — asserted by a test rather than promised in prose                                                                                                                                                      |
+
+**What procoder did not take.** BMad's agent personas — the analyst, the
+architect, the scrum master — are the part it models most distinctively,
+and procoder has no equivalent. Its unit is a domain with a controller that
+refuses, not a role with a voice. Naming that plainly is the point of this
+page: the personas are not missing by oversight, and a reader comparing the
+two should know where the resemblance stops.
+
 ## Deliberately not adopted
 
 Superpowers' subagent-orchestration machinery and branch-finishing flow
