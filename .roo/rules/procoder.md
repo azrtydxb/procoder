@@ -26,6 +26,14 @@ back, and a file it could not check is never reported as clean.
 - Run `procoder test` before claiming anything works. NOT run is never
   green. Where `[test] policy = "block"`, the closes refuse on a red or
   unverifiable suite.
+- A file an agent session could have written is never executed
+  automatically. procoder reads plenty of it — `.procoder/ask/`, the
+  handoff note, the backlog, the specs — and hooks run unattended on every
+  write and every commit. Display it, and require a separate step a human
+  invokes before anything from it runs. `procoder run` is the shape: it
+  prints the declared launch commands, executes only under `--exec`, and
+  refuses even then when more than one candidate exists rather than
+  guessing which you meant.
 - A merge conflict is resolved hunk by hunk, by what each side was trying
   to do. `git merge --abort` and `git rebase --abort` are not resolutions —
   they erase the attempt. Being stuck is a thing to say, not a thing to

@@ -163,6 +163,16 @@ func execOne(c Candidate, out func(string)) int {
 		return 2
 	}
 	bin, err := exec.LookPath(argv[0])
+	// Say which binary this actually resolved to, before running it.
+	//
+	// The command comes from the repository; the binary comes from PATH.
+	// The same declared `npm start` is a different program depending on
+	// which npm is first on the path, and somebody approving --exec could
+	// not see which one they were approving. Naming it is the difference
+	// between consenting to a command and consenting to a string (#200).
+	if err == nil {
+		out("--exec resolving " + argv[0] + " -> " + bin)
+	}
 	if err != nil {
 		out("--exec FAILED — " + argv[0] + " is not installed; the command and its evidence are printed above, so run it once you have it")
 		return 1
