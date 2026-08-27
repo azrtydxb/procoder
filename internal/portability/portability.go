@@ -90,7 +90,7 @@ metadata:
 // `procoder release` reports when the skill body changed since the last
 // tag and this did not, so a contract change cannot ship silently. Bumping
 // it is a deliberate act: see docs/commands.md.
-const ContractVersion = "1"
+const ContractVersion = "2"
 
 // versionedManifests are the plugin-tier manifests whose version field
 // must match .claude-plugin/plugin.json — a release where every manifest
