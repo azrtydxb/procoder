@@ -53,6 +53,7 @@ import (
 	"procoder/internal/runcmd"
 	"procoder/internal/security"
 	"procoder/internal/spec"
+	"procoder/internal/stall"
 	"procoder/internal/status"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
@@ -1221,6 +1222,10 @@ func backlogCmd(args []string) int {
 		return backlog.List(root, out)
 	case "board":
 		return backlog.Board(root, out)
+	case "stalled":
+		// Which carried-over items are carried AND untouched. See
+		// internal/stall: the file changing is not the work moving.
+		return stall.Check(root, backlog.ItemFiles(root), 3, out)
 	case "close":
 		if len(args) < 3 {
 			return usageErr(os.Stderr)
