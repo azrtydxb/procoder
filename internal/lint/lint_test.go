@@ -286,3 +286,46 @@ func TestUnlintedLanguagesHonourLintPolicy(t *testing.T) {
 		t.Fatalf("policy=block must block: %+v", blocked)
 	}
 }
+
+// golangci-lint caps its own output — 50 issues per linter and 3 with the
+// same text — and lints packages concurrently, so which issues survive
+// those caps depends on which package finished first. Two runs over an
+// unchanged tree reported 48 findings each and disagreed about their
+// members (#236).
+//
+// The caps also hid work rather than merely shuffling it: errcheck's
+// messages are near-identical, so max-same-issues kept three of them and
+// dropped the rest. Disabling both made the set complete AND stable —
+// verified by running the gate twice over the same tree.
+//
+// proved by: drop either flag from lintGo's args — this names the one that
+// went.
+func TestGolangciLintIsRunWithoutIssueCaps(t *testing.T) {
+	dir := t.TempDir()
+	seen := filepath.Join(dir, "args.txt")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + seen + "\nexit 0\n"
+	bin := filepath.Join(dir, "golangci-lint")
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("HOME", dir)
+
+	root := t.TempDir()
+	src := filepath.Join(root, "main.go")
+	if err := os.WriteFile(src, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lintGo(root, []string{src}, false)
+
+	raw, err := os.ReadFile(seen)
+	if err != nil {
+		t.Skipf("the stub was not reached (%v) — this asserts flags, and NOT run is not a pass", err)
+	}
+	args := string(raw)
+	for _, want := range []string{"--max-issues-per-linter=0", "--max-same-issues=0"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("golangci-lint ran without %s — its own cap then picks which findings to show, and picks differently each run:\n%s", want, args)
+		}
+	}
+}
