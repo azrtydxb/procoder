@@ -62,6 +62,32 @@ type Citation struct {
 	Line int
 }
 
+// declaredCommands returns the top-level procoder commands this spec
+// INTRODUCES: those named in `## Interfaces`, which is where a spec
+// declares the surfaces it exposes.
+//
+// Without this, a spec proposing a new command cannot name it. The
+// citation check resolves against the command registry, and the command is
+// the thing the spec proposes — so every mention was refused, and the
+// workaround was to drop the backticks and lose exactly the checkability
+// the rule protects (#230). Specs extending an existing command never hit
+// it: `procoder backlog bug` resolves because `backlog` is registered.
+//
+// Only while the spec is a draft. A spec marked complete describes work
+// that is done, and a command that still does not exist by then is a real
+// gap rather than a forward reference — so the declaration stops excusing
+// it at exactly the moment it should.
+func declaredCommands(text string) map[string]bool {
+	if statusOf(text) != "draft" {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, m := range commandRe.FindAllStringSubmatch(sectionOf(text, "Interfaces"), -1) {
+		out[m[1]] = true
+	}
+	return out
+}
+
 // UnresolvedCitations returns the citations a document makes that do not
 // exist in the tree.
 //
@@ -71,6 +97,7 @@ type Citation struct {
 // what turns the second into the first.
 func UnresolvedCitations(root, text string) []Citation {
 	symbols := repoSymbols(root)
+	declared := declaredCommands(text)
 	var out []Citation
 	for _, section := range claimSections {
 		body := sectionOf(text, section)
@@ -87,7 +114,7 @@ func UnresolvedCitations(root, text string) []Citation {
 				out = append(out, Citation{Text: cite, Line: lineOf(text, section, i)})
 			}
 			for _, m := range commandRe.FindAllStringSubmatch(line, -1) {
-				if Commands[m[1]] {
+				if Commands[m[1]] || declared[m[1]] {
 					continue
 				}
 				out = append(out, Citation{Text: "procoder " + m[1], Line: lineOf(text, section, i)})
@@ -547,7 +574,16 @@ var hedged = regexp.MustCompile(`(?i)\b(mostly|generally|as appropriate|reasonab
 // the whole group made `--help`, `--version` and `-h` match nothing at all
 // while the tests passed on `echo` alone — raised in review on #218, and
 // verified by probing each shape before the fix.
-var fixedOutput = regexp.MustCompile("`[^`]*(\\becho\\b|\\btrue\\b|\\bcat\\s+[^`]*README|--help\\b|--version\\b|(?:^|\\s)-h\\b)[^`]*`")
+// A command only counts in COMMAND POSITION: at the start of the
+// backticked span, or after a shell separator. `\btrue\b` anywhere inside
+// backticks also matched a TOML value, a JSON field and a Go literal — a
+// criterion asserting `[learn] record = true` was refused as checking a
+// command whose output cannot differ, when it is a setting with a
+// perfectly good failing branch (#231). Flags keep matching anywhere:
+// `--help` is a flag wherever it appears.
+var fixedOutput = regexp.MustCompile(
+	"`(?:[^`]*[|;&]\\s*)?\\$?\\s*(?:echo\\b|true\\b|cat\\s+[^`]*README)[^`]*`" +
+		"|`[^`]*(?:--help\\b|--version\\b|(?:^|\\s)-h\\b)[^`]*`")
 
 // unmeasured is a bar nobody can hold a result against. "Fast enough" and
 // "not too many" name a threshold without giving one, so two people
