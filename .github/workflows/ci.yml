@@ -256,6 +256,17 @@ jobs:
       - name: PROBE semgrep alone
         run: |
           time procoder security --deep || true
+      - name: PROBE 50 prettier invocations
+        run: |
+          command -v prettier && prettier --version
+          time (for f in $(git ls-files '*.md' | head -50); do prettier "$f" > /dev/null; done)
+      - name: PROBE gitleaks over the tree
+        run: |
+          command -v gitleaks && gitleaks version
+          time gitleaks detect --no-git --source . --no-banner || true
+      - name: PROBE golangci-lint
+        run: |
+          time procoder lint || true
       - name: gate over the tracked tree
         run: |
           time sh -c 'git ls-files | xargs procoder check'
