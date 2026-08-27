@@ -515,7 +515,7 @@ var Commands = map[string]bool{
 	"release": true, "review": true, "run": true, "scrub": true,
 	"security": true, "self-upgrade": true, "spec": true, "sprint": true,
 	"status": true, "templates": true, "test": true, "todo": true,
-	"version": true,
+	"version": true, "wizard": true,
 }
 
 // normaliseEOL makes CRLF and CR read as LF, so a document parses the same

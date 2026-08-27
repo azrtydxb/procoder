@@ -1104,6 +1104,40 @@ Nothing calls this from a hook, and a test asserts that by reading the hook
 sources — a delete of this size is a deliberate action a person takes, not
 something that happens to them while they are typing.
 
+#### `procoder wizard <sub>`
+
+Walk a human through a procedure procoder cannot do for them: create an
+account, generate a token, click submit in somebody else's dashboard. Those
+steps are not shell commands, so this command **executes nothing at all** —
+`show` prints the steps and `run` advances through them one at a time, so
+none is skipped by reading past it.
+
+A wizard is `.procoder/wizards/<name>.md`: a `## ` heading per step, the
+body underneath, and an optional `Capture: NAME matching <pattern>` line
+for a step that needs a value back. `wizard new <name>` **prints** a wizard
+to write rather than writing one — the binary prints and the agent writes,
+like `adr new` and `context add`.
+
+`list` names what the repository carries. An unreadable wizard directory
+says so and exits 1 rather than reporting no wizards: nothing found and
+nothing readable are different answers.
+
+**A captured value is checked and never echoed.** Wizards exist partly to
+walk somebody through generating credentials, and a token printed back is a
+token in the scrollback — so the value appears in no message, not even the
+one rejecting it. What the walk reports at the end is which names were
+checked, never what they held. A pattern that does not compile reports
+`NOT checked` rather than panicking or silently accepting.
+
+**Known pitfalls.**
+
+- **`run` proves a human confirmed each step, not that each step worked.**
+  It cannot see the dashboard you clicked in. It removes the "I thought I
+  did that one" failure, and no other.
+- **Captured values go nowhere.** They are validated while you have them in
+  front of you and then discarded; procoder does not store them, print
+  them, or put them in your CI. Paste them yourself.
+
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
 Bare `version` prints one line and asks nobody anything.
