@@ -509,7 +509,7 @@ var Commands = map[string]bool{
 	"adr": true, "agents": true, "analyze": true, "ask": true, "audit": true,
 	"backlog": true, "bench": true, "check": true, "ci": true, "config": true,
 	"context": true, "copilot-leak": true, "debt": true, "deps": true, "docs": true,
-	"doctor": true, "env": true, "format": true, "git": true, "hook": true,
+	"doctor": true, "env": true, "evidence": true, "format": true, "git": true, "hook": true,
 	"index": true, "infra": true, "init": true, "lessons": true, "lint": true,
 	"maintain": true, "plan": true, "principles": true, "prune": true,
 	"release": true, "review": true, "run": true, "scrub": true,
