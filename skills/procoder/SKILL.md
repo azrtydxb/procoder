@@ -12,7 +12,7 @@ license: Apache-2.0
 metadata:
   category: development
   author: pascal-watteel
-  contract: "1"
+  contract: "2"
 ---
 
 # Procoder
@@ -112,6 +112,51 @@ until its own gap is closed.
   across `[release] files`, the changelog entry, a clean tree, the
   gate, and the suite. It prints the `git tag` command; it never tags.
 
+## Which command, right now
+
+Read down; take the first row that matches. The chain above is the detail;
+this is the way in.
+
+| Where you are                                | Start here               |
+| -------------------------------------------- | ------------------------ |
+| A repo procoder has never governed           | `procoder audit`         |
+| An idea not yet worth a spec                 | `procoder analyze brief` |
+| Non-trivial work, no spec yet                | `procoder spec template` |
+| A spec that checks COMPLETE                  | `procoder backlog seed`  |
+| Work already committed to, no spec behind it | `procoder todo add`      |
+| A story to build, no plan yet                | `procoder plan template` |
+| Mid-change, about to say it is done          | `procoder check`         |
+| A decision that is not yours                 | `procoder ask`           |
+| A durable choice worth keeping               | `procoder adr new`       |
+| Ready to tag                                 | `procoder release`       |
+| Lost in an unfamiliar codebase               | `procoder index find`    |
+
+## What you talk yourself into
+
+Every row is a thing that has actually been said. The left column is the
+sentence; the right is what is true when it is said.
+
+| The thought                                         | What is true                                                                                                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| "Small fix, I will skip `procoder check` this once" | The gate exists for changes too small to look worth checking. That is precisely when it gets skipped and something ships broken.   |
+| "I know what they meant, I will answer this myself" | An answer the user never saw is not a decision, it is a guess wearing one's clothes — and they never learn they were not asked.    |
+| "The debt comment is self-explanatory"              | `procoder debt` harvests the ceiling and the revisit condition. A marker without them is unharvestable, which is to say invisible. |
+| "Tests are slow, I will run the gate without them"  | NOT run is never green. "I will add tests after" is how untested code ships permanently.                                           |
+| "The suite was green before my change"              | Before is not after. The one run that matters is the one over what you are about to commit.                                        |
+| "It is only a docs change"                          | Documentation that is wrong is worse than documentation that is missing, because somebody acts on it.                              |
+| "I will fix the conflict by keeping my side"        | Both sides were somebody's work. Keeping one silently is how a feature vanishes between two green runs.                            |
+| "I am nearly out of context, I will wrap up here"   | Stopping is fine; saying it is finished is not. Say where you stopped.                                                             |
+
+## Before you call it done
+
+Not prose to agree with — five things with an answer.
+
+- [ ] `procoder check` ran clean over this change, this turn
+- [ ] `procoder test` ran, and passed, over what is about to be committed
+- [ ] every `debt:` marker added names a ceiling AND a revisit condition
+- [ ] `.procoder/ask/decisions.md` has no heading the user has not answered
+- [ ] every claim made in the report traces to a command that produced it
+
 ## Build principles
 
 Climb this ladder and stop at the first rung that holds: does it need to
@@ -168,3 +213,4 @@ text).
 Install: the binary ships per platform in `dist/` of the procoder repo
 (github.com/azrtydxb/procoder); put the one for your platform on PATH,
 or use the Claude Code plugin which wires everything automatically.
+
