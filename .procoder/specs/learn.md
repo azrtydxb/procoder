@@ -1,6 +1,6 @@
 # learn
 
-Status: draft
+Status: complete
 
 ## Problem
 
@@ -144,36 +144,36 @@ repository, or the content of any file.
 <!-- Each criterion names the test that asserts it; each test carries its
      own `proved by:` mutation, per the build principles. -->
 
-- [ ] [S-1] `TestARecordIsAppendedOnlyWhenRecordingIsOn` asserts exactly one
+- [x] [S-1] `TestARecordIsAppendedOnlyWhenRecordingIsOn` asserts exactly one
       JSONL line is appended per run once recording is enabled in
       `.procoder/config.toml`, and that no file exists at all by default.
-- [ ] [S-1] `TestARecordWriteFailureChangesNothing` asserts a failing record
+- [x] [S-1] `TestARecordWriteFailureChangesNothing` asserts a failing record
       write leaves the measured command's exit code and output untouched.
-- [ ] [S-2] `TestMeasureRanksDomainsByTotalDuration` asserts the ranking over
+- [x] [S-2] `TestMeasureRanksDomainsByTotalDuration` asserts the ranking over
       a fixture of known records, and that the sample count is printed.
-- [ ] [S-2] `TestMeasureOnAnUnreadableFileSaysNotMeasured` asserts NOT
+- [x] [S-2] `TestMeasureOnAnUnreadableFileSaysNotMeasured` asserts NOT
       measured and a non-zero exit, never an empty ranking.
-- [ ] [S-2] `TestMeasureWithRecordingOffNamesTheSetting` asserts the
+- [x] [S-2] `TestMeasureWithRecordingOffNamesTheSetting` asserts the
       recording setting is named rather than an empty result being printed.
-- [ ] [S-2] `TestCorruptAndNegativeLinesAreCountedNotDropped` asserts corrupt
+- [x] [S-2] `TestCorruptAndNegativeLinesAreCountedNotDropped` asserts corrupt
       and negative-duration lines are skipped, counted, and that both counts
       appear in the report.
-- [ ] [S-3] `TestProposePrintsAndWritesNothing` asserts
+- [x] [S-3] `TestProposePrintsAndWritesNothing` asserts
       `.procoder/config.toml` is byte-identical after a proposal is printed.
-- [ ] [S-3] `TestProposeBelowMinSamplesDeclines` asserts no proposal is
+- [x] [S-3] `TestProposeBelowMinSamplesDeclines` asserts no proposal is
       printed and that the shortfall in runs is named.
-- [ ] [S-4] `TestEveryNumberCarriesItsEvidenceClass` asserts every printed
+- [x] [S-4] `TestEveryNumberCarriesItsEvidenceClass` asserts every printed
       line carrying a number is labelled measured or inferred, and that the
       labels come from `internal/evidence`.
-- [ ] [S-5] `TestVerifyPrintsTheRevertWhenCostDidNotFall` asserts the
+- [x] [S-5] `TestVerifyPrintsTheRevertWhenCostDidNotFall` asserts the
       direction of change is reported against the pre-proposal records, and
       that a revert is printed when the cost did not fall.
-- [ ] [S-6] `TestRecordingIsOffByDefault` asserts that with no `[learn]`
+- [x] [S-6] `TestRecordingIsOffByDefault` asserts that with no `[learn]`
       section, `procoder check` creates no `.procoder/state/learn.jsonl`.
-- [ ] [S-7] `TestALooseningProposalStatesWhatItCannotSee` asserts every
+- [x] [S-7] `TestALooseningProposalStatesWhatItCannotSee` asserts every
       proposal that downgrades a blocking policy carries the line naming
       the defects the measurement cannot account for.
-- [ ] [S-5] `TestVerifyWithoutAMarkerSaysSo` asserts that with no
+- [x] [S-5] `TestVerifyWithoutAMarkerSaysSo` asserts that with no
       `.procoder/state/learn-applied.json`, verify reports it has no
       anchor rather than inferring one.
 

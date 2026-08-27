@@ -605,20 +605,25 @@ func TestFixedOutputCountsACommandOnlyInCommandPosition(t *testing.T) {
 
 // #230. A spec that INTRODUCES a command must be able to name it.
 //
+// The fixture names `procoder nonesuch` rather than a plausible future
+// command. These tests first used `procoder learn`, and building learn
+// made them fail — the fixture has to be a command nobody will ever
+// register, or the test expires the day somebody implements it.
+//
 // proved by: drop `|| declared[m[1]]` from UnresolvedCitations — the
 // forward reference is refused again and this fails.
 func TestASpecMayCiteTheCommandItDeclares(t *testing.T) {
-	const draft = `# learn
+	const draft = `# nonesuch
 
 Status: draft
 
 ## Interfaces
 
-- ` + "`procoder learn measure`" + ` — the ranked cost report.
+- ` + "`procoder nonesuch measure`" + ` — the ranked cost report.
 
 ## In scope
 
-- [S-1] ` + "`procoder learn propose`" + ` prints a config change.
+- [S-1] ` + "`procoder nonesuch propose`" + ` prints a config change.
 `
 	if got := UnresolvedCitations(t.TempDir(), draft); len(got) != 0 {
 		t.Errorf("a declared command was refused: %#v", got)
@@ -632,20 +637,20 @@ Status: draft
 // declaredCommands — the complete spec's citation is excused too, and this
 // fails.
 func TestADeclaredCommandStopsBeingExcusedOnceTheSpecIsComplete(t *testing.T) {
-	const done = `# learn
+	const done = `# nonesuch
 
 Status: complete
 
 ## Interfaces
 
-- ` + "`procoder learn measure`" + ` — the ranked cost report.
+- ` + "`procoder nonesuch measure`" + ` — the ranked cost report.
 `
 	got := UnresolvedCitations(t.TempDir(), done)
 	if len(got) == 0 {
 		t.Fatal("a complete spec still excused a command that does not exist")
 	}
-	if got[0].Text != "procoder learn" {
-		t.Errorf("named %q, want `procoder learn`", got[0].Text)
+	if got[0].Text != "procoder nonesuch" {
+		t.Errorf("named %q, want `procoder nonesuch`", got[0].Text)
 	}
 }
 
@@ -653,13 +658,13 @@ Status: complete
 // Interfaces section — the In scope mention alone declares it and this
 // fails.
 func TestOnlyInterfacesDeclares(t *testing.T) {
-	const draft = `# learn
+	const draft = `# nonesuch
 
 Status: draft
 
 ## In scope
 
-- [S-1] ` + "`procoder learn propose`" + ` prints a config change.
+- [S-1] ` + "`procoder nonesuch propose`" + ` prints a config change.
 `
 	if got := UnresolvedCitations(t.TempDir(), draft); len(got) == 0 {
 		t.Error("a command named only in In scope was treated as declared")

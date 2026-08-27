@@ -42,6 +42,7 @@ import (
 	"procoder/internal/hook"
 	"procoder/internal/infra"
 	"procoder/internal/initcmd"
+	"procoder/internal/learn"
 	"procoder/internal/lessons"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
@@ -313,6 +314,10 @@ const usage = `usage: procoder <command> [args]
                        nothing when there is no terminal to ask.
                        --from-copilot reads that ledger back instead, and
                        exits 1 while any finding is still unclassified
+  learn <sub>          what procoder's own governance costs HERE —
+                       measure | propose | verify. Recording is off until
+                       [learn] record = true; a proposal is printed, never
+                       applied, and says which of its numbers are measured
   lessons              the self-learning ledger (.procoder/github/LESSONS.md):
                        findings that escaped our gates, each with the
                        adaptation that closes its class; unlearned lessons
@@ -657,6 +662,22 @@ func run(args []string) int {
 			findings = append(findings, security.SastChanged(root, changed)...)
 		}
 		return printFindings(root, "security", findings, printLine)
+	case "learn":
+		root := doctor.Root()
+		cfg := config.Load(root)
+		sub := ""
+		if len(args) > 1 {
+			sub = args[1]
+		}
+		switch sub {
+		case "", "measure":
+			return learn.Measure(root, cfg.LearnRecord, printLine)
+		case "propose":
+			return learn.Propose(root, cfg.LearnRecord, cfg.LearnMinSamples, printLine)
+		case "verify":
+			return learn.Verify(root, printLine)
+		}
+		return usageErr(os.Stderr)
 	case "lint":
 		return lintCmd(args[1:])
 	case "docs":

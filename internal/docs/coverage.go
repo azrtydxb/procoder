@@ -20,7 +20,7 @@ import (
 var Commands = []string{
 	"adr", "agents", "analyze", "ask", "audit", "backlog", "bench", "check", "ci", "claims",
 	"config", "context", "copilot-leak", "debt", "deps", "dispatch", "docs", "doctor", "env", "evidence",
-	"format", "git", "hook", "index", "infra", "init", "lessons", "lint",
+	"format", "git", "hook", "index", "learn", "infra", "init", "lessons", "lint",
 	"maintain", "plan", "principles", "prune", "release", "review", "run", "scrub", "security", "spec",
 	"self-upgrade", "sprint", "status", "templates", "test", "todo", "version", "wizard",
 }
