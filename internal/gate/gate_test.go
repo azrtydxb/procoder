@@ -311,7 +311,12 @@ func TestOneLegOwnsGolangciLint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(src)
+	// CRLF first. Windows checks the tree out with \r\n, so a pattern
+	// written as "\n\t}\n" matches nothing there and this test failed
+	// with "could not find the end of the legs slice" on Windows alone —
+	// a test reporting that it cannot see what it is pinning, which is the
+	// same silent green it exists to prevent.
+	body := strings.ReplaceAll(strings.ReplaceAll(string(src), "\r\n", "\n"), "\r", "\n")
 	start := strings.Index(body, "legs := []func() []gitx.Finding{")
 	if start < 0 {
 		t.Fatal("the legs slice is gone; this test is pinning something that no longer exists")
