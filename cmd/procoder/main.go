@@ -28,6 +28,7 @@ import (
 	"procoder/internal/copilot"
 	"procoder/internal/debt"
 	"procoder/internal/deps"
+	"procoder/internal/dispatch"
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/envsync"
@@ -335,6 +336,11 @@ const usage = `usage: procoder <command> [args]
                        as analyst, architect, implementer and reviewer in
                        turn; a lens that could not be loaded is a refusal,
                        never a review that silently happened
+  dispatch <sub>       whether a fan-out was actually parallel —
+                       open <wave> | start <wave> --task <id> | seal <wave> |
+                       return <wave> --task <id> | status [wave]. A return
+                       before the seal is the signature of serial work.
+                       Advisory: it makes the claim checkable, not true
   context <sub>        the project's shared vocabulary in .procoder/context.md —
                        add <term> <definition> | list | check. What the team
                        calls things, which is not always what the code calls
@@ -724,6 +730,16 @@ func run(args []string) int {
 			return glossary.Add(root, args[2], strings.Join(args[3:], " "), printLine)
 		}
 		return usageErr(os.Stderr)
+	case "dispatch":
+		if len(args) < 2 {
+			printLine("dispatch open|start|seal|return|status <wave-id> [--task <id>]")
+			return 2
+		}
+		id := ""
+		if len(args) > 2 && !strings.HasPrefix(args[2], "--") {
+			id = args[2]
+		}
+		return dispatch.Run(doctor.Root(), args[1], id, flagValue(args[2:], "--task"), time.Now(), printLine)
 	case "prune":
 		apply := false
 		for _, a := range args[1:] {
