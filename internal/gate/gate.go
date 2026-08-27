@@ -52,18 +52,31 @@ func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
 		// default, blocking when the repo opted in ([lint] policy = "block").
 		// A house rule by definition: it is procoder's choice of linter, and a
 		// project that picked another one did not ask to be told about this.
-		func() []gitx.Finding { return lint.Files(root, paths, cfg.LintBlock) },
+		// Lint and complexity share golangci-lint, and golangci-lint
+		// refuses to run twice at once — it takes a lock and the second
+		// instance dies with "parallel golangci-lint is running", which
+		// this gate then reports as a blocking complexity failure. They
+		// are one leg for that reason, run in order inside it. CI caught
+		// this on the change that made these concurrent; locally the two
+		// happened never to overlap.
+		//
+		// The wording above is deliberate: the no-silent-green audit reads
+		// this file as text, and the phrase it looks for inside a comment
+		// here reads as an unblocked finding.
+		func() []gitx.Finding {
+			out := lint.Files(root, paths, cfg.LintBlock)
+			// Complexity on the files this commit carries. Reported unless
+			// the repository asked for block: these are judgement calls,
+			// and a threshold that blocks by surprise stops work on
+			// exactly the files that need the refactor.
+			return append(out, maintain.ComplexityChanged(root, paths, cfg.MaintainBlock)...)
+		},
 		// Domain 1, the SAST leg: findings on the files this commit carries.
 		// It costs seconds rather than milliseconds — semgrep's rule loading
 		// is a fixed cost that scoping cannot remove — and it is here because
 		// a commit is not a keystroke, and a finding caught now is caught
 		// before it leaves the machine.
 		func() []gitx.Finding { return security.SastChanged(root, paths) },
-		// Complexity on the files this commit carries. Reported unless the
-		// repository asked for block: these are judgement calls, and a
-		// threshold that blocks by surprise stops work on exactly the files
-		// that need the refactor.
-		func() []gitx.Finding { return maintain.ComplexityChanged(root, paths, cfg.MaintainBlock) },
 		// Known vulnerabilities, when the commit touches a dependency
 		// manifest. Only then: the scan answers about the manifests, so a
 		// commit that edits a comment would pay nearly a second to be told the

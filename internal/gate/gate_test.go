@@ -292,3 +292,44 @@ func TestConcurrentlyKeepsALegThatFoundNothing(t *testing.T) {
 		t.Errorf("got %#v", got)
 	}
 }
+
+// golangci-lint takes a lock and the second concurrent instance dies with
+// "parallel golangci-lint is running", which the gate reports as a
+// BLOCKING "complexity NOT checked". Two legs used to call it — lint and
+// complexity — and making the legs concurrent made them collide. CI caught
+// it; locally they happened never to overlap, which is the worst way for a
+// race to behave.
+//
+// Source-level because the collision needs a real golangci-lint and two
+// real invocations to reproduce, and a test that needs the tool installed
+// passes by not running.
+//
+// proved by: split maintain.ComplexityChanged back into its own entry in
+// the legs slice — two legs then call golangci-lint and this fails.
+func TestOneLegOwnsGolangciLint(t *testing.T) {
+	src, err := os.ReadFile("gate.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "legs := []func() []gitx.Finding{")
+	if start < 0 {
+		t.Fatal("the legs slice is gone; this test is pinning something that no longer exists")
+	}
+	end := strings.Index(body[start:], "\n\t}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of the legs slice")
+	}
+	legs := body[start : start+end]
+
+	// Each `func() []gitx.Finding {` inside the slice is one leg.
+	var callers int
+	for _, leg := range strings.Split(legs, "func() []gitx.Finding")[1:] {
+		if strings.Contains(leg, "lint.Files(") || strings.Contains(leg, "maintain.ComplexityChanged(") {
+			callers++
+		}
+	}
+	if callers != 1 {
+		t.Errorf("%d legs reach golangci-lint; exactly one may, or they race for its lock", callers)
+	}
+}
