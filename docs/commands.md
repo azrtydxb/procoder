@@ -95,6 +95,12 @@ asking something different: implement what was scoped with nothing quietly
 deferred; reread the diff as a reviewer who did not write it; hunt defects
 deliberately; then the cheap polish and stop.
 
+The same four at the eleventh story as at the first. A task split three
+levels deep gets them at every leaf, not a share of them — "I am nine
+stories in, I can go faster now" is the feeling that precedes the bug that
+took longest to find, and `backlog close story` says so where the
+temptation arrives.
+
 `procoder review` is the third pass, and its `adversarial` and `edge-case`
 lenses are pointed at exactly that. Nothing checks that four passes
 happened — nothing on disk could — so this is a discipline, not a gate.

@@ -382,6 +382,9 @@ func TestTheAgentContractCarriesTheFourPasses(t *testing.T) {
 		"adversarial",
 		"edge-case",
 		"not from asking the same one harder",
+		// #207: the same rigour at depth, which is where attention leaks.
+		"Splitting work does not divide the care",
+		"I am nine stories in",
 	} {
 		if !strings.Contains(text, phrase) {
 			t.Errorf("AGENTS.md no longer says %q — the discipline is the deliverable", phrase)

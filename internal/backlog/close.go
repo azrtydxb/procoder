@@ -144,6 +144,11 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 	// anything.
 	out("  note: before this is finished — implemented as scoped, reread as a reviewer, " +
 		"defects hunted (`procoder review`), then cheap polish. Four questions, not one asked harder")
+	// #207: the same four at the eleventh story as at the first. Said here
+	// because this is where the temptation arrives — the epic is nearly
+	// done and the pieces left look small.
+	out("  note: splitting work does not divide the care — this story gets the same four " +
+		"passes as the first in its epic, not a share of them")
 	if len(missing) > 0 {
 		out("story " + id + " stays OPEN — the quality controller found:")
 		for _, m := range missing {
