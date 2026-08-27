@@ -2,6 +2,7 @@ package gate
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,5 +200,47 @@ func TestAQuietRepositoryStillCommits(t *testing.T) {
 		if strings.Contains(line, "BLOCKING") {
 			t.Errorf("nothing here is not a finding: %s", line)
 		}
+	}
+}
+
+// checkAll runs concurrently, and the gate prints findings straight from
+// the slice it returns. A run that returned results in completion order
+// would make the gate's output depend on which subprocess won a race —
+// the same tree printing a different report twice.
+//
+// The paths are shuffled in length so a naive append-as-they-finish
+// implementation reorders them: the short ones would come back first.
+//
+// proved by: change checkAll to `results = append(results, ...)` under a
+// mutex instead of indexing — the order follows completion and this fails.
+func TestCheckAllPreservesTheOrderGiven(t *testing.T) {
+	dir := t.TempDir()
+	var paths []string
+	// Descending size, so finishing order and given order disagree.
+	for i := 0; i < 40; i++ {
+		p := filepath.Join(dir, fmt.Sprintf("f%03d.md", i))
+		body := strings.Repeat("word ", (40-i)*200) + "\n"
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+	got := checkAll(paths)
+	if len(got) != len(paths) {
+		t.Fatalf("got %d results for %d paths", len(got), len(paths))
+	}
+	for i, r := range got {
+		if r.File != paths[i] {
+			t.Fatalf("result %d is %s, want %s — order not preserved", i, r.File, paths[i])
+		}
+	}
+}
+
+// proved by: drop the `if workers < 1` floor in checkAll — the worker loop
+// starts no goroutines, nothing drains `jobs`, and the send blocks forever.
+// This test deadlocks and the package times out instead of failing fast.
+func TestCheckAllOnNoPathsReturnsNothing(t *testing.T) {
+	if got := checkAll(nil); len(got) != 0 {
+		t.Errorf("got %d results for no paths", len(got))
 	}
 }
