@@ -9,9 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -21,6 +19,7 @@ import (
 	"procoder/internal/gitx"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
+	"procoder/internal/parallel"
 	"procoder/internal/security"
 	"procoder/internal/testrun"
 )
@@ -105,16 +104,7 @@ func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
 // legs fixed at compile time, not one unit of work per file in the tree.
 func concurrently(legs []func() []gitx.Finding) []gitx.Finding {
 	results := make([][]gitx.Finding, len(legs))
-	var wg sync.WaitGroup
-	for i, leg := range legs {
-		wg.Add(1)
-		go func(i int, leg func() []gitx.Finding) {
-			defer wg.Done()
-			// Distinct index per goroutine, read by none of them: no lock.
-			results[i] = leg()
-		}(i, leg)
-	}
-	wg.Wait()
+	parallel.Do(len(legs), func(i int) { results[i] = legs[i]() })
 	var out []gitx.Finding
 	for _, r := range results {
 		out = append(out, r...)
@@ -142,31 +132,14 @@ func concurrently(legs []func() []gitx.Finding) []gitx.Finding {
 // unbounded fan-out over a large tree would fork a thousand of them.
 func checkAll(paths []string) []format.Result {
 	results := make([]format.Result, len(paths))
-	workers := runtime.NumCPU()
-	if workers > len(paths) {
-		workers = len(paths)
-	}
-	if workers < 1 {
-		workers = 1
-	}
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// Each goroutine writes a distinct index and reads none, so
-			// the slice needs no lock.
-			for i := range jobs {
-				results[i] = format.Check(paths[i])
-			}
-		}()
-	}
-	for i := range paths {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
+	// One budget for the whole binary, not one per fan-out: this pass, the
+	// secret scan and the gate's legs all draw on it. See internal/parallel
+	// for what happened when each sized itself independently.
+	parallel.Do(len(paths), func(i int) {
+		// Each unit writes a distinct index and reads none, so the slice
+		// needs no lock.
+		results[i] = format.Check(paths[i])
+	})
 	return results
 }
 
