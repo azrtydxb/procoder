@@ -170,3 +170,31 @@ attributed it to per-file startup; that was inference, not measurement.
   WHAT is scanned.
 - measure gitleaks in CI properly first, then decide: one more probe cycle
   before any code changes.
+
+## The tracked-tree gate is 787 gitleaks process startups — batch it?
+
+`Secrets` calls `scanOne` once per path, and `scanOne` starts a gitleaks
+process. Over 787 tracked files that is 787 startups. A probe scanned the
+whole tree with ONE invocation in about a second, which accounts for the
+~290s of the 341s CI step that four other explanations did not.
+
+`SastChanged` in the same file already solves this shape: scan the tree
+once, then filter the FINDINGS to the paths asked about, rather than naming
+targets. Its comment says why — naming targets made semgrep scan files its
+own default selection skips.
+
+- batch above a threshold: one scan when the path set is large, per-file
+  when it is small. Keeps a three-file commit from scanning a monorepo.
+- always scan the tree and filter, like SastChanged: one rule, no
+  threshold, no heuristic to tune — and a large repository pays it on
+  every commit.
+- leave it: the local cost is 41s and only CI sees the full tree.
+
+## PR #241 is a probe that must not merge
+
+It adds timing steps to the gate job and exists only to answer where the
+441s went. It has answered.
+
+- revert the probe steps and close #241 unmerged.
+- keep the runner-cores line, drop the rest: the cores line is a permanent
+  diagnostic; the PROBE steps are not.
