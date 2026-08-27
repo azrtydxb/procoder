@@ -98,6 +98,34 @@ refuses, not a role with a voice. Naming that plainly is the point of this
 page: the personas are not missing by oversight, and a reader comparing the
 two should know where the resemblance stops.
 
+## Borrowed from, recently
+
+A fifth relationship, distinct from the four above: projects procoder read
+in a deliberate research sweep on 2026-08-26 and took specific mechanisms
+from within days. These are sources, not parallel discoveries, and the
+issue bodies say so — each opens with `## Source` naming the project.
+
+| Taken from [unlazy](https://github.com/Leonxlnx/unlazy)                      | Where it lives in Procoder                                                                                 |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| The Depth Tree: every leaf of a decomposed task gets the full rigor budget   | The depth-scaling rule in this file ([#207](https://github.com/azrtydxb/procoder/issues/207))              |
+| Ownership leases: an `OWNS:` glob per task, conflicts reported not prevented | `procoder claims` ([#199](https://github.com/azrtydxb/procoder/issues/199))                                |
+| The launch-wave protocol: every agent started before the first is awaited    | `procoder dispatch` ([#202](https://github.com/azrtydxb/procoder/issues/202))                              |
+| Approval bound to the resolved PATH, not just the command text               | `procoder run --exec` naming the resolved binary ([#200](https://github.com/azrtydxb/procoder/issues/200)) |
+| A hook that displays evidence and never executes what it reads               | The never-execute-automatically rule ([#201](https://github.com/azrtydxb/procoder/issues/201))             |
+
+From [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills):
+the per-skill rationalization table, and the progressive-disclosure
+guidance in its `docs/skill-anatomy.md`
+([#189](https://github.com/azrtydxb/procoder/issues/189)).
+
+From [mattpocock/skills](https://github.com/mattpocock/skills): the wizard
+shape — scripting a walkthrough for steps only a human can perform
+([#192](https://github.com/azrtydxb/procoder/issues/192)).
+
+Where procoder arrived at something before that sweep and another project
+holds it too, that is a different claim and it is made separately in
+[Comparable projects](comparable-projects.md).
+
 ## Deliberately not adopted
 
 Superpowers' subagent-orchestration machinery and branch-finishing flow
