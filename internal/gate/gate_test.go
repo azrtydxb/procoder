@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/gitx"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stubGitleaks puts a fake gitleaks on PATH that reports no leaks, so the
@@ -242,5 +244,51 @@ func TestCheckAllPreservesTheOrderGiven(t *testing.T) {
 func TestCheckAllOnNoPathsReturnsNothing(t *testing.T) {
 	if got := checkAll(nil); len(got) != 0 {
 		t.Errorf("got %d results for no paths", len(got))
+	}
+}
+
+// The gate prints findings straight out of what concurrently returns, so
+// completion order would make the same tree print a different report twice
+// — the accidental version of which is #236, and the cost of it is that
+// "did my change alter this?" stops being answerable.
+//
+// Leg 0 is the slowest, so a version that appended as legs finished would
+// put it last.
+//
+// proved by: append into a shared slice under a mutex instead of writing
+// results[i] — this fails on the first element.
+func TestConcurrentlyReturnsResultsInDeclarationOrder(t *testing.T) {
+	mk := func(name string, d time.Duration) func() []gitx.Finding {
+		return func() []gitx.Finding {
+			time.Sleep(d)
+			return []gitx.Finding{{Message: name}}
+		}
+	}
+	got := concurrently([]func() []gitx.Finding{
+		mk("first", 60*time.Millisecond),
+		mk("second", 30*time.Millisecond),
+		mk("third", 0),
+	})
+	want := []string{"first", "second", "third"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d findings, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Message != w {
+			t.Errorf("position %d is %q, want %q — declaration order not preserved", i, got[i].Message, w)
+		}
+	}
+}
+
+// proved by: drop the `results[i] = leg()` write and return `out` built
+// only from non-nil legs — the nil leg vanishes, the slice shortens, and
+// callers that index by leg lose their alignment.
+func TestConcurrentlyKeepsALegThatFoundNothing(t *testing.T) {
+	got := concurrently([]func() []gitx.Finding{
+		func() []gitx.Finding { return nil },
+		func() []gitx.Finding { return []gitx.Finding{{Message: "only"}} },
+	})
+	if len(got) != 1 || got[0].Message != "only" {
+		t.Errorf("got %#v", got)
 	}
 }
