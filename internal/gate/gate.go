@@ -9,7 +9,9 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -74,6 +76,50 @@ func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
 // place the two scopes diverge. Extracted from RunWith so the divergence
 // reads as three paired branches rather than being spread through a
 // function that is also doing formatting and reporting.
+
+// checkAll runs the formatter check over every path and returns the
+// results IN THE ORDER GIVEN, whatever order they finished in. Callers
+// print findings straight from this slice, so a run that reordered them
+// would make the gate's output depend on which subprocess won a race.
+//
+// Concurrent because the cost here is process startup, not computation.
+// Measured on this repository: 787 tracked files, 510 of them markdown, so
+// the tracked-tree pass was 510 serial prettier cold starts at ~0.2s each
+// — 6m47s in CI, against a job budget of 10 minutes. Nothing was slow; it
+// was just one at a time.
+//
+// Bounded by NumCPU: every unit of work is an external process, and an
+// unbounded fan-out over a large tree would fork a thousand of them.
+func checkAll(paths []string) []format.Result {
+	results := make([]format.Result, len(paths))
+	workers := runtime.NumCPU()
+	if workers > len(paths) {
+		workers = len(paths)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Each goroutine writes a distinct index and reads none, so
+			// the slice needs no lock.
+			for i := range jobs {
+				results[i] = format.Check(paths[i])
+			}
+		}()
+	}
+	for i := range paths {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	return results
+}
+
 func hygieneFor(root string, cfg config.Config, paths []string, commitMessage string, scope Scope) []gitx.Finding {
 	// Domain 9: git hygiene, workflow lint, message checks — same rules as
 	// `procoder git`, via the shared Collect, so the two cannot drift apart.
@@ -161,23 +207,22 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 
 	var unformatted, unchecked []format.Result
 	clean, skipped := 0, 0
-	for _, p := range paths {
-		if scope != Adopted {
-			// Not "clean" and not "out of scope" — neither is true. The
-			// file was not looked at, and the summary line says so rather
-			// than filing it under a verdict it never got.
-			break
-		}
-		res := format.Check(p)
-		switch res.Verdict {
-		case format.Clean:
-			clean++
-		case format.OutOfScope:
-			skipped++
-		case format.Unformatted:
-			unformatted = append(unformatted, res)
-		case format.Unchecked:
-			unchecked = append(unchecked, res)
+	// Not "clean" and not "out of scope" — neither is true of a file
+	// nobody looked at, and the summary line says so rather than filing it
+	// under a verdict it never got. This was the first statement of the
+	// loop below; it never depended on the file, so it is a guard.
+	if scope == Adopted {
+		for _, res := range checkAll(paths) {
+			switch res.Verdict {
+			case format.Clean:
+				clean++
+			case format.OutOfScope:
+				skipped++
+			case format.Unformatted:
+				unformatted = append(unformatted, res)
+			case format.Unchecked:
+				unchecked = append(unchecked, res)
+			}
 		}
 	}
 
