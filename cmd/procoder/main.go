@@ -61,6 +61,7 @@ import (
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
 	"procoder/internal/tools"
+	"procoder/internal/wizard"
 )
 
 func init() {
@@ -399,6 +400,11 @@ const usage = `usage: procoder <command> [args]
                        add <title> | list | show <id> | close <id> — close
                        REFUSES until every acceptance criterion is checked,
                        evidence is recorded, and the gate is clean
+  wizard <sub>         walk a human through a procedure procoder cannot do
+                       for them — list | new <name> | show <name> |
+                       run <name>. It executes nothing: the steps are
+                       accounts, dashboards and tokens, not commands. A
+                       captured value is shape-checked and never echoed
   version [--check]    print the version; --check asks GitHub what the
                        newest release is and offers to install it when this
                        build is behind. Silenced by [version] check = "off"
@@ -747,6 +753,34 @@ func run(args []string) int {
 				return 2
 			}
 			return glossary.Add(root, args[2], strings.Join(args[3:], " "), printLine)
+		}
+		return usageErr(os.Stderr)
+	case "wizard":
+		root := doctor.Root()
+		if len(args) < 2 {
+			return wizard.List(root, printLine)
+		}
+		switch args[1] {
+		case "list":
+			return wizard.List(root, printLine)
+		case "new":
+			if len(args) < 3 {
+				printLine("wizard new <name> — prints a wizard to write")
+				return 2
+			}
+			return wizard.Scaffold(args[2], printLine)
+		case "show":
+			if len(args) < 3 {
+				printLine("wizard show <name> — prints every step, runs nothing")
+				return 2
+			}
+			return wizard.Show(root, args[2], printLine)
+		case "run":
+			if len(args) < 3 {
+				printLine("wizard run <name> — walks the steps one at a time")
+				return 2
+			}
+			return wizard.Run(root, args[2], os.Stdin, printLine)
 		}
 		return usageErr(os.Stderr)
 	case "dispatch":
