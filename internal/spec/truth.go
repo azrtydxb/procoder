@@ -542,7 +542,12 @@ var hedged = regexp.MustCompile(`(?i)\b(mostly|generally|as appropriate|reasonab
 // fixedOutput is a command whose result cannot differ. `echo`, a `--help`,
 // a `--version`: they print the same thing on a working system and a
 // broken one, so a criterion checking them has no failing branch at all.
-var fixedOutput = regexp.MustCompile("`[^`]*\\b(echo|true|cat\\s+[^`]*README|--help|--version|-h\\b)[^`]*`")
+// The word alternatives carry their own \b; the flag forms cannot, because
+// there is no word boundary before a hyphen. Writing one \b in front of
+// the whole group made `--help`, `--version` and `-h` match nothing at all
+// while the tests passed on `echo` alone — raised in review on #218, and
+// verified by probing each shape before the fix.
+var fixedOutput = regexp.MustCompile("`[^`]*(\\becho\\b|\\btrue\\b|\\bcat\\s+[^`]*README|--help\\b|--version\\b|(?:^|\\s)-h\\b)[^`]*`")
 
 // unmeasured is a bar nobody can hold a result against. "Fast enough" and
 // "not too many" name a threshold without giving one, so two people

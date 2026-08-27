@@ -368,7 +368,6 @@ evidence is prose, and a sentence explaining why a check was not needed is
 exactly right; what was missing is a reader being able to tell which they
 are looking at, since a section that is somebody's word for it and one that
 can be re-checked looked identical to every check procoder made.
-
 #### `procoder context <sub>`
 
 The project's shared vocabulary in `.procoder/context.md` — what the team

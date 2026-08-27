@@ -504,8 +504,25 @@ func TestACriterionNamingNeitherIsStillCaught(t *testing.T) {
 // the case it covers is named here as unreported.
 func TestWeakOraclesAreReported(t *testing.T) {
 	for name, tc := range map[string]struct{ criterion, want string }{
-		"fixed output": {
+		"fixed output: echo": {
 			"- [ ] [S-1] `echo ok` prints ok after the change; fails if it does not.",
+			"no failing branch",
+		},
+		// The flag forms, which the first version of this rule matched
+		// nothing at all: a single \b in front of the alternation cannot
+		// match a token starting with a hyphen, and the test covered only
+		// `echo`, so three of the four shapes were silently dead. Raised
+		// in review on #218.
+		"fixed output: --help": {
+			"- [ ] [S-1] `procoder --help` prints usage; fails if it does not.",
+			"no failing branch",
+		},
+		"fixed output: --version": {
+			"- [ ] [S-1] `procoder --version` prints the version; fails if it does not.",
+			"no failing branch",
+		},
+		"fixed output: -h": {
+			"- [ ] [S-1] `mytool -h` prints usage; fails if it does not.",
 			"no failing branch",
 		},
 		"hedged": {
