@@ -226,6 +226,26 @@ user stories**, with the story as the execution unit of spec-based work
 - `close epic <id>` / `close milestone <id>` — refuse while any child
   is open; epic close warns on spec drift (never blocks on it).
 
+**`backlog stalled`** — which carried-over items are carried _and_
+untouched.
+
+A story edited nine times across three sprints, criteria still unchecked
+and evidence still empty, looks busy in every other report. `sprint status`
+says "carried over"; nothing said "carried over and never advanced".
+
+The state is hashed over what carries status — the `Status:` line, which
+criteria are checked, whether evidence says anything — and everything else
+is deliberately excluded. A timestamp, a reworded paragraph, a reordered
+list: the file changed and the work did not, and a hash that moved on those
+would report every story as progressing. Evidence counts as
+present-or-absent rather than by content, because its text is rewritten as
+it is gathered and what matters is that it went from nothing to something.
+The template's own comment is not evidence.
+
+A detection aid, never a verdict. An item can legitimately wait; what this
+reports is that it waited while looking otherwise. A file git cannot answer
+for is reported as NOT checked, never as unstalled.
+
 #### `procoder sprint <sub>`
 
 Scope-boxed sprints over the backlog — a goal plus the stories pulled
