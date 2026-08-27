@@ -247,16 +247,18 @@ jobs:
           echo "PROCODER_PUPPETEER_CONFIG=/tmp/puppeteer.json" >> "$GITHUB_ENV"
       - name: doctor
         run: procoder doctor
-      - name: PROBE cores
-        run: echo "cores: $(nproc)"
       - name: PROBE the suite alone
-        run: time procoder test || true
+        run: |
+          time procoder test || true
       - name: PROBE the suite again, cache warm
-        run: time procoder test || true
+        run: |
+          time procoder test || true
       - name: PROBE semgrep alone
-        run: time procoder security --deep || true
+        run: |
+          time procoder security --deep || true
       - name: gate over the tracked tree
-        run: time (git ls-files | xargs procoder check)
+        run: |
+          time sh -c 'git ls-files | xargs procoder check'
       - name: security, the deep pass
         run: procoder security --deep
       - name: documentation report, external links included
