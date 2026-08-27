@@ -38,7 +38,7 @@ it.
   evidence class of that measurement.
 - [S-4] Label every finding `measured` or `inferred`, reusing the existing
   `internal/evidence` classification rather than inventing a second one.
-- [S-5] A verify subcommand — after a proposal has been applied, report
+- [S-5] `procoder learn verify` — after a proposal has been applied, report
   whether the cost it targeted actually fell, and print the revert when it
   did not.
 - [S-6] Opt-in recording: `[learn] record = true`, defaulting to false, so
@@ -75,13 +75,18 @@ it.
 - **No new dependency**, per the build principles.
 - **Sample size is a first-class output**, not a footnote. A ranking from
   four runs must say it came from four runs.
+- **Every run is recorded**, not a sample. Rotation by line count already
+  bounds the file, so sampling would trade accuracy for a limit that is
+  already enforced — and on a low-traffic repository a one-in-N sample may
+  never reach `min_samples` at all. One appended line is negligible beside
+  the work being measured.
 
 ## Interfaces
 
-- A new top-level command, `learn`, whose bare form is `measure`.
-- measure [--since <dur>] — the ranked cost report.
-- learn propose — the ranked report plus printed config changes.
-- learn verify — did the last applied proposal help.
+- `procoder learn` — the bare form is `procoder learn measure`.
+- `procoder learn measure [--since <dur>]` — the ranked cost report.
+- `procoder learn propose` — the ranked report plus printed config changes.
+- `procoder learn verify` — did the last applied proposal help.
 - `[learn] record = true|false` in `.procoder/config.toml` (default false).
 - `[learn] min_samples = <n>` (default 20) — below this, `propose` prints
   nothing and says why.
@@ -94,8 +99,16 @@ it.
 {"cmd":"check","domain":"lint","ms":812,"exit":0,"blocking":false,"at":"2026-08-27T10:00:00Z"}
 ```
 
-Rotated by line count, oldest dropped, so an old repository does not carry
-an unbounded file. Nothing in it identifies a person, a path outside the
+`.procoder/state/learn-applied.json` records which proposal was applied and
+when — written by the agent when it applies one, read by the binary. That
+is the anchor `procoder learn verify` measures against. Inferring it from
+the git history of `.procoder/config.toml` was considered and rejected:
+history shows that the file changed, never which proposal a change
+corresponds to, nor whether an edit was a proposal at all. A marker can be
+forgotten, and `verify` says so rather than guessing.
+
+Both files are rotated by line count, oldest dropped, so an old repository
+does not carry an unbounded file. Nothing in it identifies a person, a path outside the
 repository, or the content of any file.
 
 ## Edge cases
@@ -157,16 +170,18 @@ repository, or the content of any file.
       that a revert is printed when the cost did not fall.
 - [ ] [S-6] `TestRecordingIsOffByDefault` asserts that with no `[learn]`
       section, `procoder check` creates no `.procoder/state/learn.jsonl`.
+- [ ] [S-7] `TestALooseningProposalStatesWhatItCannotSee` asserts every
+      proposal that downgrades a blocking policy carries the line naming
+      the defects the measurement cannot account for.
+- [ ] [S-5] `TestVerifyWithoutAMarkerSaysSo` asserts that with no
+      `.procoder/state/learn-applied.json`, verify reports it has no
+      anchor rather than inferring one.
 
 ## Open questions
 
-- OPEN: Recording writes on every gate run, and the gate runs on every
-  commit. Is an append per command acceptable, or should recording sample
-  (say one run in N) to keep the file small?
-- OPEN: Should learn propose be allowed to suggest loosening a policy
-  from `block` to `report`? That trades safety for speed on the strength of
-  timing data alone, and the measurement cannot see the defects the
-  stricter policy prevented.
-- OPEN: `verify` needs to know which proposal was applied and when. Should
-  that be a recorded marker the agent writes when it applies a change, or
-  should `verify` infer it from the git history of `.procoder/config.toml`?
+<!-- All three resolved with the user on 2026-08-27 and rewritten as
+     decisions above: recording frequency in Constraints, the loosening
+     rule as [S-7] in In scope, and the verify anchor in Data.
+
+     Left empty deliberately: any non-empty line in this section counts as
+     an open question, "None." included. -->
