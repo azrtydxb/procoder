@@ -344,6 +344,7 @@ The command comes from the repository and the binary comes from `PATH`, so
 the same declared `npm start` is a different program depending on which npm
 is first. Naming it is the difference between consenting to a command and
 consenting to a string.
+
 #### `procoder context <sub>`
 
 The project's shared vocabulary in `.procoder/context.md` — what the team
