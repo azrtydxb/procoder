@@ -15,15 +15,14 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"procoder/internal/config"
 	"procoder/internal/gitx"
+	"procoder/internal/parallel"
 	"procoder/internal/tools"
 )
 
@@ -107,29 +106,13 @@ func Secrets(root string, paths []string) []gitx.Finding {
 	// order followed whichever process finished first would differ between
 	// two runs over the same tree.
 	results := make([][]gitx.Finding, len(wanted))
-	workers := runtime.NumCPU()
-	if workers > len(wanted) {
-		workers = len(wanted)
-	}
-	if workers < 1 {
-		workers = 1
-	}
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range jobs {
-				results[i] = scanOne(bin, root, wanted[i])
-			}
-		}()
-	}
-	for i := range wanted {
-		jobs <- i
-	}
-	close(jobs)
-	wg.Wait()
+	// The shared budget, not a private NumCPU: this scan runs alongside
+	// the formatter pass and the gate's other legs, and three fan-outs
+	// each sizing themselves to the machine put twenty to thirty
+	// processes on ten cores. See internal/parallel.
+	parallel.Do(len(wanted), func(i int) {
+		results[i] = scanOne(bin, root, wanted[i])
+	})
 	var out []gitx.Finding
 	for _, r := range results {
 		out = append(out, r...)
