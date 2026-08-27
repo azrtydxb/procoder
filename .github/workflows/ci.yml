@@ -99,7 +99,14 @@ jobs:
     # procoder's own gate over its own tree: the dogfood job. Formatting
     # gaps, git hygiene, and workflow lint all fail this leg.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Measured, not guessed: this job ran 8m53s and 9m10s on the two most
+    # recent merges — 89% and 92% of a ten-minute budget — and timed out at
+    # 10m09s on #228 inside `procoder security --deep`. A timeout surfaces
+    # as `cancelled`, which is indistinguishable from a real failure at the
+    # merge gate and sends whoever sees it hunting a defect that is not
+    # there. Twenty gives the deep pass room to be slow without turning a
+    # green tree red.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
