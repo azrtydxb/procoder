@@ -283,7 +283,18 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 			dirs["./"+filepath.ToSlash(d)] = true
 		}
 	}
-	args := []string{"run", "--output.text.path=stdout", "--show-stats=false"}
+	// No issue caps. golangci-lint defaults to --max-issues-per-linter 50
+	// and --max-same-issues 3, and it lints packages concurrently — so
+	// WHICH issues survive those caps depends on which package finished
+	// first. Two runs over an unchanged tree reported forty-eight findings
+	// each and disagreed about their members, which made "did my change
+	// alter this?" unanswerable (#236).
+	//
+	// The caps were also hiding work: max-same-issues 3 keeps three of any
+	// near-identical message, and errcheck emits almost nothing else, so
+	// most of them never reached the report at all.
+	args := []string{"run", "--output.text.path=stdout", "--show-stats=false",
+		"--max-issues-per-linter=0", "--max-same-issues=0"}
 	// the project's own config always wins; without one, procoder supplies
 	// a curated baseline strong enough to catch the bug classes reviewers
 	// keep finding (security edges, error handling, loop allocations) —
