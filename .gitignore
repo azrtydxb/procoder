@@ -15,4 +15,5 @@ docs/changelog.md
 # the tag and publishes them; hooks/launcher.sh fetches the one this
 # machine needs and caches it here. See ADR 0009.
 /dist/
+.procoder/state/dispatch.json
 .procoder/state/claims.json

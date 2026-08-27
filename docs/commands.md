@@ -415,6 +415,39 @@ the same declared `npm start` is a different program depending on which npm
 is first. Naming it is the difference between consenting to a command and
 consenting to a string.
 
+#### `procoder dispatch <sub>`
+
+Whether a fan-out was actually parallel.
+
+The principles tell an agent to launch independent work together rather
+than grinding through it serially. Nothing checked, and the difference is
+invisible afterwards: an agent that ran three subagents one at a time and
+narrated it as parallel produces the same transcript as one that did it
+properly.
+
+- `open <wave>` — start recording a fan-out
+- `start <wave> --task <id>` — once per task, **before anything is awaited**
+- `seal <wave>` — no more tasks may join
+- `return <wave> --task <id>` — a task came back
+- `status [wave]` — the verdict
+
+**A return recorded before the seal is the signature of serial work**: that
+task finished before the last one was launched, which is precisely what
+parallel means it should not have done. The early return is remembered when
+it happens, because by the time anybody asks, the seal has usually been
+called and the evidence would be gone.
+
+Three verdicts, and the middle one matters: `parallel`, `NOT parallel`, and
+`NOT verified` for a wave nobody sealed. Not verified is **not** the same
+as verified serial — it says nobody recorded the barrier, which is a
+different claim from saying the work was serial.
+
+**Advisory.** procoder cannot stop an agent calling this dishonestly, or at
+all. What it does is make the claim checkable, which turns "I ran them in
+parallel" from narration into something with a record behind it — and it
+catches the honest mistake, genuinely serial work honestly recorded, which
+is the common one.
+
 #### `procoder claims <sub>`
 
 Who is working on what, while several agents work at once.
