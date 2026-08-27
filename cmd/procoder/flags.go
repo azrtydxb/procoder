@@ -27,6 +27,7 @@ var knownFlags = map[string][]string{
 	"ci":           {"--runs"},
 	"copilot-leak": {"--since", "--quiet", "--from-copilot"},
 	"docs":         {"--ack", "--external"},
+	"claims":       {"--by"},
 	"env":          {"--sync"},
 	"index":        {"--at"},
 	"init":         {"--yes"},
@@ -142,4 +143,18 @@ func usageFor(cmd string) string {
 	// the block keeps its own indentation so the continuation lines stay
 	// aligned under the description, which is what makes it readable
 	return "usage:\n" + strings.Join(lines[start:end], "\n") + "\n"
+}
+
+// flagValue reads `--name value` out of an argument list. Absent is "",
+// which every caller treats as "not given" and refuses on when it matters.
+func flagValue(args []string, name string) string {
+	for i, a := range args {
+		if a == name && i+1 < len(args) {
+			return args[i+1]
+		}
+		if v, ok := strings.CutPrefix(a, name+"="); ok {
+			return v
+		}
+	}
+	return ""
 }

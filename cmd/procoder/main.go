@@ -23,6 +23,7 @@ import (
 	"procoder/internal/backlog"
 	"procoder/internal/bench"
 	"procoder/internal/ciops"
+	"procoder/internal/claims"
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
 	"procoder/internal/copilot"
@@ -338,6 +339,10 @@ const usage = `usage: procoder <command> [args]
                        as analyst, architect, implementer and reviewer in
                        turn; a lens that could not be loaded is a refusal,
                        never a review that silently happened
+  claims <sub>         who is working on what, while several agents work at
+                       once — add <glob>... --by <agent> | release --by
+                       <agent> | list. Advisory: an overlap is reported,
+                       never prevented; procoder does not own the editor
   evidence record <cmd>
                        run a command and print a fingerprint of what it
                        produced — sha256, byte count, exit code — for
@@ -736,6 +741,39 @@ func run(args []string) int {
 				return 2
 			}
 			return glossary.Add(root, args[2], strings.Join(args[3:], " "), printLine)
+		}
+		return usageErr(os.Stderr)
+	case "claims":
+		// Subcommands rather than top-level verbs: `release` is already
+		// the release controller, and one word cannot mean two things.
+		root := doctor.Root()
+		if len(args) < 2 {
+			return claims.List(root, printLine)
+		}
+		switch args[1] {
+		case "list":
+			return claims.List(root, printLine)
+		case "release":
+			by := flagValue(args[2:], "--by")
+			if by == "" {
+				printLine("claims release --by <agent> — whose claims to drop")
+				return 2
+			}
+			return claims.Release(root, by, printLine)
+		case "add":
+			by := flagValue(args[2:], "--by")
+			var globs []string
+			for i := 2; i < len(args); i++ {
+				if args[i] == "--by" {
+					i++
+					continue
+				}
+				if strings.HasPrefix(args[i], "--by=") {
+					continue
+				}
+				globs = append(globs, args[i])
+			}
+			return claims.Add(root, by, globs, time.Now(), printLine)
 		}
 		return usageErr(os.Stderr)
 	case "prune":

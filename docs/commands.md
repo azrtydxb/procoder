@@ -212,6 +212,17 @@ The project layer under `.procoder/backlog/`: **milestones → epics →
 user stories**, with the story as the execution unit of spec-based work
 (the todo list stays standalone for everything else).
 
+**Decisions on the board.** `board` opens with what is waiting on a person,
+and which stories say they are waiting on it. A story adds a `Blocked-by:`
+header naming the decision; the match is loose, because somebody writing
+that header shortens the question rather than pasting it.
+
+The decisions themselves stay in `.procoder/ask/decisions.md` — the agent's
+write path, and what it reaches for mid-work. This does not move them onto
+the backlog; it makes the backlog show they exist, which is the difference
+between a blocked story and one nobody has started. A decisions file
+procoder cannot read is reported as unread, never as nothing waiting.
+
 - `milestone <title>` / `epic <title> [--milestone <id>]` /
   `story <title> --epic <id>` — print each file for the agent to
   review and write; slug collisions refuse rather than overwrite.
@@ -403,6 +414,33 @@ The command comes from the repository and the binary comes from `PATH`, so
 the same declared `npm start` is a different program depending on which npm
 is first. Naming it is the difference between consenting to a command and
 consenting to a string.
+
+#### `procoder claims <sub>`
+
+Who is working on what, while several agents work at once.
+
+- `add <glob>... --by <agent>` — declare a working set, and hear about any
+  overlap
+- `release --by <agent>` — drop that agent's claims
+- `list` — who holds what, and every overlap between them
+
+The principles already say two agents never own the same file. That is
+prose, and prose does not notice: a lead fanning out four subagents has no
+way to see that two were pointed at the same package until the second one's
+edits land on the first's.
+
+**Advisory, and it cannot be otherwise.** A claim does not stop a write —
+procoder does not own the editor. What it does is make an overlap visible
+before the work collides, which is the honest half a tool can do.
+
+Overlap detection is deliberately generous: two globs that _could_ match
+the same path are reported without proof that they will. A false conflict
+costs a question; a missed one costs two agents' work. An agent never
+conflicts with itself.
+
+Claims live in `.procoder/state/claims.json`, which is gitignored — a claim
+outlives nothing but the work it describes. A ledger that exists and cannot
+be read is reported as unreadable, never as nobody holding anything.
 
 #### `procoder evidence record <command>`
 

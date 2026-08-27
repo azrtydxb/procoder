@@ -44,6 +44,11 @@ var (
 	sprintRe    = regexp.MustCompile(`(?m)^Sprint:\s*(\S+)`)
 	typeRe      = regexp.MustCompile(`(?m)^Type:\s*(\S+)`)
 	severityRe  = regexp.MustCompile(`(?m)^Severity:\s*(\S+)`)
+	// A story waiting on a decision names it. Without this a blocked story
+	// looks exactly like one nobody has started, which is the whole of
+	// #191: the decisions file exists, and nothing connects it to the work
+	// it is holding up.
+	blockedByRe = regexp.MustCompile(`(?m)^Blocked-by:\s*(.+?)\s*$`)
 	// The fingerprint half is optional to MATCH so that a Spec: line without
 	// one still registers as a spec reference. It is not optional to HAVE:
 	// an epic that names a spec but records no seeding is one the board must
@@ -69,6 +74,7 @@ type Item struct {
 	SpecName  string   // epics: source spec name, "" when none
 	SpecPrint string   // epics: spec fingerprint recorded at seed time
 	Missing   []string // stories: required sections the file does not carry
+	BlockedBy string   // stories: the decision blocking this, from a Blocked-by: header
 	Path      string
 }
 
@@ -166,6 +172,9 @@ func LoadAll(root string) ([]Item, error) {
 			}
 			if m := severityRe.FindStringSubmatch(text); m != nil {
 				it.Severity = m[1]
+			}
+			if m := blockedByRe.FindStringSubmatch(text); m != nil {
+				it.BlockedBy = m[1]
 			}
 			if m := specRe.FindStringSubmatch(text); m != nil {
 				it.SpecName, it.SpecPrint = m[1], m[2]
