@@ -293,6 +293,18 @@ request that is the contributor, who would then be excluded from the credit
 they are owed. With nothing configured it asks `gh` locally, so a
 repository that has set nothing still gets the rule by hand.
 
+**The skill contract.** `skills/procoder/SKILL.md` is what agents are told
+to do; its body is generated from `AGENTS.md` and its frontmatter carries a
+`contract` version. When the body changes since the last tag and that
+version does not, `procoder release` says so — an adopter upgrading would
+otherwise be governed by different rules with nothing to tell them.
+
+Reported, not refused. A wording fix changes the body too, and blocking
+every typo behind a version bump would make the bump meaningless within a
+month. The version is bumped in `internal/portability/portability.go`,
+which makes it a deliberate act rather than a field somebody edits in
+passing, and `procoder agents` regenerates the file.
+
 `procoder release --credits` runs those two checks and nothing else, and CI
 runs it on every commit with a token. That is the difference between a rule
 and a habit: until it ran in CI it ran only when whoever cut the release
@@ -570,7 +582,18 @@ that is the answer. Two of sprint 021's deviations were criteria that could
 not fail at all: one describing a narrowing that cannot happen, one on a
 fixture where the two outcomes were indistinguishable.
 
-All four refuse only while the spec is a `draft` — deliberately the moment
+Three more ways a criterion can look measured and not be, each refused:
+
+- **a command whose output cannot differ** — `echo`, a `--version`, a
+  `--help`. It prints the same thing on a working system and a broken one,
+  so the criterion has no failing branch at all.
+- **hedged vocabulary** — "mostly", "generally", "as appropriate". There is
+  no observation that contradicts them, so the criterion passes whatever
+  the code does.
+- **a bar with no number** — "fast enough", "not too many". Two people
+  reading the same result would disagree about whether it passed.
+
+All seven refuse only while the spec is a `draft` — deliberately the moment
 before the sprint opens, when a deviation is cheap. A spec already marked
 `complete` gets notes instead, because retrofitting a rule onto an archive
 nobody will rewrite is how a check gets switched off. `backlog close story`

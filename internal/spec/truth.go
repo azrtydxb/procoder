@@ -352,6 +352,9 @@ func TruthGaps(root, text string) []string {
 	for _, f := range CriteriaWithoutFalsifiers(text) {
 		gaps = append(gaps, fmt.Sprintf("line %d: the criterion %s", f.Line, f.Why))
 	}
+	for _, f := range WeakOracles(text) {
+		gaps = append(gaps, fmt.Sprintf("line %d: the criterion %s", f.Line, f.Why))
+	}
 	return gaps
 }
 
@@ -523,4 +526,66 @@ func normaliseEOL(s string) string {
 		return s
 	}
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// The remaining half of #198, after 3.2.0 took the unfalsifiable case.
+//
+// Three ways a criterion can look measured and not be. Each fires only on
+// an unambiguous shape, for the reason every rule in this file errs the
+// same way: a criterion refused wrongly gets deleted rather than fixed.
+
+// hedged is vocabulary that removes the possibility of being wrong.
+// "Mostly works" has no observation that contradicts it, so a criterion
+// written this way passes whatever the code does.
+var hedged = regexp.MustCompile(`(?i)\b(mostly|generally|as appropriate|reasonably|roughly|more or less|where sensible|if needed|should be fine|works well)\b`)
+
+// fixedOutput is a command whose result cannot differ. `echo`, a `--help`,
+// a `--version`: they print the same thing on a working system and a
+// broken one, so a criterion checking them has no failing branch at all.
+// The word alternatives carry their own \b; the flag forms cannot, because
+// there is no word boundary before a hyphen. Writing one \b in front of
+// the whole group made `--help`, `--version` and `-h` match nothing at all
+// while the tests passed on `echo` alone — raised in review on #218, and
+// verified by probing each shape before the fix.
+var fixedOutput = regexp.MustCompile("`[^`]*(\\becho\\b|\\btrue\\b|\\bcat\\s+[^`]*README|--help\\b|--version\\b|(?:^|\\s)-h\\b)[^`]*`")
+
+// unmeasured is a bar nobody can hold a result against. "Fast enough" and
+// "not too many" name a threshold without giving one, so two people
+// reading the same result disagree about whether it passed.
+var unmeasured = regexp.MustCompile(`(?i)\b(fast enough|quick enough|not too (many|slow|long|big)|small enough|large enough|acceptable performance|reasonable time)\b`)
+
+// WeakOracles returns the criteria that look like measurements and are
+// not.
+//
+// Separate from UncheckableCriteria because the failure differs: that one
+// is a criterion with no observation at all, this one is a criterion whose
+// observation cannot fail. Both end the same way — a promise ticked
+// without ever being tested — and reporting them separately tells the
+// author which mistake they made.
+func WeakOracles(text string) []CriterionFault {
+	body := sectionOf(text, "Acceptance criteria")
+	if body == "" {
+		return nil
+	}
+	var out []CriterionFault
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "- [") {
+			continue
+		}
+		criterion := joinWrapped(lines, i)
+		at := lineOf(text, "Acceptance criteria", i)
+		switch {
+		case fixedOutput.MatchString(criterion):
+			out = append(out, CriterionFault{Text: criterion, Line: at,
+				Why: "checks a command whose output cannot differ — it prints the same thing on a working system and a broken one, so this criterion has no failing branch; check something the change actually affects"})
+		case hedged.MatchString(criterion):
+			out = append(out, CriterionFault{Text: criterion, Line: at,
+				Why: "is hedged — there is no observation that contradicts \"mostly\" or \"generally\", so it passes whatever the code does; say what must be true, exactly"})
+		case unmeasured.MatchString(criterion):
+			out = append(out, CriterionFault{Text: criterion, Line: at,
+				Why: "names a bar without giving one — two people reading the same result would disagree about whether it passed; put the number in"})
+		}
+	}
+	return out
 }
