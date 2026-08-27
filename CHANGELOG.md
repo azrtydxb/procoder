@@ -49,6 +49,124 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.3.0 — 2026-08-27
+
+_Fifteen ways an agent's work looked finished when it was not — a check
+nobody ran, a fan-out that was secretly serial, a decision made on your
+behalf — each made visible._
+
+**Added — nothing procoder runs automatically comes from a file an agent
+wrote.** ([#219](https://github.com/azrtydxb/procoder/pull/219),
+[#201](https://github.com/azrtydxb/procoder/issues/201),
+[#200](https://github.com/azrtydxb/procoder/issues/200)) Several procoder
+commands read setup steps out of the repository. Those files are written by
+agents, and a file an agent wrote is a file an attacker can influence
+through anything that agent read. The boundary is now explicit: procoder
+looks at those commands and prints them, and a human runs them. Where a
+command genuinely must be re-run on trust, the approval is fingerprinted
+against the environment it was granted in, so trust given on your laptop is
+not trust taken in CI.
+
+**Added — who is working on what, while several agents work at once.**
+([#224](https://github.com/azrtydxb/procoder/pull/224),
+[#199](https://github.com/azrtydxb/procoder/issues/199)) "Two agents never
+own the same file" was a rule in prose, which means it held exactly as long
+as everybody remembered it. `procoder claims add <glob> --by <agent>`
+records the claim and reports an overlap. It reports and never prevents:
+procoder does not own your editor, and a lease that cannot actually stop a
+write should not pretend it can.
+
+**Added — whether a fan-out was actually parallel.**
+([#225](https://github.com/azrtydxb/procoder/pull/225),
+[#202](https://github.com/azrtydxb/procoder/issues/202)) Launching five
+agents and awaiting them one at a time looks identical, in every report, to
+launching five agents at once. `procoder dispatch` opens a wave, takes a
+start per task, and seals it — and a task that returns before the seal is
+the signature of serial work wearing a parallel costume. Advisory: it makes
+the claim checkable, not true.
+
+**Added — evidence that can be re-checked, and saying so when it cannot.**
+([#220](https://github.com/azrtydxb/procoder/pull/220),
+[#204](https://github.com/azrtydxb/procoder/issues/204),
+[#208](https://github.com/azrtydxb/procoder/issues/208)) `procoder evidence
+record <command>` runs a check and stores a fingerprint of its result,
+never its output — proof it ran, without a story's evidence section turning
+into a log dump. And closing a story now distinguishes evidence that was
+_measured_ from evidence that is a _claim_ someone typed. Both are allowed;
+only one of them is checkable, and the difference used to be invisible.
+
+**Added — did the change stay where the plan said it would.**
+([#223](https://github.com/azrtydxb/procoder/pull/223),
+[#197](https://github.com/azrtydxb/procoder/issues/197)) The failure is the
+drive-by edit: a change that does what was asked and also touches four
+files nowhere near it, each a small improvement nobody reviewed as such.
+`procoder backlog scope` compares what changed against the files the plans
+declare. When there is nothing to compare against it says `scope NOT
+checked` rather than reporting a clean result, because a check that could
+not run must never read as one that passed.
+
+**Added — which carried-over items are carried _and_ untouched.**
+([#222](https://github.com/azrtydxb/procoder/pull/222),
+[#205](https://github.com/azrtydxb/procoder/issues/205)) A story edited
+nine times across three sprints, criteria still unchecked and evidence
+still empty, looks busy in every other report. `procoder backlog stalled`
+hashes what a story _means_ — its status, criteria and evidence — and
+ignores the metadata churn, so a long session cannot mistake motion for
+progress.
+
+**Added — the four passes before a piece of work is finished, and the same
+rigor at every depth.** ([#221](https://github.com/azrtydxb/procoder/pull/221),
+[#203](https://github.com/azrtydxb/procoder/issues/203),
+[#207](https://github.com/azrtydxb/procoder/issues/207)) Implement, reread,
+hunt defects, polish — closing after the first pass is how work ships that
+compiles and is still wrong. And depth is where attention leaks: on a large
+decomposed task the last leaves get a fraction of the care the first ones
+got, though each is still somebody's afternoon spent reading what you
+wrote.
+
+**Added — a turn does not end with a decision buried in prose.**
+([#215](https://github.com/azrtydxb/procoder/pull/215)) The rule that
+questions are not the agent's to answer was already written down, and was
+still being routed around — a decision would appear as a sentence in a
+paragraph, and the session would move on as if it had been settled. It is
+now enforced at the end of the turn, not merely documented. An invented
+answer is indistinguishable from a decision once it is written down, and
+the person who was never asked never finds out.
+
+**Added — decisions that block other work appear on the board.**
+([#224](https://github.com/azrtydxb/procoder/pull/224),
+[#191](https://github.com/azrtydxb/procoder/issues/191)) An undecided
+question holding up a story was visible only to whoever read the decisions
+file. It is now a thing the backlog can show you, because a blocker nobody
+can see is a blocker nobody unblocks.
+
+**Added — a shared vocabulary, and three more oracles that refuse.**
+([#217](https://github.com/azrtydxb/procoder/pull/217),
+[#218](https://github.com/azrtydxb/procoder/pull/218),
+[#195](https://github.com/azrtydxb/procoder/issues/195),
+[#198](https://github.com/azrtydxb/procoder/issues/198)) `.procoder/context.md`
+records what the team calls things, which is not always what the code calls
+them, and spec and plan checks cross-reference it. Separately, acceptance
+criteria that cannot fail are refused in three more shapes: a fixed-output
+command, hedging vocabulary, and a threshold with nothing measuring it.
+
+**Added — the skill contract carries a version, and the provenance map
+names BMad.** ([#218](https://github.com/azrtydxb/procoder/pull/218),
+[#217](https://github.com/azrtydxb/procoder/pull/217),
+[#196](https://github.com/azrtydxb/procoder/issues/196),
+[#210](https://github.com/azrtydxb/procoder/issues/210)) The skill file now
+versions like an ADR, so a change to the contract is a thing you can point
+at. And `docs/influences.md` records the BMad Method alongside procoder's
+other influences — it is prior art worth naming, not a procoder feature.
+
+**Added — merge-conflict discipline, written down.**
+([#216](https://github.com/azrtydxb/procoder/pull/216),
+[#193](https://github.com/azrtydxb/procoder/issues/193)) Resolving a
+conflict by keeping one side is how a feature disappears between two green
+test runs — it happened here, during 3.2.0, and survived because the lost
+code had a comment rather than a test. The rule now: read the resolved file
+before committing it, and confirm each side's contribution is still there.
+
 ## 3.2.1 — 2026-08-26
 
 _The release controller works out who is owed a credit, and CI enforces it,
