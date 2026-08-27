@@ -243,6 +243,28 @@ user stories**, with the story as the execution unit of spec-based work
 - `close epic <id>` / `close milestone <id>` — refuse while any child
   is open; epic close warns on spec drift (never blocks on it).
 
+**`backlog scope`** — did the change stay where the plans said it would?
+
+The failure is the drive-by edit: a change that does what was asked and
+also touches four files nowhere near it, each a small unrelated
+improvement nobody reviewed as such. The build principles already say a
+small diff in the wrong place is a second bug — but prose does not notice.
+
+A plan declares which files each task touches, and `plan check` already
+blocks a task that names none, so the declared set exists. This compares it
+against what actually changed and reports what no plan mentions. Both
+declaration spellings are read — `` **Files:** `a`, `b` `` and
+`Files: a, b` — and a plan naming a directory covers what is under it,
+because demanding every file by name makes the declaration a chore nobody
+keeps current.
+
+**Report only, and quiet when it cannot tell.** No plan, or plans that
+declare no files, reports `scope NOT checked` — there is genuinely nothing
+to compare against, and that is not the same as saying the change was
+surgical. When it does report, neither answer is automatically wrong:
+either the plan is behind the work or the work wandered, and both are worth
+a look.
+
 **`backlog stalled`** — which carried-over items are carried _and_
 untouched.
 
