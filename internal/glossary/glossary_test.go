@@ -146,14 +146,15 @@ func TestNearIgnoresVeryShortTerms(t *testing.T) {
 // proved by: the os.IsNotExist branch in Load made to swallow every error
 // — the unreadable file reads as an empty glossary and nothing says so.
 func TestAnUnreadableGlossaryIsNotAnEmptyOne(t *testing.T) {
-	root := withGlossary(t, "## a term\n\nA definition.\n")
+	// A DIRECTORY where the file should be, rather than chmod 000: reading
+	// a directory fails on every OS, while chmod does not deny reads on
+	// Windows — the first version of this test passed on macOS and Linux
+	// and failed on Windows CI for that reason. Skipping there would have
+	// meant the case stopped being checked on a whole platform.
+	root := t.TempDir()
 	p := filepath.Join(root, filepath.FromSlash(Path))
-	if err := os.Chmod(p, 0o000); err != nil {
-		t.Skipf("cannot make the file unreadable here: %v", err)
-	}
-	defer os.Chmod(p, 0o644)
-	if os.Geteuid() == 0 {
-		t.Skip("running as root, which can read anything")
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	if _, err := Load(root); err == nil {
