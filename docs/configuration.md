@@ -426,3 +426,14 @@ Setting `bmad` with no BMad installed is a blocking finding naming both,
 rather than a silent fall back to Procoder's own chain: a repository that
 chose one methodology must not be governed by the other without being
 told.
+
+### `[learn]`
+
+| Key           | Default | What it does                                                                                                                                    |
+| ------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `record`      | `false` | Append one timing record per command run to `.procoder/state/learn.jsonl`. Off until asked: no repository starts measuring because it upgraded. |
+| `min_samples` | `20`    | How many recorded runs `procoder learn propose` wants before it proposes anything.                                                              |
+
+The records are gitignored state, not repository content, and hold a
+command name, a duration and an exit code — nothing about a file's
+contents and nothing identifying a person.

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"procoder/internal/codeindex"
 	"procoder/internal/config"
@@ -18,6 +19,7 @@ import (
 	"procoder/internal/format"
 	"procoder/internal/gitcmd"
 	"procoder/internal/gitx"
+	"procoder/internal/learn"
 	"procoder/internal/lint"
 	"procoder/internal/maintain"
 	"procoder/internal/parallel"
@@ -216,7 +218,7 @@ func Run(paths []string, root string, stdout io.Writer) int {
 // RunWith is Run plus the commit message being prepared, so the
 // documentation acknowledgment can clear its obligation at the moment of
 // the commit. Everything else is identical.
-func RunWith(paths []string, root string, commitMessage string, stdout io.Writer) int {
+func RunWith(paths []string, root string, commitMessage string, stdout io.Writer) (exit int) {
 	if len(paths) == 0 {
 		var err error
 		paths, err = changedFiles(root)
@@ -240,6 +242,22 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	codeindex.ImpactIfIndexed(root, paths, func(line string) { fmt.Fprintln(stdout, "  info  "+line) })
 
 	cfg := config.Load(root)
+
+	// What this run cost, recorded for `procoder learn` when the
+	// repository asked for it. Deferred so it records however the gate
+	// exits, and it can neither change the verdict nor fail the run — see
+	// internal/learn for why that silence is deliberate here and nowhere
+	// else.
+	started := time.Now()
+	defer func() {
+		learn.Append(root, learn.Record{
+			Cmd:      "check",
+			Ms:       time.Since(started).Milliseconds(),
+			Exit:     exit,
+			Blocking: exit != 0,
+			At:       started.UTC().Format(time.RFC3339),
+		}, cfg.LearnRecord)
+	}()
 
 	// How much of procoder this repository is subject to. A repository
 	// that never adopted it is somebody else's: it gets the checks that

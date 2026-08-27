@@ -89,6 +89,15 @@ type Config struct {
 	// ReleaseFiles are the version-bearing files `procoder release`
 	// verifies; unset means the version-sync leg verifies nothing (said).
 	ReleaseFiles []string
+
+	// LearnRecord turns on the timing records `procoder learn` reads.
+	// Off by default: no repository starts writing measurement data
+	// because it upgraded.
+	LearnRecord bool
+	// LearnMinSamples is how many runs must be recorded before `learn
+	// propose` will say anything. A ranking from four runs is not
+	// evidence, and a proposal made on one is worse than none.
+	LearnMinSamples int
 	// BenchThreshold is the regression percentage `procoder bench` marks;
 	// zero means the default of 10.
 	BenchThreshold int
@@ -124,6 +133,12 @@ type Config struct {
 }
 
 // Defaults per the design contract.
+// defaultLearnMinSamples is how many recorded runs `learn propose` wants
+// before it will propose anything. Twenty is a judgement, not a
+// calculation: enough that one slow morning does not set policy, few
+// enough to reach in a week of ordinary work.
+const defaultLearnMinSamples = 20
+
 const defaultMaxFileMB = 5
 
 // defaultSastBlocksAt is the severity semgrep reserves for findings it is
@@ -135,7 +150,7 @@ const defaultSastBlocksAt = "ERROR"
 // guessed at.
 func Load(root string) Config {
 	cfg := Config{MaxFileMB: defaultMaxFileMB, DebtMarker: "debt:", CommitGate: "block",
-		SastBlocksAt: defaultSastBlocksAt}
+		SastBlocksAt: defaultSastBlocksAt, LearnMinSamples: defaultLearnMinSamples}
 	defaults := map[string]string{
 		"git.commit_gate": "block",
 		"git.max_file_mb": strconv.Itoa(defaultMaxFileMB),
@@ -147,6 +162,8 @@ func Load(root string) Config {
 		// a false relaxation line teaches the reader to skim the real ones.
 		"bench.threshold":         "10",
 		"security.sast_blocks_at": defaultSastBlocksAt,
+		"learn.record":            "false",
+		"learn.min_samples":       strconv.Itoa(defaultLearnMinSamples),
 	}
 	raw, err := os.ReadFile(filepath.Join(root, ".procoder", "config.toml"))
 	if err != nil {
@@ -228,6 +245,12 @@ func Load(root string) Config {
 			cfg.TestBlock = value == "block"
 		case "sprint.retro":
 			cfg.SprintRetroOff = value == "off"
+		case "learn.record":
+			cfg.LearnRecord = value == "true"
+		case "learn.min_samples":
+			if n, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && n > 0 {
+				cfg.LearnMinSamples = n
+			}
 		case "release.maintainers":
 			cfg.Maintainers = parseList(value)
 		case "release.files":

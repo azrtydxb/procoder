@@ -994,6 +994,47 @@ is asked nothing.
 
 See [Every agent](portability.md) for the full host matrix.
 
+#### `procoder learn <sub>`
+
+What procoder's own governance costs in **this** repository — `measure` |
+`propose` | `verify`. Every other domain measures your code; this one
+measures procoder, which is the claim its documentation could not otherwise
+make: see [Honest limits](honest-limits.md).
+
+**Recording is off until you ask.** `[learn] record = true` in
+`.procoder/config.toml` makes the gate append one JSONL line per run to
+`.procoder/state/learn.jsonl` — gitignored, never committed, and holding
+nothing but a command name, a duration and an exit code. A repository that
+upgrades records nothing.
+
+`measure` ranks what cost the most and prints the sample count it used.
+`propose` prints configuration changes and **writes none of them** — the
+binary prints and the agent writes, like `adr new` and `context add`.
+`verify` reports whether an applied proposal actually reduced what it
+targeted, and prints the revert when it did not.
+
+Every number carries where it came from, in the same words `backlog close`
+uses: `[measured]` for a total over recorded runs, `[manual claim]` for
+anything projected from them.
+
+**Known pitfalls.**
+
+- **A record that cannot be written is dropped in silence.** This is the
+  only place in procoder where a failure is not reported. The gate runs on
+  every commit, and a measurement able to fail the thing it measures would
+  be a governance cost of its own.
+- **A proposal may suggest loosening a blocking policy, and says what it
+  cannot see.** The records hold what a check COST; nothing in them holds
+  what it PREVENTED. Every loosening proposal carries that line, because
+  showing one side of the trade as though it were both is the failure this
+  command exists to avoid.
+- **`verify` needs a marker.** Write `.procoder/state/learn-applied.json`
+  when you apply a proposal. Without it `verify` says NOT verified rather
+  than guessing: the git history of `config.toml` shows that the file
+  changed, never which proposal a change corresponds to.
+- **Below `[learn] min_samples` (20) `propose` says nothing** and names the
+  shortfall. A ranking from four runs is not evidence.
+
 #### `procoder lessons`
 
 The self-learning loop's ledger (`.procoder/github/LESSONS.md`): every

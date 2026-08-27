@@ -537,7 +537,7 @@ var Commands = map[string]bool{
 	"backlog": true, "bench": true, "check": true, "ci": true, "claims": true, "config": true,
 	"context": true, "copilot-leak": true, "debt": true, "deps": true, "dispatch": true, "docs": true,
 	"doctor": true, "env": true, "evidence": true, "format": true, "git": true, "hook": true,
-	"index": true, "infra": true, "init": true, "lessons": true, "lint": true,
+	"index": true, "learn": true, "infra": true, "init": true, "lessons": true, "lint": true,
 	"maintain": true, "plan": true, "principles": true, "prune": true,
 	"release": true, "review": true, "run": true, "scrub": true,
 	"security": true, "self-upgrade": true, "spec": true, "sprint": true,
