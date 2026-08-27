@@ -147,6 +147,30 @@ checkable claim.
   convergence framing; the argument moves to #209's research page or is
   dropped.
 
+## The gitleaks batching premise was wrong — batch, or run concurrently?
+
+CORRECTION. The decision to "batch above a threshold" was taken on my
+figure that one whole-tree gitleaks call costs about a second, from a CI
+probe. Measured locally it costs 27.8s, and the CI step carried `|| true`,
+so whether it scanned anything at all is unknown.
+
+The real local numbers: per-file 0.05s × 787 = 39.4s, whole tree 27.8s. A
+30% saving, not the ~290s I implied. And the whole-tree scan reads `.git`,
+`dist` and ignored directories the per-file scan never looks at — it finds
+115 leaks there, all outside the tracked set.
+
+Which of the ~240s unaccounted for in CI is gitleaks remains unproven. I
+attributed it to per-file startup; that was inference, not measurement.
+
+- run the per-file scans concurrently: attacks process startup directly,
+  scans exactly what it scans today, helps whether the leg is 41s or 240s,
+  and is the pattern already used for the formatter pass.
+- batch above a threshold as originally agreed: fewer processes, but 30%
+  locally rather than the number the decision was made on, and it changes
+  WHAT is scanned.
+- measure gitleaks in CI properly first, then decide: one more probe cycle
+  before any code changes.
+
 ## The tracked-tree gate is 787 gitleaks process startups — batch it?
 
 `Secrets` calls `scanOne` once per path, and `scanOne` starts a gitleaks

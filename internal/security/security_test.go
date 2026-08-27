@@ -2,6 +2,7 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -832,5 +833,66 @@ func TestAFailedToolIsReportedByItsDiagnosticNotItsProgress(t *testing.T) {
 	}
 	if got := why("   \n  \n", nil); got != "no output" {
 		t.Errorf("whitespace is not a diagnosis, got %q", got)
+	}
+}
+
+// The secret scan runs one process per path, concurrently. The gate prints
+// its findings straight out of the returned slice, so a run that collected
+// them in completion order would make the same tree print a different
+// report twice.
+//
+// A stub rather than real gitleaks, and deliberately: the fixture has to
+// produce a finding for EVERY path for the order to be observable at all,
+// and a test that skips when the real scanner happens not to fire asserts
+// nothing. The stub sleeps longer for earlier paths, so completion order
+// and the order given disagree on every run.
+//
+// proved by: collect into a shared slice under a mutex in Secrets instead
+// of writing results[i] — the order follows whichever stub exited first
+// and this fails.
+func TestSecretsReturnsFindingsInThePathOrderGiven(t *testing.T) {
+	// $1 is `dir`, $2 the path; --report-path is the fourth flag pair.
+	stub(t, "gitleaks", `
+report=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--report-path" ]; then report="$a"; fi
+  prev="$a"
+done
+src="$2"
+case "$src" in
+  *f00*) sleep 0.30 ;;
+  *f01*) sleep 0.25 ;;
+  *f02*) sleep 0.20 ;;
+  *f03*) sleep 0.15 ;;
+  *f04*) sleep 0.10 ;;
+  *) sleep 0.01 ;;
+esac
+printf '[{"File":"%s","StartLine":1,"RuleID":"stub-rule"}]' "$src" > "$report"
+exit 1
+`)
+	root := t.TempDir()
+	var paths []string
+	for i := 0; i < 6; i++ {
+		p := filepath.Join(root, fmt.Sprintf("f%02d.txt", i))
+		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, p)
+	}
+
+	got := Secrets(root, paths)
+	if len(got) != len(paths) {
+		t.Fatalf("got %d findings for %d paths: %+v", len(got), len(paths), got)
+	}
+	for i, f := range got {
+		if filepath.Base(f.File) != filepath.Base(paths[i]) {
+			var seen []string
+			for _, g := range got {
+				seen = append(seen, filepath.Base(g.File))
+			}
+			t.Fatalf("position %d is %s, want %s — path order not preserved: %v",
+				i, filepath.Base(f.File), filepath.Base(paths[i]), seen)
+		}
 	}
 }

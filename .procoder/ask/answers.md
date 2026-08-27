@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-27 16:18 UTC. procoder reads this
+Written 2026-08-27 17:07 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -133,6 +133,35 @@ Key: 6617364d8670
 Question: Which of #177 and #181 is next, given #172 and #175 are both in review?
 
 Answer: #181 (procoder prune) — already specified with guardrails agreed, start immediately
+
+## [decision] decisions.md
+
+Key: 6625130ff945
+Question: The gitleaks batching premise was wrong — batch, or run concurrently?
+
+CORRECTION. The decision to "batch above a threshold" was taken on my
+figure that one whole-tree gitleaks call costs about a second, from a CI
+probe. Measured locally it costs 27.8s, and the CI step carried `|| true`,
+so whether it scanned anything at all is unknown.
+
+The real local numbers: per-file 0.05s × 787 = 39.4s, whole tree 27.8s. A
+30% saving, not the ~290s I implied. And the whole-tree scan reads `.git`,
+`dist` and ignored directories the per-file scan never looks at — it finds
+115 leaks there, all outside the tracked set.
+
+Which of the ~240s unaccounted for in CI is gitleaks remains unproven. I
+attributed it to per-file startup; that was inference, not measurement.
+
+- run the per-file scans concurrently: attacks process startup directly,
+  scans exactly what it scans today, helps whether the leg is 41s or 240s,
+  and is the pattern already used for the formatter pass.
+- batch above a threshold as originally agreed: fewer processes, but 30%
+  locally rather than the number the decision was made on, and it changes
+  WHAT is scanned.
+- measure gitleaks in CI properly first, then decide: one more probe cycle
+  before any code changes.
+
+Answer: Run the per-file scans concurrently. It attacks process startup directly, scans exactly what it scans today, and does not depend on the whole-tree figure I got wrong.
 
 ## [decision] decisions.md
 

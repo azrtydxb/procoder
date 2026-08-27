@@ -15,9 +15,11 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"procoder/internal/config"
@@ -77,12 +79,60 @@ func Secrets(root string, paths []string) []gitx.Finding {
 		return []gitx.Finding{{Blocking: true,
 			Message: "NOT checked — gitleaks is not installed; run `procoder init` (security)"}}
 	}
-	var out []gitx.Finding
+	// One gitleaks process per path, run concurrently. The cost here is
+	// process startup, not scanning: measured on this repository, a single
+	// file costs 0.05s and 787 of them cost 39.4s, which is 787 startups
+	// and almost no reading.
+	//
+	// Scanning the tree in ONE call was the obvious alternative and is
+	// worse. It costs 27.8s here — a 30% saving, not the order of
+	// magnitude the shape suggests — and it reads `.git`, `dist` and every
+	// ignored directory, where it finds 115 leaks that are in nobody's
+	// commit. Narrowing afterwards would mean paying to find things only
+	// to discard them.
+	//
+	// Bounded by NumCPU: every unit of work is an external process.
+	var wanted []string
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
-		out = append(out, scanOne(bin, root, p)...)
+		wanted = append(wanted, p)
+	}
+	if len(wanted) == 0 {
+		return nil
+	}
+	// Results by index, concatenated in the order the paths were given: the
+	// gate prints findings straight from this slice, and a report whose
+	// order followed whichever process finished first would differ between
+	// two runs over the same tree.
+	results := make([][]gitx.Finding, len(wanted))
+	workers := runtime.NumCPU()
+	if workers > len(wanted) {
+		workers = len(wanted)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				results[i] = scanOne(bin, root, wanted[i])
+			}
+		}()
+	}
+	for i := range wanted {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	var out []gitx.Finding
+	for _, r := range results {
+		out = append(out, r...)
 	}
 	return out
 }
@@ -92,7 +142,25 @@ func Secrets(root string, paths []string) []gitx.Finding {
 // report's paths — and therefore .gitleaksignore fingerprints — relative.
 func scanOne(bin, workdir, src string) []gitx.Finding {
 	var out []gitx.Finding
-	report := filepath.Join(os.TempDir(), fmt.Sprintf("procoder-gitleaks-%d.json", time.Now().UnixNano()))
+	// A unique path per scan, from the OS rather than from the clock.
+	// This used to be time.Now().UnixNano(), which was fine while scans
+	// ran one at a time and is not now they run concurrently: two
+	// goroutines reading the same nanosecond share a report path, and one
+	// then reads the other's findings under its own file name. Windows
+	// makes that likely rather than theoretical — its clock granularity is
+	// milliseconds, not nanoseconds.
+	dir, tmpErr := os.MkdirTemp("", "procoder-gitleaks-")
+	if tmpErr != nil {
+		return []gitx.Finding{{File: src, Blocking: true,
+			Message: "gitleaks has nowhere to write its report (" + tmpErr.Error() + ") — the path was NOT checked (security)"}}
+	}
+	defer os.RemoveAll(dir)
+	// A directory, not a reserved file name. os.CreateTemp would also be
+	// unique, and it would CREATE the report — so a gitleaks that died
+	// before writing anything would leave an empty file where "no report"
+	// is the thing that has to be detectable, and the finding would stop
+	// quoting why the scan failed.
+	report := filepath.Join(dir, "report.json")
 	common := []string{"--report-format", "json", "--report-path", report,
 		"--no-banner", "--exit-code", "1"}
 	ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
@@ -122,7 +190,6 @@ func scanOne(bin, workdir, src string) []gitx.Finding {
 		}
 	}
 	raw, readErr := os.ReadFile(report)
-	os.Remove(report)
 	if readErr != nil {
 		return []gitx.Finding{{File: src, Blocking: true,
 			Message: "gitleaks produced no report — the path was NOT checked: " + firstLine(errb.String()) + " (security)"}}
