@@ -28,6 +28,7 @@ var knownFlags = map[string][]string{
 	"copilot-leak": {"--since", "--quiet", "--from-copilot"},
 	"docs":         {"--ack", "--external"},
 	"dispatch":     {"--task"},
+	"claims":       {"--by"},
 	"env":          {"--sync"},
 	"index":        {"--at"},
 	"init":         {"--yes"},

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/ask"
 	"sort"
 	"strings"
 
@@ -67,6 +68,11 @@ func Board(root string, out func(string)) int {
 		out(emptyHint)
 		return 0
 	}
+	// Decisions first, because a decision is what is holding other work
+	// up, and a board that lists the work without the reason reads as
+	// nobody having started (#191).
+	printDecisions(root, items, out)
+
 	var milestones, epics, stories []Item
 	active := ""
 	for _, it := range items {
@@ -280,4 +286,62 @@ func driftFlag(root string, e Item) string {
 		return "  ⚠ spec drift"
 	}
 	return ""
+}
+
+// printDecisions shows what is waiting on a person, and which stories say
+// they are waiting on it.
+//
+// The decisions themselves live in .procoder/ask/decisions.md — the
+// agent's write path, and the thing it reaches for mid-work. This does not
+// move them onto the backlog; it makes the backlog show that they exist,
+// which is the difference between a blocked story and an unstarted one.
+func printDecisions(root string, items []Item, out func(string)) {
+	pending, notes, err := ask.PendingDecisions(root)
+	if err != nil || len(notes) > 0 {
+		// Unreadable is not "no decisions": saying nothing is waiting,
+		// because procoder could not look, is the failure this whole
+		// repository keeps finding.
+		out("DECISIONS NOT read — " + firstProblem(err, notes))
+		out("")
+		return
+	}
+	if len(pending) == 0 {
+		return
+	}
+	out(fmt.Sprintf("DECISIONS WAITING (%d) — work below may be held up by these", len(pending)))
+	for _, q := range pending {
+		head := firstLineOf(q.Text)
+		out("  ? " + head)
+		for _, it := range items {
+			if it.BlockedBy != "" && mentions(head, it.BlockedBy) {
+				out("      blocks " + it.ID)
+			}
+		}
+	}
+	out("")
+}
+
+func firstProblem(err error, notes []string) string {
+	if err != nil {
+		return err.Error()
+	}
+	if len(notes) > 0 {
+		return notes[0]
+	}
+	return "reason unknown"
+}
+
+func firstLineOf(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
+}
+
+// mentions matches a story's Blocked-by: against a decision's heading
+// loosely, because a person writing the header will shorten the question
+// rather than paste it.
+func mentions(decision, blockedBy string) bool {
+	d, b := strings.ToLower(decision), strings.ToLower(strings.TrimSpace(blockedBy))
+	return b != "" && (strings.Contains(d, b) || strings.Contains(b, d))
 }
