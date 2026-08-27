@@ -329,3 +329,58 @@ cs/Sloppy.cs — csharpier is not installed` — which names the file and
   count, know what the maximum possible count is, because a number that is
   too HIGH is as much a defect as one that is too low and reads as better
   news.
+
+## 2026-08-27 roadmap sweep (self) — "Closes #A, #B" closed only #A, twice
+
+- Class: mechanical
+
+- Adaptation: GitHub honours a closing keyword only before the number it
+  immediately precedes. `Closes #194, #211, #209` closed #194 and left the
+  other two open; `Closes #230, #231` closed #230 and left #231. Both read
+  as correct in the commit message, and the issues sat open while every PR
+  showed as merged — which is the worst shape for this failure, because the
+  work IS done and nothing looks wrong until somebody lists open issues.
+
+  The rule: repeat the keyword per issue — `Closes #194, closes #211,
+closes #209` — and after merging a PR that claimed to close more than
+  one, check the issues rather than the PR.
+
+## 2026-08-27 roadmap sweep (self) — a timeout read as a cancellation, and I blamed my own pushes
+
+- Class: judgment
+
+- Adaptation: the gate job reported CANCELLED, and the step list showed the
+  cancellation inside `procoder security --deep`. I concluded twice from
+  that: first that my own `gh pr update-branch` pushes were killing the run
+  through the concurrency group, then that semgrep was the expensive step.
+  Both were wrong and both were checkable in one call.
+
+  The timestamps said 10m09s against `timeout-minutes: 10` — a timeout,
+  which GitHub surfaces as `cancelled`. And per-step timings said semgrep
+  took 6 seconds while `gate over the tracked tree` took 6m47s: the
+  cancelled step is simply the one that was RUNNING when the clock
+  expired, which says nothing about what consumed the time.
+
+  The rule: a cancelled job is a timeout until the timestamps say
+  otherwise, and the step that shows as cancelled is the last one started,
+  never by itself the slow one. Read per-step durations before naming a
+  cause. This ledger already carried the same failure from 2026-08-19 —
+  "gate job hung 10 minutes ... cancelled by its own timeout" — and the
+  budget was never raised, so it recurred. A lesson recorded without the
+  fix applied is a lesson that will be learned again.
+
+## 2026-08-27 roadmap sweep (self) — a local speedup asserted as a CI speedup
+
+- Class: judgment
+
+- Adaptation: parallelising the tracked-tree format check cut 257.5s to
+  153.0s on a ten-core laptop, and I told the maintainer it would take the
+  CI job "from 9-plus minutes to 4-5". Then I measured: that step ran 508s,
+  407s and 402s on recent main runs and 429s with the change — inside the
+  existing spread, no improvement at all. The runners have far fewer cores
+  and the CI bottleneck is not per-file process startup.
+
+  The rule: a benchmark measures the machine it ran on. Before claiming an
+  improvement somewhere else, measure it there, and get the baseline's
+  SPREAD rather than one sample — a single 6m47s reading looked like a
+  fixed baseline when the real range was 402-508s.
