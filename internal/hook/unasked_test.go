@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"procoder/internal/ask"
 	"strings"
 	"testing"
 )
@@ -223,5 +224,60 @@ func TestAnEmptyDecisionsFileStillBlocks(t *testing.T) {
 	recordDecision(t, root, "   \n")
 	if code, _ := runStop(t, root, "Done. Should I tag it now?"); code != 2 {
 		t.Fatalf("an empty decisions file did not block (exit %d) — empty means nothing was recorded", code)
+	}
+}
+
+// The defect this fixes, reproduced: a decision recorded in an EARLIER
+// turn used to silence the hook for every later turn, whatever they
+// buried. Measured mid-session on this repository — six pending decisions
+// and the hook mute since the first of them.
+//
+// proved by: restore `len(pending) > 0` as an unconditional silencer in
+// unaskedDecision — the second call stops blocking and this fails.
+func TestAStaleBacklogDoesNotSilenceTheHook(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, filepath.FromSlash(ask.Dir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decisions := filepath.Join(dir, ask.DecisionsFile)
+	write := func(body string) {
+		if err := os.WriteFile(decisions, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Turn one: the agent records a decision, so the hook stays quiet.
+	write("## Ship it now or hold?\n\n- now: ...\n- hold: ...\n")
+	if blocked, _ := unaskedDecision(root, "Should I ship it now, or hold?"); blocked {
+		t.Fatal("blocked a turn that recorded its decision")
+	}
+
+	// Turn two: a DIFFERENT decision, in prose, and the file untouched.
+	// The backlog from turn one must not excuse it.
+	blocked, msg := unaskedDecision(root, "Do you want the cache dropped as well?")
+	if !blocked {
+		t.Fatal("a stale backlog silenced the hook — the whole defect")
+	}
+	if !strings.Contains(msg, "decisions.md") {
+		t.Errorf("the refusal must name the file: %q", msg)
+	}
+}
+
+// proved by: drop the `readErr != nil` arm in decisionsChanged so a
+// missing digest reads as unchanged — the first stop in a fresh tree then
+// blocks, and this fails.
+func TestTheFirstStopInATreeDoesNotBlock(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, filepath.FromSlash(ask.Dir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ask.DecisionsFile),
+		[]byte("## Something already here?\n\n- a: ...\n- b: ...\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if blocked, _ := unaskedDecision(root, "Shall I go ahead?"); blocked {
+		t.Error("blocked on the first stop, with nothing to compare against")
 	}
 }
