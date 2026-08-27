@@ -31,6 +31,7 @@ import (
 	"procoder/internal/docs"
 	"procoder/internal/doctor"
 	"procoder/internal/envsync"
+	"procoder/internal/evidence"
 	"procoder/internal/format"
 	"procoder/internal/gate"
 	"procoder/internal/gitcmd"
@@ -336,6 +337,11 @@ const usage = `usage: procoder <command> [args]
                        as analyst, architect, implementer and reviewer in
                        turn; a lens that could not be loaded is a refusal,
                        never a review that silently happened
+  evidence record <cmd>
+                       run a command and print a fingerprint of what it
+                       produced — sha256, byte count, exit code — for
+                       pasting under the Evidence heading. The output
+                       itself is never printed: evidence gets committed
   context <sub>        the project's shared vocabulary in .procoder/context.md —
                        add <term> <definition> | list | check. What the team
                        calls things, which is not always what the code calls
@@ -707,6 +713,12 @@ func run(args []string) int {
 			force = true
 		}
 		return releases.Upgrade(version, force, upgradeConsent, printLine)
+	case "evidence":
+		if len(args) < 3 || args[1] != "record" {
+			printLine("evidence record <command> — runs it and prints a fingerprint, never its output")
+			return 2
+		}
+		return evidence.Record(doctor.Root(), args[2:], printLine)
 	case "context":
 		root := doctor.Root()
 		if len(args) < 2 {

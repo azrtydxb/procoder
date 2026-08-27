@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"procoder/internal/evidence"
 	"procoder/internal/spec"
 	"strings"
 	"time"
@@ -109,6 +110,14 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 	// change deliberately does not do. So the controller says it, the
 	// person reads it, and the next spec is written better.
 	var criterionNotes []string
+
+	// Is this evidence a measurement or somebody's account of one? Both
+	// are legitimate; what was missing is the difference being visible to
+	// whoever reads the closed story later (#208).
+	if ev := textutil.Section(text, "Evidence"); strings.TrimSpace(textutil.StripComments(ev)) != "" {
+		criterionNotes = append(criterionNotes, "evidence is a "+evidence.Classify(ev).String()+
+			" — `procoder evidence record <command>` produces a fingerprint anybody can re-check")
+	}
 	for _, f := range spec.UncheckableCriteria("## Acceptance criteria\n" + criteria) {
 		criterionNotes = append(criterionNotes, "a criterion "+f.Why)
 	}

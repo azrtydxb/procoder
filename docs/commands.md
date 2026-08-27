@@ -367,6 +367,30 @@ the same declared `npm start` is a different program depending on which npm
 is first. Naming it is the difference between consenting to a command and
 consenting to a string.
 
+#### `procoder evidence record <command>`
+
+Runs a command and prints a fingerprint of what it produced — sha256, byte
+count, exit code — for pasting under a story's `## Evidence` heading.
+
+**The output itself is never printed and never written.** Evidence gets
+committed, and a suite's output can carry a token, a customer name or a
+path identifying somebody's machine. The fingerprint proves a specific
+command produced a specific result, which is more falsifiable than prose,
+without putting the result on disk. A failing command is recorded too: a
+ledger that only holds successes is a highlight reel.
+
+The `Command:` line does echo what you typed, because evidence that does
+not say what ran proves nothing — so a secret passed as an _argument_ is
+printed. What this protects is the output, which is the part you cannot
+control.
+
+`todo close` and `backlog close story` say which kind of evidence a story
+carries — a measurement or a manual claim. **Both are accepted.** Most
+evidence is prose, and a sentence explaining why a check was not needed is
+exactly right; what was missing is a reader being able to tell which they
+are looking at, since a section that is somebody's word for it and one that
+can be re-checked looked identical to every check procoder made.
+
 #### `procoder context <sub>`
 
 The project's shared vocabulary in `.procoder/context.md` — what the team
