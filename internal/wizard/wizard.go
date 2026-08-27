@@ -84,12 +84,26 @@ func read(root, name string) (string, string) {
 
 // List names the wizards this repository carries.
 func List(root string, out func(string)) int {
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
+	dir := filepath.Join(root, Dir)
+	// Absent and unreadable are different answers, and os.ReadDir alone
+	// cannot tell them apart everywhere: on Windows, reading a path that
+	// is a FILE reports "cannot find the path", which satisfies
+	// os.IsNotExist — so the honest failure would read as "no wizards".
+	// Stat first, and let the kind of the thing decide.
+	info, statErr := os.Stat(dir)
+	switch {
+	case statErr != nil && os.IsNotExist(statErr):
+		out("no wizards — `procoder wizard new <name>` prints one to write")
+		return 0
+	case statErr != nil:
+		out(Dir + " cannot be read (" + statErr.Error() + ") — the wizards are NOT listed")
+		return 1
+	case !info.IsDir():
+		out(Dir + " is not a directory — the wizards are NOT listed")
+		return 1
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			out("no wizards — `procoder wizard new <name>` prints one to write")
-			return 0
-		}
 		out(Dir + " cannot be read (" + err.Error() + ") — the wizards are NOT listed")
 		return 1
 	}

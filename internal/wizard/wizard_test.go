@@ -68,9 +68,14 @@ func TestAMissingWizardIsNamed(t *testing.T) {
 	}
 }
 
-// proved by: have List swallow the ReadDir error and print the empty-state
-// line — an unreadable directory then reads as "no wizards", and this
-// fails on both the exit code and the word NOT.
+// Windows found this one. os.ReadDir on a path that is a FILE reports
+// "cannot find the path specified" there, which satisfies os.IsNotExist —
+// so the first version of List answered "no wizards" for a path it could
+// not read. Absent and unreadable are different answers on every platform.
+//
+// proved by: replace the Stat switch in List with a bare os.ReadDir whose
+// error path returns the empty-state line — this fails on Windows, and the
+// !info.IsDir() arm is what makes it fail on Unix too.
 func TestAnUnreadableWizardDirIsNotReportedAsEmpty(t *testing.T) {
 	root := t.TempDir()
 	// A file where the directory belongs: ReadDir fails on every platform,
@@ -85,8 +90,12 @@ func TestAnUnreadableWizardDirIsNotReportedAsEmpty(t *testing.T) {
 	if code := List(root, out); code != 1 {
 		t.Errorf("code = %d, want 1", code)
 	}
-	if !strings.Contains(strings.Join(*got, "\n"), "NOT listed") {
+	joined := strings.Join(*got, "\n")
+	if !strings.Contains(joined, "NOT listed") {
 		t.Errorf("an unreadable dir read as empty: %v", *got)
+	}
+	if strings.Contains(joined, "no wizards") {
+		t.Errorf("an unreadable dir claimed there are none: %v", *got)
 	}
 }
 
