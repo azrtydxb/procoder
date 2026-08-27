@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"procoder/internal/gitx"
 )
 
 // stubGitleaks puts a fake gitleaks on PATH that reports no leaks, so the
@@ -267,5 +270,97 @@ func TestTheGateStillCarriesTheWholeTreeSecurityLegs(t *testing.T) {
 		if !strings.Contains(string(src), call) {
 			t.Errorf("gate.go no longer calls %s — CI dropped `security --deep` because the gate covered it, so this is CI losing a check silently", call)
 		}
+	}
+}
+
+// The gate prints findings straight out of what concurrently returns, so
+// completion order would make the same tree print a different report twice
+// — the accidental version of which is #236, and the cost of it is that
+// "did my change alter this?" stops being answerable.
+//
+// Leg 0 is the slowest, so a version that appended as legs finished would
+// put it last.
+//
+// proved by: append into a shared slice under a mutex instead of writing
+// results[i] — this fails on the first element.
+func TestConcurrentlyReturnsResultsInDeclarationOrder(t *testing.T) {
+	mk := func(name string, d time.Duration) func() []gitx.Finding {
+		return func() []gitx.Finding {
+			time.Sleep(d)
+			return []gitx.Finding{{Message: name}}
+		}
+	}
+	got := concurrently([]func() []gitx.Finding{
+		mk("first", 60*time.Millisecond),
+		mk("second", 30*time.Millisecond),
+		mk("third", 0),
+	})
+	want := []string{"first", "second", "third"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d findings, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Message != w {
+			t.Errorf("position %d is %q, want %q — declaration order not preserved", i, got[i].Message, w)
+		}
+	}
+}
+
+// proved by: drop the `results[i] = leg()` write and return `out` built
+// only from non-nil legs — the nil leg vanishes, the slice shortens, and
+// callers that index by leg lose their alignment.
+func TestConcurrentlyKeepsALegThatFoundNothing(t *testing.T) {
+	got := concurrently([]func() []gitx.Finding{
+		func() []gitx.Finding { return nil },
+		func() []gitx.Finding { return []gitx.Finding{{Message: "only"}} },
+	})
+	if len(got) != 1 || got[0].Message != "only" {
+		t.Errorf("got %#v", got)
+	}
+}
+
+// golangci-lint takes a lock and the second concurrent instance dies with
+// "parallel golangci-lint is running", which the gate reports as a
+// BLOCKING "complexity NOT checked". Two legs used to call it — lint and
+// complexity — and making the legs concurrent made them collide. CI caught
+// it; locally they happened never to overlap, which is the worst way for a
+// race to behave.
+//
+// Source-level because the collision needs a real golangci-lint and two
+// real invocations to reproduce, and a test that needs the tool installed
+// passes by not running.
+//
+// proved by: split maintain.ComplexityChanged back into its own entry in
+// the legs slice — two legs then call golangci-lint and this fails.
+func TestOneLegOwnsGolangciLint(t *testing.T) {
+	src, err := os.ReadFile("gate.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CRLF first. Windows checks the tree out with \r\n, so a pattern
+	// written as "\n\t}\n" matches nothing there and this test failed
+	// with "could not find the end of the legs slice" on Windows alone —
+	// a test reporting that it cannot see what it is pinning, which is the
+	// same silent green it exists to prevent.
+	body := strings.ReplaceAll(strings.ReplaceAll(string(src), "\r\n", "\n"), "\r", "\n")
+	start := strings.Index(body, "legs := []func() []gitx.Finding{")
+	if start < 0 {
+		t.Fatal("the legs slice is gone; this test is pinning something that no longer exists")
+	}
+	end := strings.Index(body[start:], "\n\t}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of the legs slice")
+	}
+	legs := body[start : start+end]
+
+	// Each `func() []gitx.Finding {` inside the slice is one leg.
+	var callers int
+	for _, leg := range strings.Split(legs, "func() []gitx.Finding")[1:] {
+		if strings.Contains(leg, "lint.Files(") || strings.Contains(leg, "maintain.ComplexityChanged(") {
+			callers++
+		}
+	}
+	if callers != 1 {
+		t.Errorf("%d legs reach golangci-lint; exactly one may, or they race for its lock", callers)
 	}
 }
