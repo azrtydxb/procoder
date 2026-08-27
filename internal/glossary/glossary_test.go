@@ -31,7 +31,10 @@ func collect() (func(string), *[]string) {
 // the glossary reads as empty.
 func TestLoadReadsTermsAndDefinitions(t *testing.T) {
 	root := withGlossary(t, "# Vocabulary\n\n## quality chain\n\nThe refusing controllers.\n\n## the gate\n\nWhat runs before a commit.\n")
-	terms := Load(root)
+	terms, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(terms) != 2 {
 		t.Fatalf("want 2 terms, got %d: %+v", len(terms), terms)
 	}
@@ -131,5 +134,47 @@ func TestNearIgnoresVeryShortTerms(t *testing.T) {
 	terms := []Term{{Name: "gate", Definition: "x"}}
 	if got := Near(terms, "We should investigate delegating this."); len(got) != 0 {
 		t.Fatalf("a short term matched unrelated prose: %+v", got)
+	}
+}
+
+// A glossary that EXISTS and cannot be read is not the same as no
+// glossary. Reporting it as none makes this feature go quiet in the one
+// place it is meant to help, and it is the fifth time that shape has
+// appeared in this codebase — unknown treated as none. Raised in review on
+// #217.
+//
+// proved by: the os.IsNotExist branch in Load made to swallow every error
+// — the unreadable file reads as an empty glossary and nothing says so.
+func TestAnUnreadableGlossaryIsNotAnEmptyOne(t *testing.T) {
+	// A DIRECTORY where the file should be, rather than chmod 000: reading
+	// a directory fails on every OS, while chmod does not deny reads on
+	// Windows — the first version of this test passed on macOS and Linux
+	// and failed on Windows CI for that reason. Skipping there would have
+	// meant the case stopped being checked on a whole platform.
+	root := t.TempDir()
+	p := filepath.Join(root, filepath.FromSlash(Path))
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(root); err == nil {
+		t.Fatal("an unreadable glossary loaded without error — it reads as no glossary at all")
+	}
+	out, lines := collect()
+	if code := Check(root, out); code == 0 {
+		t.Errorf("check reported success on a glossary it could not read: %v", *lines)
+	}
+	if !strings.Contains(strings.Join(*lines, "\n"), "could not be read") {
+		t.Errorf("the finding does not say what happened: %v", *lines)
+	}
+}
+
+// And an absent glossary is still the ordinary case: no error, no noise.
+//
+// proved by: the os.IsNotExist branch removed — every repository without a
+// glossary starts reporting an error.
+func TestNoGlossaryIsNotAnError(t *testing.T) {
+	if terms, err := Load(t.TempDir()); err != nil || len(terms) != 0 {
+		t.Fatalf("a repository with no glossary reported terms=%v err=%v", terms, err)
 	}
 }

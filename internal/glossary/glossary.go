@@ -31,12 +31,21 @@ type Term struct {
 	Line       int
 }
 
-// Load reads the glossary. A repository without one has no vocabulary
-// recorded yet, which is the ordinary case and not a problem.
-func Load(root string) []Term {
+// Load reads the glossary, and says when it could not.
+//
+// A repository without one has no vocabulary recorded yet: the ordinary
+// case, no error. A glossary that EXISTS and cannot be read is a different
+// thing entirely, and the error is returned rather than swallowed —
+// otherwise every caller reports "no glossary" for a file that is right
+// there, and the one place this feature is meant to help is where it goes
+// quiet. Raised in review on #217.
+func Load(root string) ([]Term, error) {
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(Path)))
 	if err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil, nil // no glossary yet, which is not a problem
+		}
+		return nil, err
 	}
 	var out []Term
 	var current *Term
@@ -57,7 +66,7 @@ func Load(root string) []Term {
 		current.Definition = strings.TrimSpace(current.Definition)
 		out = append(out, *current)
 	}
-	return out
+	return out, nil
 }
 
 func normaliseEOL(s string) string {
@@ -72,7 +81,11 @@ func normaliseEOL(s string) string {
 //
 // Both report. Neither refuses — see the package comment.
 func Check(root string, out func(string)) int {
-	terms := Load(root)
+	terms, err := Load(root)
+	if err != nil {
+		out(Path + " could not be read (" + err.Error() + ") — the glossary is there and procoder cannot see it, which is not the same as there being none")
+		return 2
+	}
 	if len(terms) == 0 {
 		out("no glossary — " + Path + " does not exist or records nothing")
 		return 0
@@ -110,7 +123,11 @@ func Check(root string, out func(string)) int {
 
 // List prints the vocabulary.
 func List(root string, out func(string)) int {
-	terms := Load(root)
+	terms, err := Load(root)
+	if err != nil {
+		out(Path + " could not be read (" + err.Error() + ")")
+		return 2
+	}
 	if len(terms) == 0 {
 		out("no glossary — write " + Path + " with a `## <term>` section per entry")
 		return 0
@@ -133,7 +150,12 @@ func Add(root, term, definition string, out func(string)) int {
 		out("a glossary entry needs a definition — a term nobody defined is one everybody will define differently")
 		return 2
 	}
-	for _, existing := range Load(root) {
+	existing, err := Load(root)
+	if err != nil {
+		out(Path + " could not be read (" + err.Error() + ") — refusing to add a term when procoder cannot see which already exist")
+		return 2
+	}
+	for _, existing := range existing {
 		if normalise(existing.Name) == normalise(term) {
 			out(fmt.Sprintf("%q is already defined at %s:%d — edit that entry rather than adding a second", existing.Name, Path, existing.Line))
 			return 2
@@ -154,7 +176,10 @@ func Add(root, term, definition string, out func(string)) int {
 // a miss is one duplicated word; the cost of firing on every document is a
 // check people stop reading.
 func Near(terms []Term, prose string) []Term {
+	// Normalised once, not per term. Prose here is a whole spec, and the
+	// loop below asked for it twice per entry. Raised in review on #217.
 	lower := strings.ToLower(prose)
+	flat := normalise(prose)
 	var out []Term
 	for _, t := range terms {
 		name := normalise(t.Name)
@@ -165,11 +190,11 @@ func Near(terms []Term, prose string) []Term {
 		if strings.Contains(lower, strings.ToLower(t.Name)) {
 			continue // the prose uses the term, which is the point
 		}
-		if singular := strings.TrimSuffix(name, "s"); singular != name && strings.Contains(normalise(prose), singular) {
+		if singular := strings.TrimSuffix(name, "s"); singular != name && strings.Contains(flat, singular) {
 			out = append(out, t)
 			continue
 		}
-		if strings.Contains(normalise(prose), name) {
+		if strings.Contains(flat, name) {
 			out = append(out, t)
 		}
 	}
