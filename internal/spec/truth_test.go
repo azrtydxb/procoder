@@ -563,3 +563,105 @@ func TestAMeasuredCriterionIsSilent(t *testing.T) {
 		}
 	}
 }
+
+// #231. The `true` alternative in fixedOutput was matching anywhere inside
+// a backticked span, so a TOML value, a JSON field and a Go literal all
+// read as the shell builtin. Every shape is probed on both sides, because
+// this pattern has silently matched nothing before and the tests passed
+// on `echo` alone.
+//
+// proved by: put `\btrue\b` back as a bare alternative in fixedOutput —
+// the config, JSON and YAML shapes match again and this fails.
+func TestFixedOutputCountsACommandOnlyInCommandPosition(t *testing.T) {
+	weak := []string{
+		"- [ ] `echo hi` prints",
+		"- [ ] `true` returns",
+		"- [ ] `$ echo hi` prints",
+		"- [ ] `cat README.md` shows",
+		"- [ ] `procoder --help` prints",
+		"- [ ] `procoder --version` prints",
+		"- [ ] `foo | true` succeeds",
+		"- [ ] `procoder -h` prints",
+	}
+	fine := []string{
+		"- [ ] `[learn] record = true` enables it",
+		"- [ ] `record = true` in the config",
+		"- [ ] `{\"blocking\": true}` is written",
+		"- [ ] `blocking: true` appears",
+		"- [ ] `procoder check` exits 1",
+		"- [ ] `TestTrueThing` asserts it",
+	}
+	for _, s := range weak {
+		if !fixedOutput.MatchString(s) {
+			t.Errorf("stopped catching a real weak oracle: %s", s)
+		}
+	}
+	for _, s := range fine {
+		if fixedOutput.MatchString(s) {
+			t.Errorf("a value read as a command: %s", s)
+		}
+	}
+}
+
+// #230. A spec that INTRODUCES a command must be able to name it.
+//
+// proved by: drop `|| declared[m[1]]` from UnresolvedCitations — the
+// forward reference is refused again and this fails.
+func TestASpecMayCiteTheCommandItDeclares(t *testing.T) {
+	const draft = `# learn
+
+Status: draft
+
+## Interfaces
+
+- ` + "`procoder learn measure`" + ` — the ranked cost report.
+
+## In scope
+
+- [S-1] ` + "`procoder learn propose`" + ` prints a config change.
+`
+	if got := UnresolvedCitations(t.TempDir(), draft); len(got) != 0 {
+		t.Errorf("a declared command was refused: %#v", got)
+	}
+}
+
+// The declaration is a forward reference, and it expires. A spec marked
+// complete describes work that is done.
+//
+// proved by: remove the `statusOf(text) != "draft"` guard in
+// declaredCommands — the complete spec's citation is excused too, and this
+// fails.
+func TestADeclaredCommandStopsBeingExcusedOnceTheSpecIsComplete(t *testing.T) {
+	const done = `# learn
+
+Status: complete
+
+## Interfaces
+
+- ` + "`procoder learn measure`" + ` — the ranked cost report.
+`
+	got := UnresolvedCitations(t.TempDir(), done)
+	if len(got) == 0 {
+		t.Fatal("a complete spec still excused a command that does not exist")
+	}
+	if got[0].Text != "procoder learn" {
+		t.Errorf("named %q, want `procoder learn`", got[0].Text)
+	}
+}
+
+// proved by: have declaredCommands scan the whole text instead of the
+// Interfaces section — the In scope mention alone declares it and this
+// fails.
+func TestOnlyInterfacesDeclares(t *testing.T) {
+	const draft = `# learn
+
+Status: draft
+
+## In scope
+
+- [S-1] ` + "`procoder learn propose`" + ` prints a config change.
+`
+	if got := UnresolvedCitations(t.TempDir(), draft); len(got) == 0 {
+		t.Error("a command named only in In scope was treated as declared")
+	}
+}
