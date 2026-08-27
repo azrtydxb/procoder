@@ -138,6 +138,12 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 	for _, n := range criterionNotes {
 		out("  note: " + n)
 	}
+	// The four passes are a discipline, not a check — nothing on disk can
+	// tell whether they happened (#203). Naming them where a person is
+	// deciding a story is done is the moment the reminder is worth
+	// anything.
+	out("  note: before this is finished — implemented as scoped, reread as a reviewer, " +
+		"defects hunted (`procoder review`), then cheap polish. Four questions, not one asked harder")
 	if len(missing) > 0 {
 		out("story " + id + " stays OPEN — the quality controller found:")
 		for _, m := range missing {

@@ -358,3 +358,33 @@ func TestAnythingOtherThanAResumeGetsTheWholeText(t *testing.T) {
 		}
 	}
 }
+
+// The four-pass discipline (#203). Nothing on disk can verify an agent did
+// four distinct passes, which is why this is a rule and not a check — and
+// exactly why its absence has to fail something, or it quietly stops being
+// part of the contract.
+//
+// proved by: the four-pass bullet deleted from AGENTS.md — the phrases are
+// named here as missing.
+func TestTheAgentContractCarriesTheFourPasses(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
+	if err != nil {
+		t.Skipf("no AGENTS.md here: %v", err)
+	}
+	// Whitespace-normalised: the file is prettier-formatted, so any phrase
+	// long enough to be worth pinning will eventually be reflowed across a
+	// line break. Matching raw text would make this fail on a wrap rather
+	// than on the rule going missing.
+	text := strings.Join(strings.Fields(string(raw)), " ")
+	for _, phrase := range []string{
+		"four passes",
+		"reviewer who did not write it",
+		"adversarial",
+		"edge-case",
+		"not from asking the same one harder",
+	} {
+		if !strings.Contains(text, phrase) {
+			t.Errorf("AGENTS.md no longer says %q — the discipline is the deliverable", phrase)
+		}
+	}
+}

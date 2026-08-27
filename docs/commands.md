@@ -90,6 +90,17 @@ Procoder — only the checks that are true anywhere run, and the content
 checks see only the lines the commit wrote. The run says which mode it was
 in; see [Adopted and universal repositories](configuration.md#adopted-and-universal-repositories).
 
+**Where review sits.** Finishing a piece of work is four passes, each
+asking something different: implement what was scoped with nothing quietly
+deferred; reread the diff as a reviewer who did not write it; hunt defects
+deliberately; then the cheap polish and stop.
+
+`procoder review` is the third pass, and its `adversarial` and `edge-case`
+lenses are pointed at exactly that. Nothing checks that four passes
+happened — nothing on disk could — so this is a discipline, not a gate.
+What it buys is that thoroughness comes from asking four different
+questions rather than asking the same one harder.
+
 #### `procoder review [--lens <name>[,<name>]] [paths...]`
 
 The judgment half of the gate. Every other check Procoder runs is

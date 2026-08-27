@@ -50,6 +50,14 @@ back, and a file it could not check is never reported as clean.
   conflict wherever the texts diverge, including through the middle of a
   function, so "keep both sides" can leave one side without its closing
   lines and still look plausible.
+- Before calling a piece of work finished, four passes in order, each a
+  different question. Implement what was scoped, with nothing quietly
+  deferred. Reread the diff as a reviewer who did not write it. Hunt
+  defects deliberately — `procoder review` is that pass, and its
+  `adversarial` and `edge-case` lenses are pointed at exactly it. Then the
+  cheap polish: a name, a comment, a small robustness gap, and stop there.
+  Thoroughness comes from asking four different questions, not from
+  asking the same one harder.
 - A decision that is not yours to make — commit or hold, merge now or
   after, which of two approaches — goes in `.procoder/ask/decisions.md`,
   one `## ` heading per decision with its options beneath, and then you
