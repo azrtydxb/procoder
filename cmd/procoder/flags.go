@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ import (
 // applied to the other seventy-seven.
 var knownFlags = map[string][]string{
 	"ask":          {"--file"},
+	"check":        {"--paths-from"},
 	"backlog":      {"--epic", "--milestone", "--severity"},
 	"bench":        {"--save"},
 	"ci":           {"--runs"},
@@ -158,4 +160,50 @@ func flagValue(args []string, name string) string {
 		}
 	}
 	return ""
+}
+
+// pathsFrom reads `--paths-from <file>` (or `-` for stdin) into a path
+// list. It returns (nil, false, 0) when the flag is absent, so the caller
+// falls through to its positional paths unchanged.
+//
+// One path per line. A blank line is skipped; nothing else is
+// interpreted, because a file name is whatever git printed.
+func pathsFrom(args []string, stdin io.Reader, out func(string)) (paths []string, handled bool, code int) {
+	src := ""
+	for i, a := range args {
+		if a == "--paths-from" {
+			if i+1 >= len(args) {
+				out("--paths-from needs a file, or - for stdin")
+				return nil, true, 2
+			}
+			src = args[i+1]
+		}
+	}
+	if src == "" {
+		return nil, false, 0
+	}
+	var raw []byte
+	var err error
+	if src == "-" {
+		raw, err = io.ReadAll(stdin)
+	} else {
+		raw, err = os.ReadFile(src)
+	}
+	if err != nil {
+		// Unknown is never none: a list that could not be read must not
+		// become an empty list, which the gate would read as "nothing
+		// changed" and report clean.
+		out("--paths-from could not read " + src + " (" + err.Error() + ") — nothing was checked")
+		return nil, true, 2
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			paths = append(paths, line)
+		}
+	}
+	if len(paths) == 0 {
+		out("--paths-from " + src + " listed no files — nothing was checked")
+		return nil, true, 2
+	}
+	return paths, false, 0
 }
