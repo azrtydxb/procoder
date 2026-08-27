@@ -95,16 +95,26 @@ func unaskedDecision(root, message string) (bool, string) {
 		return false, ""
 	}
 	pending, notes, err := ask.PendingDecisions(root)
-	if err != nil || len(notes) > 0 || len(pending) > 0 {
-		// Three reasons to say nothing, and only one of them is "the agent
-		// already recorded a decision".
-		//
+	if err != nil || len(notes) > 0 {
 		// A note means the decisions file exists and could not be read, or
 		// holds something in a shape procoder does not recognise. Whether a
 		// decision was recorded is then UNKNOWN, and blocking a turn on not
 		// knowing is a block nobody can act on — the thing this hook exists
 		// to prevent, not to cause. Raised in review on #215, where the
 		// notes were being discarded and unknown read as none.
+		return false, ""
+	}
+	// A recorded decision silences this hook only when it was recorded THIS
+	// TURN. `len(pending) > 0` used to be the whole test, and it meant the
+	// hook switched itself off permanently: the first decision written to
+	// the file satisfied it, and every later turn that buried a DIFFERENT
+	// decision in prose went unchallenged. Measured on this repository
+	// mid-session — six pending, the hook silent since the first one.
+	//
+	// An enforcement that goes quiet exactly when decisions are piling up
+	// unanswered has it backwards. What "the agent already recorded one"
+	// really means is that the file CHANGED while this turn ran.
+	if len(pending) > 0 && decisionsChanged(root) {
 		return false, ""
 	}
 	if alreadyBlocked(root, message) {
@@ -126,6 +136,40 @@ func unaskedDecision(root, message string) (bool, string) {
 		"structured question tool, on its own, before continuing.\n\n" +
 		"If what you wrote is not a decision, record it anyway or reword it: this " +
 		"fires on an explicit ask, and it will not fire twice on the same message."
+}
+
+// decisionsFile is the digest of .procoder/ask/decisions.md as of the last
+// stop, so the next one can tell a decision recorded during this turn from
+// a backlog that was already there.
+const decisionsFile = "last-decisions-digest"
+
+// decisionsChanged reports whether the decisions file differs from what it
+// held at the previous stop, and records the new digest either way.
+//
+// Unknown is not "changed": a digest that cannot be read or written leaves
+// the hook unable to tell a fresh decision from an old one, and the safe
+// direction there is to let the turn end. A hook that blocks on its own
+// broken bookkeeping is one people disable.
+func decisionsChanged(root string) bool {
+	path := filepath.Join(root, filepath.FromSlash(ask.Dir), ask.DecisionsFile)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return true // no file, or unreadable: not evidence of a backlog
+	}
+	sum := sha256.Sum256(raw)
+	now := hex.EncodeToString(sum[:])[:16]
+
+	digestPath := filepath.Join(root, filepath.FromSlash(StateDir), decisionsFile)
+	before, readErr := os.ReadFile(digestPath)
+	if os.MkdirAll(filepath.Dir(digestPath), 0o755) == nil {
+		_ = os.WriteFile(digestPath, []byte(now), 0o644)
+	}
+	if readErr != nil {
+		// First stop in this tree: nothing to compare against, so the
+		// question "was this recorded just now" has no answer yet.
+		return true
+	}
+	return strings.TrimSpace(string(before)) != now
 }
 
 func blockedPath(root string) string {
