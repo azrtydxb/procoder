@@ -119,9 +119,20 @@ survived. It becomes the daemon's first three bugs.
 typed pair per owner, for example:
 
 ```go
-func LoadWaves(root string) ([]dispatch.Wave, error)
-func SaveWaves(root string, ws []dispatch.Wave) error
+func LoadDispatch(root string) ([]byte, error)
+func SaveDispatch(root string, data []byte) error
 ```
+
+One named pair per owner, carrying bytes. Named rather than generic is the
+point: `SaveDispatch` says which resource is being written, which is what
+lets the daemon lock it, order it, and later account for it. A
+`Put(key, bytes)` would push every one of those decisions back out to the
+callers.
+
+The payload is bytes and not the owner's own type because the owner's type
+lives in the owner's package, and that package imports this one — a store
+returning `[]dispatch.Wave` would be an import cycle. Marshalling stays
+where it already is; only the filesystem call moves.
 
 Callers keep their current signatures. What changes inside each package is
 that the stdlib read/write pair becomes a store call.

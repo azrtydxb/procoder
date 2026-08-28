@@ -49,8 +49,13 @@ func TestStaleLockIsBrokenAndReported(t *testing.T) {
 	}
 }
 
-// proved by: dropping either the parse check or the future check leaves that
-// case waiting out the full timeout instead of taking the lock.
+// proved by: dropping the mtime clause or the future check leaves that case
+// waiting out the full timeout instead of taking the lock.
+//
+// The unparsable case is planted with an OLD mtime deliberately. A lock file
+// is created empty and written a moment later, so unparsable contents on a
+// fresh file mean "being written now", not "dead" — treating those as dead
+// gave two holders of one lock.
 func TestUnreadableLockIsStale(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -67,6 +72,12 @@ func TestUnreadableLockIsStale(t *testing.T) {
 			}
 			if err := os.WriteFile(p, []byte(tc.body), 0o644); err != nil {
 				t.Fatal(err)
+			}
+			if tc.name == "unparsable" {
+				old := time.Now().Add(-31 * time.Second)
+				if err := os.Chtimes(p, old, old); err != nil {
+					t.Fatal(err)
+				}
 			}
 			rel, broken, err := Lock(root, ".procoder/state/dispatch.json")
 			if err != nil {
@@ -143,4 +154,25 @@ func TestPartialAcquisitionReleasesWhatItTook(t *testing.T) {
 		t.Fatalf("the first path was left locked after a failed multi-lock: %v", err)
 	}
 	rel()
+}
+
+// proved by: treating unparsable contents as stale regardless of the file's
+// age lets a caller steal a lock that was created a microsecond ago and is
+// still being written. Two holders of one lock is the defect this package
+// exists to remove, so it gets its own test rather than only showing up as a
+// lost append somewhere downstream.
+func TestNewbornLockIsNotStolen(t *testing.T) {
+	root := t.TempDir()
+	p := lockPath(root, ".procoder/state/dispatch.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// exactly what O_EXCL leaves behind for the moment before the pid and
+	// timestamp are written
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if stale(p) {
+		t.Fatal("an empty, freshly created lock was judged stale — a live lock can be stolen mid-write")
+	}
 }

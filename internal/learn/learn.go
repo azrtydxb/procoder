@@ -16,10 +16,10 @@ package learn
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Dir is where the records live, under the gitignored state directory:
@@ -65,20 +65,13 @@ func Append(root string, r Record, on bool) {
 	if !on {
 		return
 	}
-	dir := filepath.Join(root, filepath.FromSlash(Dir))
-	if os.MkdirAll(dir, 0o755) != nil {
-		return
-	}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(dir, File), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close() //nolint:errcheck // see the doc comment: silence is the contract
-	_, _ = f.Write(append(line, '\n'))
+	// Silence is the contract, per the doc comment above: a measurement
+	// able to fail the run it measures is a governance cost of its own.
+	_ = store.AppendLearn(root, append(line, '\n'))
 }
 
 // Reading is what a report knows about the records: the ones it could
@@ -93,7 +86,7 @@ type Reading struct {
 // dropped in silence: a report that quietly discarded half its input would
 // be a measurement nobody could check.
 func Read(root string) (Reading, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(Dir), File))
+	raw, err := store.LoadLearn(root)
 	if err != nil {
 		return Reading{}, err
 	}

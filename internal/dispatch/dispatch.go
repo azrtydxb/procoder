@@ -23,10 +23,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"procoder/internal/store"
 )
 
 // File is where waves live: procoder's own session state, beside the
@@ -57,7 +58,7 @@ type ledger struct {
 // reporting it as none would be claiming every wave was clean on the
 // strength of not having looked.
 func Load(root string) ([]Wave, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(File)))
+	raw, err := store.LoadDispatch(root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -73,15 +74,11 @@ func Load(root string) ([]Wave, error) {
 
 // Save writes the ledger — session state, not repository content.
 func Save(root string, ws []Wave) error {
-	p := filepath.Join(root, filepath.FromSlash(File))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(ledger{Waves: ws}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, append(raw, '\n'), 0o644)
+	return store.SaveDispatch(root, append(raw, '\n'))
 }
 
 func find(ws []Wave, id string) int {

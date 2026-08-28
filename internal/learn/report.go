@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"procoder/internal/evidence"
+
+	"procoder/internal/store"
 )
 
 // class labels a number with where it came from, reusing the evidence
@@ -149,8 +151,7 @@ type Applied struct {
 // Verify reports whether an applied proposal actually reduced what it
 // targeted, and prints the revert when it did not (S-5).
 func Verify(root string, out func(string)) int {
-	path := filepath.Join(root, filepath.FromSlash(Dir), AppliedFile)
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadMarker(root, AppliedFile)
 	if err != nil {
 		// No anchor is not "it worked". Without a marker there is nothing
 		// to measure against, and guessing from the git history of

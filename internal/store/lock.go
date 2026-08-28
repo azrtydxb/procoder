@@ -129,29 +129,45 @@ func acquire(root, rel string) ([]string, error) {
 
 // stale says whether the lock at p can be presumed dead.
 //
-// Three ways, and two of them are about not being able to tell: contents
-// that do not parse, and a timestamp in the future, are both locks whose
-// liveness cannot be established. A lock nobody can interpret cannot be
-// proven live, and treating it as live would wedge the file until somebody
-// deleted it by hand.
+// The file's OWN age is the first test, and it is the one that makes this
+// safe. A lock file is created empty by O_EXCL and only then written, so
+// for a moment every live lock has contents that do not parse. Treating
+// unparsable contents as dead on its own let a second caller steal a
+// newborn lock and gave two holders — the exact defect this package
+// exists to prevent, found by TestConcurrentAppendsBothSurvive.
+//
+// So: old by mtime is dead, whatever it says. Otherwise the contents get
+// a say only when they parse — a recorded time long past, or one in the
+// future (clock skew, a restored backup), is a lock whose owner cannot be
+// believed. Contents that do not parse on a FRESH file are a lock being
+// written this instant, and waiting is correct; if it really is corrupt,
+// mtime condemns it thirty seconds later.
 //
 // A lock that has vanished is NOT stale — it is gone, and the next O_EXCL
 // settles who gets it.
 func stale(p string) bool {
+	info, err := os.Stat(p)
+	if err != nil {
+		return false
+	}
+	if time.Since(info.ModTime()) > staleAfter {
+		return true
+	}
+
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		return false
 	}
 	fields := strings.Fields(string(raw))
 	if len(fields) != 2 {
-		return true
+		return false // being written right now
 	}
 	if _, err := strconv.Atoi(fields[0]); err != nil {
-		return true
+		return false
 	}
 	sec, err := strconv.ParseInt(fields[1], 10, 64)
 	if err != nil {
-		return true
+		return false
 	}
 	age := time.Since(time.Unix(sec, 0))
 	return age > staleAfter || age < 0

@@ -24,6 +24,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"procoder/internal/store"
 )
 
 // Dir is the procoder-owned state directory; StateFile is the only file this
@@ -435,8 +437,7 @@ func isEnvKey(k string) bool {
 // baseline is not an error. A corrupt file or an unknown version is an error
 // naming the file, never an empty baseline read as "nothing changed".
 func readState(root string) (*state, error) {
-	path := filepath.Join(root, filepath.FromSlash(StateFile))
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadEnvState(root)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -479,30 +480,10 @@ func writeState(root string, cur scan) error {
 		return err
 	}
 	body = append(body, '\n')
-	dir := filepath.Join(root, filepath.FromSlash(Dir))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return reasonedPath(Dir, err)
-	}
-	tmp, err := os.CreateTemp(dir, "env-*.json.tmp")
-	if err != nil {
-		return reasonedPath(Dir, err)
-	}
-	name := tmp.Name()
-	if _, err := tmp.Write(body); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(name)
-		return reasonedPath(StateFile, err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(name)
-		return reasonedPath(StateFile, err)
-	}
-	if err := os.Chmod(name, 0o644); err != nil {
-		_ = os.Remove(name)
-		return reasonedPath(StateFile, err)
-	}
-	if err := os.Rename(name, filepath.Join(dir, "env.json")); err != nil {
-		_ = os.Remove(name)
+	// The temp-and-rename this used to do by hand now lives in the store,
+	// which also takes the file's lock — the same guarantee, plus the one
+	// this never had.
+	if err := store.SaveEnvState(root, body); err != nil {
 		return reasonedPath(StateFile, err)
 	}
 	return nil

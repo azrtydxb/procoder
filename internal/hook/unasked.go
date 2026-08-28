@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"procoder/internal/ask"
+
+	"procoder/internal/store"
 )
 
 // blockedFile remembers the message this hook last refused to end the turn
@@ -159,11 +161,8 @@ func decisionsChanged(root string) bool {
 	sum := sha256.Sum256(raw)
 	now := hex.EncodeToString(sum[:])[:16]
 
-	digestPath := filepath.Join(root, filepath.FromSlash(StateDir), decisionsFile)
-	before, readErr := os.ReadFile(digestPath)
-	if os.MkdirAll(filepath.Dir(digestPath), 0o755) == nil {
-		_ = os.WriteFile(digestPath, []byte(now), 0o644)
-	}
+	before, readErr := store.LoadMarker(root, decisionsFile)
+	_ = store.SaveMarker(root, decisionsFile, []byte(now))
 	if readErr != nil {
 		// First stop in this tree: nothing to compare against, so the
 		// question "was this recorded just now" has no answer yet.
@@ -172,17 +171,13 @@ func decisionsChanged(root string) bool {
 	return strings.TrimSpace(string(before)) != now
 }
 
-func blockedPath(root string) string {
-	return filepath.Join(root, filepath.FromSlash(StateDir), blockedFile)
-}
-
 func fingerprint(message string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(message)))
 	return hex.EncodeToString(sum[:])[:16]
 }
 
 func alreadyBlocked(root, message string) bool {
-	raw, err := os.ReadFile(blockedPath(root))
+	raw, err := store.LoadMarker(root, blockedFile)
 	if err != nil {
 		return false
 	}
@@ -192,9 +187,5 @@ func alreadyBlocked(root, message string) bool {
 // rememberBlocked records the fingerprint and reports whether it stuck.
 // The caller blocks only when it did — see unaskedDecision.
 func rememberBlocked(root, message string) bool {
-	dir := filepath.Dir(blockedPath(root))
-	if os.MkdirAll(dir, 0o755) != nil {
-		return false
-	}
-	return os.WriteFile(blockedPath(root), []byte(fingerprint(message)), 0o644) == nil
+	return store.SaveMarker(root, blockedFile, []byte(fingerprint(message))) == nil
 }
