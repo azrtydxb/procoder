@@ -87,6 +87,12 @@ survived. It becomes the daemon's first three bugs.
   that downgrades keeps working.
 - **Changing what any domain decides.** The gate reaches the same verdict,
   the hooks emit the same text. Only the plumbing underneath moves.
+- **Golden capture of `procoder check`, the PreToolUse hook and the
+  PostToolUse hook.** All three exec gitleaks, semgrep, golangci-lint or
+  the test runner, whose presence and version vary by machine. A golden of
+  those would pin one laptop rather than procoder's behaviour, and would
+  fail in CI for reasons no change caused. The seam under them is covered
+  by the store's own tests and by the structural guards instead.
 - **Read locking.** Writers serialise against writers. A reader may observe
   a file that a writer is about to replace; the atomic rename in S-3 means
   what it observes is always a whole file, which is the property that
@@ -252,10 +258,20 @@ name and format.
 - [ ] [S-2] `TestNoDirectProcoderFileIO` greps the tree for stdlib file
       reads and writes against a `.procoder/` path outside
       `internal/store`. Fails if any package reintroduces one.
-- [ ] [S-2] `TestMigrationOutputUnchanged` runs `procoder check`,
-      `procoder status` and the four hook entrypoints over a fixture
-      repository and compares stdout against committed golden files. Fails
-      if any byte of any output moves.
+- [ ] [S-2] `TestMigrationOutputUnchanged` runs `procoder status`, the
+      SessionStart principles hook, the Stop hook's handoff note and
+      `procoder config` over a fixture repository and compares against
+      committed golden files. Fails if any byte moves.
+- [ ] [S-2] The goldens `TestMigrationOutputUnchanged` reads were captured
+      from a binary built at commit `c4bb353`, before `internal/store`
+      existed: `diff` reports no difference for `status.txt`,
+      `principles-hook.txt` or `handoff.txt`. Fails if one of those three is
+      regenerated from current code, which turns the parity assertion into a
+      snapshot of whatever the code now does.
+- [ ] [S-2] `TestCapturesAreDeterministic` runs every capture twice and
+      fails if two runs differ. A golden taken from a command whose output
+      moves records one roll of the dice and fails for everybody
+      afterwards.
 - [ ] [S-3] `TestAtomicWriteLeavesOriginalOnRenameFailure` makes the
       rename fail after the temp file is written. Fails if the target file
       differs by a single byte from its previous contents.

@@ -576,14 +576,32 @@ Interfaces consumed: `Lock` (Task 1); `ReadFile`, `WriteFile` (Task 2).
       test.
 - [ ] Run `procoder check` and commit.
 
-## Task 7: the guard tests
+## Task 7a: the parity harness — BEFORE task 6
+
+Files:
+
+- `internal/store/golden_test.go` — the parity harness
+- `internal/store/testdata/golden/` — the committed expected outputs
+
+Ordering note: the plan originally put every guard last. That is the wrong
+order for this one. The parity harness is the only thing that would catch a
+behaviour change in task 6's twenty-package migration, and building it
+afterwards means the riskiest task in the plan runs with no net under it.
+The structural guards in Task 7b genuinely do come last, because they
+cannot pass until task 6 is done.
+
+Interfaces consumed: none. This task adds no production code.
+
+- [ ] Run `go test ./internal/store/` — expect PASS. A byte of drift in
+      any captured output fails with a diff.
+- [ ] Run `procoder check` and commit.
+
+## Task 7b: the structural guards
 
 Files:
 
 - `internal/store/coverage_test.go` — the two structural guards
 - `internal/store/deps_test.go` — the dependency guard
-- `internal/store/golden_test.go` — the parity harness
-- `internal/store/testdata/golden/` — the committed expected outputs
 
 Interfaces consumed: everything produced by tasks 1 to 6. This task adds
 no production code — it is the evidence that the previous six did what

@@ -1,0 +1,13 @@
+setting                     value        source
+ask.policy                  report       .procoder/config.toml:2
+bench.threshold             10           default
+git.commit_gate             block        default
+git.max_file_mb             5            default
+learn.min_samples           20           default
+learn.record                false        default
+security.sast_blocks_at     ERROR        default
+sprint.retro                on           default
+version.check               warn         default
+
+repo identity  <root>  (no remote — repository root path)
+

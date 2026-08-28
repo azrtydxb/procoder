@@ -1,0 +1,8 @@
+== state of play
+branch: main — this is the default branch
+head: 380c1e2
+dirty files: none (clean tree)
+sprint: none — no backlog yet (`procoder backlog` starts one)
+open tasks: none
+unlearned lessons: none — no ledger at .procoder/github/LESSONS.md
+index: none — `procoder index build` has not run here
