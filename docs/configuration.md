@@ -113,6 +113,10 @@ policy = "report"
 # setting that upgraded without asking would remove the consent the
 # upgrade is built on.
 check = "warn"
+
+[service]
+# Overrides the repository identity procoder computes. Unset by default.
+repo = "acme/widgets"
 ```
 
 ## A setting procoder does not know
@@ -437,3 +441,41 @@ told.
 The records are gitignored state, not repository content, and hold a
 command name, a duration and an exit code — nothing about a file's
 contents and nothing identifying a person.
+
+### `[service]`
+
+| Key    | Default    | What it does                                                         |
+| ------ | ---------- | -------------------------------------------------------------------- |
+| `repo` | _computed_ | The repository's stable name, overriding the one procoder works out. |
+
+Procoder needs a name for this repository that means the same thing on
+somebody else's machine. A filesystem path does not: the same repository
+lives at a different path for every person who clones it.
+
+So it works one out, down a ladder, and `procoder config` prints both the
+answer and the rung that produced it:
+
+```
+repo identity  host/owner/repo   (origin remote)
+```
+
+| Rung             | When it answers                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `[service] repo` | You set it. Nothing below is consulted.                                            |
+| origin           | There is an `origin` remote.                                                       |
+| first remote     | There is no `origin`; the alphabetically first remote wins, and the line names it. |
+| root path        | There are no remotes at all. The resolved absolute path.                           |
+
+Remote URLs are normalised to `host/owner/repo`, so
+`git@host:o/r.git`, `https://host/o/r.git` and `ssh://git@host/o/r` are
+one identity rather than three.
+
+**`origin` beats an alphabetically earlier remote deliberately.** Pure
+alphabetical order is simpler and wrong: a colleague who adds a personal
+remote named `fork` would key the same repository differently from
+everybody else, which defeats the one thing an identity is for.
+
+Set `repo` when the computed answer is wrong for you — a monorepo serving
+several products, a mirror whose remote is not the name anybody uses, or
+a checkout with no remote at all that you would rather not identify by
+path.
