@@ -1,6 +1,7 @@
 # service-state-seam — implementation plan
 
 Status: complete
+Delivered: 2026-08-29 — all seven tasks closed on feat/service-state-seam
 Spec: .procoder/specs/service-state-seam.md
 
 ## Goal
