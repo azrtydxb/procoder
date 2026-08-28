@@ -8,13 +8,13 @@ package todo
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -72,22 +72,18 @@ type Task struct {
 
 // List returns every task, open first, sorted by id.
 func List(root string) ([]Task, error) {
-	dir := filepath.Join(root, Dir)
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	names, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil, fmt.Errorf("todo directory unreadable: %v", err)
 	}
 	var tasks []Task
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".md") {
 			continue
 		}
-		path := filepath.Join(dir, e.Name())
-		t := Task{ID: strings.TrimSuffix(e.Name(), ".md"), Path: path, Status: "open"}
-		raw, err := os.ReadFile(path)
+		path := filepath.Join(root, Dir, name)
+		t := Task{ID: strings.TrimSuffix(name, ".md"), Path: path, Status: "open"}
+		raw, err := store.LoadIn(root, Dir, name)
 		if err != nil {
 			// an unreadable task is a finding, not something to hide
 			t.Status = "unreadable"
@@ -140,7 +136,7 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 		out(err.Error())
 		return 2
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := readUnder(root, path)
 	if err != nil {
 		out("no task " + id + " — `procoder todo list` shows what exists")
 		return 2
@@ -185,10 +181,34 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 		return 1
 	}
 	closed := statusRe.ReplaceAllString(text, "Status: closed "+time.Now().UTC().Format("2006-01-02"))
-	if err := os.WriteFile(path, []byte(closed), 0o644); err != nil {
+	if err := writeUnder(root, path, []byte(closed)); err != nil {
 		out("cannot update the task file: " + err.Error())
 		return 2
 	}
 	out("task " + id + " closed — criteria checked, evidence recorded, gate clean")
 	return 0
+}
+
+// Read reads a task file the caller located with File(). Exported because
+// the command layer shows a task it just looked up, and it must not reach
+// past the store to do it.
+func Read(root, abs string) ([]byte, error) { return readUnder(root, abs) }
+
+// readUnder and writeUnder reach a .procoder/ file the caller was handed as
+// an absolute path. File() returns absolute paths, so its callers would
+// otherwise have to go around the store to open what they were given.
+func readUnder(root, abs string) ([]byte, error) {
+	rel, err := store.Rel(root, abs)
+	if err != nil {
+		return nil, err
+	}
+	return store.LoadDoc(root, rel)
+}
+
+func writeUnder(root, abs string, data []byte) error {
+	rel, err := store.Rel(root, abs)
+	if err != nil {
+		return err
+	}
+	return store.SaveDoc(root, rel, data)
 }

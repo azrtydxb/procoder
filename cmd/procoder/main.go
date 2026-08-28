@@ -1460,7 +1460,7 @@ func todoCmd(args []string) int {
 			out(err.Error())
 			return 2
 		}
-		raw, err := os.ReadFile(path)
+		raw, err := todo.Read(root, path)
 		if err != nil {
 			out("no task " + args[1] + " — `procoder todo list` shows what exists")
 			return 2

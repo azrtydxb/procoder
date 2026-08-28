@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 )
 
 // Dir is where a repository puts its own lenses.
@@ -65,7 +66,7 @@ func resolveSet(root string, shippedSet []Lens, dir string) ([]Lens, []gitx.Find
 	for _, shipped := range shippedSet {
 		path := filepath.Join(root, dir, shipped.Name+".md")
 		rel := filepath.ToSlash(filepath.Join(dir, shipped.Name+".md"))
-		data, err := os.ReadFile(path)
+		data, err := store.LoadIn(root, dir, shipped.Name+".md")
 		switch {
 		case os.IsNotExist(err):
 			shipped.Source = "default"

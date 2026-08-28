@@ -8,13 +8,12 @@ package backlog
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"procoder/internal/evidence"
 	"procoder/internal/spec"
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -75,7 +74,7 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		out(err.Error())
 		return 2
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := readUnder(root, path)
 	if err != nil {
 		out("no story " + id + " — `procoder backlog list` shows what exists")
 		return 2
@@ -165,7 +164,7 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		}
 		return 1
 	}
-	if !markDone(path, text, out) {
+	if !markDone(root, path, text, out) {
 		return 2
 	}
 	out("story " + id + " closed — criteria checked, evidence recorded, gate clean")
@@ -215,12 +214,12 @@ func CloseEpic(root, id string, out func(string)) int {
 		emit(out, warns)
 		return 1
 	}
-	raw, err := os.ReadFile(epic.Path)
+	raw, err := readUnder(root, epic.Path)
 	if err != nil {
 		out("cannot read the epic file: " + err.Error())
 		return 2
 	}
-	if !markDone(epic.Path, string(raw), out) {
+	if !markDone(root, epic.Path, string(raw), out) {
 		return 2
 	}
 	out("epic " + id + " closed — every story done")
@@ -265,12 +264,12 @@ func CloseMilestone(root, id string, out func(string)) int {
 		}
 		return 1
 	}
-	raw, err := os.ReadFile(ms.Path)
+	raw, err := readUnder(root, ms.Path)
 	if err != nil {
 		out("cannot read the milestone file: " + err.Error())
 		return 2
 	}
-	if !markDone(ms.Path, string(raw), out) {
+	if !markDone(root, ms.Path, string(raw), out) {
 		return 2
 	}
 	out("milestone " + id + " closed — every epic done")
@@ -294,7 +293,7 @@ func driftWarnings(root string, epic Item) []string {
 	if epic.SpecName == "" {
 		return nil
 	}
-	b, err := os.ReadFile(filepath.Join(root, ".procoder", "specs", epic.SpecName+".md"))
+	b, err := store.LoadIn(root, ".procoder/specs", epic.SpecName+".md")
 	if err != nil {
 		return []string{"⚠ spec " + epic.SpecName + " is missing — traceability lost, not blocking"}
 	}
@@ -316,9 +315,9 @@ func emit(out func(string), lines []string) {
 
 // markDone rewrites the Status line to done <date> in a whole-file write —
 // no partial rewrite, same as todo. A write failure is printed verbatim.
-func markDone(path, text string, out func(string)) bool {
+func markDone(root, path, text string, out func(string)) bool {
 	done := statusRe.ReplaceAllString(text, "Status: done "+time.Now().UTC().Format("2006-01-02"))
-	if err := os.WriteFile(path, []byte(done), 0o644); err != nil {
+	if err := writeUnder(root, path, []byte(done)); err != nil {
 		out("cannot update the file: " + err.Error())
 		return false
 	}

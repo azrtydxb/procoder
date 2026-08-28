@@ -2,10 +2,10 @@ package ask
 
 import (
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"procoder/internal/answers"
+	"procoder/internal/store"
 	"sort"
 	"strings"
 	"time"
@@ -59,12 +59,12 @@ func WriteQuestions(root string, qs []Question, now time.Time) error {
 		// parser trims each line, so the space is not load-bearing.
 		b.WriteString(strings.TrimRight(answers.AnswerPrefix, " ") + "\n")
 	}
-	return write(Path(root, QuestionsFile), b.String())
+	return write(root, Path(root, QuestionsFile), b.String())
 }
 
 // WriteAnswers records the decisions. Questions are carried alongside their
 // answers so the file reads as a record rather than a list of hashes.
-func WriteAnswers(root string, qs []Question, store Answers, now time.Time) error {
+func WriteAnswers(root string, qs []Question, decided Answers, now time.Time) error {
 	known := map[string]Question{}
 	for _, q := range qs {
 		known[q.Key()] = q
@@ -74,15 +74,15 @@ func WriteAnswers(root string, qs []Question, store Answers, now time.Time) erro
 	b.WriteString("Written " + now.UTC().Format("2006-01-02 15:04") + " UTC. procoder reads this\n")
 	b.WriteString("file to avoid asking a question twice; edit an answer here to change what\n")
 	b.WriteString("it believes. Reword the question and it will be asked again.\n")
-	keys := make([]string, 0, len(store))
-	for k := range store {
+	keys := make([]string, 0, len(decided))
+	for k := range decided {
 		keys = append(keys, k)
 	}
 	// Stable output: a file that reorders itself on every write is a diff
 	// nobody can read.
 	sort.Strings(keys)
 	for _, key := range keys {
-		entry := store[key]
+		entry := decided[key]
 		heading, question := "(no longer asked)", entry.Question
 		if q, ok := known[key]; ok {
 			heading, question = q.Label(), q.Text
@@ -98,50 +98,33 @@ func WriteAnswers(root string, qs []Question, store Answers, now time.Time) erro
 		}
 		b.WriteString("\n" + answers.AnswerPrefix + entry.Answer + "\n")
 	}
-	return write(Path(root, answers.File), b.String())
+	return write(root, Path(root, answers.File), b.String())
 }
 
 // write replaces a file only once the new content is safely on disk. The
-// answers file is the durable record of decisions nobody can reconstruct, and
-// os.WriteFile truncates before it writes: a failure halfway leaves an empty
+// answers file is the durable record of decisions nobody can reconstruct,
+// and a plain write truncates first: a failure halfway leaves an empty
 // record where the decisions were.
-func write(dest, body string) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".procoder-ask-*")
+//
+// The temp-and-rename this used to do by hand is now the store's, which
+// does the same thing and also takes the file's lock — the guarantee this
+// code never had.
+func write(root, dest, body string) error {
+	rel, err := store.Rel(root, dest)
 	if err != nil {
 		return err
 	}
-	name := tmp.Name()
-	defer func() { _ = os.Remove(name) }()
-	if _, err := tmp.WriteString(body); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	// The checked close: a write that fails on close is a failed write, and
-	// renaming it over the record would install the failure.
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(name, dest)
+	return store.SaveDoc(root, rel, []byte(body))
 }
 
 // Same reports whether the store already on disk matches this one, so a run
 // with nothing new to say leaves the file — and its timestamp — alone.
-func Same(root string, store Answers) bool {
+func Same(root string, a Answers) bool {
 	existing, err := answers.Load(root)
-	if err != nil || len(existing) != len(store) {
+	if err != nil || len(existing) != len(a) {
 		return false
 	}
-	for k, v := range store {
+	for k, v := range a {
 		if existing[k] != v {
 			return false
 		}

@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -71,14 +72,14 @@ Created: %s
 
 // Files lists the analysis documents in root, sorted.
 func Files(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
+	names, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil
 	}
 	var out []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			out = append(out, filepath.Join(root, Dir, e.Name()))
+	for _, name := range names {
+		if strings.HasSuffix(name, ".md") {
+			out = append(out, filepath.Join(root, Dir, name))
 		}
 	}
 	sort.Strings(out)
@@ -132,7 +133,7 @@ func Check(root, name string, out func(string)) int {
 
 	worst := 0
 	for _, path := range files {
-		raw, err := os.ReadFile(path)
+		raw, err := readUnder(root, path)
 		if err != nil {
 			out(filepath.Base(path) + ": unreadable — " + err.Error())
 			worst = 2
@@ -169,4 +170,15 @@ func SpecSource(root, specName string) string {
 		return ""
 	}
 	return filepath.ToSlash(filepath.Join(Dir, specName+".md"))
+}
+
+// readUnder reads a .procoder/ file the caller was handed as an absolute
+// path. Files returns absolute paths, so its readers would otherwise have
+// to go around the store to open what they were given.
+func readUnder(root, abs string) ([]byte, error) {
+	rel, err := store.Rel(root, abs)
+	if err != nil {
+		return nil, err
+	}
+	return store.LoadDoc(root, rel)
 }

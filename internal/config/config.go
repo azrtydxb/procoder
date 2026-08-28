@@ -7,12 +7,11 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"procoder/internal/store"
 	"procoder/internal/tools"
 )
 
@@ -175,7 +174,7 @@ func Load(root string) Config {
 		"learn.record":            "false",
 		"learn.min_samples":       strconv.Itoa(defaultLearnMinSamples),
 	}
-	raw, err := os.ReadFile(filepath.Join(root, ".procoder", "config.toml"))
+	raw, err := store.LoadDoc(root, ".procoder/config.toml")
 	if err != nil {
 		cfg.Settings = defaultSettings(defaults)
 		return cfg

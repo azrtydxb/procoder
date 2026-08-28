@@ -92,7 +92,7 @@ func specQuestions(root string) []Question {
 	var qs []Question
 	for _, path := range spec.Files(root) {
 		name := strings.TrimSuffix(filepath.Base(path), ".md")
-		for _, line := range spec.OpenQuestions(path) {
+		for _, line := range spec.OpenQuestions(root, path) {
 			qs = append(qs, Question{Source: "spec", Origin: name, Text: line})
 		}
 	}

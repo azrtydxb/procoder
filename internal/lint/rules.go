@@ -1,9 +1,9 @@
 package lint
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // RulesPath is the lint domain's repo-overridable rules file, following
@@ -25,7 +25,7 @@ type Rules struct {
 // LoadRules reads the repository's lint rules.
 func LoadRules(root string) Rules {
 	var r Rules
-	data, err := os.ReadFile(filepath.Join(root, RulesPath))
+	data, err := store.LoadDoc(root, RulesPath)
 	if err != nil {
 		return r
 	}

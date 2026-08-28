@@ -15,11 +15,11 @@ package lessons
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 )
 
 // CopilotLeaksPath is the scratch ledger of Copilot auto-review findings,
@@ -39,7 +39,7 @@ a failure, never the source that failed. An entry becomes a real lesson in
 // RunCopilotLeaks prints the leak ledger's state and flags entries nobody has
 // turned into an adaptation yet.
 func RunCopilotLeaks(root string, out func(string)) int {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(CopilotLeaksPath)))
+	raw, err := store.LoadDoc(root, CopilotLeaksPath)
 	if os.IsNotExist(err) {
 		// nothing has been captured, which is the ordinary state — the ledger
 		// is written by `procoder copilot-leak`, not by a template, so there
@@ -77,21 +77,13 @@ func RunCopilotLeaks(root string, out func(string)) int {
 // human replaces it. title, url and finding must already be sanitised; this
 // package never sees the raw Copilot body.
 func RecordCopilotEntry(root, title, url, finding string, at time.Time) error {
-	path := filepath.Join(root, filepath.FromSlash(CopilotLeaksPath))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }() // the checked close is below; this one only covers the error paths
-	st, err := f.Stat()
-	if err != nil {
+	existing, err := store.LoadDoc(root, CopilotLeaksPath)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	var b strings.Builder
-	if st.Size() == 0 {
+	b.Write(existing)
+	if len(existing) == 0 {
 		b.WriteString(copilotHeader)
 	}
 	b.WriteString("\n## " + at.UTC().Format("2006-01-02 15:04") + " " + oneLine(url) +
@@ -100,10 +92,7 @@ func RecordCopilotEntry(root, title, url, finding string, at time.Time) error {
 	b.WriteString("- Original: " + oneLine(url) + "\n")
 	b.WriteString("- Finding: " + oneLine(finding) + "\n")
 	b.WriteString("- Adaptation: <the concrete change that catches this class from now on>\n")
-	if _, err := f.WriteString(b.String()); err != nil {
-		return err
-	}
-	return f.Close()
+	return store.SaveDoc(root, CopilotLeaksPath, []byte(b.String()))
 }
 
 // oneLine flattens a value onto a single ledger line. A finding body carries
@@ -128,13 +117,12 @@ func oneLine(s string) string {
 // The reminder never blocks: an unwritten adaptation is work to do, not a
 // broken tree.
 func LeakReminder(root string) []gitx.Finding {
-	path := filepath.Join(root, filepath.FromSlash(CopilotLeaksPath))
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadDoc(root, CopilotLeaksPath)
 	if os.IsNotExist(err) {
 		return nil // no ledger is the ordinary case, not a finding
 	}
 	if err != nil {
-		return []gitx.Finding{{File: path,
+		return []gitx.Finding{{File: CopilotLeaksPath,
 			Message: CopilotLeaksPath + " NOT checked (" + err.Error() + ") — captured Copilot findings cannot be counted"}}
 	}
 	unlearned := 0
@@ -146,7 +134,7 @@ func LeakReminder(root string) []gitx.Finding {
 	if unlearned == 0 {
 		return nil
 	}
-	return []gitx.Finding{{File: path,
+	return []gitx.Finding{{File: CopilotLeaksPath,
 		Message: fmt.Sprintf("%d captured Copilot finding(s) in %s carry no adaptation — the class stays open until one is written",
 			unlearned, CopilotLeaksPath)}}
 }

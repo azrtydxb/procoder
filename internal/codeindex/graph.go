@@ -3,11 +3,12 @@ package codeindex
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
+
+	"procoder/internal/store"
 )
 
 // The call graph is assembled from SCIP occurrences — the indexer's own
@@ -39,7 +40,7 @@ type scipGraphDoc struct {
 }
 
 func loadScip(root string) (*scipIndex, error) {
-	raw, err := os.ReadFile(filepath.Join(root, Dir, refsFile))
+	raw, err := store.LoadIn(root, Dir, refsFile)
 	if err != nil {
 		return nil, fmt.Errorf("the precise tier is not built — run `procoder index build` with the SCIP tools installed (`procoder init`)")
 	}

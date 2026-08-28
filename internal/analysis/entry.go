@@ -2,8 +2,9 @@ package analysis
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
+
+	"procoder/internal/store"
 )
 
 // Entry is a point in the quality chain a change can start from.
@@ -97,12 +98,12 @@ func furthest(root string) string {
 		{".procoder/specs", "spec"},
 		{Dir, "analysis"},
 	} {
-		entries, err := os.ReadDir(filepath.Join(root, probe.dir))
+		names, err := store.ListDir(root, probe.dir)
 		if err != nil {
 			continue
 		}
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".md" {
+		for _, name := range names {
+			if filepath.Ext(name) == ".md" {
 				return probe.name
 			}
 		}

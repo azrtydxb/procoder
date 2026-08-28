@@ -22,6 +22,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/lessons"
 	"procoder/internal/planning"
+	"procoder/internal/store"
 	"procoder/internal/testrun"
 	"procoder/internal/todo"
 )
@@ -410,7 +411,7 @@ func lessonLine(root string) string {
 // HEAD. Freshness with no HEAD to compare against is unknown, and says so —
 // a stale index that reads as current is exactly the lie this domain bans.
 func indexLine(root, head string, timedOut bool) string {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(codeindex.Dir), "meta.json"))
+	raw, err := store.LoadIn(root, codeindex.Dir, "meta.json")
 	if os.IsNotExist(err) {
 		return "index: none — `procoder index build` has not run here"
 	}

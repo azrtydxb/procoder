@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -122,8 +123,7 @@ func Run(root string, save bool, threshold int, out func(string)) int {
 // corrupt or unreadable one skips comparison with the reason and offers
 // --save as the fix.
 func compareBaseline(root string, current []row, threshold int, out func(string)) bool {
-	path := filepath.Join(root, filepath.FromSlash(Dir), "baseline.txt")
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadIn(root, Dir, "baseline.txt")
 	if os.IsNotExist(err) {
 		out("no baseline at " + Dir + "/baseline.txt — run with --save to record one")
 		return false
@@ -175,14 +175,10 @@ func compareBaseline(root string, current []row, threshold int, out func(string)
 // saveBaseline writes Dir/baseline.txt: the header line, then the raw
 // benchmark lines. This is the only write the package ever performs.
 func saveBaseline(root string, lines []string) error {
-	dir := filepath.Join(root, filepath.FromSlash(Dir))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	header := fmt.Sprintf("# procoder bench baseline %s %s %s/%s",
 		time.Now().Format("2006-01-02"), commit(root), runtime.GOOS, runtime.GOARCH)
 	body := header + "\n" + strings.Join(lines, "\n") + "\n"
-	return os.WriteFile(filepath.Join(dir, "baseline.txt"), []byte(body), 0o644)
+	return store.SaveIn(root, Dir, "baseline.txt", []byte(body))
 }
 
 // parseBaseline parses a stored baseline: rows plus the GOOS/GOARCH the
