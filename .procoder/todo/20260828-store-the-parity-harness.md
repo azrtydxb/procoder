@@ -1,6 +1,6 @@
 # store: the parity harness, before the twenty-package migration
 
-Status: open
+Status: closed 2026-08-28
 Created: 2026-08-28
 
 ## Description
@@ -21,19 +21,44 @@ future drift.
 
 ## Acceptance criteria
 
-- [ ] `TestMigrationOutputUnchanged` compares `procoder status`, the
+- [x] `TestMigrationOutputUnchanged` compares `procoder status`, the
       SessionStart principles hook, the Stop hook's handoff note and
       `procoder config` against committed goldens. Fails if any byte moves.
-- [ ] `TestCapturesAreDeterministic` runs every capture twice and fails if
+- [x] `TestCapturesAreDeterministic` runs every capture twice and fails if
       the two differ.
-- [ ] `diff` reports no difference between the goldens for status, the
+- [x] `diff` reports no difference between the goldens for status, the
       principles hook and the handoff note and the output of a binary built
       at `c4bb353`, the commit before `internal/store` existed.
-- [ ] Nondeterministic values are held out of the goldens by line, not by
+- [x] Nondeterministic values are held out of the goldens by line, not by
       dropping the line: the handoff's `generated:` timestamp and the
       config report's absolute root path are replaced, and the fact that
       each line is printed is still asserted.
-- [ ] `procoder check` is clean.
+- [x] `procoder check` is clean.
 
 ## Evidence
+
+- `internal/store/golden_test.go` and four goldens under
+  `internal/store/testdata/golden/`, committed as 994ed5e.
+- Parity proof, run against a worktree at `c4bb353` built to
+  `pc-old`: `diff` reported no difference for `status.txt`,
+  `principles-hook.txt` and `handoff.txt`. The worktree has been removed;
+  the check is reproducible with `git worktree add <dir> c4bb353` and
+  `go build ./cmd/procoder` inside it.
+- `config.txt` is deliberately NOT a parity golden. Task 4 changed that
+  output on purpose — the identity line is new — so it is captured from
+  current code and guards drift from here.
+- TestCapturesAreDeterministic paid for itself on first run: the handoff
+  note stamps `generated:` with the wall clock, so the first goldens failed
+  a second after being written. Both that line and the config report's
+  absolute root path are now replaced by line rather than dropped, so the
+  presence of each line is still asserted.
+- The harness is `package store_test`, not `package store`: it drives
+  status, principles, the stop hook and the config report, all of which
+  import internal/store, so an in-package test would be an import cycle.
+- KNOWN, deliberate exclusion: `procoder check`, PreToolUse and
+  PostToolUse are not captured. They exec gitleaks, semgrep,
+  golangci-lint or the test runner, whose presence and version vary by
+  machine, so a golden of those pins one laptop rather than procoder's
+  behaviour. Recorded in the spec's Out of scope, not left silent.
+- `procoder check` clean; `go test ./...` green.
 
