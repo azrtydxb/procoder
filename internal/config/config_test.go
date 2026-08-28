@@ -447,3 +447,23 @@ func TestTheUnknownKeyFindingNamesTheRunningBuild(t *testing.T) {
 		t.Errorf("the finding does not say which build does not know the key: %q", cfg.Problems[0].Reason)
 	}
 }
+
+// proved by: dropping the service.repo case leaves ServiceRepo empty, and an
+// empty identity is one every repository shares.
+func TestServiceRepoKey(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[service]\nrepo = \"acme/widgets\"\n"
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(root)
+	if cfg.ServiceRepo != "acme/widgets" {
+		t.Fatalf("ServiceRepo = %q, want acme/widgets", cfg.ServiceRepo)
+	}
+	if len(cfg.Problems) != 0 {
+		t.Fatalf("[service] repo was reported as a problem: %v", cfg.Problems)
+	}
+}

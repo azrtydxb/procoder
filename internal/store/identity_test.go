@@ -1,0 +1,125 @@
+package store
+
+import (
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func gitRepo(t *testing.T, remotes map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	args := [][]string{{"init", "-q", "-b", "main"}}
+	for name, url := range remotes {
+		args = append(args, []string{"remote", "add", name, url})
+	}
+	for _, a := range args {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+	}
+	return dir
+}
+
+// proved by: skipping the host lower-casing, or keeping the .git suffix,
+// splits one repository into two keys and this fails.
+func TestIdentityNormalisation(t *testing.T) {
+	for _, url := range []string{
+		"git@host:o/r.git",
+		"https://host/o/r.git",
+		"ssh://git@host/o/r",
+		"https://HOST/o/r/",
+		"https://host/o/r",
+	} {
+		if got := normalise(url); got != "host/o/r" {
+			t.Errorf("normalise(%q) = %q, want host/o/r", url, got)
+		}
+	}
+}
+
+// proved by: letting the alphabetically first remote win outright makes the
+// origin-plus-fork case return the fork, which is the divergence this ladder
+// exists to prevent — two people with different extra remotes keying the same
+// repository differently.
+func TestIdentityLadder(t *testing.T) {
+	t.Run("config wins", func(t *testing.T) {
+		root := gitRepo(t, map[string]string{"origin": "https://host/o/r.git"})
+		got := IdentityFor(root, "acme/widgets")
+		if got.Key != "acme/widgets" || got.Rung != "config" {
+			t.Fatalf("got %+v, want key acme/widgets rung config", got)
+		}
+	})
+	t.Run("origin beats an earlier name", func(t *testing.T) {
+		root := gitRepo(t, map[string]string{
+			"origin": "https://host/o/r.git",
+			"fork":   "https://host/me/r.git",
+		})
+		got := IdentityFor(root, "")
+		if got.Key != "host/o/r" || got.Rung != "origin" {
+			t.Fatalf("got %+v, want key host/o/r rung origin", got)
+		}
+	})
+	t.Run("first alphabetically when there is no origin", func(t *testing.T) {
+		root := gitRepo(t, map[string]string{
+			"upstream": "https://host/o/r.git",
+			"fork":     "https://host/me/r.git",
+		})
+		got := IdentityFor(root, "")
+		if got.Key != "host/me/r" || got.Rung != "remote" || got.Detail != "fork" {
+			t.Fatalf("got %+v, want key host/me/r rung remote detail fork", got)
+		}
+	})
+	t.Run("path when there is no remote", func(t *testing.T) {
+		root := gitRepo(t, nil)
+		want, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := IdentityFor(root, "")
+		if got.Key != want || got.Rung != "path" {
+			t.Fatalf("got %+v, want key %s rung path", got, want)
+		}
+	})
+}
+
+// proved by: testing for the empty string rather than trimming leaves the key
+// empty, and an empty identity is one every repository shares.
+func TestIdentityBlankConfigKeyIgnored(t *testing.T) {
+	root := gitRepo(t, map[string]string{"origin": "https://host/o/r.git"})
+	got := IdentityFor(root, "   ")
+	if got.Rung != "origin" || got.Key != "host/o/r" {
+		t.Fatalf("got %+v, want the origin rung", got)
+	}
+}
+
+// proved by: falling back to the raw argument rather than the resolved path
+// gives two keys for one checkout reached through a symlink.
+func TestIdentityWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := IdentityFor(root, "")
+	if got.Key != want || got.Rung != "path" {
+		t.Fatalf("got %+v, want key %s rung path", got, want)
+	}
+}
+
+// proved by: a Source that names the rung without the remote's name leaves a
+// surprising identity untraceable to the remote that produced it.
+func TestIdentitySource(t *testing.T) {
+	for _, tc := range []struct {
+		id   Identity
+		want string
+	}{
+		{Identity{Rung: "config"}, "[service] repo in .procoder/config.toml"},
+		{Identity{Rung: "origin"}, "origin remote"},
+		{Identity{Rung: "remote", Detail: "fork"}, "first remote alphabetically: fork"},
+		{Identity{Rung: "path"}, "no remote — repository root path"},
+	} {
+		if got := tc.id.Source(); got != tc.want {
+			t.Errorf("Source() for %+v = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}

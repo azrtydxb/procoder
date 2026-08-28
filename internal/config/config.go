@@ -126,6 +126,16 @@ type Config struct {
 	// A name procoder does not ship is reported and dropped, so the default
 	// still runs — a mistyped tool name must not leave code unchecked.
 	Tools map[string]string
+	// ServiceRepo overrides the computed repository identity
+	// (`[service] repo`). Empty means compute it — see store.IdentityFor.
+	//
+	// It exists because the computed answer can be wrong: a monorepo
+	// serving several products, a mirror whose remote is not the name
+	// anybody uses, a checkout with no remote at all. A repository that
+	// knows its own name must be able to say so rather than live with a
+	// path.
+	ServiceRepo string
+
 	// Problems are settings the file names that could not be used. They
 	// block: a config that silently falls back lets a team believe a
 	// setting is in force when it never was.
@@ -261,6 +271,8 @@ func Load(root string) Config {
 			if value == "block" || value == "report" || value == "off" {
 				cfg.CommitGate = value
 			}
+		case "service.repo":
+			cfg.ServiceRepo = value
 		case "ask.policy":
 			cfg.AskBlock = value == "block"
 		case "version.check":
