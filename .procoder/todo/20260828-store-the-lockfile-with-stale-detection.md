@@ -58,3 +58,21 @@ held`; replacing the `rel()` on a failed acquisition with `_ = rel`
   first, and `plan check` re-run.
 - `procoder check` clean at commit time; the commit gate passed both
   commits on this branch.
+
+## Correction, 2026-08-28 (after this task closed)
+
+Task 5's TestConcurrentAppendsBothSurvive found a defect in this task's
+lock. `O_EXCL` creates the lock file empty and writes the pid and
+timestamp a moment later, so for that moment every LIVE lock has contents
+that do not parse. The rule shipped here — unparsable contents mean stale
+— let a second caller steal a newborn lock, which is two holders of one
+lock: the exact defect this package exists to remove.
+
+The criterion "a lock file whose contents do not parse is treated as
+stale" was wrong as written, not merely incompletely implemented. It is
+now: the file's own mtime decides staleness first, and the contents get a
+say only when they parse. TestNewbornLockIsNotStolen pins the case
+directly rather than leaving it to surface as a lost append somewhere
+downstream. Fixed in 3ff036d; the spec and plan were corrected rather
+than left reading as though the first attempt had been right.
+

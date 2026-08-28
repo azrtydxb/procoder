@@ -113,9 +113,13 @@ func Lock(root string, relPaths ...string) (release func(), broken []string, err
           `stale lock was not broken: procoder: could not lock ... within 5s`.
 
 - [ ] Implement stale detection: before retrying, read the existing lock
-      file. Break it — remove it and try again — when any of these hold:
-      the contents do not parse as two decimal integers; the timestamp is
-      more than 30 seconds in the past; the timestamp is in the future.
+      file. Break it — remove it and try again — when the file's own mtime
+      is more than 30 seconds old, or when the contents parse and the
+      recorded timestamp is more than 30 seconds in the past or in the
+      future. Contents that do not parse on a file with a FRESH mtime are a
+      lock being written this instant: O_EXCL creates it empty and the pid
+      and timestamp arrive a moment later, so condemning on contents alone
+      hands two callers the same lock.
       When a lock is broken, return its repo-relative path in `broken` so
       the caller can report it. Empty on the ordinary path.
 

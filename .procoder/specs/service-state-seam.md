@@ -197,9 +197,13 @@ name and format.
   what the path rung already provides.
 - **Stale lock from a killed process.** A lock older than the stale
   threshold is broken and taken, and the fact that it was broken is
-  reported, not swallowed.
-- **A lock file whose contents do not parse.** Treated as stale — a lock
-  nobody can interpret cannot be proven live.
+  reported, not swallowed. The file's own mtime is what decides this, not
+  the timestamp written inside it.
+- **A lock file whose contents do not parse.** Stale only if the file's own
+  mtime is older than the threshold. `O_EXCL` creates the file empty and the
+  pid and timestamp land a moment later, so for that moment every LIVE lock
+  is unparsable; condemning on contents alone gave two holders of one lock.
+  A genuinely corrupt lock is condemned by its mtime thirty seconds later.
 - **Lock timestamp in the future** (clock skew, a restored backup). Treated
   as stale, for the same reason.
 - **`.procoder/` does not exist.** No state to protect; the store creates
@@ -266,8 +270,13 @@ name and format.
       stale threshold. Fails if the write is refused, or if it succeeds
       without reporting that the lock was broken.
 - [ ] [S-4] `TestUnreadableLockIsStale` plants a lock whose contents do not
-      parse and one whose timestamp is in the future. Fails if either is
-      treated as live.
+      parse AND whose mtime is older than the stale threshold, and one whose
+      recorded timestamp is in the future. Fails if either is treated as
+      live.
+- [ ] [S-4] `TestNewbornLockIsNotStolen` — an empty lock file with a fresh
+      mtime is NOT stale. Fails if unparsable contents alone condemn a lock,
+      which would let a caller steal one that was created a microsecond ago
+      and is still being written.
 - [ ] [S-4] `TestLiveLockRefusesRatherThanBlocks` holds a lock past the
       timeout from a live process. Fails if the write proceeds unlocked, or
       if the call has not returned a message naming the file by the time
