@@ -1141,6 +1141,19 @@ number, or Procoder's own default. A policy set weaker than the default
 is marked as relaxed, so a repository that quietly turned a gate down
 says so out loud rather than looking like a repository that never had one.
 
+It ends with the repository's identity and the rung that produced it:
+
+```
+repo identity  host/owner/repo  (origin remote)
+```
+
+The identity is a name for this repository that means the same thing on
+somebody else's machine, which a filesystem path does not. It is not a
+setting — it has no default to be relaxed from — which is why it sits
+below the table rather than in it. See
+[Configuration](configuration.md) for the ladder and for `[service] repo`,
+which overrides it.
+
 #### `procoder doctor`
 
 Which tools this repository needs (by its file inventory), which are
