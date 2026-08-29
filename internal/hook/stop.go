@@ -17,7 +17,7 @@ import (
 // StateDir is procoder-owned, per-clone derived state — the same precedent as
 // the index. HandoffFile is the note a session leaves behind for the next one.
 const (
-	StateDir    = ".procoder/state"
+	StateDir    = store.StateDir
 	HandoffFile = "handoff.md"
 )
 

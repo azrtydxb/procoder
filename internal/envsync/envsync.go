@@ -31,8 +31,8 @@ import (
 // Dir is the procoder-owned state directory; StateFile is the only file this
 // package ever writes, and only under --sync.
 const (
-	Dir       = ".procoder/state"
-	StateFile = ".procoder/state/env.json"
+	Dir       = store.StateDir
+	StateFile = store.EnvPath
 )
 
 // stateVersion is the shape version of the state file. A file carrying any

@@ -32,7 +32,7 @@ import (
 
 // File is where waves live: procoder's own session state, beside the
 // handoff note and the claims ledger.
-const File = ".procoder/state/dispatch.json"
+const File = store.DispatchPath
 
 // Wave is one fan-out.
 type Wave struct {

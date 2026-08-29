@@ -13,17 +13,18 @@ import (
 // proved by: writing without taking the lock lets this succeed, which is the
 // race the whole package exists to remove.
 func TestSaveDispatchLocksAndWritesAtomically(t *testing.T) {
+	impatient(t)
 	root := t.TempDir()
-	plant(t, root, dispatchPath, os.Getpid(), time.Now().Unix())
+	plant(t, root, DispatchPath, os.Getpid(), time.Now().Unix())
 
 	err := SaveDispatch(root, []byte("{}\n"))
 	if err == nil {
 		t.Fatal("SaveDispatch wrote while the file was locked")
 	}
-	if !strings.Contains(err.Error(), dispatchPath) {
+	if !strings.Contains(err.Error(), DispatchPath) {
 		t.Fatalf("error does not name the file: %v", err)
 	}
-	if _, rerr := ReadFile(root, dispatchPath); rerr == nil {
+	if _, rerr := ReadFile(root, DispatchPath); rerr == nil {
 		t.Fatal("a refused save left a file behind")
 	}
 }
@@ -61,7 +62,7 @@ func TestLoadsDoNotLock(t *testing.T) {
 	if err := SaveClaims(root, []byte("{}\n")); err != nil {
 		t.Fatal(err)
 	}
-	rel, _, err := Lock(root, claimsPath)
+	rel, err := Lock(root, ClaimsPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,7 @@ import (
 
 // Dir is where the records live, under the gitignored state directory:
 // timing data is not repository content and is never committed.
-const Dir = ".procoder/state"
+const Dir = store.StateDir
 
 // File is the append-only record, one JSON object per line.
 const File = "learn.jsonl"

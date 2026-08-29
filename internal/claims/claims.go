@@ -31,7 +31,7 @@ import (
 // File is where claims live: procoder-owned session state, beside the
 // handoff note. Ephemeral by nature — a claim outlives nothing but the
 // work it describes.
-const File = ".procoder/state/claims.json"
+const File = store.ClaimsPath
 
 // Claim is one agent's declared working set.
 type Claim struct {

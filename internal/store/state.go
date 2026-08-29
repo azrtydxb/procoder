@@ -1,10 +1,9 @@
 package store
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 )
 
 // The five gitignored state owners, named here rather than in each owning
@@ -12,60 +11,77 @@ import (
 // These are the files the daemon will serialise; the paths themselves do
 // not move.
 const (
-	dispatchPath = ".procoder/state/dispatch.json"
-	claimsPath   = ".procoder/state/claims.json"
-	envPath      = ".procoder/state/env.json"
-	learnPath    = ".procoder/state/learn.jsonl"
-	handoffPath  = ".procoder/state/handoff.md"
-	markerDir    = ".procoder/state"
+	// StateDir and the paths under it are exported so the packages that
+	// own this data can NAME the same string rather than declare their own
+	// copy of it. Two declarations of one path drift, and the drift is
+	// silent until one writes where the other no longer reads.
+	StateDir     = ".procoder/state"
+	DispatchPath = StateDir + "/dispatch.json"
+	ClaimsPath   = StateDir + "/claims.json"
+	EnvPath      = StateDir + "/env.json"
+	LearnPath    = StateDir + "/learn.jsonl"
+	HandoffPath  = StateDir + "/handoff.md"
 )
 
 // LoadDispatch reads the parallel-dispatch ledger.
-func LoadDispatch(root string) ([]byte, error) { return ReadFile(root, dispatchPath) }
+func LoadDispatch(root string) ([]byte, error) { return ReadFile(root, DispatchPath) }
 
 // SaveDispatch replaces the parallel-dispatch ledger.
-func SaveDispatch(root string, data []byte) error { return save(root, dispatchPath, data) }
+func SaveDispatch(root string, data []byte) error { return save(root, DispatchPath, data) }
 
 // LoadClaims reads the work-claims ledger.
-func LoadClaims(root string) ([]byte, error) { return ReadFile(root, claimsPath) }
+func LoadClaims(root string) ([]byte, error) { return ReadFile(root, ClaimsPath) }
 
 // SaveClaims replaces the work-claims ledger.
-func SaveClaims(root string, data []byte) error { return save(root, claimsPath, data) }
+func SaveClaims(root string, data []byte) error { return save(root, ClaimsPath, data) }
 
 // LoadEnvState reads the environment baseline.
-func LoadEnvState(root string) ([]byte, error) { return ReadFile(root, envPath) }
+func LoadEnvState(root string) ([]byte, error) { return ReadFile(root, EnvPath) }
 
 // SaveEnvState replaces the environment baseline.
-func SaveEnvState(root string, data []byte) error { return save(root, envPath, data) }
+func SaveEnvState(root string, data []byte) error { return save(root, EnvPath, data) }
 
 // LoadLearn reads the timing records.
-func LoadLearn(root string) ([]byte, error) { return ReadFile(root, learnPath) }
+func LoadLearn(root string) ([]byte, error) { return ReadFile(root, LearnPath) }
 
 // AppendLearn adds one record line.
 //
-// Read, append, write under one lock rather than an O_APPEND handle. An
-// O_APPEND write is atomic only up to the pipe buffer and only on some
-// filesystems, and "usually" is not a property a measurement can be built
-// on — a lost record is a measurement that quietly understates itself.
+// O_APPEND under the lock, not a read-modify-write. The lock is what makes
+// the append safe now, so rewriting the whole file to add one line would
+// buy nothing and cost everything: learn.Append runs on EVERY procoder
+// invocation, the record file is never trimmed, and a full rewrite would
+// make each command pay for the length of its own history.
 func AppendLearn(root string, line []byte) error {
-	release, _, err := Lock(root, learnPath)
+	release, err := Lock(root, LearnPath)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	old, err := ReadFile(root, learnPath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("procoder: could not read %s (%v) — the record was NOT appended", learnPath, err)
+	p := filepath.Join(root, filepath.FromSlash(LearnPath))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return fmt.Errorf("procoder: could not create %s (%v) — the record was NOT appended", StateDir, err)
 	}
-	return WriteFile(root, learnPath, append(old, line...), 0o644)
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("procoder: could not open %s (%v) — the record was NOT appended", LearnPath, err)
+	}
+	if _, err := f.Write(line); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("procoder: could not append to %s (%v) — the record was NOT appended", LearnPath, err)
+	}
+	// A write that fails on close is a failed write.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("procoder: could not close %s (%v) — the record was NOT appended", LearnPath, err)
+	}
+	return nil
 }
 
 // LoadHandoff reads the session handoff note.
-func LoadHandoff(root string) ([]byte, error) { return ReadFile(root, handoffPath) }
+func LoadHandoff(root string) ([]byte, error) { return ReadFile(root, HandoffPath) }
 
 // SaveHandoff replaces the session handoff note.
-func SaveHandoff(root string, data []byte) error { return save(root, handoffPath, data) }
+func SaveHandoff(root string, data []byte) error { return save(root, HandoffPath, data) }
 
 // LoadMarker reads one of the small single-line markers beside the handoff
 // note — last-decisions-digest, last-unasked-decision.
@@ -86,18 +102,9 @@ func SaveMarker(root, name string, data []byte) error {
 	return save(root, p, data)
 }
 
-// markerPath refuses a name that is a path.
-//
-// A marker is named by a file name, not by a location, and joining an
-// unchecked name would let ".." walk out of .procoder/state and overwrite
-// whatever it found. Nothing in procoder passes a hostile name today; this
-// costs one comparison and removes the question.
-func markerPath(name string) (string, error) {
-	if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
-		return "", errors.New("procoder: a marker is named by a file name, not a path: " + name)
-	}
-	return markerDir + "/" + name, nil
-}
+// markerPath refuses a name that is a path, which is inDir's job — a
+// marker is a file in .procoder/state and nothing more.
+func markerPath(name string) (string, error) { return inDir(StateDir, name) }
 
 // save is the shape every state write shares: take the file's lock, replace
 // it atomically, release.
@@ -107,7 +114,7 @@ func markerPath(name string) (string, error) {
 // waited on a writer would put the gate's slowest write on the hot path of
 // every hook.
 func save(root, relPath string, data []byte) error {
-	release, _, err := Lock(root, relPath)
+	release, err := Lock(root, relPath)
 	if err != nil {
 		return err
 	}
