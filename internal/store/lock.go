@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -49,12 +50,6 @@ const (
 // A var rather than a const only so a test can shorten it; nothing in
 // procoder changes it at runtime.
 var staleAfter = 30 * time.Second
-
-// heartbeatEvery keeps a held lock looking alive. Without it a write that
-// legitimately takes longer than staleAfter — rewriting a multi-megabyte
-// tags.jsonl on a slow filesystem — would have its lock taken out from
-// under it while it was still writing.
-func heartbeatEvery() time.Duration { return staleAfter / 3 }
 
 // lockTimeout bounds the wait. A hook that blocked would take the session
 // with it, so waiting forever is never an option here.
@@ -102,18 +97,24 @@ func Lock(root string, relPaths ...string) (release func(), err error) {
 	sort.Strings(paths)
 
 	var hs []held
+	// Once, because the returned closure is a defer in most callers and a
+	// second close of h.stop would panic. A release function that can only
+	// be called safely once is a trap; this one can be called twice.
+	var once sync.Once
 	rel := func() {
-		for _, h := range hs {
-			close(h.stop)
-			p := lockPath(root, h.rel)
-			// Remove only what we actually hold. If this lock was broken
-			// as stale and somebody else's live lock now sits at the same
-			// path, removing it would hand a third caller a lock that is
-			// already held.
-			if cur, err := os.Stat(p); err == nil && os.SameFile(cur, h.info) {
-				_ = os.Remove(p)
+		once.Do(func() {
+			for _, h := range hs {
+				close(h.stop)
+				p := lockPath(root, h.rel)
+				// Remove only what we actually hold. If this lock was
+				// broken as stale and somebody else's live lock now sits
+				// at the same path, removing it would hand a third caller
+				// a lock that is already held.
+				if cur, err := os.Stat(p); err == nil && os.SameFile(cur, h.info) {
+					_ = os.Remove(p)
+				}
 			}
-		}
+		})
 	}
 	for _, p := range paths {
 		h, err := acquire(root, p)
@@ -148,7 +149,10 @@ func acquire(root, rel string) (held, error) {
 				return held{}, fmt.Errorf("procoder: could not write the lock for %s — the write was NOT made", rel)
 			}
 			h := held{rel: rel, info: info, stop: make(chan struct{})}
-			go keepAlive(p, h.stop)
+			// The tick is read HERE, on the caller's goroutine. Reading
+			// staleAfter inside keepAlive raced every test that restores
+			// it, and `go test -race` said so.
+			go keepAlive(p, info, staleAfter/3, h.stop)
 			return h, nil
 		}
 		if !os.IsExist(err) {
@@ -173,16 +177,27 @@ func breakStale(p, rel string) bool {
 	b, err := os.OpenFile(bp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		// Somebody else is breaking this one — unless they died doing it,
-		// which takes microseconds, so an old break file is litter. The
-		// recovery is bounded: the worst case is two callers breaking a
-		// lock that is dead either way, and O_EXCL still gives one winner.
+		// which takes microseconds, so an old break file is litter.
+		//
+		// The stat and the remove are bound by os.SameFile for the same
+		// reason the lock's own break is: without it, clearing what looks
+		// like an orphan can delete a break file somebody created in
+		// between, and then two callers are inside the section that exists
+		// to hold one.
 		if info, serr := os.Stat(bp); serr == nil && time.Since(info.ModTime()) > staleAfter {
-			_ = os.Remove(bp)
+			removeIfSame(bp, info)
 		}
 		return false
 	}
 	_ = b.Close()
-	defer func() { _ = os.Remove(bp) }()
+	// The identity of OUR break file, so the deferred remove cannot delete
+	// a later caller's.
+	mine, serr := os.Stat(bp)
+	if serr != nil {
+		_ = os.Remove(bp)
+		return false
+	}
+	defer removeIfSame(bp, mine)
 
 	if !stale(p) {
 		return false
@@ -194,16 +209,36 @@ func breakStale(p, rel string) bool {
 	return true
 }
 
+// removeIfSame deletes p only when it is still the file described by want.
+// Every unguarded stat-then-remove in this package has turned out to be a
+// way for one caller to delete another's file.
+func removeIfSame(p string, want os.FileInfo) {
+	if cur, err := os.Stat(p); err == nil && os.SameFile(cur, want) {
+		_ = os.Remove(p)
+	}
+}
+
 // keepAlive touches the lock while it is held, so a slow write is never
 // mistaken for a dead one.
-func keepAlive(p string, stop <-chan struct{}) {
-	t := time.NewTicker(heartbeatEvery())
+//
+// It stops the moment the file at p is no longer the file we created. If
+// our lock is ever broken — one failed os.Chtimes is enough — carrying on
+// would refresh a STRANGER'S lock for as long as this process lives, and
+// that lock would then never be judged stale even after its own owner
+// died. A heartbeat for a lock we no longer hold is worse than no
+// heartbeat at all.
+func keepAlive(p string, mine os.FileInfo, every time.Duration, stop <-chan struct{}) {
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-stop:
 			return
 		case now := <-t.C:
+			cur, err := os.Stat(p)
+			if err != nil || !os.SameFile(cur, mine) {
+				return
+			}
 			_ = os.Chtimes(p, now, now)
 		}
 	}

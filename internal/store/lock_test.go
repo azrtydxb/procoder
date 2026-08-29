@@ -17,6 +17,14 @@ import (
 // made to wait it out. Six tests each sleeping five real seconds is thirty
 // seconds of a suite that otherwise runs in two, and the number under test
 // is the behaviour at the deadline, not the deadline itself.
+// TestMain silences the break notice for the whole package. Setting it
+// per test raced the tests that restore it against anything still holding
+// a lock, and `go test -race` said so.
+func TestMain(m *testing.M) {
+	Notice = io.Discard
+	os.Exit(m.Run())
+}
+
 func impatient(t *testing.T) {
 	t.Helper()
 	was := lockTimeout
@@ -64,7 +72,7 @@ func TestStaleLockIsBrokenAndReported(t *testing.T) {
 	plant(t, root, ".procoder/state/dispatch.json", os.Getpid(), time.Now().Add(-31*time.Second).Unix())
 	var notice bytes.Buffer
 	Notice = &notice
-	t.Cleanup(func() { Notice = os.Stderr })
+	t.Cleanup(func() { Notice = io.Discard })
 
 	rel, err := Lock(root, ".procoder/state/dispatch.json")
 	if err != nil {
@@ -204,10 +212,17 @@ func TestNewbornLockIsNotStolen(t *testing.T) {
 }
 
 // brief shortens the staleness window so a test can outlive it.
+//
+// Three seconds, not sixty milliseconds. os.Chtimes stores a TRUNCATED
+// time on HFS+, exFAT and several container overlay filesystems — one or
+// two seconds of granularity — so a lock touched a moment ago can read as
+// nearly a second old, and a sub-second window would fail there for a
+// reason nobody changed. The six seconds of sleeping this was meant to
+// save is in lockTimeout, which impatient() handles.
 func brief(t *testing.T) {
 	t.Helper()
 	was := staleAfter
-	staleAfter = 60 * time.Millisecond
+	staleAfter = 3 * time.Second
 	t.Cleanup(func() { staleAfter = was })
 }
 
@@ -228,9 +243,6 @@ func TestOnlyOneCallerEverHoldsALock(t *testing.T) {
 	// A dead lock in the way, so every caller arrives at the break path
 	// together rather than one of them simply winning O_EXCL.
 	plant(t, root, rel, os.Getpid(), time.Now().Add(-31*time.Second).Unix())
-	Notice = io.Discard
-	t.Cleanup(func() { Notice = os.Stderr })
-
 	var holders int32
 	var worst int32
 	var wg sync.WaitGroup
@@ -275,9 +287,8 @@ func TestAHeldLockIsNotBrokenWhileItsOwnerWorks(t *testing.T) {
 	}
 	defer release()
 
-	// Outlive the staleness window several times over, the way a slow
-	// write does.
-	time.Sleep(4 * staleAfter)
+	// Outlive the staleness window, the way a slow write does.
+	time.Sleep(2 * staleAfter)
 
 	if _, err := Lock(root, rel); err == nil {
 		t.Fatal("a lock held by a live, working owner was broken as stale")
@@ -342,9 +353,6 @@ func TestAnOrphanedBreakFileIsCleared(t *testing.T) {
 	if err := os.Chtimes(bp, old, old); err != nil {
 		t.Fatal(err)
 	}
-	Notice = io.Discard
-	t.Cleanup(func() { Notice = os.Stderr })
-
 	release, err := Lock(root, rel)
 	if err != nil {
 		t.Fatalf("an orphaned break file wedged the path: %v", err)
