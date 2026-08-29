@@ -6,7 +6,9 @@ import (
 	"go/printer"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,36 +118,51 @@ func TestStoreCoversEveryPathConstant(t *testing.T) {
 	}
 }
 
-// procoderPathIdents are the identifiers that hold a .procoder/ path. An
-// os.* call naming one of these is reaching past the store.
-//
-// Written out rather than inferred: inferring it means guessing which `Dir`
-// a call meant, and a guard that guesses is a guard that fails open.
+// procoderPathIdents are identifiers from OTHER packages that hold a
+// .procoder/ path. Within a package the constants are discovered; across
+// one they are named here, because guessing which `Dir` a qualified
+// selector meant is how a guard starts failing open.
 var procoderPathIdents = []string{
-	"RulesPath", "CopilotLeaksPath", "MermaidConfigPath", "PerspectiveDir",
-	"StateDir", "DecisionsFile", "codeindex.Dir", "spec.Dir",
+	"codeindex.Dir", "spec.Dir", "ask.Dir", "answers.Dir",
 }
 
-// ioFuncs are the calls that read or write a file's contents. os.Stat and
-// os.Getwd are absent deliberately: asking whether something exists is not
-// reaching past the store, and gate adoption legitimately stats .procoder/.
+// ioFuncs are the calls that read, write, replace or remove a file.
+//
+// os.Stat and os.Lstat are absent deliberately: asking whether something
+// exists is not reaching past the store, and gate adoption legitimately
+// stats .procoder/ to decide whether a repository opted in. Removal and
+// mode changes ARE here — a delete past the store is as much a write as a
+// write is.
 var ioFuncs = map[string]bool{
 	"ReadFile": true, "WriteFile": true, "Create": true, "CreateTemp": true,
 	"OpenFile": true, "Open": true, "ReadDir": true, "Rename": true,
+	"Remove": true, "RemoveAll": true, "Truncate": true, "Chmod": true,
+	"Symlink": true, "Link": true,
 }
 
-// proved by: reintroducing a direct os.ReadFile on a .procoder/ path
-// anywhere outside this package fails this, which is what stops the seam
-// eroding one convenient call at a time.
-func TestNoDirectProcoderFileIO(t *testing.T) {
+// packageProcoderConsts collects the .procoder/ path constants declared
+// anywhere in a package.
+//
+// Per PACKAGE, not per file: Go constants are package-scoped, and a guard
+// that only looked in the violating file missed a call in todo.go using a
+// Dir declared three lines up in the same file's package but a different
+// file. That bypass was found by review, not by the guard.
+func packageProcoderConsts(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
 	fset := token.NewFileSet()
-	for _, p := range goFiles(t) {
-		f, err := parser.ParseFile(fset, p, nil, 0)
-		if err != nil {
-			t.Fatalf("%s: %v", p, err)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
 		}
-		// The package's own .procoder path constants, by name.
-		local := map[string]bool{}
+		f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, 0)
+		if err != nil {
+			continue
+		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			vs, ok := n.(*ast.ValueSpec)
 			if !ok {
@@ -159,14 +176,118 @@ func TestNoDirectProcoderFileIO(t *testing.T) {
 				if !ok || bl.Kind != token.STRING {
 					continue
 				}
-				if v, err := strconv.Unquote(bl.Value); err == nil && strings.HasPrefix(v, ".procoder") {
-					local[name.Name] = true
+				if v, err := strconv.Unquote(bl.Value); err == nil && isProcoderPath(v) {
+					out[name.Name] = true
+				}
+			}
+			return true
+		})
+	}
+	return out
+}
+
+// isProcoderPath matches `.procoder` and `.procoder/...` and NOT
+// `.procoder-...`, which is how the self-upgrade names a temp directory
+// and has nothing to do with the store.
+func isProcoderPath(v string) bool {
+	return v == ".procoder" || strings.HasPrefix(v, ".procoder/")
+}
+
+// proved by: reintroducing a direct os.ReadFile on a .procoder/ path
+// anywhere outside this package fails this, which is what stops the seam
+// eroding one convenient call at a time.
+func TestNoDirectProcoderFileIO(t *testing.T) {
+	fset := token.NewFileSet()
+	byDir := map[string][]string{}
+	for _, p := range goFiles(t) {
+		d := filepath.Dir(p)
+		byDir[d] = append(byDir[d], p)
+	}
+	dirs := make([]string, 0, len(byDir))
+	for d := range byDir {
+		dirs = append(dirs, d)
+	}
+	sort.Strings(dirs)
+
+	for _, dir := range dirs {
+		consts := packageProcoderConsts(t, dir)
+		for _, p := range byDir[dir] {
+			f, err := parser.ParseFile(fset, p, nil, 0)
+			if err != nil {
+				t.Fatalf("%s: %v", p, err)
+			}
+			checkFile(t, fset, p, f, consts)
+		}
+	}
+}
+
+// checkFile flags every IO call in one file that names a .procoder/ path,
+// directly or through a variable that was assigned one.
+func checkFile(t *testing.T, fset *token.FileSet, path string, f *ast.File, consts map[string]bool) {
+	t.Helper()
+	render := func(n ast.Node) string {
+		var b strings.Builder
+		if printer.Fprint(&b, fset, n) != nil {
+			return ""
+		}
+		return b.String()
+	}
+	// names a .procoder path, either as a literal or through a constant
+	// this package or another one declares as one.
+	names := func(text string) bool {
+		if procoderLiteral.MatchString(text) {
+			return true
+		}
+		for c := range consts {
+			if identRe(c).MatchString(text) {
+				return true
+			}
+		}
+		for _, c := range procoderPathIdents {
+			if identRe(c).MatchString(text) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		// Variables holding a .procoder path. Without this the guard is
+		// bypassed by one line — `p := filepath.Join(root, Dir, name)`
+		// followed by `os.ReadFile(p)` — which review demonstrated.
+		tainted := map[string]bool{}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			var lhs []ast.Expr
+			var rhs []ast.Expr
+			switch a := n.(type) {
+			case *ast.AssignStmt:
+				lhs, rhs = a.Lhs, a.Rhs
+			case *ast.ValueSpec:
+				for _, id := range a.Names {
+					lhs = append(lhs, id)
+				}
+				rhs = a.Values
+			default:
+				return true
+			}
+			for i, l := range lhs {
+				id, ok := l.(*ast.Ident)
+				if !ok || i >= len(rhs) {
+					continue
+				}
+				text := render(rhs[i])
+				if names(text) {
+					tainted[id.Name] = true
 				}
 			}
 			return true
 		})
 
-		ast.Inspect(f, func(n ast.Node) bool {
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
@@ -175,63 +296,39 @@ func TestNoDirectProcoderFileIO(t *testing.T) {
 			if !ok {
 				return true
 			}
-			id, ok := sel.X.(*ast.Ident)
-			if !ok || id.Name != "os" || !ioFuncs[sel.Sel.Name] {
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != "os" || !ioFuncs[sel.Sel.Name] {
 				return true
 			}
-			var b strings.Builder
-			if err := printer.Fprint(&b, fset, call); err != nil {
-				return true
-			}
-			text := b.String()
-
-			// `".procoder/` or exactly `".procoder"` — NOT `.procoder-`,
-			// which is how the self-upgrade names a temp directory and has
-			// nothing to do with the store.
-			hit := strings.Contains(text, `".procoder/`) || strings.Contains(text, `".procoder"`)
-			for name := range local {
-				if !hit && containsIdent(text, name) {
-					hit = true
-				}
-			}
-			for _, name := range procoderPathIdents {
-				if !hit && containsIdent(text, name) {
+			text := render(call)
+			hit := names(text)
+			for v := range tainted {
+				if !hit && identRe(v).MatchString(text) {
 					hit = true
 				}
 			}
 			if hit {
 				t.Errorf("%s:%d reaches past the store: %s",
-					p, fset.Position(call.Pos()).Line, strings.Join(strings.Fields(text), " "))
+					path, fset.Position(call.Pos()).Line, strings.Join(strings.Fields(text), " "))
 			}
 			return true
 		})
 	}
 }
 
-// containsIdent reports whether text uses name as a whole identifier, so
-// "Dir" does not match "SkipDir".
-func containsIdent(text, name string) bool {
-	for i := 0; ; {
-		j := strings.Index(text[i:], name)
-		if j < 0 {
-			return false
-		}
-		j += i
-		before := byte(' ')
-		if j > 0 {
-			before = text[j-1]
-		}
-		after := byte(' ')
-		if j+len(name) < len(text) {
-			after = text[j+len(name)]
-		}
-		if !isIdentByte(before) && !isIdentByte(after) {
-			return true
-		}
-		i = j + len(name)
+// procoderLiteral matches a `".procoder"` or `".procoder/..."` string in
+// rendered source, and not `".procoder-..."`.
+var procoderLiteral = regexp.MustCompile(`"\.procoder(/[^"]*)?"`)
+
+// identRe matches name as a whole identifier, so "Dir" does not match
+// "SkipDir" and "spec.Dir" does not match "myspec.Dir".
+func identRe(name string) *regexp.Regexp {
+	if re, ok := identCache[name]; ok {
+		return re
 	}
+	re := regexp.MustCompile(`(^|[^\w.])` + regexp.QuoteMeta(name) + `($|[^\w.])`)
+	identCache[name] = re
+	return re
 }
 
-func isIdentByte(b byte) bool {
-	return b == '_' || b == '.' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
-}
+var identCache = map[string]*regexp.Regexp{}
