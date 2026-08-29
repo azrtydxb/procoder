@@ -256,36 +256,79 @@ func checkFile(t *testing.T, fset *token.FileSet, path string, f *ast.File, cons
 		if !ok || fn.Body == nil {
 			continue
 		}
-		// Variables holding a .procoder path. Without this the guard is
+		// Names holding a .procoder path. Without this the guard is
 		// bypassed by one line — `p := filepath.Join(root, Dir, name)`
 		// followed by `os.ReadFile(p)` — which review demonstrated.
+		//
+		// Selector targets are tainted by their rendered text, because
+		// `t.Path` and `it.Path` really do hold .procoder absolute paths
+		// today, and `os.ReadFile(t.Path)` is the likeliest future
+		// regression. Taint propagates and the loop runs to a fixed point,
+		// so an alias chain does not launder it.
+		//
+		// KNOWN GAP, documented rather than left to be discovered: a
+		// helper that RETURNS a .procoder path — `os.ReadFile(mk(root))` —
+		// is not caught. Following return values wants a second pass over
+		// the package's call graph, which is more than this guard is
+		// worth; the coverage test above is what catches a new path being
+		// introduced at all.
 		tainted := map[string]bool{}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			var lhs []ast.Expr
-			var rhs []ast.Expr
-			switch a := n.(type) {
-			case *ast.AssignStmt:
-				lhs, rhs = a.Lhs, a.Rhs
-			case *ast.ValueSpec:
-				for _, id := range a.Names {
-					lhs = append(lhs, id)
+		taintedText := func(text string) bool {
+			for v := range tainted {
+				if identRe(v).MatchString(text) {
+					return true
 				}
-				rhs = a.Values
-			default:
+			}
+			return false
+		}
+		for pass := 0; pass < 8; pass++ {
+			before := len(tainted)
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				var lhs, rhs []ast.Expr
+				switch a := n.(type) {
+				case *ast.AssignStmt:
+					lhs, rhs = a.Lhs, a.Rhs
+				case *ast.ValueSpec:
+					for _, id := range a.Names {
+						lhs = append(lhs, id)
+					}
+					rhs = a.Values
+				case *ast.RangeStmt:
+					// for _, p := range paths — the value carries the
+					// taint of what is ranged over.
+					x := render(a.X)
+					if a.Value != nil && (names(x) || taintedText(x)) {
+						if id, ok := a.Value.(*ast.Ident); ok {
+							tainted[id.Name] = true
+						}
+					}
+					return true
+				default:
+					return true
+				}
+				for i, l := range lhs {
+					if i >= len(rhs) {
+						continue
+					}
+					text := render(rhs[i])
+					if !names(text) && !taintedText(text) {
+						continue
+					}
+					switch target := l.(type) {
+					case *ast.Ident:
+						tainted[target.Name] = true
+					case *ast.SelectorExpr:
+						if t := render(target); t != "" {
+							tainted[t] = true
+						}
+					}
+				}
 				return true
+			})
+			if len(tainted) == before {
+				break
 			}
-			for i, l := range lhs {
-				id, ok := l.(*ast.Ident)
-				if !ok || i >= len(rhs) {
-					continue
-				}
-				text := render(rhs[i])
-				if names(text) {
-					tainted[id.Name] = true
-				}
-			}
-			return true
-		})
+		}
 
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
@@ -301,12 +344,7 @@ func checkFile(t *testing.T, fset *token.FileSet, path string, f *ast.File, cons
 				return true
 			}
 			text := render(call)
-			hit := names(text)
-			for v := range tainted {
-				if !hit && identRe(v).MatchString(text) {
-					hit = true
-				}
-			}
+			hit := names(text) || taintedText(text)
 			if hit {
 				t.Errorf("%s:%d reaches past the store: %s",
 					path, fset.Position(call.Pos()).Line, strings.Join(strings.Fields(text), " "))
