@@ -74,7 +74,7 @@ func CloseStoryWith(root, id string, gateClean func() bool, suite func() (bool, 
 		out(err.Error())
 		return 2
 	}
-	raw, err := readUnder(root, path)
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out("no story " + id + " — `procoder backlog list` shows what exists")
 		return 2
@@ -214,7 +214,7 @@ func CloseEpic(root, id string, out func(string)) int {
 		emit(out, warns)
 		return 1
 	}
-	raw, err := readUnder(root, epic.Path)
+	raw, err := store.LoadUnder(root, epic.Path)
 	if err != nil {
 		out("cannot read the epic file: " + err.Error())
 		return 2
@@ -264,7 +264,7 @@ func CloseMilestone(root, id string, out func(string)) int {
 		}
 		return 1
 	}
-	raw, err := readUnder(root, ms.Path)
+	raw, err := store.LoadUnder(root, ms.Path)
 	if err != nil {
 		out("cannot read the milestone file: " + err.Error())
 		return 2
@@ -317,7 +317,7 @@ func emit(out func(string), lines []string) {
 // no partial rewrite, same as todo. A write failure is printed verbatim.
 func markDone(root, path, text string, out func(string)) bool {
 	done := statusRe.ReplaceAllString(text, "Status: done "+time.Now().UTC().Format("2006-01-02"))
-	if err := writeUnder(root, path, []byte(done)); err != nil {
+	if err := store.SaveUnder(root, path, []byte(done)); err != nil {
 		out("cannot update the file: " + err.Error())
 		return false
 	}

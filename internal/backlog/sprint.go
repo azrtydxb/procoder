@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"procoder/internal/config"
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -125,7 +126,7 @@ func sprintSeq(id string) int {
 // done. `[sprint] retro = "off"` in config.toml opts a repo out.
 func retroGate(root string, last Item, out func(string)) int {
 	rel := filepath.ToSlash(filepath.Join(Dir, KindSprint, last.ID+".md"))
-	raw, err := readUnder(root, last.Path)
+	raw, err := store.LoadUnder(root, last.Path)
 	if err != nil {
 		out("cannot read " + rel + " — an unreadable retro is unknown, and unknown is never done; fix the file before opening a sprint")
 		return 1
@@ -158,7 +159,7 @@ func SprintPull(root string, ids []string, out func(string)) int {
 			refused = true
 			continue
 		}
-		raw, err := readUnder(root, path)
+		raw, err := store.LoadUnder(root, path)
 		if err != nil {
 			out("refused " + id + ": no such story — `procoder backlog list` shows what exists")
 			refused = true
@@ -189,7 +190,7 @@ func SprintPull(root string, ids []string, out func(string)) int {
 			continue
 		}
 		updated := sprintLineRe.ReplaceAllString(text, "Sprint: "+active.ID)
-		if err := writeUnder(root, path, []byte(updated)); err != nil {
+		if err := store.SaveUnder(root, path, []byte(updated)); err != nil {
 			out("cannot update the story file: " + err.Error())
 			return 2
 		}
@@ -223,7 +224,7 @@ func SprintCarry(root, id, reason string, out func(string)) int {
 		out(err.Error())
 		return 2
 	}
-	raw, err := readUnder(root, path)
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out("no story " + id + " — `procoder backlog list` shows what exists")
 		return 1
@@ -238,7 +239,7 @@ func SprintCarry(root, id, reason string, out func(string)) int {
 		return 1
 	}
 	updated := sprintLineRe.ReplaceAllString(text, "Sprint: -\nCarried: "+active.ID+" — "+reason)
-	if err := writeUnder(root, path, []byte(updated)); err != nil {
+	if err := store.SaveUnder(root, path, []byte(updated)); err != nil {
 		out("cannot update the story file: " + err.Error())
 		return 2
 	}
@@ -313,7 +314,7 @@ func SprintClose(root string, out func(string)) int {
 		}
 		return 1
 	}
-	raw, err := readUnder(root, active.Path)
+	raw, err := store.LoadUnder(root, active.Path)
 	if err != nil {
 		out("cannot read the sprint file: " + err.Error())
 		return 2
@@ -337,7 +338,7 @@ func SprintClose(root string, out func(string)) int {
 			"<!-- What we change next sprint because of it. -->\n\n" +
 			"<!-- One adaptation from this sprint worth keeping. -->\n"
 	}
-	if err := writeUnder(root, active.Path, []byte(text)); err != nil {
+	if err := store.SaveUnder(root, active.Path, []byte(text)); err != nil {
 		out("cannot update the sprint file: " + err.Error())
 		return 2
 	}
@@ -362,7 +363,7 @@ func sprintStories(root, sprintID string) (committed []Item, carried []string) {
 			committed = append(committed, it)
 			continue
 		}
-		raw, err := readUnder(root, it.Path)
+		raw, err := store.LoadUnder(root, it.Path)
 		if err == nil && carriedRe.Match(raw) {
 			carried = append(carried, it.ID)
 		}

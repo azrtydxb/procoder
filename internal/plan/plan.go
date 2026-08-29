@@ -131,7 +131,7 @@ func Check(root, name string, out func(string)) int {
 }
 
 func checkOne(root, path string, out func(string)) int {
-	raw, err := readUnder(root, path)
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
 		return 2
@@ -210,14 +210,3 @@ func planFiles(root string) []string {
 // surgical-scope check, which reads the `**Files:**` lines a plan already
 // has to carry.
 func Files(root string) []string { return planFiles(root) }
-
-// readUnder reads a .procoder/ file the caller was handed as an absolute
-// path. Files returns absolute paths, so its readers would otherwise have
-// to go around the store to open what they were given.
-func readUnder(root, abs string) ([]byte, error) {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return nil, err
-	}
-	return store.LoadDoc(root, rel)
-}

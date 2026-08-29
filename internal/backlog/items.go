@@ -323,22 +323,3 @@ func ItemFiles(root string) []string {
 	}
 	return out
 }
-
-// readUnder and writeUnder reach a .procoder/ file the caller was handed as
-// an absolute path. Item.Path is absolute, and its holders would otherwise
-// have to go around the store to open what they were given.
-func readUnder(root, abs string) ([]byte, error) {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return nil, err
-	}
-	return store.LoadDoc(root, rel)
-}
-
-func writeUnder(root, abs string, data []byte) error {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return err
-	}
-	return store.SaveDoc(root, rel, data)
-}

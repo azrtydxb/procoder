@@ -136,7 +136,7 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 		out(err.Error())
 		return 2
 	}
-	raw, err := readUnder(root, path)
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out("no task " + id + " — `procoder todo list` shows what exists")
 		return 2
@@ -181,7 +181,7 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 		return 1
 	}
 	closed := statusRe.ReplaceAllString(text, "Status: closed "+time.Now().UTC().Format("2006-01-02"))
-	if err := writeUnder(root, path, []byte(closed)); err != nil {
+	if err := store.SaveUnder(root, path, []byte(closed)); err != nil {
 		out("cannot update the task file: " + err.Error())
 		return 2
 	}
@@ -192,23 +192,4 @@ func CloseWith(root, id string, gateClean func() bool, suite func() (bool, strin
 // Read reads a task file the caller located with File(). Exported because
 // the command layer shows a task it just looked up, and it must not reach
 // past the store to do it.
-func Read(root, abs string) ([]byte, error) { return readUnder(root, abs) }
-
-// readUnder and writeUnder reach a .procoder/ file the caller was handed as
-// an absolute path. File() returns absolute paths, so its callers would
-// otherwise have to go around the store to open what they were given.
-func readUnder(root, abs string) ([]byte, error) {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return nil, err
-	}
-	return store.LoadDoc(root, rel)
-}
-
-func writeUnder(root, abs string, data []byte) error {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return err
-	}
-	return store.SaveDoc(root, rel, data)
-}
+func Read(root, abs string) ([]byte, error) { return store.LoadUnder(root, abs) }

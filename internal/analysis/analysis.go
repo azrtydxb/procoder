@@ -133,7 +133,7 @@ func Check(root, name string, out func(string)) int {
 
 	worst := 0
 	for _, path := range files {
-		raw, err := readUnder(root, path)
+		raw, err := store.LoadUnder(root, path)
 		if err != nil {
 			out(filepath.Base(path) + ": unreadable — " + err.Error())
 			worst = 2
@@ -170,15 +170,4 @@ func SpecSource(root, specName string) string {
 		return ""
 	}
 	return filepath.ToSlash(filepath.Join(Dir, specName+".md"))
-}
-
-// readUnder reads a .procoder/ file the caller was handed as an absolute
-// path. Files returns absolute paths, so its readers would otherwise have
-// to go around the store to open what they were given.
-func readUnder(root, abs string) ([]byte, error) {
-	rel, err := store.Rel(root, abs)
-	if err != nil {
-		return nil, err
-	}
-	return store.LoadDoc(root, rel)
 }

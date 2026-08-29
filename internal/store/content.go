@@ -78,7 +78,7 @@ func inDir(relDir, name string) (string, error) {
 // release. Per file, not per directory — two people editing two different
 // stories have no reason to wait for each other.
 func saveContent(root, relPath string, data []byte) error {
-	release, _, err := Lock(root, relPath)
+	release, err := Lock(root, relPath)
 	if err != nil {
 		return err
 	}
@@ -95,11 +95,11 @@ func saveContent(root, relPath string, data []byte) error {
 // what they were given. It refuses a path outside root, so "read what I
 // was handed" cannot become "read anything".
 func Rel(root, abs string) (string, error) {
-	r, err := filepath.Abs(root)
+	r, err := resolve(root)
 	if err != nil {
 		return "", err
 	}
-	a, err := filepath.Abs(abs)
+	a, err := resolve(abs)
 	if err != nil {
 		return "", err
 	}
@@ -108,10 +108,62 @@ func Rel(root, abs string) (string, error) {
 		return "", err
 	}
 	rel = filepath.ToSlash(rel)
-	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", errors.New("procoder: " + abs + " is outside " + root)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", errors.New("procoder: " + filepath.ToSlash(abs) + " is not a file inside " + filepath.ToSlash(root))
 	}
 	return rel, nil
+}
+
+// resolve makes a path absolute AND follows symlinks, which matters in both
+// directions.
+//
+// Without it a legitimate path is refused: on macOS a temp root is
+// /var/... while anything that has called EvalSymlinks holds
+// /private/var/..., and comparing the two says "outside". And an escape is
+// permitted: a symlink inside the root pointing out of it would otherwise
+// produce a clean-looking relative path that reads and writes elsewhere.
+//
+// A path that does not exist yet cannot be resolved; its nearest existing
+// ancestor is resolved instead, so a first write is not refused for not
+// having happened yet.
+func resolve(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		return r, nil
+	}
+	dir, base := filepath.Split(abs)
+	parent, err := resolve(filepath.Clean(dir))
+	if err != nil {
+		return abs, nil
+	}
+	return filepath.Join(parent, base), nil
+}
+
+// LoadUnder and SaveUnder reach a .procoder/ file the caller was handed as
+// an ABSOLUTE path.
+//
+// Several packages list .procoder/ files as absolute paths and hand them
+// around — spec.Files, plan.Files, analysis.Files, Item.Path, Task.Path —
+// and their readers would otherwise have to go around the store to open
+// what they were given. Rel refuses a path outside the root, so "read what
+// I was handed" cannot become "read anything".
+func LoadUnder(root, abs string) ([]byte, error) {
+	rel, err := Rel(root, abs)
+	if err != nil {
+		return nil, err
+	}
+	return LoadDoc(root, rel)
+}
+
+func SaveUnder(root, abs string, data []byte) error {
+	rel, err := Rel(root, abs)
+	if err != nil {
+		return err
+	}
+	return SaveDoc(root, rel, data)
 }
 
 // OpenIn opens a file in a directory owner for streaming.

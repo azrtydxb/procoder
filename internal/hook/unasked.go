@@ -3,8 +3,6 @@ package hook
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -153,8 +151,7 @@ const decisionsFile = "last-decisions-digest"
 // direction there is to let the turn end. A hook that blocks on its own
 // broken bookkeeping is one people disable.
 func decisionsChanged(root string) bool {
-	path := filepath.Join(root, filepath.FromSlash(ask.Dir), ask.DecisionsFile)
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadIn(root, ask.Dir, ask.DecisionsFile)
 	if err != nil {
 		return true // no file, or unreadable: not evidence of a backlog
 	}
