@@ -123,3 +123,36 @@ func TestIdentitySource(t *testing.T) {
 		}
 	}
 }
+
+// proved by: leaving a port in the authority makes https://host:8443/o/r
+// and https://host/8443/o/r one key — two repositories with one identity,
+// which is the collision an identity exists to prevent.
+func TestIdentityNormalisationIsAdversarial(t *testing.T) {
+	for _, tc := range []struct{ url, want string }{
+		{"https://host:8443/o/r", "host/o/r"},
+		{"https://host/8443/o/r", "host/8443/o/r"},
+		{"ssh://git@host:2222/o/r.git", "host/o/r"},
+		{"https://host/2222/o/r", "host/2222/o/r"},
+		// an "@" in the PATH must not throw the host away
+		{"https://host/o/r@2", "host/o/r@2"},
+		// nothing reducible to a host and a path is not an identity
+		{"", ""},
+		{"https://", ""},
+		{"git@host", ""},
+		{"   ", ""},
+	} {
+		if got := normalise(tc.url); got != tc.want {
+			t.Errorf("normalise(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}
+
+// proved by: taking a rung's answer without checking it is non-empty gives
+// every repository with a malformed remote the same empty identity.
+func TestIdentitySkipsARungThatCannotAnswer(t *testing.T) {
+	root := gitRepo(t, map[string]string{"origin": "git@host"})
+	got := IdentityFor(root, "")
+	if got.Rung != "path" || got.Key == "" {
+		t.Fatalf("got %+v, want the path rung with a non-empty key", got)
+	}
+}
