@@ -1,13 +1,28 @@
 package store
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// impatient shortens the acquire timeout for a test that is deliberately
+// made to wait it out. Six tests each sleeping five real seconds is thirty
+// seconds of a suite that otherwise runs in two, and the number under test
+// is the behaviour at the deadline, not the deadline itself.
+func impatient(t *testing.T) {
+	t.Helper()
+	was := lockTimeout
+	lockTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { lockTimeout = was })
+}
 
 // plant writes a lock file for rel with the given pid and unix time, so a
 // test can stage the exact state the stale check has to judge.
@@ -20,17 +35,25 @@ func plant(t *testing.T, root, rel string, pid int, unix int64) {
 	if err := os.WriteFile(p, []byte(fmt.Sprintf("%d\n%d\n", pid, unix)), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The file's mtime is the liveness signal, so a lock planted as having
+	// been taken N seconds ago must LOOK N seconds old. Writing fresh bytes
+	// with an old timestamp inside would be a lock no real run produces.
+	at := time.Unix(unix, 0)
+	if err := os.Chtimes(p, at, at); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // proved by: dropping the O_EXCL flag makes the second Lock succeed.
 func TestLockIsExclusive(t *testing.T) {
+	impatient(t)
 	root := t.TempDir()
-	rel, _, err := Lock(root, ".procoder/state/dispatch.json")
+	rel, err := Lock(root, ".procoder/state/dispatch.json")
 	if err != nil {
 		t.Fatalf("first lock: %v", err)
 	}
 	defer rel()
-	if _, _, err := Lock(root, ".procoder/state/dispatch.json"); err == nil {
+	if _, err := Lock(root, ".procoder/state/dispatch.json"); err == nil {
 		t.Fatal("second lock succeeded while the first was held")
 	}
 }
@@ -39,13 +62,17 @@ func TestLockIsExclusive(t *testing.T) {
 func TestStaleLockIsBrokenAndReported(t *testing.T) {
 	root := t.TempDir()
 	plant(t, root, ".procoder/state/dispatch.json", os.Getpid(), time.Now().Add(-31*time.Second).Unix())
-	rel, broken, err := Lock(root, ".procoder/state/dispatch.json")
+	var notice bytes.Buffer
+	Notice = &notice
+	t.Cleanup(func() { Notice = os.Stderr })
+
+	rel, err := Lock(root, ".procoder/state/dispatch.json")
 	if err != nil {
 		t.Fatalf("stale lock was not broken: %v", err)
 	}
 	defer rel()
-	if len(broken) != 1 || !strings.Contains(broken[0], "dispatch.json") {
-		t.Fatalf("breaking the lock was not reported: %v", broken)
+	if !strings.Contains(notice.String(), "dispatch.json") {
+		t.Fatalf("breaking the lock was not reported: %q", notice.String())
 	}
 }
 
@@ -79,14 +106,11 @@ func TestUnreadableLockIsStale(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			rel, broken, err := Lock(root, ".procoder/state/dispatch.json")
+			rel, err := Lock(root, ".procoder/state/dispatch.json")
 			if err != nil {
 				t.Fatalf("lock was not treated as stale: %v", err)
 			}
 			defer rel()
-			if len(broken) != 1 {
-				t.Fatalf("breaking the lock was not reported: %v", broken)
-			}
 		})
 	}
 }
@@ -94,10 +118,11 @@ func TestUnreadableLockIsStale(t *testing.T) {
 // proved by: removing the deadline from the retry loop makes this hang rather
 // than fail, which is the failure a hook must never be able to cause.
 func TestLiveLockRefusesRatherThanBlocks(t *testing.T) {
+	impatient(t)
 	root := t.TempDir()
 	plant(t, root, ".procoder/state/dispatch.json", os.Getpid(), time.Now().Unix())
 	start := time.Now()
-	_, _, err := Lock(root, ".procoder/state/dispatch.json")
+	_, err := Lock(root, ".procoder/state/dispatch.json")
 	if err == nil {
 		t.Fatal("write proceeded while a live lock was held")
 	}
@@ -118,7 +143,7 @@ func TestLockOrderIsSortedPaths(t *testing.T) {
 	for _, pair := range [][2]string{{a, b}, {b, a}} {
 		go func(p [2]string) {
 			for i := 0; i < 50; i++ {
-				rel, _, err := Lock(root, p[0], p[1])
+				rel, err := Lock(root, p[0], p[1])
 				if err != nil {
 					done <- err
 					return
@@ -143,13 +168,14 @@ func TestLockOrderIsSortedPaths(t *testing.T) {
 // proved by: returning early on the first failure, without releasing what was
 // already taken, leaves the first path locked and this fails.
 func TestPartialAcquisitionReleasesWhatItTook(t *testing.T) {
+	impatient(t)
 	root := t.TempDir()
 	first, second := ".procoder/a.md", ".procoder/b.md"
 	plant(t, root, second, os.Getpid(), time.Now().Unix()) // live, will not yield
-	if _, _, err := Lock(root, first, second); err == nil {
+	if _, err := Lock(root, first, second); err == nil {
 		t.Fatal("Lock succeeded though the second path was held")
 	}
-	rel, _, err := Lock(root, first)
+	rel, err := Lock(root, first)
 	if err != nil {
 		t.Fatalf("the first path was left locked after a failed multi-lock: %v", err)
 	}
@@ -175,4 +201,153 @@ func TestNewbornLockIsNotStolen(t *testing.T) {
 	if stale(p) {
 		t.Fatal("an empty, freshly created lock was judged stale — a live lock can be stolen mid-write")
 	}
+}
+
+// brief shortens the staleness window so a test can outlive it.
+func brief(t *testing.T) {
+	t.Helper()
+	was := staleAfter
+	staleAfter = 60 * time.Millisecond
+	t.Cleanup(func() { staleAfter = was })
+}
+
+// TestOnlyOneCallerEverHoldsALock is the test for the defect that review
+// found and this package exists to prevent.
+//
+// Judging a lock stale and removing it are two operations. Without
+// serialising them, two callers that both judge the same lock stale
+// interleave: the first removes and re-creates, the second removes what
+// the first just created and creates its own. Both then hold, and the
+// second's write lands on top of the first's.
+//
+// proved by: replacing breakStale's O_EXCL break file with a plain
+// stat-then-remove makes this fail with "2 callers held the lock at once".
+func TestOnlyOneCallerEverHoldsALock(t *testing.T) {
+	root := t.TempDir()
+	const rel = ".procoder/state/dispatch.json"
+	// A dead lock in the way, so every caller arrives at the break path
+	// together rather than one of them simply winning O_EXCL.
+	plant(t, root, rel, os.Getpid(), time.Now().Add(-31*time.Second).Unix())
+	Notice = io.Discard
+	t.Cleanup(func() { Notice = os.Stderr })
+
+	var holders int32
+	var worst int32
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			release, err := Lock(root, rel)
+			if err != nil {
+				return // losing the race is fine; holding it together is not
+			}
+			n := atomic.AddInt32(&holders, 1)
+			for {
+				w := atomic.LoadInt32(&worst)
+				if n <= w || atomic.CompareAndSwapInt32(&worst, w, n) {
+					break
+				}
+			}
+			time.Sleep(2 * time.Millisecond)
+			atomic.AddInt32(&holders, -1)
+			release()
+		}()
+	}
+	wg.Wait()
+	if worst > 1 {
+		t.Fatalf("%d callers held the lock at once", worst)
+	}
+}
+
+// proved by: without the heartbeat the mtime is set once at creation, so a
+// write that legitimately runs longer than staleAfter has its lock taken
+// out from under it while it is still writing.
+func TestAHeldLockIsNotBrokenWhileItsOwnerWorks(t *testing.T) {
+	brief(t)
+	impatient(t)
+	root := t.TempDir()
+	const rel = ".procoder/state/claims.json"
+
+	release, err := Lock(root, rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	// Outlive the staleness window several times over, the way a slow
+	// write does.
+	time.Sleep(4 * staleAfter)
+
+	if _, err := Lock(root, rel); err == nil {
+		t.Fatal("a lock held by a live, working owner was broken as stale")
+	}
+}
+
+// TestBreakingAStaleLockIsSerialised is the real proof for the defect
+// review found; TestOnlyOneCallerEverHoldsALock above is a stress test and
+// is honestly NOT proof, because the window it hunts is two syscalls wide
+// and sixteen goroutines rarely land inside it.
+//
+// The defect: judging a lock stale and removing it are two operations.
+// Two callers that both judge the same lock stale interleave — the first
+// removes and re-creates, the second removes what the first just created —
+// and both then hold. The fix is that only the holder of the break file
+// may remove, so the second caller never reaches its remove.
+//
+// proved by: removing the break file's O_EXCL guard makes this test break
+// the lock anyway and fail.
+func TestBreakingAStaleLockIsSerialised(t *testing.T) {
+	impatient(t)
+	root := t.TempDir()
+	const rel = ".procoder/state/dispatch.json"
+	plant(t, root, rel, os.Getpid(), time.Now().Add(-31*time.Second).Unix())
+
+	// Somebody else is already inside the break.
+	bp := lockPath(root, rel) + breakSuffix
+	if err := os.WriteFile(bp, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Lock(root, rel); err == nil {
+		t.Fatal("broke a stale lock while another caller was already breaking it — two callers can hold")
+	}
+
+	// And once that caller is done, the stale lock is breakable again.
+	if err := os.Remove(bp); err != nil {
+		t.Fatal(err)
+	}
+	Notice = io.Discard
+	t.Cleanup(func() { Notice = os.Stderr })
+	release, err := Lock(root, rel)
+	if err != nil {
+		t.Fatalf("the stale lock was not breakable once the break file went: %v", err)
+	}
+	release()
+}
+
+// proved by: never clearing an orphaned break file wedges the path — no
+// caller can ever break the stale lock behind it, and every write to that
+// file fails until somebody deletes it by hand.
+func TestAnOrphanedBreakFileIsCleared(t *testing.T) {
+	root := t.TempDir()
+	const rel = ".procoder/state/dispatch.json"
+	plant(t, root, rel, os.Getpid(), time.Now().Add(-31*time.Second).Unix())
+
+	bp := lockPath(root, rel) + breakSuffix
+	if err := os.WriteFile(bp, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-31 * time.Second)
+	if err := os.Chtimes(bp, old, old); err != nil {
+		t.Fatal(err)
+	}
+	Notice = io.Discard
+	t.Cleanup(func() { Notice = os.Stderr })
+
+	release, err := Lock(root, rel)
+	if err != nil {
+		t.Fatalf("an orphaned break file wedged the path: %v", err)
+	}
+	release()
 }

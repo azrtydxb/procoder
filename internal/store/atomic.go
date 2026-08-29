@@ -1,11 +1,11 @@
 package store
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,15 +14,20 @@ import (
 // and so a person reading `git status` after a crash can tell what it is.
 const tempPrefix = ".procoder-tmp-"
 
-// tempMaxAge is how long a temp file may sit before the sweep removes it. It
-// is not the lock's staleAfter by accident: both answer the same question,
-// which is how long a live write could plausibly still be going.
-const tempMaxAge = 30 * time.Second
+// tempLitterAge is how long a temp file may sit before the sweep removes
+// it. An hour rather than the lock's thirty seconds, and deliberately much
+// longer than any write could take: the sweep runs in one process against
+// files another process may still be writing, and the only way to be sure
+// a temp file is litter rather than work in progress is for it to be far
+// older than any live write could be. Litter costs nothing to leave a
+// little longer; deleting somebody's in-flight write costs them the write.
+const tempLitterAge = time.Hour
 
-// forceRenameFailure makes the rename fail. It exists for one test and
-// nothing else: there is no portable way to make os.Rename fail on demand,
-// and the atomicity claim is not worth making if nothing can check it.
-var forceRenameFailure bool
+// swept remembers which directories this process has already tidied. The
+// sweep is a full ReadDir, and running one after every save into
+// .procoder/todo or .procoder/specs would put the size of the directory on
+// the cost of writing one file in it.
+var swept sync.Map
 
 // ReadFile reads the file at the repo-relative path. An absent file returns
 // an error satisfying os.IsNotExist, exactly as os.ReadFile does, because
@@ -79,35 +84,50 @@ func WriteFile(root, relPath string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("procoder: could not close %s (%v) — the write was NOT made", relPath, err)
 	}
 
-	if err := rename(tmp, target); err != nil {
+	if err := os.Rename(tmp, target); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("procoder: could not replace %s (%v) — the write was NOT made", relPath, err)
 	}
+	syncDir(dir)
 
 	sweep(dir)
 	return nil
 }
 
-// rename is os.Rename with the test seam in front of it.
-func rename(from, to string) error {
-	if forceRenameFailure {
-		return errors.New("rename failure forced by a test")
+// syncDir flushes the directory entry the rename created.
+//
+// Syncing the file's data is not enough on its own: the rename is a
+// directory operation, and a power failure between the two can leave the
+// target back under its old name or missing altogether — which is the
+// "rename that outlives its own data" this whole function exists to
+// prevent. Best effort, because a filesystem that will not sync a
+// directory handle is not a reason to fail a write that has already
+// landed.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
 	}
-	return os.Rename(from, to)
+	_ = d.Sync()
+	_ = d.Close()
 }
 
 // sweep removes temp files old enough that no live write could still own
-// them — the litter left by a process that died between staging and rename.
+// them — the litter left by a process that died between staging and
+// rename. Once per directory per process: see swept.
 //
 // Best effort by design: it runs after a write that has already succeeded,
 // and failing the caller because some unrelated stale file could not be
 // removed would turn tidying into an outage.
 func sweep(dir string) {
+	if _, done := swept.LoadOrStore(dir, true); done {
+		return
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	cutoff := time.Now().Add(-tempMaxAge)
+	cutoff := time.Now().Add(-tempLitterAge)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasPrefix(e.Name(), tempPrefix) {
 			continue

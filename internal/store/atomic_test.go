@@ -8,27 +8,44 @@ import (
 	"time"
 )
 
-// proved by: replacing the temp-and-rename with a direct os.WriteFile leaves
-// the target truncated instead of untouched, and this fails.
+// proved by: replacing the temp-and-rename with a direct os.WriteFile makes
+// the write destroy what was at the target instead of leaving it, and this
+// fails.
+//
+// The rename is made to fail by pointing it at a NON-EMPTY DIRECTORY, which
+// no platform will let a file be renamed over. That is why this test needs
+// no seam in the production code: an atomicity claim nothing can check is
+// not worth making, but a claim that needs a flag in the shipping binary to
+// check is worse.
 func TestAtomicWriteLeavesOriginalOnRenameFailure(t *testing.T) {
 	root := t.TempDir()
-	rel := ".procoder/state/claims.json"
-	if err := WriteFile(root, rel, []byte("original"), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	const rel = ".procoder/state/claims.json"
 
-	forceRenameFailure = true
-	t.Cleanup(func() { forceRenameFailure = false })
+	target := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(target, "keep.txt")
+	if err := os.WriteFile(child, []byte("untouched"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := WriteFile(root, rel, []byte("replacement"), 0o644); err == nil {
-		t.Fatal("WriteFile reported success though the rename failed")
+		t.Fatal("WriteFile reported success though the rename could not have worked")
 	}
-	got, err := ReadFile(root, rel)
+	got, err := os.ReadFile(child)
+	if err != nil || string(got) != "untouched" {
+		t.Fatalf("a failed write damaged the target: %q %v", got, err)
+	}
+	// and it left no litter behind
+	entries, err := os.ReadDir(filepath.Dir(target))
 	if err != nil {
-		t.Fatalf("target unreadable after a failed write: %v", err)
+		t.Fatal(err)
 	}
-	if string(got) != "original" {
-		t.Fatalf("target was modified: %q", got)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), tempPrefix) {
+			t.Fatalf("a failed write left %s behind", e.Name())
+		}
 	}
 }
 
@@ -73,25 +90,54 @@ func TestReaderNeverSeesPartialFile(t *testing.T) {
 // fails. Without it a crashed write litters .procoder/ forever.
 func TestTempFilesAreSwept(t *testing.T) {
 	root := t.TempDir()
-	rel := ".procoder/state/claims.json"
+	const rel = ".procoder/state/claims.json"
+
+	// The litter is planted BEFORE the first write into this directory,
+	// because the sweep runs once per directory per process — a second
+	// write does not pay for a second ReadDir.
+	dir := filepath.Join(root, ".procoder", "state")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	litter := filepath.Join(dir, tempPrefix+"stale")
+	if err := os.WriteFile(litter, []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(litter, old, old); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := WriteFile(root, rel, []byte("seed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	stale := filepath.Join(root, ".procoder", "state", tempPrefix+"stale")
-	if err := os.WriteFile(stale, []byte("junk"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-31 * time.Second)
-	if err := os.Chtimes(stale, old, old); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := WriteFile(root, rel, []byte("second"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(stale); err == nil {
+	if _, err := os.Stat(litter); err == nil {
 		t.Fatal("stale temp file survived a successful write")
+	}
+}
+
+// proved by: sweeping on every write puts the size of the directory on the
+// cost of writing one file in it.
+func TestSweepRunsOncePerDirectory(t *testing.T) {
+	root := t.TempDir()
+	const rel = ".procoder/specs/a.md"
+	if err := WriteFile(root, rel, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, ".procoder", "specs")
+	litter := filepath.Join(dir, tempPrefix+"later")
+	if err := os.WriteFile(litter, []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(litter, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFile(root, ".procoder/specs/b.md", []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(litter); err != nil {
+		t.Fatal("the second write into the same directory swept again")
 	}
 }
 

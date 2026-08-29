@@ -1,7 +1,7 @@
 // Package store is the one place procoder reads and writes .procoder/.
 //
 // Until now every domain issued its own os.ReadFile and os.WriteFile
-// against its own path constant — twenty-five of them, none locking, none
+// against its own path constant — twenty-six of them, none locking, none
 // atomic. That was correct while procoder was a short-lived process: one
 // hook ran, touched a file, and exited before the next one started. The
 // daemon in #117 ends it. Two sessions writing the same ledger is ordinary
@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,16 +31,53 @@ const (
 	// lockDir sits under .procoder/state/, which is already gitignored. A
 	// lock file beside the file it protects would show up in git status
 	// and in review, which is how a lock becomes a diff.
-	lockDir = ".procoder/state/locks"
-	// staleAfter is how long a lock may sit before it is presumed dead. No
-	// write through this package holds a lock for anything like this long;
-	// what takes this long is a process that was killed holding one.
-	staleAfter = 30 * time.Second
-	// lockTimeout bounds the wait. A hook that blocked would take the
-	// session with it, so waiting forever is never an option here.
-	lockTimeout = 5 * time.Second
-	lockRetry   = 10 * time.Millisecond
+	lockDir   = ".procoder/state/locks"
+	lockRetry = 10 * time.Millisecond
+	// breakSuffix names the file that serialises BREAKING a stale lock.
+	// Judging a lock stale and removing it are two operations, and two
+	// callers doing them at once is how both end up holding: the first
+	// removes and re-creates, the second removes what the first just
+	// created. Only the holder of this file may break, so that interleave
+	// cannot happen.
+	breakSuffix = ".break"
 )
+
+// staleAfter is how long a lock may go untouched before it is presumed
+// dead. A HELD lock is touched by its heartbeat every staleAfter/3, so
+// reaching this means the owner stopped running — not that it is slow.
+//
+// A var rather than a const only so a test can shorten it; nothing in
+// procoder changes it at runtime.
+var staleAfter = 30 * time.Second
+
+// heartbeatEvery keeps a held lock looking alive. Without it a write that
+// legitimately takes longer than staleAfter — rewriting a multi-megabyte
+// tags.jsonl on a slow filesystem — would have its lock taken out from
+// under it while it was still writing.
+func heartbeatEvery() time.Duration { return staleAfter / 3 }
+
+// lockTimeout bounds the wait. A hook that blocked would take the session
+// with it, so waiting forever is never an option here.
+//
+// A var rather than a const only so the contention tests can shorten it;
+// six tests waiting out five seconds each is thirty seconds of sleeping in
+// a suite that otherwise runs in two.
+var lockTimeout = 5 * time.Second
+
+// Notice is where the store says it had to break a stale lock. Breaking one
+// means a previous run died holding it, which is worth a human knowing;
+// returning the fact to callers that all discard it would be an honesty
+// channel nobody reads.
+var Notice io.Writer = os.Stderr
+
+// held is one acquired lock: which path, and WHICH FILE — os.SameFile
+// against this is what stops release removing a lock that has since been
+// broken and replaced by somebody else's live one.
+type held struct {
+	rel  string
+	info os.FileInfo
+	stop chan struct{}
+}
 
 // lockPath is where rel's lock lives. The name is a hash because the
 // repo-relative path contains separators, and because a name derived from
@@ -50,98 +88,140 @@ func lockPath(root, rel string) string {
 }
 
 // Lock takes an exclusive lock on each repo-relative path and returns the
-// func that releases them, plus any stale lock it had to break so the
-// caller can report it.
+// func that releases them.
 //
 // The paths are locked in sorted order, always, whatever order the caller
 // asked for. That is the whole deadlock story: two callers wanting the
 // same two files can no longer take them in opposite orders.
 //
-// broken is returned rather than read from a package-level accessor,
-// because concurrent callers would race on shared state — and this package
-// exists precisely because that concurrency is real.
-//
 // On failure nothing is held: locks already taken are released before the
 // error returns, so a caller that gives up does not leave a file locked
 // against everybody else for the next thirty seconds.
-func Lock(root string, relPaths ...string) (release func(), broken []string, err error) {
+func Lock(root string, relPaths ...string) (release func(), err error) {
 	paths := append([]string(nil), relPaths...)
 	sort.Strings(paths)
 
-	var held []string
+	var hs []held
 	rel := func() {
-		for _, p := range held {
-			_ = os.Remove(lockPath(root, p))
+		for _, h := range hs {
+			close(h.stop)
+			p := lockPath(root, h.rel)
+			// Remove only what we actually hold. If this lock was broken
+			// as stale and somebody else's live lock now sits at the same
+			// path, removing it would hand a third caller a lock that is
+			// already held.
+			if cur, err := os.Stat(p); err == nil && os.SameFile(cur, h.info) {
+				_ = os.Remove(p)
+			}
 		}
 	}
 	for _, p := range paths {
-		b, err := acquire(root, p)
-		broken = append(broken, b...)
+		h, err := acquire(root, p)
 		if err != nil {
 			rel()
-			return nil, nil, err
+			return nil, err
 		}
-		held = append(held, p)
+		hs = append(hs, h)
 	}
-	return rel, broken, nil
+	return rel, nil
 }
 
 // acquire takes one lock, breaking a dead one if that is what is in the
 // way, and gives up at the deadline rather than waiting on a live writer
 // forever.
-func acquire(root, rel string) ([]string, error) {
+func acquire(root, rel string) (held, error) {
 	p := lockPath(root, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return nil, fmt.Errorf("procoder: could not create the lock directory for %s (%v) — the write was NOT made", rel, err)
+		return held{}, fmt.Errorf("procoder: could not create the lock directory for %s (%v) — the write was NOT made", rel, err)
 	}
 
-	var broken []string
 	deadline := time.Now().Add(lockTimeout)
 	for {
 		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
 			_, werr := fmt.Fprintf(f, "%d\n%d\n", os.Getpid(), time.Now().Unix())
 			cerr := f.Close()
-			if werr != nil || cerr != nil {
+			info, serr := os.Stat(p)
+			if werr != nil || cerr != nil || serr != nil {
 				// A lock nobody can read is one everybody else will break.
 				_ = os.Remove(p)
-				return broken, fmt.Errorf("procoder: could not write the lock for %s — the write was NOT made", rel)
+				return held{}, fmt.Errorf("procoder: could not write the lock for %s — the write was NOT made", rel)
 			}
-			return broken, nil
+			h := held{rel: rel, info: info, stop: make(chan struct{})}
+			go keepAlive(p, h.stop)
+			return h, nil
 		}
 		if !os.IsExist(err) {
-			return broken, fmt.Errorf("procoder: could not lock %s (%v) — the write was NOT made", rel, err)
+			return held{}, fmt.Errorf("procoder: could not lock %s (%v) — the write was NOT made", rel, err)
 		}
 
-		if stale(p) {
-			_ = os.Remove(p)
-			if len(broken) == 0 {
-				broken = append(broken, rel)
-			}
-		} else {
+		if !breakStale(p, rel) {
 			time.Sleep(lockRetry)
 		}
 		if time.Now().After(deadline) {
-			return broken, fmt.Errorf("procoder: could not lock %s within %s — the write was NOT made", rel, lockTimeout)
+			return held{}, fmt.Errorf("procoder: could not lock %s within %s — the write was NOT made", rel, lockTimeout)
+		}
+	}
+}
+
+// breakStale removes the lock at p if it is dead, and reports whether it
+// did. Only one caller at a time may be inside the removal, because
+// judging and removing are two operations and interleaving two of them is
+// how both end up holding.
+func breakStale(p, rel string) bool {
+	bp := p + breakSuffix
+	b, err := os.OpenFile(bp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		// Somebody else is breaking this one — unless they died doing it,
+		// which takes microseconds, so an old break file is litter. The
+		// recovery is bounded: the worst case is two callers breaking a
+		// lock that is dead either way, and O_EXCL still gives one winner.
+		if info, serr := os.Stat(bp); serr == nil && time.Since(info.ModTime()) > staleAfter {
+			_ = os.Remove(bp)
+		}
+		return false
+	}
+	_ = b.Close()
+	defer func() { _ = os.Remove(bp) }()
+
+	if !stale(p) {
+		return false
+	}
+	if os.Remove(p) != nil {
+		return false
+	}
+	fmt.Fprintf(Notice, "procoder: broke a stale lock on %s — a previous run left it behind\n", rel)
+	return true
+}
+
+// keepAlive touches the lock while it is held, so a slow write is never
+// mistaken for a dead one.
+func keepAlive(p string, stop <-chan struct{}) {
+	t := time.NewTicker(heartbeatEvery())
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-t.C:
+			_ = os.Chtimes(p, now, now)
 		}
 	}
 }
 
 // stale says whether the lock at p can be presumed dead.
 //
-// The file's OWN age is the first test, and it is the one that makes this
-// safe. A lock file is created empty by O_EXCL and only then written, so
-// for a moment every live lock has contents that do not parse. Treating
-// unparsable contents as dead on its own let a second caller steal a
-// newborn lock and gave two holders — the exact defect this package
-// exists to prevent, found by TestConcurrentAppendsBothSurvive.
+// The file's OWN age is the test that matters, and the heartbeat above is
+// what makes it trustworthy: a lock whose owner is running is touched
+// every ten seconds, so one untouched for thirty belongs to a process that
+// is gone.
 //
-// So: old by mtime is dead, whatever it says. Otherwise the contents get
-// a say only when they parse — a recorded time long past, or one in the
-// future (clock skew, a restored backup), is a lock whose owner cannot be
-// believed. Contents that do not parse on a FRESH file are a lock being
-// written this instant, and waiting is correct; if it really is corrupt,
-// mtime condemns it thirty seconds later.
+// The contents get a say only when they parse. A lock file is created
+// empty by O_EXCL and written a moment later, so for that moment every
+// live lock is unparsable; treating that as dead let a second caller steal
+// a newborn lock and gave two holders — found by
+// TestConcurrentAppendsBothSurvive. A genuinely corrupt lock is condemned
+// by its mtime instead, thirty seconds later.
 //
 // A lock that has vanished is NOT stale — it is gone, and the next O_EXCL
 // settles who gets it.
@@ -169,6 +249,14 @@ func stale(p string) bool {
 	if err != nil {
 		return false
 	}
-	age := time.Since(time.Unix(sec, 0))
-	return age > staleAfter || age < 0
+	// The recorded time is when the lock was TAKEN, and nothing refreshes
+	// it — the heartbeat touches the file's mtime, which is the liveness
+	// signal. Ageing the contents as well would condemn every lock whose
+	// owner is still working after staleAfter, which is the case the
+	// heartbeat exists to protect.
+	//
+	// What the contents still answer is a timestamp in the FUTURE: a clock
+	// that moved, or a restored backup. A lock whose owner claims to have
+	// taken it after now cannot be believed about anything.
+	return time.Since(time.Unix(sec, 0)) < 0
 }
