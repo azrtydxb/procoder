@@ -36,15 +36,6 @@ const File = "learn.jsonl"
 // corresponds to, nor whether an edit was a proposal at all.
 const AppliedFile = "learn-applied.json"
 
-// maxRecords bounds the file so an old repository does not carry an
-// unbounded one. Oldest dropped.
-//
-// debt: a flat line count, not a size or an age. It is the cheapest thing
-// that bounds the file, and a repository whose commands vary wildly in
-// number per day gets an uneven window. Revisit when somebody reports a
-// window that is too short to be useful.
-const maxRecords = 5000
-
 // Record is one command run.
 type Record struct {
 	Cmd      string `json:"cmd"`
