@@ -72,6 +72,12 @@ type held struct {
 	rel  string
 	info os.FileInfo
 	stop chan struct{}
+	// done closes when the heartbeat has actually returned. Release waits
+	// for it: on Windows a file cannot be removed while another handle has
+	// it open, and os.Chtimes opens one, so removing while the heartbeat
+	// was mid-tick failed and left the lock behind for the next caller to
+	// wait out.
+	done chan struct{}
 }
 
 // lockPath is where rel's lock lives. The name is a hash because the
@@ -105,14 +111,16 @@ func Lock(root string, relPaths ...string) (release func(), err error) {
 		once.Do(func() {
 			for _, h := range hs {
 				close(h.stop)
+				select {
+				case <-h.done:
+				case <-time.After(2 * time.Second):
+				}
 				p := lockPath(root, h.rel)
 				// Remove only what we actually hold. If this lock was
 				// broken as stale and somebody else's live lock now sits
 				// at the same path, removing it would hand a third caller
 				// a lock that is already held.
-				if cur, err := os.Stat(p); err == nil && os.SameFile(cur, h.info) {
-					_ = os.Remove(p)
-				}
+				removeIfSame(p, h.info)
 			}
 		})
 	}
@@ -137,6 +145,7 @@ func acquire(root, rel string) (held, error) {
 	}
 
 	deadline := time.Now().Add(lockTimeout)
+	var lastErr error
 	for {
 		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
@@ -148,21 +157,30 @@ func acquire(root, rel string) (held, error) {
 				_ = os.Remove(p)
 				return held{}, fmt.Errorf("procoder: could not write the lock for %s — the write was NOT made", rel)
 			}
-			h := held{rel: rel, info: info, stop: make(chan struct{})}
+			h := held{rel: rel, info: info, stop: make(chan struct{}), done: make(chan struct{})}
 			// The tick is read HERE, on the caller's goroutine. Reading
 			// staleAfter inside keepAlive raced every test that restores
 			// it, and `go test -race` said so.
-			go keepAlive(p, info, staleAfter/3, h.stop)
+			go keepAlive(p, info, staleAfter/3, h.stop, h.done)
 			return h, nil
 		}
-		if !os.IsExist(err) {
-			return held{}, fmt.Errorf("procoder: could not lock %s (%v) — the write was NOT made", rel, err)
-		}
-
-		if !breakStale(p, rel) {
+		// A create that failed is not proof the lock is unobtainable —
+		// only the deadline is. Windows reports a file that is pending
+		// deletion as "Access is denied" rather than "already exists", so
+		// treating anything but IsExist as fatal turned ordinary
+		// contention into a hard failure there. CI on windows-latest is
+		// what said so; ubuntu and macOS never saw it.
+		lastErr = err
+		if !os.IsExist(err) || !breakStale(p, rel) {
 			time.Sleep(lockRetry)
 		}
 		if time.Now().After(deadline) {
+			// The cause is worth carrying when it is NOT plain contention;
+			// a permissions problem that spent the whole deadline should
+			// not read the same as a busy file.
+			if !os.IsExist(lastErr) {
+				return held{}, fmt.Errorf("procoder: could not lock %s within %s (%v) — the write was NOT made", rel, lockTimeout, lastErr)
+			}
 			return held{}, fmt.Errorf("procoder: could not lock %s within %s — the write was NOT made", rel, lockTimeout)
 		}
 	}
@@ -213,8 +231,18 @@ func breakStale(p, rel string) bool {
 // Every unguarded stat-then-remove in this package has turned out to be a
 // way for one caller to delete another's file.
 func removeIfSame(p string, want os.FileInfo) {
-	if cur, err := os.Stat(p); err == nil && os.SameFile(cur, want) {
-		_ = os.Remove(p)
+	cur, err := os.Stat(p)
+	if err != nil || !os.SameFile(cur, want) {
+		return
+	}
+	// Retried, because Windows refuses to remove a file another handle
+	// still has open and a lock left behind costs the next caller the
+	// whole acquire timeout.
+	for i := 0; i < 20; i++ {
+		if os.Remove(p) == nil {
+			return
+		}
+		time.Sleep(lockRetry)
 	}
 }
 
@@ -227,7 +255,8 @@ func removeIfSame(p string, want os.FileInfo) {
 // that lock would then never be judged stale even after its own owner
 // died. A heartbeat for a lock we no longer hold is worse than no
 // heartbeat at all.
-func keepAlive(p string, mine os.FileInfo, every time.Duration, stop <-chan struct{}) {
+func keepAlive(p string, mine os.FileInfo, every time.Duration, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {

@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,9 @@ func TestSweepRunsOncePerDirectory(t *testing.T) {
 // would let this succeed, which is the silent-green this package exists to
 // remove.
 func TestReadOnlyStateRefusesWrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod on Windows toggles a file's read-only attribute and does not restrict a DIRECTORY, so there is no read-only directory to test against here")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the directory mode, so there is nothing to test")
 	}

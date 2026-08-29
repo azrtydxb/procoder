@@ -1,0 +1,6 @@
+# Golden files are compared byte for byte against output procoder generates
+# at runtime, and procoder emits LF on every platform. Without this, a
+# Windows checkout converts them to CRLF and every golden comparison fails
+# for a difference nobody wrote — which is what happened the first time CI
+# ran the state seam on windows-latest.
+internal/store/testdata/golden/** -text

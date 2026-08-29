@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,9 @@ func TestResolveTerminatesAtTheRoot(t *testing.T) {
 // proved by: falling back to an unlocked write here makes this pass while
 // reintroducing the race the package exists to remove.
 func TestReadOnlyStateBlocksContentWrites(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod on Windows toggles a file's read-only attribute and does not restrict a DIRECTORY, so there is no read-only directory to test against here")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores the directory mode, so there is nothing to test here")
 	}

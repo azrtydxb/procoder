@@ -75,6 +75,10 @@ func TestIdentityLadder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Slash-separated: the key for one checkout must be the same
+		// string on Windows as anywhere else, which is why IdentityFor
+		// puts it through ToSlash.
+		want = filepath.ToSlash(want)
 		got := IdentityFor(root, "")
 		if got.Key != want || got.Rung != "path" {
 			t.Fatalf("got %+v, want key %s rung path", got, want)
@@ -100,6 +104,7 @@ func TestIdentityWithoutGit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	want = filepath.ToSlash(want)
 	got := IdentityFor(root, "")
 	if got.Key != want || got.Rung != "path" {
 		t.Fatalf("got %+v, want key %s rung path", got, want)
