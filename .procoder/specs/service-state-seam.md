@@ -233,6 +233,25 @@ name and format.
   permissions). Same answer: the write is refused with the reason. A store
   that fell back to writing unlocked would reintroduce the race it exists
   to remove, and would do it silently.
+
+  This COUPLES every write under `.procoder/` to the writability of
+  `.procoder/state/`, and that is a behaviour change worth stating rather
+  than discovering. With `.procoder/state/` read-only and the rest of the
+  tree writable, `procoder ask` used to write `.procoder/ask/QA.md` and
+  now refuses, because the lock it needs lives under state.
+
+  The condition is narrower than it first reads: it bites only while
+  `.procoder/state/locks/` does not yet exist. Once created — which the
+  first successful write in a repository does — a read-only state
+  directory blocks nothing, because no new entry has to be made inside
+  it. Accepted
+  deliberately: the alternatives are worse. Locks beside their files show
+  up in `git status` and in review; locks in the OS temp directory stop
+  being mutually exclusive the moment two processes have different
+  `TMPDIR` values, which on macOS is the ordinary case across sessions —
+  a lock that silently stops locking is the one failure this package
+  cannot have.
+
 - **`os.Rename` fails.** The temp file is removed and the operation
   reports failure. The target is untouched — the previous contents survive,
   which is the whole point of writing this way.
@@ -320,6 +339,11 @@ name and format.
 - [ ] [S-7] `TestConfigPrintsIdentityRung` runs `procoder config` against
       a fixture per rung. Fails if the output omits the identity, or names
       a rung other than the one that answered.
+- [ ] [S-4] `TestReadOnlyStateBlocksContentWrites` writes a content file
+      with `.procoder/state/` read-only. Fails if the write succeeds — it
+      must refuse, because the lock cannot be taken — and the message must
+      name the lock directory, so the coupling is diagnosable rather than
+      mysterious.
 - [ ] [S-3] [S-4] `TestReadOnlyStateRefusesWrite` makes
       `.procoder/state/` unwritable. Fails if the write succeeds, if the
       refusal does not name the reason, or if any file under `.procoder/`

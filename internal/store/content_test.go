@@ -190,3 +190,63 @@ func TestResolveTerminatesAtTheRoot(t *testing.T) {
 		t.Fatal("resolving the filesystem root returned nothing")
 	}
 }
+
+// TestReadOnlyStateBlocksContentWrites pins a real behaviour change, so it
+// is a decision rather than a surprise.
+//
+// The lock for every file lives under .procoder/state/locks, so a
+// read-only .procoder/state stops writes to content that has nothing to do
+// with state: `procoder ask` used to write .procoder/ask/QA.md in that
+// situation and now refuses.
+//
+// The condition is narrow, and worth being precise about rather than
+// alarming: it bites only while .procoder/state/locks does not yet exist.
+// Once it has been created — which the first successful write in a
+// repository does — a read-only state directory blocks nothing, because
+// no new entry has to be made inside it.
+//
+// Accepted deliberately. Locks beside their files show up in git status
+// and in review; locks in the OS temp directory stop being mutually
+// exclusive the moment two processes have different TMPDIR values, which
+// on macOS is the ordinary case across sessions — and a lock that silently
+// stops locking is the one failure this package cannot have.
+//
+// proved by: falling back to an unlocked write here makes this pass while
+// reintroducing the race the package exists to remove.
+func TestReadOnlyStateBlocksContentWrites(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory mode, so there is nothing to test here")
+	}
+	root := t.TempDir()
+	// Seed the content file WITHOUT the store, so the lock directory has
+	// never been created. That is the whole condition: once
+	// .procoder/state/locks exists, a read-only state directory no longer
+	// blocks anything, because nothing new has to be created inside it.
+	ask := filepath.Join(root, ".procoder", "ask")
+	if err := os.MkdirAll(ask, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ask, "QA.md"), []byte("before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(root, ".procoder", "state")
+	if err := os.MkdirAll(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(state, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(state, 0o755) })
+
+	err := SaveDoc(root, ".procoder/ask/QA.md", []byte("after"))
+	if err == nil {
+		t.Fatal("wrote a content file unlocked while the lock directory was unwritable")
+	}
+	if !strings.Contains(err.Error(), "lock directory") {
+		t.Fatalf("the error does not name the lock directory, so the coupling is not diagnosable: %v", err)
+	}
+	got, _ := ReadFile(root, ".procoder/ask/QA.md")
+	if string(got) != "before" {
+		t.Fatalf("the refused write changed the file anyway: %q", got)
+	}
+}
