@@ -156,3 +156,54 @@ func TestIdentitySkipsARungThatCannotAnswer(t *testing.T) {
 		t.Fatalf("got %+v, want the path rung with a non-empty key", got)
 	}
 }
+
+// proved by: returning "" for a path-shaped remote makes two clones of one
+// /srv/git/repo.git key by their own checkout paths — two identities for
+// one repository, which is exactly the divergence identity prevents. That
+// was a regression this branch introduced and review caught.
+func TestIdentityHandlesLocalRemotes(t *testing.T) {
+	for _, tc := range []struct{ url, want string }{
+		{"/srv/git/repo.git", "/srv/git/repo"},
+		{"file:///srv/git/repo.git", "/srv/git/repo"},
+		{"file:///srv/git/repo", "/srv/git/repo"},
+		{"/srv/git/repo/", "/srv/git/repo"},
+		// relative remotes mean something different from each clone, so
+		// they deliberately do not answer
+		{"../sibling.git", ""},
+	} {
+		if got := normalise(tc.url); got != tc.want {
+			t.Errorf("normalise(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}
+
+// proved by: two clones of one bare remote must agree, which is the whole
+// point — and the rung must say the remote answered, not that there was none.
+func TestTwoClonesOfALocalRemoteAgree(t *testing.T) {
+	a := gitRepo(t, map[string]string{"origin": "/srv/git/repo.git"})
+	b := gitRepo(t, map[string]string{"origin": "/srv/git/repo.git"})
+	ida, idb := IdentityFor(a, ""), IdentityFor(b, "")
+	if ida.Key != idb.Key {
+		t.Fatalf("two clones of one remote disagree: %q vs %q", ida.Key, idb.Key)
+	}
+	if ida.Rung != "origin" {
+		t.Fatalf("rung = %q, want origin — there plainly is a remote", ida.Rung)
+	}
+}
+
+// proved by: scanning for the scp separator without skipping the brackets
+// lands inside an IPv6 literal and returns garbage.
+func TestIdentityNormalisationEdges(t *testing.T) {
+	for _, tc := range []struct{ url, want string }{
+		{"[::1]:o/r", "[::1]/o/r"},
+		{"https://[::1]:8443/o/r", "[::1]/o/r"},
+		{"https://host//o//r", "host/o/r"},
+		{"https://host/o/r.GIT", "host/o/r"},
+		{"https://host/o/r?x=1", "host/o/r"},
+		{"https://host/o/r#frag", "host/o/r"},
+	} {
+		if got := normalise(tc.url); got != tc.want {
+			t.Errorf("normalise(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}

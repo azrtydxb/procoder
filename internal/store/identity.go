@@ -98,17 +98,46 @@ func IdentityFor(root, cfgRepo string) Identity {
 // the worse failure of the two, so the path keeps its case.
 func normalise(url string) string {
 	s := strings.TrimSpace(url)
+	if s == "" {
+		return ""
+	}
+	// A remote can be a path on this machine rather than a URL. Returning
+	// "" for those made two clones of one /srv/git/repo.git key by their
+	// own checkout paths — two identities for one repository, which is the
+	// divergence identity exists to prevent.
+	if p, ok := localRemote(s); ok {
+		return p
+	}
+	// A RELATIVE path remote means something different from each clone's
+	// own directory, so it cannot key two clones together. It does not
+	// answer, rather than answering with a key built out of "..".
+	if strings.HasPrefix(s, "./") || strings.HasPrefix(s, "../") {
+		return ""
+	}
+
 	scheme := false
 	if i := strings.Index(s, "://"); i >= 0 {
 		s, scheme = s[i+3:], true
 	}
+	// A query or a fragment is not part of the repository's name.
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
 
 	// Split the authority from the path. The scp-like form git@host:o/r
 	// separates them with a colon and has no scheme; every other form uses
-	// the first slash.
+	// the first slash. A bracketed IPv6 literal is skipped before the scan,
+	// or the colon inside it is read as the separator.
+	scan := s
+	offset := 0
+	if strings.HasPrefix(s, "[") {
+		if end := strings.Index(s, "]"); end >= 0 {
+			scan, offset = s[end+1:], end+1
+		}
+	}
 	var authority, rest string
-	slash := strings.Index(s, "/")
-	colon := strings.Index(s, ":")
+	slash := indexAt(scan, "/", offset)
+	colon := indexAt(scan, ":", offset)
 	switch {
 	case !scheme && colon >= 0 && (slash < 0 || colon < slash):
 		authority, rest = s[:colon], s[colon+1:]
@@ -131,13 +160,76 @@ func normalise(url string) string {
 	}
 
 	host := strings.ToLower(authority)
-	rest = strings.Trim(rest, "/")
-	rest = strings.TrimSuffix(rest, ".git")
-	rest = strings.Trim(rest, "/")
+	rest = trimPath(rest)
 	if host == "" || rest == "" {
 		return ""
 	}
 	return host + "/" + rest
+}
+
+// indexAt finds sep in s, returning an index into the ORIGINAL string that
+// s was sliced from at offset.
+func indexAt(s, sep string, offset int) int {
+	if i := strings.Index(s, sep); i >= 0 {
+		return i + offset
+	}
+	return -1
+}
+
+// trimPath reduces a repository path to its bare form: no leading or
+// trailing slashes, no doubled ones, and no .git suffix in any case — the
+// hosts that serve these are not case-sensitive about that suffix, and two
+// keys for one repository is the failure being avoided.
+func trimPath(p string) string {
+	for strings.Contains(p, "//") {
+		p = strings.ReplaceAll(p, "//", "/")
+	}
+	p = strings.Trim(p, "/")
+	if len(p) >= 4 && strings.EqualFold(p[len(p)-4:], ".git") {
+		p = p[:len(p)-4]
+	}
+	return strings.Trim(p, "/")
+}
+
+// localRemote recognises a remote that names a path on this machine rather
+// than a host: file:///srv/git/repo.git, /srv/git/repo.git, C:\\git\\repo.
+//
+// These are ordinary — a bare shared remote, a submodule, a mirror — and
+// two clones of one of them are one repository. The key is the path of the
+// REMOTE, which both clones agree on, not of either checkout.
+//
+// A RELATIVE path remote is deliberately not matched: it means something
+// different from each clone's own directory, so it cannot key them
+// together and pretending otherwise would be worse than falling through.
+func localRemote(s string) (string, bool) {
+	p := s
+	switch {
+	case strings.HasPrefix(s, "file://"):
+		p = strings.TrimPrefix(s, "file://")
+	case strings.HasPrefix(s, "/"):
+	case windowsDrive(s):
+	default:
+		return "", false
+	}
+	p = trimPath(filepath.ToSlash(p))
+	if p == "" {
+		return "", false
+	}
+	return "/" + p, true
+}
+
+// windowsDrive reports whether s begins with a drive letter, as C:\\git\\repo
+// does. A single-letter host is not a shape any real remote uses, so the
+// ambiguity with the scp form costs nothing.
+func windowsDrive(s string) bool {
+	if len(s) < 3 || s[1] != ':' {
+		return false
+	}
+	c := s[0]
+	if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
+		return false
+	}
+	return s[2] == '/' || s[2] == '\\'
 }
 
 func allDigits(s string) bool {
