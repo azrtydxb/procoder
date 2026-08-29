@@ -49,7 +49,7 @@ func LoadLearn(root string) ([]byte, error) { return ReadFile(root, LearnPath) }
 // O_APPEND under the lock, not a read-modify-write. The lock is what makes
 // the append safe now, so rewriting the whole file to add one line would
 // buy nothing and cost everything: learn.Append runs on EVERY procoder
-// invocation, the record file is never trimmed, and a full rewrite would
+// invocation, the record file has no bound today (see the open todo), and a full rewrite would
 // make each command pay for the length of its own history.
 func AppendLearn(root string, line []byte) error {
 	release, err := Lock(root, LearnPath)
@@ -106,8 +106,10 @@ func SaveMarker(root, name string, data []byte) error {
 // marker is a file in .procoder/state and nothing more.
 func markerPath(name string) (string, error) { return inDir(StateDir, name) }
 
-// save is the shape every state write shares: take the file's lock, replace
-// it atomically, release.
+// save is the shape EVERY write in this package shares — state and content
+// alike: take the file's lock, replace it atomically, release. Per file,
+// not per directory, so two people editing two different stories have no
+// reason to wait for each other.
 //
 // Reads deliberately do NOT lock. The atomic rename means a reader always
 // sees a whole file, which is the property that matters, and a reader that

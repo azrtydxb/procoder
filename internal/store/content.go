@@ -55,14 +55,14 @@ func SaveIn(root, relDir, name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return saveContent(root, p, data)
+	return save(root, p, data)
 }
 
 // LoadDoc reads a single-file owner.
 func LoadDoc(root, relPath string) ([]byte, error) { return ReadFile(root, relPath) }
 
 // SaveDoc replaces a single-file owner.
-func SaveDoc(root, relPath string, data []byte) error { return saveContent(root, relPath, data) }
+func SaveDoc(root, relPath string, data []byte) error { return save(root, relPath, data) }
 
 // inDir refuses a name that is a path, for the reason markerPath does:
 // joining an unchecked name lets ".." walk out of the directory the caller
@@ -72,18 +72,6 @@ func inDir(relDir, name string) (string, error) {
 		return "", errors.New("procoder: a file in " + relDir + " is named by a file name, not a path: " + name)
 	}
 	return strings.TrimRight(relDir, "/") + "/" + name, nil
-}
-
-// saveContent is one file's write: take its lock, replace it atomically,
-// release. Per file, not per directory — two people editing two different
-// stories have no reason to wait for each other.
-func saveContent(root, relPath string, data []byte) error {
-	release, err := Lock(root, relPath)
-	if err != nil {
-		return err
-	}
-	defer release()
-	return WriteFile(root, relPath, data, 0o644)
 }
 
 // Rel turns an absolute path inside root into the repo-relative slash form
@@ -135,7 +123,15 @@ func resolve(p string) (string, error) {
 		return r, nil
 	}
 	dir, base := filepath.Split(abs)
-	parent, err := resolve(filepath.Clean(dir))
+	// The fixed point, or this recurses forever: Clean("/") is "/", so a
+	// filesystem root that EvalSymlinks cannot resolve — a Windows drive
+	// that is not ready — would call this with the same argument until the
+	// stack ran out.
+	clean := filepath.Clean(dir)
+	if clean == abs || base == "" {
+		return abs, nil
+	}
+	parent, err := resolve(clean)
 	if err != nil {
 		return abs, nil
 	}

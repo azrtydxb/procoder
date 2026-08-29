@@ -177,3 +177,16 @@ func TestRelRefusesTheRootItself(t *testing.T) {
 		t.Fatal("Rel accepted the root directory as a file")
 	}
 }
+
+// proved by: without the fixed-point guard, a path whose root cannot be
+// resolved recurses until the stack runs out.
+func TestResolveTerminatesAtTheRoot(t *testing.T) {
+	root := filepath.VolumeName(os.TempDir()) + string(filepath.Separator)
+	got, err := resolve(root)
+	if err != nil {
+		t.Fatalf("resolving the filesystem root errored: %v", err)
+	}
+	if got == "" {
+		t.Fatal("resolving the filesystem root returned nothing")
+	}
+}
