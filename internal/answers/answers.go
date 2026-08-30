@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Dir and File are where the record lives, beside the other state this
@@ -63,7 +65,7 @@ func Path(root string) string { return filepath.Join(root, filepath.FromSlash(Di
 // error: treating it as empty would re-ask everything and then write the new
 // answers over decisions already made.
 func Load(root string) (Store, error) {
-	raw, err := os.ReadFile(Path(root))
+	raw, err := store.LoadIn(root, Dir, File)
 	if os.IsNotExist(err) {
 		return Store{}, nil
 	}

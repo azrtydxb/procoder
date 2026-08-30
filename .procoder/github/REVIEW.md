@@ -48,6 +48,29 @@ Check every hunk for:
   the terminator variants, the case the happy path skips.
 - Test fixtures that trip our own scanners: assemble marker/secret-like
   content at runtime, never as a literal.
+- CHECK-THEN-ACT on a shared file: a stat (or a read, or an exists test)
+  followed by a remove, rename, or create, with nothing binding the two to
+  the same file. Between them another process can replace what was
+  examined, and the second operation then lands on somebody else's file.
+  Bind them — `os.SameFile` against the `FileInfo` that was judged, or a
+  lock that only one caller can hold — or say in a comment why the race is
+  unreachable here.
+- POSIX ASSUMPTIONS in code and in tests, because CI's Windows leg is the
+  only thing that catches them and it catches them late:
+  - a create or open error tested with `os.IsExist` alone — Windows reports
+    a file pending deletion as "access is denied", so contention reads as a
+    hard failure;
+  - a remove or rename of a file another handle may have open — Windows
+    refuses it, POSIX does not;
+  - `os.Chmod` on a DIRECTORY to make it unwritable — Windows toggles a
+    file's read-only attribute and does not restrict a directory, so the
+    test proves nothing there;
+  - a path compared as a native string where the code deliberately emits
+    slashes (or the reverse).
+- COMMITTED FIXTURES compared byte for byte against generated output need
+  `.gitattributes` to hold their line endings. A Windows checkout converts
+  text files to CRLF, and every golden then fails on a difference nobody
+  wrote.
 - Prose and markdown: code spans unbroken, lists formatted, wording that
   says what the code actually does — names and paths in docs match the
   code exactly (every variant, full paths).

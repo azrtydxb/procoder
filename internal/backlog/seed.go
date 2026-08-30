@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"procoder/internal/spec"
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -69,7 +70,7 @@ func Seed(root, specName, milestone string, out func(string)) int {
 		// spec with gaps, 2 for a spec that does not exist.
 		return code
 	}
-	raw, err := os.ReadFile(filepath.Join(root, spec.Dir, specName+".md"))
+	raw, err := store.LoadIn(root, spec.Dir, specName+".md")
 	if err != nil {
 		out("spec " + specName + " unreadable: " + err.Error())
 		return 2

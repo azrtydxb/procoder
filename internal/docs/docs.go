@@ -20,6 +20,7 @@ import (
 
 	"procoder/internal/actions"
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
@@ -111,7 +112,7 @@ func defaultRules() Rules {
 // default for that section, absent sections keep their defaults.
 func LoadRules(root string) Rules {
 	r := defaultRules()
-	data, err := os.ReadFile(filepath.Join(root, RulesPath))
+	data, err := store.LoadDoc(root, RulesPath)
 	if err != nil {
 		return r
 	}

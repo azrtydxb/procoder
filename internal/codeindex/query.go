@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
@@ -21,7 +22,7 @@ import (
 // loadTags reads the broad tier. A missing index is an instruction, not an
 // empty answer — the caller prints the error verbatim.
 func loadTags(root string) ([]Tag, error) {
-	f, err := os.Open(filepath.Join(root, Dir, tagsFile))
+	f, err := store.OpenIn(root, Dir, tagsFile)
 	if err != nil {
 		return nil, fmt.Errorf("no index — run `procoder index build` first")
 	}
@@ -45,7 +46,7 @@ func loadTags(root string) ([]Tag, error) {
 
 func loadMeta(root string) Meta {
 	var m Meta
-	raw, err := os.ReadFile(filepath.Join(root, Dir, metaFile))
+	raw, err := store.LoadIn(root, Dir, metaFile)
 	if err == nil {
 		json.Unmarshal(raw, &m)
 	}
@@ -205,7 +206,7 @@ func Refs(root, symbol string, out func(string)) int {
 
 // preciseRefs answers from the SCIP JSON when it exists and knows the symbol.
 func preciseRefs(root, symbol string, out func(string)) (int, bool) {
-	raw, err := os.ReadFile(filepath.Join(root, Dir, refsFile))
+	raw, err := store.LoadIn(root, Dir, refsFile)
 	if err != nil {
 		return 0, false
 	}
@@ -442,7 +443,7 @@ func Refresh(root, file string) {
 	}
 	fresh, _ := normalizeTags(raw)
 
-	old, err := os.ReadFile(filepath.Join(root, Dir, tagsFile))
+	old, err := store.LoadIn(root, Dir, tagsFile)
 	if err != nil {
 		return
 	}
@@ -460,21 +461,12 @@ func Refresh(root, file string) {
 		return // leave the index untouched rather than write a truncated one
 	}
 	buf.Write(fresh)
-	// atomic swap: a crash mid-write must never leave a half index behind
-	tmp := filepath.Join(root, Dir, tagsFile+".tmp")
-	if os.WriteFile(tmp, []byte(buf.String()), 0o644) != nil {
-		return
-	}
-	if err := os.Rename(tmp, filepath.Join(root, Dir, tagsFile)); err != nil {
-		// The index is now stale and nobody can be told — Refresh is
-		// fire-and-forget from the write hook. What must not also happen is
-		// a .tmp accumulating beside it on every failed write; the next
-		// `index build` is the recovery, and staleNote already says so.
-		//
-		// debt: this cleanup is unprotected by tests, revisit if Refresh
-		// grows a second failure mode — a rename cannot be made to fail
-		// while the write beside it succeeds without injecting a seam, and
-		// one seam would then pay for itself twice.
-		os.Remove(tmp)
-	}
+	// The atomic swap this used to do by hand is now the store's, which
+	// also cleans up its own temp file on failure and takes the index's
+	// lock — so a Refresh firing from the write hook can no longer race an
+	// `index build` running in another session.
+	//
+	// The failure stays silent: Refresh is fire-and-forget from the write
+	// hook, the index is then stale, and staleNote is what says so.
+	_ = store.SaveIn(root, Dir, tagsFile, []byte(buf.String()))
 }

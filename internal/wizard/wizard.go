@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Dir is where wizards live, relative to the repository root.
@@ -70,8 +72,7 @@ func normaliseEOL(s string) string {
 
 // read returns a wizard's text, or a message naming why it could not.
 func read(root, name string) (string, string) {
-	p := filepath.Join(root, Dir, name+".md")
-	raw, err := os.ReadFile(p)
+	raw, err := store.LoadIn(root, Dir, name+".md")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "no wizard named " + name + " — expected " + filepath.ToSlash(filepath.Join(Dir, name+".md"))
@@ -102,14 +103,14 @@ func List(root string, out func(string)) int {
 		out(Dir + " is not a directory — the wizards are NOT listed")
 		return 1
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := store.ListDir(root, Dir)
 	if err != nil {
 		out(Dir + " cannot be read (" + err.Error() + ") — the wizards are NOT listed")
 		return 1
 	}
 	var names []string
 	for _, e := range entries {
-		if n := strings.TrimSuffix(e.Name(), ".md"); !e.IsDir() && n != e.Name() {
+		if n := strings.TrimSuffix(e, ".md"); n != e {
 			names = append(names, n)
 		}
 	}

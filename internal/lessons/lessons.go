@@ -9,8 +9,9 @@ package lessons
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Path is the ledger, under D-HOME with the other github rules files.
@@ -113,7 +114,7 @@ func Parse(text string) []Entry {
 
 // Run prints the ledger state and flags unlearned lessons.
 func Run(root string, out func(string)) int {
-	raw, err := os.ReadFile(filepath.Join(root, Path))
+	raw, err := store.LoadDoc(root, Path)
 	if os.IsNotExist(err) {
 		out("no lessons ledger — `procoder templates` prints the shape for " + Path)
 		return 0

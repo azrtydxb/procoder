@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"procoder/internal/host"
 	"procoder/internal/releases"
 	"procoder/internal/status"
+	"procoder/internal/store"
 )
 
 // File is the repo override path, under D-HOME.
@@ -219,7 +219,7 @@ the ND formatting for that response and answer in plain prose.
 // Effective returns the principles text for this repo: the override file
 // if present, else the default; the bool says whether it was overridden.
 func Effective(root string) (string, bool) {
-	if raw, err := os.ReadFile(filepath.Join(root, File)); err == nil && strings.TrimSpace(string(raw)) != "" {
+	if raw, err := store.LoadDoc(root, File); err == nil && strings.TrimSpace(string(raw)) != "" {
 		return string(raw), true
 	}
 	return Default, false

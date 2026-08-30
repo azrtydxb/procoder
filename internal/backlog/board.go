@@ -15,6 +15,7 @@ import (
 
 	"procoder/internal/gitx"
 	"procoder/internal/spec"
+	"procoder/internal/store"
 )
 
 // emptyHint is the one line an empty backlog prints — an instruction to
@@ -275,7 +276,7 @@ func driftFlag(root string, e Item) string {
 	if e.SpecName == "" {
 		return ""
 	}
-	raw, err := os.ReadFile(filepath.Join(root, spec.Dir, e.SpecName+".md"))
+	raw, err := store.LoadIn(root, spec.Dir, e.SpecName+".md")
 	if err != nil {
 		return "  ⚠ spec missing"
 	}

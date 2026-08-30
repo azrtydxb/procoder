@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
@@ -223,7 +224,7 @@ func Build(root string, stdout func(string)) error {
 		return fmt.Errorf("ctags failed: %v", err)
 	}
 	tags, count := normalizeTags(raw)
-	if err := os.WriteFile(filepath.Join(dir, tagsFile), tags, 0o644); err != nil {
+	if err := store.SaveIn(root, Dir, tagsFile, tags); err != nil {
 		return err
 	}
 	stdout(fmt.Sprintf("broad tier: %d symbols from %d files (universal-ctags)", count, len(files)))
@@ -233,7 +234,7 @@ func Build(root string, stdout func(string)) error {
 	meta := Meta{Commit: head(root), BuiltAt: time.Now().UTC().Format(time.RFC3339),
 		Files: len(files), Tags: count, Precise: precise}
 	enc, _ := json.Marshal(meta)
-	return os.WriteFile(filepath.Join(dir, metaFile), enc, 0o644)
+	return store.SaveIn(root, Dir, metaFile, enc)
 }
 
 // normalizeTags keeps only real tag lines and re-emits them in our stable
@@ -322,7 +323,7 @@ func buildPrecise(root, dir string, stdout func(string)) bool {
 	if err != nil {
 		return false
 	}
-	if err := os.WriteFile(filepath.Join(dir, refsFile), merged, 0o644); err != nil {
+	if err := store.SaveIn(root, Dir, refsFile, merged); err != nil {
 		return false
 	}
 	if len(built) < len(indexers) {

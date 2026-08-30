@@ -16,15 +16,15 @@ package learn
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Dir is where the records live, under the gitignored state directory:
 // timing data is not repository content and is never committed.
-const Dir = ".procoder/state"
+const Dir = store.StateDir
 
 // File is the append-only record, one JSON object per line.
 const File = "learn.jsonl"
@@ -35,15 +35,6 @@ const File = "learn.jsonl"
 // history shows THAT the file changed, never which proposal a change
 // corresponds to, nor whether an edit was a proposal at all.
 const AppliedFile = "learn-applied.json"
-
-// maxRecords bounds the file so an old repository does not carry an
-// unbounded one. Oldest dropped.
-//
-// debt: a flat line count, not a size or an age. It is the cheapest thing
-// that bounds the file, and a repository whose commands vary wildly in
-// number per day gets an uneven window. Revisit when somebody reports a
-// window that is too short to be useful.
-const maxRecords = 5000
 
 // Record is one command run.
 type Record struct {
@@ -65,20 +56,13 @@ func Append(root string, r Record, on bool) {
 	if !on {
 		return
 	}
-	dir := filepath.Join(root, filepath.FromSlash(Dir))
-	if os.MkdirAll(dir, 0o755) != nil {
-		return
-	}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(dir, File), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close() //nolint:errcheck // see the doc comment: silence is the contract
-	_, _ = f.Write(append(line, '\n'))
+	// Silence is the contract, per the doc comment above: a measurement
+	// able to fail the run it measures is a governance cost of its own.
+	_ = store.AppendLearn(root, append(line, '\n'))
 }
 
 // Reading is what a report knows about the records: the ones it could
@@ -93,7 +77,7 @@ type Reading struct {
 // dropped in silence: a report that quietly discarded half its input would
 // be a measurement nobody could check.
 func Read(root string) (Reading, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(Dir), File))
+	raw, err := store.LoadLearn(root)
 	if err != nil {
 		return Reading{}, err
 	}

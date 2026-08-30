@@ -7,7 +7,6 @@ package adr
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -75,15 +75,14 @@ func New(root, title string, out func(string)) int {
 		out("a decision record needs a title")
 		return 2
 	}
-	dir := filepath.Join(root, Dir)
-	entries, err := os.ReadDir(dir)
-	if err != nil && !os.IsNotExist(err) {
+	names, err := store.ListDir(root, Dir)
+	if err != nil {
 		out("adr directory unreadable: " + err.Error())
 		return 2
 	}
 	next := 1
-	for _, e := range entries {
-		if m := numberRe.FindStringSubmatch(e.Name()); m != nil {
+	for _, name := range names {
+		if m := numberRe.FindStringSubmatch(name); m != nil {
 			if n, err := strconv.Atoi(m[1]); err == nil && n >= next {
 				next = n + 1
 			}
@@ -221,24 +220,20 @@ type parsed struct {
 // unreadable directory is an error; an unreadable file is a record with
 // Err set — never silently skipped.
 func load(root string) ([]parsed, error) {
-	dir := filepath.Join(root, Dir)
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	names, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil, err
 	}
 	var records []parsed
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".md") {
 			continue
 		}
-		r := parsed{Record: Record{File: filepath.ToSlash(filepath.Join(Dir, e.Name()))}}
-		if m := numberRe.FindStringSubmatch(e.Name()); m != nil {
+		r := parsed{Record: Record{File: filepath.ToSlash(filepath.Join(Dir, name))}}
+		if m := numberRe.FindStringSubmatch(name); m != nil {
 			r.Number = m[1]
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		raw, err := store.LoadIn(root, Dir, name)
 		if err != nil {
 			r.Err = err
 			records = append(records, r)

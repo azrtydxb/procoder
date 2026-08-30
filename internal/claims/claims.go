@@ -21,16 +21,17 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"procoder/internal/store"
 )
 
 // File is where claims live: procoder-owned session state, beside the
 // handoff note. Ephemeral by nature — a claim outlives nothing but the
 // work it describes.
-const File = ".procoder/state/claims.json"
+const File = store.ClaimsPath
 
 // Claim is one agent's declared working set.
 type Claim struct {
@@ -50,7 +51,7 @@ type ledger struct {
 // none would say "nobody else is working here" on the strength of not
 // having looked, which is the failure this package exists to prevent.
 func Load(root string) ([]Claim, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(File)))
+	raw, err := store.LoadClaims(root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -68,15 +69,11 @@ func Load(root string) ([]Claim, error) {
 // repository content — the same footing as the handoff note, and outside
 // P-CONTROL for the same reason.
 func Save(root string, cs []Claim) error {
-	p := filepath.Join(root, filepath.FromSlash(File))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
 	raw, err := json.MarshalIndent(ledger{Claims: cs}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, append(raw, '\n'), 0o644)
+	return store.SaveClaims(root, append(raw, '\n'))
 }
 
 // Overlap reports whether two globs could match the same path.

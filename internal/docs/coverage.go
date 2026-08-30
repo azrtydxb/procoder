@@ -11,6 +11,7 @@ import (
 
 	"procoder/internal/codeindex"
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 )
 
 // Commands is the canonical list of procoder commands. cmd/procoder pins its
@@ -132,7 +133,7 @@ func documentedWords(root string) map[string]bool {
 const indexTagsFile = "tags.jsonl"
 
 func loadIndexTags(root string) ([]codeindex.Tag, error) {
-	f, err := os.Open(filepath.Join(root, codeindex.Dir, indexTagsFile))
+	f, err := store.OpenIn(root, codeindex.Dir, indexTagsFile)
 	if err != nil {
 		return nil, fmt.Errorf("the index has not been built")
 	}

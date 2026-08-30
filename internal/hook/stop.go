@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"procoder/internal/status"
 	"procoder/internal/tools"
+
+	"procoder/internal/store"
 )
 
 // StateDir is procoder-owned, per-clone derived state — the same precedent as
 // the index. HandoffFile is the note a session leaves behind for the next one.
 const (
-	StateDir    = ".procoder/state"
+	StateDir    = store.StateDir
 	HandoffFile = "handoff.md"
 )
 
@@ -57,14 +58,9 @@ func Stop(stdin io.Reader, root string) int {
 		root = rootFromPayload(raw)
 	}
 
-	dir := filepath.Join(root, filepath.FromSlash(StateDir))
-	if os.MkdirAll(dir, 0o755) != nil {
-		return 0 // no state directory, no note — and no noise about it
-	}
-	path := filepath.Join(dir, HandoffFile)
-	old, _ := os.ReadFile(path) // absent is the first handoff, not an error
+	old, _ := store.LoadHandoff(root) // absent is the first handoff, not an error
 	// a note that could not be written is a lost note, never a broken session
-	_ = os.WriteFile(path, []byte(handoff(root, string(old))), 0o644)
+	_ = store.SaveHandoff(root, []byte(handoff(root, string(old))))
 
 	// The note is written first, on every path including this one: a
 	// blocked turn must not also lose its handoff.

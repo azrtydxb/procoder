@@ -3,10 +3,10 @@ package codeindex
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // implsDoc mirrors the SCIP fields Impls reads: the per-document symbol
@@ -33,7 +33,7 @@ type implsDoc struct {
 // nowhere else, so without SCIP the honest response is "not built", never
 // a textual guess.
 func Impls(root, symbol string, out func(string)) int {
-	raw, err := os.ReadFile(filepath.Join(root, Dir, refsFile))
+	raw, err := store.LoadIn(root, Dir, refsFile)
 	if err != nil {
 		out("the precise tier is not built — implementations need SCIP; install the SCIP tools and run `procoder index build`")
 		return 1

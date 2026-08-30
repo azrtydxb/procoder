@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -174,8 +175,8 @@ func Check(root, name string, out func(string)) int {
 // lines read as the one question it is. It lives here because this package
 // decides what a spec is; `ask` offers these to a human and `checkOne` judges
 // them, and one reading keeps the two from disagreeing.
-func OpenQuestions(path string) []string {
-	raw, err := os.ReadFile(path)
+func OpenQuestions(root, path string) []string {
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		return nil
 	}
@@ -234,7 +235,7 @@ func continuesPrevious(line string) bool {
 // package calls too, so the collector that offers a question and the checker
 // that judges it can never disagree about what is still being asked.
 func openQuestions(root, path string) (unanswered []string, answered int) {
-	questions := OpenQuestions(path)
+	questions := OpenQuestions(root, path)
 	if len(questions) == 0 {
 		return nil, 0
 	}
@@ -266,7 +267,7 @@ func statusOf(text string) string {
 }
 
 func checkOne(root, path string, out func(string)) int {
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
 		return 2
@@ -415,14 +416,14 @@ func checkOne(root, path string, out func(string)) int {
 func Files(root string) []string { return specFiles(root) }
 
 func specFiles(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
+	entries, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil
 	}
 	var out []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			out = append(out, filepath.Join(root, Dir, e.Name()))
+		if strings.HasSuffix(e, ".md") {
+			out = append(out, filepath.Join(root, Dir, e))
 		}
 	}
 	sort.Strings(out)

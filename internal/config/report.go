@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 )
 
 // Report is `procoder config`: every effective setting, its value, and
@@ -25,6 +26,14 @@ func Report(root string, stdout io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "%-27s %-12s %s%s\n", s.Key, s.Value, s.Source, mark)
 	}
+	// Not a row in the table above, deliberately. The table is settings:
+	// each has a default and can be relaxed from it. The identity has
+	// neither — it is computed, or stated, and listing it there would
+	// invite somebody to read it as a knob that had been loosened.
+	id := store.IdentityFor(root, cfg.ServiceRepo)
+	fmt.Fprintln(stdout)
+	fmt.Fprintf(stdout, "repo identity  %s  (%s)\n", id.Key, id.Source())
+
 	if len(cfg.Problems) == 0 {
 		return 0
 	}

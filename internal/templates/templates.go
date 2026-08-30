@@ -11,11 +11,11 @@ package templates
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"procoder/internal/gitx"
+	"procoder/internal/store"
 )
 
 // Dir is where a repository puts its own versions.
@@ -34,7 +34,7 @@ const Dir = ".procoder/templates"
 func Resolve(root, name, embedded string) (body, source string, problem *gitx.Finding) {
 	path := filepath.Join(root, Dir, name+".md")
 	rel := filepath.ToSlash(filepath.Join(Dir, name+".md"))
-	data, err := os.ReadFile(path)
+	data, err := store.LoadIn(root, Dir, name+".md")
 	if err != nil {
 		return embedded, "default", nil
 	}

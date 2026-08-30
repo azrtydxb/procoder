@@ -24,6 +24,7 @@ import (
 	"procoder/internal/planning"
 	"procoder/internal/portability"
 	"procoder/internal/security"
+	"procoder/internal/store"
 )
 
 // Paths under D-HOME.
@@ -194,7 +195,7 @@ func templateFindings(root string) []gitx.Finding {
 const githubPRTemplatePath = ".github/PULL_REQUEST_TEMPLATE.md"
 
 func mirrorSync(root string) []gitx.Finding {
-	master, err := os.ReadFile(filepath.Join(root, prTemplatePath))
+	master, err := store.LoadDoc(root, prTemplatePath)
 	if err != nil {
 		return nil // absence of the master is already its own finding
 	}

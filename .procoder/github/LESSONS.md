@@ -384,3 +384,62 @@ closes #209` — and after merging a PR that claimed to close more than
   improvement somewhere else, measure it there, and get the baseline's
   SPREAD rather than one sample — a single 6m47s reading looked like a
   fixed baseline when the real range was 402-508s.
+
+## 2026-08-30 state seam (self) — a lock that worked everywhere except the one platform nobody ran
+
+- Class: mechanical
+
+- Adaptation: `internal/store`'s lock treated any create error that was not
+  `os.IsExist` as fatal. On Windows a file pending deletion reports "access
+  is denied" instead, so ordinary contention became a hard failure and
+  `TestConcurrentAppendsBothSurvive` lost five of twenty appends — the exact
+  defect the package exists to prevent, on the platform it had never run
+  on. A second one beside it: release removed the lock while the heartbeat
+  could still have it open in `os.Chtimes`, which Windows refuses, so the
+  lock survived and the next caller paid the whole timeout.
+
+  What makes this worth a ledger entry is everything that did NOT catch it.
+  Two fresh-context review passes read the whole diff. A 245-invocation
+  equivalence sweep compared every command, every write path and nineteen
+  broken-input scenarios against the pre-change binary. `go test -race`
+  passed. All of it ran on macOS, and none of it could have found this.
+
+  The rule: filesystem semantics are platform behaviour, not Go behaviour,
+  and no amount of local evidence substitutes for the leg that runs
+  elsewhere. REVIEW.md now names the four shapes — `os.IsExist` alone,
+  removing a file another handle may hold, `os.Chmod` on a directory, and
+  native-versus-slash path comparisons — so the rubric asks the question
+  before CI has to.
+
+## 2026-08-30 state seam (self) — committed goldens failed on line endings nobody wrote
+
+- Class: mechanical
+
+- Adaptation: the parity goldens are compared byte for byte against output
+  procoder generates at runtime, and procoder emits LF everywhere. A
+  Windows checkout converted the committed files to CRLF, so all four
+  golden comparisons failed on a difference no change had made. Fixed with
+  `.gitattributes` pinning them, rather than by teaching the comparison to
+  normalise — a comparison taught to ignore a difference stops being a
+  byte-for-byte comparison.
+
+  The rule: any committed fixture compared byte for byte against generated
+  output needs its line endings pinned. REVIEW.md now says so.
+
+## 2026-08-30 state seam (self) — the same check-then-act race, twice in one branch
+
+- Class: mechanical
+
+- Adaptation: the pre-PR review found that judging a lock stale and removing
+  it were two unbound operations, so two callers could both break one lock
+  and both hold it. The fix serialised breaking behind an `O_EXCL` file. The
+  VERIFICATION pass then found the identical shape reintroduced on that
+  break file — a stat, then a remove, with nothing binding them — one commit
+  after the first was fixed.
+
+  Fixing an instance does not close a class. `removeIfSame` is now the one
+  way this package removes anything it did not just create, and REVIEW.md
+  carries check-then-act on a shared file as its own rubric line, because
+  reading for "is this race fixed" is a different question from reading for
+  "does this shape appear anywhere".
+

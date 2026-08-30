@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -71,14 +72,14 @@ Created: %s
 
 // Files lists the analysis documents in root, sorted.
 func Files(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
+	names, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil
 	}
 	var out []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			out = append(out, filepath.Join(root, Dir, e.Name()))
+	for _, name := range names {
+		if strings.HasSuffix(name, ".md") {
+			out = append(out, filepath.Join(root, Dir, name))
 		}
 	}
 	sort.Strings(out)
@@ -132,7 +133,7 @@ func Check(root, name string, out func(string)) int {
 
 	worst := 0
 	for _, path := range files {
-		raw, err := os.ReadFile(path)
+		raw, err := store.LoadUnder(root, path)
 		if err != nil {
 			out(filepath.Base(path) + ": unreadable — " + err.Error())
 			worst = 2

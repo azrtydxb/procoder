@@ -316,13 +316,16 @@ func TestARenumberedQuestionKeepsItsAnswer(t *testing.T) {
 	}
 }
 
-// writeQuestions puts one Open questions section on disk and returns its path.
-func writeQuestions(t *testing.T, body string) string {
+// writeQuestions puts one Open questions section on disk and returns the
+// root it lives under and its path — OpenQuestions reads through the store,
+// which refuses a path outside the root it was given.
+func writeQuestions(t *testing.T, body string) (string, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "widget.md")
+	root := t.TempDir()
+	path := filepath.Join(root, "widget.md")
 	spec := strings.Replace(completeSpec(), "## Open questions\n\n", "## Open questions\n\n"+body+"\n\n", 1)
 	if err := os.WriteFile(path, []byte(spec), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	return root, path
 }

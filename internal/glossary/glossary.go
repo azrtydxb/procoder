@@ -15,9 +15,10 @@ package glossary
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"procoder/internal/store"
 )
 
 // Path is where the glossary lives, beside the other things a repository
@@ -40,7 +41,7 @@ type Term struct {
 // there, and the one place this feature is meant to help is where it goes
 // quiet. Raised in review on #217.
 func Load(root string) ([]Term, error) {
-	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(Path)))
+	raw, err := store.LoadDoc(root, Path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // no glossary yet, which is not a problem

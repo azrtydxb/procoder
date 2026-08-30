@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"procoder/internal/answers"
+	"procoder/internal/store"
 	"strings"
 )
 
@@ -37,8 +38,7 @@ const DecisionsFile = "decisions.md"
 // nothing. It is not a finding, and treating it as one would put a note in
 // front of every user who never writes decisions.
 func decisionQuestions(root string) ([]Question, []string) {
-	path := Path(root, DecisionsFile)
-	raw, err := os.ReadFile(path)
+	raw, err := store.LoadIn(root, Dir, DecisionsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

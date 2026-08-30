@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/store"
 	"procoder/internal/templates"
 	"procoder/internal/textutil"
 )
@@ -129,20 +130,17 @@ func LoadAll(root string) ([]Item, error) {
 	var items []Item
 	for _, kind := range []string{KindMilestone, KindEpic, KindStory, KindSprint} {
 		dir := filepath.Join(root, Dir, kind)
-		entries, err := os.ReadDir(dir)
-		if os.IsNotExist(err) {
-			continue
-		}
+		names, err := store.ListDir(root, Dir+"/"+kind)
 		if err != nil {
 			return nil, fmt.Errorf("backlog directory unreadable: %v", err)
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		for _, name := range names {
+			if !strings.HasSuffix(name, ".md") {
 				continue
 			}
-			path := filepath.Join(dir, e.Name())
-			it := Item{ID: strings.TrimSuffix(e.Name(), ".md"), Kind: kind, Path: path, Status: "open"}
-			raw, err := os.ReadFile(path)
+			path := filepath.Join(dir, name)
+			it := Item{ID: strings.TrimSuffix(name, ".md"), Kind: kind, Path: path, Status: "open"}
+			raw, err := store.LoadIn(root, Dir+"/"+kind, name)
 			if err != nil {
 				it.Status = "unreadable"
 				it.Title = err.Error()
@@ -312,16 +310,15 @@ func printItem(root, kind, slug, title string, fill func(now string) string, out
 func ItemFiles(root string) []string {
 	var out []string
 	for _, kind := range []string{KindMilestone, KindEpic, KindStory, KindSprint} {
-		dir := filepath.Join(root, filepath.FromSlash(Dir), kind)
-		entries, err := os.ReadDir(dir)
+		names, err := store.ListDir(root, Dir+"/"+kind)
 		if err != nil {
 			continue // a repository need not have every kind
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		for _, name := range names {
+			if !strings.HasSuffix(name, ".md") {
 				continue
 			}
-			out = append(out, path.Join(Dir, kind, e.Name()))
+			out = append(out, path.Join(Dir, kind, name))
 		}
 	}
 	return out

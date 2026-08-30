@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"procoder/internal/store"
 	"procoder/internal/textutil"
 )
 
@@ -122,15 +123,15 @@ func Check(root, name string, out func(string)) int {
 	}
 	worst := 0
 	for _, f := range files {
-		if code := checkOne(f, out); code > worst {
+		if code := checkOne(root, f, out); code > worst {
 			worst = code
 		}
 	}
 	return worst
 }
 
-func checkOne(path string, out func(string)) int {
-	raw, err := os.ReadFile(path)
+func checkOne(root, path string, out func(string)) int {
+	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
 		return 2
@@ -191,14 +192,14 @@ func checkOne(path string, out func(string)) int {
 }
 
 func planFiles(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, Dir))
+	entries, err := store.ListDir(root, Dir)
 	if err != nil {
 		return nil
 	}
 	var out []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			out = append(out, filepath.Join(root, Dir, e.Name()))
+		if strings.HasSuffix(e, ".md") {
+			out = append(out, filepath.Join(root, Dir, e))
 		}
 	}
 	sort.Strings(out)
