@@ -359,3 +359,58 @@ func TestAnOrphanedBreakFileIsCleared(t *testing.T) {
 	}
 	release()
 }
+
+// TestStalenessHasMarginForCoarseMtime pins the relationship that makes
+// mtime-only liveness safe on a filesystem that stores a truncated time.
+//
+// HFS+, exFAT and several container overlay filesystems keep mtime to one
+// or two second granularity, so a lock touched a moment ago can READ as up
+// to that much older than it is. The heartbeat refreshes every
+// staleAfter/3, so the worst observed age of a live lock is one heartbeat
+// interval plus one granularity — and that has to stay comfortably under
+// staleAfter or a live lock gets broken on those filesystems.
+//
+// This is an invariant test, not a filesystem test: it cannot prove
+// behaviour on a filesystem this machine does not have. What it does is
+// stop somebody shortening staleAfter, or lengthening the heartbeat,
+// without noticing that the margin went with it.
+//
+// proved by: setting staleAfter to 3s — the value brief() uses — fails it,
+// which is why brief() is confined to tests that hold a lock briefly.
+func TestStalenessHasMarginForCoarseMtime(t *testing.T) {
+	const worstGranularity = 2 * time.Second
+	worstObserved := staleAfter/3 + worstGranularity
+	if worstObserved*2 > staleAfter {
+		t.Fatalf("a live lock can read as %v old against a %v window — too little margin for a filesystem with %v mtime granularity",
+			worstObserved, staleAfter, worstGranularity)
+	}
+}
+
+// proved by: comparing against a timestamp stored INSIDE the lock rather
+// than the file's mtime makes a truncated mtime irrelevant and this test
+// vacuous — which is what the check did before the heartbeat landed.
+func TestATruncatedMtimeDoesNotCondemnALiveLock(t *testing.T) {
+	root := t.TempDir()
+	const rel = ".procoder/state/dispatch.json"
+	release, err := Lock(root, rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	// What a coarse filesystem stores: the same instant, rounded down to a
+	// two-second boundary.
+	p := lockPath(root, rel)
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coarse := info.ModTime().Truncate(2 * time.Second)
+	if err := os.Chtimes(p, coarse, coarse); err != nil {
+		t.Fatal(err)
+	}
+
+	if stale(p) {
+		t.Fatal("a live lock whose mtime was truncated to a 2s boundary was judged stale")
+	}
+}
