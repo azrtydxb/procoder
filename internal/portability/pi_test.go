@@ -233,6 +233,21 @@ func invocations(t *testing.T, log string) []string {
 	return strings.Split(strings.TrimSpace(string(raw)), "\n")
 }
 
+// payloadOf pulls the JSON body off a logged invocation line, which the fixture
+// writes as "<arguments> <payload>".
+func payloadOf(t *testing.T, line string) map[string]any {
+	t.Helper()
+	start := strings.Index(line, "{")
+	if start < 0 {
+		t.Fatalf("invocation carries no payload: %q", line)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(line[start:]), &got); err != nil {
+		t.Fatalf("invocation payload is not JSON: %v\n%s", err, line)
+	}
+	return got
+}
+
 // registryOnce runs the harness's registry mode and unpacks the three things
 // it reports. One load of the adapter answers all three checks below, so the
 // split into separate tests costs no extra node process.
@@ -395,7 +410,12 @@ func TestPiLauncherResolvesFromModuleLocation(t *testing.T) {
 	if !strings.HasSuffix(filepath.ToSlash(posix), "hooks/launcher.sh") {
 		t.Errorf("posix launcher is %q, expected the hooks/ launcher beside the package", posix)
 	}
-	if posix == "procoder" || !filepath.IsAbs(posix) {
+	// Judged for what it is — a path with a directory in it, rather than a bare
+	// command the shell would look up. filepath.IsAbs would ask the wrong
+	// question on the Windows leg, where the darwin answer arrives joined with
+	// backslashes and is not abs by Windows' rules; the machine this runs on is
+	// not the platform being resolved, and only the separator proves it.
+	if posix == "procoder" || !strings.HasPrefix(filepath.ToSlash(posix), "/") {
 		t.Errorf("posix launcher %q is resolved through PATH rather than beside the package", posix)
 	}
 	win, _ := got["win32"].(string)
@@ -545,8 +565,16 @@ func TestPiWriteResultCarriesFormatVerdict(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("the hook ran %d times for one write", len(calls))
 	}
-	if !strings.Contains(calls[0], `"file_path":"`+filepath.Join(root, "internal", "gate", "gate.go")+`"`) {
-		t.Errorf("the hook was not told which file, as an absolute path: %s", calls[0])
+	if calls := invocations(t, log); len(calls) == 1 {
+		// Read as JSON rather than matched as a substring: the payload is a JSON
+		// string and a Windows path inside it is escaped twice over (\\ for the
+		// separator, and the separator itself), so the text of the assertion drifts
+		// from the value it is about. The field is what the hook was told.
+		want := filepath.Clean(filepath.Join(root, "internal", "gate", "gate.go"))
+		input, _ := payloadOf(t, calls[0])["tool_input"].(map[string]any)
+		if got, _ := input["file_path"].(string); filepath.Clean(got) != want {
+			t.Errorf("the hook was told %q, not %q", got, want)
+		}
 	}
 
 	env["FIXTURE_MODE"] = "silent"
