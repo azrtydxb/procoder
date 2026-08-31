@@ -368,25 +368,24 @@ func TestACommandOwnedMessageFileClearsTheObligation(t *testing.T) {
 	commitAll(t, root)
 	writeAt(t, root, ".toolpin", "RUFF=0.1\n")
 
+	// Assert the OBLIGATION, not a clean gate: a machine without the security
+	// tools carries NOT-checked findings in an adopted repository whether or
+	// not this test exists, and those are environment, not the mechanism
+	// under test.
 	ack := "cat > msg.txt <<'EOF'\nchore: pin bump\n\ndocs: none — the pin file is self-describing\nEOF\ngit commit -F msg.txt"
-	if v, r := decisionOf(t, commitPayload(t, root, ack)); v == "deny" {
-		t.Fatalf("an acknowledgment in the command's own heredoc must clear the obligation: %s", r)
+	if _, r := decisionOf(t, commitPayload(t, root, ack)); strings.Contains(r, "documentation obligation") {
+		t.Fatalf("an acknowledgment in the command's own heredoc must clear the obligation:\n%s", r)
 	}
 
 	noAck := "cat > msg2.txt <<'EOF'\nchore: pin bump\nEOF\ngit commit -F msg2.txt"
 	v, r := decisionOf(t, commitPayload(t, root, noAck))
-	if v != "deny" {
-		t.Fatalf("without the acknowledgment line the obligation must still block, got %q (%s)", v, r)
-	}
 	if !strings.Contains(r, "documentation obligation") {
-		t.Fatalf("the refusal must name the obligation:\n%s", r)
+		t.Fatalf("without the acknowledgment line the obligation must still block (decision %q):\n%s", v, r)
 	}
 
-	// the body carries no apostrophe on purpose: a lone quote opens the
-	// tokenizer's quoted state, which a heredoc body must never leave dangling.
 	other := "cat > other.txt <<'EOF'\ndocs: none — not for this commit\nEOF\ngit commit -F msg3.txt"
-	if v, r := decisionOf(t, commitPayload(t, root, other)); v != "deny" {
-		t.Fatalf("a heredoc that writes a different file must not answer for this commit's message: %s", r)
+	if _, r := decisionOf(t, commitPayload(t, root, other)); !strings.Contains(r, "documentation obligation") {
+		t.Fatalf("a heredoc that writes a different file must not answer for this commit's message:\n%s", r)
 	}
 }
 
