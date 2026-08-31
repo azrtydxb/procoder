@@ -381,11 +381,20 @@ the staged-index story from a run that was actually about gate scope.
 
 ## The ask queue reports 13 open questions; four of them look answered already. Fix the queue or answer the list?
 
-**Decided: the list was answered directly.** The round of eight answers was
-recorded in `answers.md` (107, 117, 60, the copilot-leak cadence, and the four
+**Decided: the list was answered directly, and the defects it named were fixed
+in #257 (with #256's records).** The round of eight answers was recorded in
+`answers.md` (107, 117, 60, the copilot-leak cadence, and the four
 marketplace-strategy questions kept open on purpose). The key-instability
-defect itself was not filed and not fixed; this heading is its record, and it
-stays until someone takes it.
+mechanism shipped as `answers.KeyStable` + `answers.Settled`: a question is
+keyed by its words, not its line breaks, so a reflow keeps its recorded
+answer while a reworded question is asked again; stores written under the
+legacy key keep reading as settled. The `-F <file>` gap shipped alongside it:
+the gate now reads the body of the heredoc the command writes to the named
+file, so an acknowledgment in `cat > msg.txt <<'EOF'` reaches the obligation
+it was written to clear. The store flake the heading was written about is
+issue #255, and the format decision was re-filed under its stable key, since
+its original record was keyed by a hash of the section's text as written —
+the exact orphaning this fix exists to stop.
 
 Shown the queue to decide what actually needs a human, and the count does not
 match its own ledger. Three observations, each from a command:
