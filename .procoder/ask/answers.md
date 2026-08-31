@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-31 09:11 UTC. procoder reads this
+Written 2026-08-31 12:44 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -241,6 +241,13 @@ compiles. The exposure the issue describes is not there.
   add one.
 
 Answer: not yet — do a deep analysis first, and close only if it is 100% certain
+
+## (no longer asked)
+
+Key: 87246294ecbe
+Question: `procoder format` prints content in one of four verdicts — fix the command, or the habit?
+
+Answer: Fix the command, the first option. Given as an instruction rather than a
 
 ## (no longer asked)
 
