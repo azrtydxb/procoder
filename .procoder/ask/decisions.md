@@ -413,9 +413,10 @@ match its own ledger. Three observations, each from a command:
 
 So "13 questions need a human" is partly a queue defect wearing a queue. Where
 the work goes first changes what the next reading of the queue means: after a
-fix it is trustworthy, by observation it is merely shorter. The untracked
-todo record the heading was written about became issue #255 and was deleted
-from the tree, so only the defect and the `-F <file>` message gap remain.
+fix it is trustworthy, by observation it is merely shorter. The load-dependent
+store test it named is issue #255, and the `-F <file>` message gap it named is
+fixed in #257 alongside the key mechanism, so the heading's own "two sharper
+things" are both off the list.
 
 - Chase the key instability first: find what the key hashes, make it survive a
   question being reflowed or re-collected, and let the true open list fall out
