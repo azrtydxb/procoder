@@ -87,7 +87,7 @@ Adopt a single portable core (`plugin.json`, `mcp.json`, `skills/`) with client-
 3.2 `.codex-plugin/plugin.json` — Update to Agent Plugins format. Move hooks under extension namespace. Add `$schema`, `author`, `version`.
 3.3 `.devin-plugin/plugin.json` — Add version, description, hooks config if supported.
 3.4 `gemini-extension.json` — Add all marketplace-required fields: version, description, repository, license.
-3.5 `package.json` — Add `$schema` for Agent Plugins, author, homepage, repository, keywords. Rename `pi` key to follow spec.
+3.5 `package.json` — Add `$schema` for Agent Plugins, author, homepage, repository, keywords. Do NOT rename the `pi` key: pi's own loader reads the `pi` block (`extensions`, `skills`, `prompts`) out of `package.json`, verified against the installed host's package documentation, and renaming it to a namespaced form would leave the extension, the skill path and the gallery keyword unread — the integration that ships today. If the marketplace spec ever demands a different key, the answer is a second key beside this one, not a rename.
 
 **Evidence:** All manifests have consistent metadata (name, version, description, author, license).
 

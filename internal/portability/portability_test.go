@@ -2,6 +2,7 @@ package portability
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -159,21 +160,33 @@ func TestForbiddenHooksJSONBlocks(t *testing.T) {
 	}
 }
 
-// opencodeTwin reproduces the generator's substitution rule, so the test
-// pins actual content parity, not just existence: twin = command body with
-// the Claude launcher swapped for the PATH binary.
-func opencodeTwin(body string) string {
-	// CRLF leveled first: a Windows checkout rewrites line endings, and
-	// the multi-line phrase below would otherwise never match there
-	body = strings.ReplaceAll(body, "\r\n", "\n")
-	body = strings.ReplaceAll(body, `"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"`, "procoder")
-	body = strings.ReplaceAll(body, "The launcher is: procoder",
-		"The command below is the `procoder` binary on PATH.")
-	body = strings.ReplaceAll(body, "The launcher for every procoder command below is:\nprocoder",
-		"Every procoder command below is the `procoder` binary on PATH.")
-	body = strings.ReplaceAll(body, "launcher.sh ", "procoder ")
-	body = strings.ReplaceAll(body, "launcher.sh", "procoder")
-	return body
+// hostCommandText asks the one substitution rule what a host's command text
+// should be, by running the module the pi adapter applies at load.
+//
+// Asking rather than restating is the point. The rule used to live in this file,
+// which left the adapter free to keep its own copy — and a drifted copy is not a
+// red test, it is a command that runs a different binary from the one the
+// repository shipped. Skipped without node, which the gate needs anyway to
+// format the markdown this rule rewrites.
+func hostCommandText(t *testing.T, root, body, launcher string) string {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("no node on PATH")
+	}
+	script := `const {pathToFileURL} = await import("node:url");
+const m = await import(pathToFileURL(process.argv[1]).href);
+let body = "";
+for await (const chunk of process.stdin) body += chunk;
+process.stdout.write(m.hostCommandText(body, process.argv[2]));`
+	cmd := exec.Command(node, "--input-type=module", "-e", script,
+		filepath.Join(root, "hooks", "host-command-text.mjs"), launcher)
+	cmd.Stdin = strings.NewReader(body)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the shared command-text rule did not run: %v", err)
+	}
+	return string(out)
 }
 
 // Commands whose content is Claude-specific and deliberately ships no
@@ -207,7 +220,7 @@ func TestOpenCodeCommandParity(t *testing.T) {
 			t.Errorf("command %s has no .opencode/command twin — regenerate", e.Name())
 			continue
 		}
-		if strings.ReplaceAll(string(raw), "\r\n", "\n") != opencodeTwin(string(src)) {
+		if strings.ReplaceAll(string(raw), "\r\n", "\n") != hostCommandText(t, root, string(src), "procoder") {
 			t.Errorf("%s does not match the generation rule applied to commands/%s — regenerate", twin, e.Name())
 		}
 	}
@@ -225,7 +238,7 @@ func TestOpenCodeCommandParity(t *testing.T) {
 // Host detection: ordering and the VS Code heuristic.
 func TestHostDetection(t *testing.T) {
 	clear := func() {
-		for _, k := range []string{"COPILOT_PLUGIN_DATA", "PLUGIN_DATA", "QODER_SESSION_ID", "CLAUDE_PLUGIN_ROOT"} {
+		for _, k := range []string{"COPILOT_PLUGIN_DATA", "PLUGIN_DATA", "QODER_SESSION_ID", "CLAUDE_PLUGIN_ROOT", "PI_CODING_AGENT"} {
 			t.Setenv(k, "")
 			os.Unsetenv(k)
 		}

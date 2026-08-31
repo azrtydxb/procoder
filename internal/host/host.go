@@ -25,6 +25,10 @@ const (
 	Copilot Host = "copilot"
 	// Qoder wants the hookSpecificOutput envelope without the systemMessage.
 	Qoder Host = "qoder"
+	// Pi wants the envelope the other envelope hosts get; it is named here so
+	// that is a decision rather than an accident of the Claude default, which a
+	// later change to that default would otherwise move silently.
+	Pi Host = "pi"
 )
 
 // Detect sniffs the environment. Unknown environments answer Claude —
@@ -38,6 +42,13 @@ func Detect() Host {
 	}
 	if os.Getenv("QODER_SESSION_ID") != "" {
 		return Qoder
+	}
+	// Last among the known hosts. pi exports PI_CODING_AGENT into its own
+	// process, and therefore into every launcher its adapter spawns; a host
+	// that sets both its own variable and pi's is being run inside pi, and the
+	// outer host is the one whose envelope matters.
+	if os.Getenv("PI_CODING_AGENT") != "" {
+		return Pi
 	}
 	return Claude
 }

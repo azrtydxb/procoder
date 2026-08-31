@@ -274,3 +274,107 @@ that genuinely wants a long-lived process, and the least specified).
   state without a daemon", keeping the discussion in one thread.
 - comment the measurements and leave #117 open as written: the inter-repo
   coordination case is unproven either way and may still want a service.
+
+## How do the 34 command files reach pi?
+
+`package.json` declares `pi.skills: ["./commands"]`. Measured, that yields one
+skill named `commands` — pi falls back to the parent directory name when a
+skill has no `name:` frontmatter, so all 34 files collide and it keeps the
+first (`adr.md`) and warns about the rest. The other 33 are invisible.
+
+They are also not skills: each is a user-typed command that expands `$ARGUMENTS`
+into a shell line. pi has exactly that shape, as prompt templates. But 33 of the
+34 invoke `"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"`, and pi sets no plugin-root
+variable at all (grep for `PLUGIN_ROOT` in pi's dist: zero hits), so the line
+expands to `/hooks/launcher.sh` and fails.
+
+- Register them at load as extension commands, reading `commands/*.md` and
+  substituting the launcher path the extension resolves from its own module
+  URL: one source of truth, ~40 lines of glue, no second copy to drift.
+- Emit a pi-specific `.pi/prompts/*.md` at release time and pin it with the
+  portability drift guard, as the rule-file copies already are: 34 more files,
+  and the drift guard grows to cover generated command text.
+- Reword the canonical `commands/*.md` to name `procoder check` rather than the
+  launcher path, and make each host adapter responsible for putting a correct
+  `procoder` in front of it: cleanest text, but it changes what Claude Code runs.
+
+## Where does the pi adapter get installed from?
+
+Every rule-file host gets a committed copy under its own path; every plugin-tier
+host gets a manifest and an install step. pi can take either shape, and the
+choice decides whether a governed repository carries pi files at all.
+
+- `pi install git:github.com/azrtydxb/procoder@vX` (user scope): one install per
+  machine, works in every repository, nothing committed, and the version is
+  pinned by hand rather than by the repo.
+- `pi install -l` writing a committed `.pi/settings.json`: the repo declares its
+  own procoder version, matching how `[release] files` pins versions; needs
+  project trust, and every adopter runs the install after cloning.
+- A committed `.pi/extensions/procoder.ts` copy, byte-identical to
+  `pi-extension/index.mjs`, pinned by the drift guard like the other rule files:
+  zero install step, and a copy to regenerate in every governed repository.
+
+## Does the pi adapter match the Claude hook set, or use what pi offers?
+
+pi can do two things Claude Code's hook set cannot. `tool_result` lets the
+post-write findings land inside the write's own tool result instead of as a
+side-channel `additionalContext`, and `agent_settled` fires per turn rather than
+only at session end, so the handoff note and the unasked-decision block can run
+every turn.
+
+- Hook parity first: the four hooks, nothing more, so one comparison across
+  hosts stays honest and the pi row in docs/portability.md means what the
+  Claude row means.
+- Go further now, and record in docs/portability.md that pi gets strictly more
+  than Claude does — accepting that "supported on host X" stops being a
+  comparable claim across the host table.
+
+## `procoder format` prints content in one of four verdicts — fix the command, or the habit?
+
+While building the pi adapter, three files were emptied by the documented
+workflow: `procoder format <file> > <file>`. `formatCmd` writes the formatted
+content only in the `Unformatted` branch; `Clean`, `OutOfScope` and `Unchecked`
+each print a one-line banner and no content, so the redirection that is correct
+one moment replaces the file with a banner the next. It happened three times in
+one session, including to files that had just been checked as clean, and the
+recovery for an uncommitted file was to rewrite it from memory.
+
+`procoder check` caught all three (an unformatted markdown file, a package.json
+that would not parse, fifteen tests failing) — the gate worked, but after three
+writes rather than before any.
+
+- Change the contract: stdout of `procoder format` is always the file's
+  formatted bytes, in every verdict, with the banner moved to stderr. The
+  documented pipeline then idempotent and safe by construction, and the cost is
+  re-printing a file nobody asked to change. Touches AGENTS.md's wording, the
+  command's own text in commands/, and the hook docs.
+- Keep the contract and only warn: extend the banner to say "no content follows,
+  do not redirect this over the file". Costs nothing, prevents nothing — the
+  next coder pipes it anyway and reads the banner afterwards.
+- Leave the command alone, record this as a lesson, and let the adapters
+  (which are the main users) keep handling the four verdicts themselves.
+
+## Which of the pi integration's claims are backed by a measurement?
+
+Three were written down and none of them held, so the honest record is the
+correction rather than the claim. What is true now, each with the command that
+produced it:
+
+- **The commit gate blocks, live, before the shell runs.** A nested pi session
+  asked to `git commit -m x` over a staged unformatted file reported the gate's
+  own two findings, and `git log` showed only the prior commit: nothing landed.
+  pi's own `agent-loop.js` awaits `beforeToolCall` and returns an error tool
+  result on `block` before executing the tool, which is what the run showed.
+- **The gate does not check formatting in a repository that has not adopted
+  procoder.** In one scratch tree with `.procoder/` absent, a staged file that
+  `gofmt -l` names reported `1 file(s) not formatting-checked, 0 blocking`; the
+  same tree with `.procoder/config.toml` present reported `1 unformatted` and a
+  blocking finding. The scope line in the report says this in as many words.
+- **A tool result I described as evidence never existed.** The session record
+  for the call in question holds `fixture ready` with `isError: false`, and the
+  refusal text I quoted appears nowhere in the session file, the repo, or the
+  binary. It was invented, escalated, and put in this file.
+
+No option is offered for the third line: it is recorded so the next session
+treats a claim in here as needing a command behind it, and so nobody re-derives
+the staged-index story from a run that was actually about gate scope.
