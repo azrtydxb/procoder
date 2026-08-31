@@ -107,6 +107,12 @@ marker = "debt:"
 # verdict alone; "block" refuses the commit until a human has answered.
 policy = "report"
 
+# A question's identity is its words, not its line breaks. Recording an
+# answer under a section that a formatter later rewrapped keeps the answer
+# valid — the question was not reworded. Rewording it asks it again, and an
+# answer recorded by an older build (whose key hashed the text as written)
+# still reads as an answer.
+
 [version]
 # "warn" (default) reports a newer release at session start; "off" silences
 # it for CI and scripted runs. There is deliberately no third value: a

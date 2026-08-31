@@ -52,9 +52,40 @@ type Store map[string]Entry
 // reworded — the old answer belonged to a different question. Source and
 // origin are in the hash because the same sentence from two domains is two
 // questions.
+//
+// Key is the legacy identifier: it hashes the text AS WRITTEN, so a
+// reformatted or re-wrapped question changed the hash and orphaned every
+// answer recorded under it — an answered decision came back on the next
+// run. New code keys by KeyStable and reads the store through Settled, which
+// also finds what Key recorded; a store full of legacy entries stays
+// readable rather than re-asking what was already settled.
 func Key(source, origin, text string) string {
 	sum := sha1.Sum([]byte(source + "\x00" + origin + "\x00" + text)) // nosemgrep: use-of-sha1
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+// KeyStable is Key over the question's WORDS rather than its line breaks.
+// A formatter reflowing a section, or a question re-wrapped across lines,
+// keeps the key it was answered under; changing a word changes the key, and
+// a reworded question is asked again, exactly as Key documented.
+func KeyStable(source, origin, text string) string {
+	return Key(source, origin, strings.Join(strings.Fields(text), " "))
+}
+
+// Settled reports whether the store holds an answer to the question, under
+// either generation of key. Recording an answer used Key, so a store written
+// before KeyStable was introduced must still read as settled, or every
+// recorded decision would be re-asked the first time after the upgrade.
+func (s Store) Settled(source, origin, text string) bool {
+	k := KeyStable(source, origin, text)
+	if _, ok := s[k]; ok {
+		return true
+	}
+	if legacy := Key(source, origin, text); legacy != k {
+		_, ok := s[legacy]
+		return ok
+	}
+	return false
 }
 
 // Path is the answers file for a repository.

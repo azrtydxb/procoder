@@ -141,7 +141,13 @@ func FromFile(root, file string, out func(string)) int {
 	}
 	known := map[string]bool{}
 	for _, q := range qs {
+		// both generations of key: an answer file written before KeyStable
+		// carries the legacy one, and it must count as known rather than as
+		// "a question no domain is asking".
 		known[q.Key()] = true
+		if lk := q.LegacyKey(); lk != q.Key() {
+			known[lk] = true
+		}
 	}
 	recorded, unknown := 0, 0
 	for key, entry := range given {

@@ -346,3 +346,65 @@ func TestInstallGitPrintsAndWritesNothing(t *testing.T) {
 		t.Fatalf("InstallGit must write nothing; found %v (%v)", entries, err)
 	}
 }
+
+// The message file a commit names with -F is often the command's own
+// output — `cat > msg.txt <<'EOF' … EOF` then `git commit -F msg.txt` — and
+// the gate judges the command BEFORE the shell has run, so the file does
+// not exist yet. The acknowledgment was in the heredoc all along, in the
+// command line the gate was handed, and this is the shape that blocked a
+// real merge with "no commit message reached this check".
+//
+// proved by: the heredocInto call removed from PreToolUse — the case that
+// carries the acknowledgment in its own heredoc re-blocks on the obligation.
+func TestACommandOwnedMessageFileClearsTheObligation(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	// the obligation only BLOCKS when the repository says docs are blocking;
+	// the default is report, and a report would let both the control and the
+	// negative case through, so the fixture opts in the way the procoder
+	// repository's own config does.
+	writeAt(t, root, ".procoder/config.toml", "[docs]\npolicy = \"block\"\n")
+	writeAt(t, root, "README.md", "# demo\n\n.toolpin pins the tool versions.\n")
+	commitAll(t, root)
+	writeAt(t, root, ".toolpin", "RUFF=0.1\n")
+
+	ack := "cat > msg.txt <<'EOF'\nchore: pin bump\n\ndocs: none — the pin file is self-describing\nEOF\ngit commit -F msg.txt"
+	if v, r := decisionOf(t, commitPayload(t, root, ack)); v == "deny" {
+		t.Fatalf("an acknowledgment in the command's own heredoc must clear the obligation: %s", r)
+	}
+
+	noAck := "cat > msg2.txt <<'EOF'\nchore: pin bump\nEOF\ngit commit -F msg2.txt"
+	v, r := decisionOf(t, commitPayload(t, root, noAck))
+	if v != "deny" {
+		t.Fatalf("without the acknowledgment line the obligation must still block, got %q (%s)", v, r)
+	}
+	if !strings.Contains(r, "documentation obligation") {
+		t.Fatalf("the refusal must name the obligation:\n%s", r)
+	}
+
+	// the body carries no apostrophe on purpose: a lone quote opens the
+	// tokenizer's quoted state, which a heredoc body must never leave dangling.
+	other := "cat > other.txt <<'EOF'\ndocs: none — not for this commit\nEOF\ngit commit -F msg3.txt"
+	if v, r := decisionOf(t, commitPayload(t, root, other)); v != "deny" {
+		t.Fatalf("a heredoc that writes a different file must not answer for this commit's message: %s", r)
+	}
+}
+
+func TestHeredocIntoReadsOnlyTheHeredocThatWritesTheNamedFile(t *testing.T) {
+	cmd := "cat > msg.txt <<'EOF'\nchore: x\n\ndocs: none — reason\nEOF\ngit commit -F msg.txt"
+	if got, ok := heredocInto(cmd, "msg.txt"); !ok || !strings.Contains(got, "docs: none") {
+		t.Errorf("the heredoc that writes msg.txt must read as its message: ok=%v got=%q", ok, got)
+	}
+	if _, ok := heredocInto(cmd, "other.txt"); ok {
+		t.Error("a heredoc that writes msg.txt must not answer for other.txt")
+	}
+	if _, ok := heredocInto("git commit -F msg.txt", "msg.txt"); ok {
+		t.Error("a command with no heredoc has no heredoc message")
+	}
+	// an append leaves the file's prior content unknown: the gate cannot
+	// vouch for a message it cannot see in full
+	appe := "cat >> msg.txt <<'EOF'\nx\nEOF"
+	if _, ok := heredocInto(appe, "msg.txt"); ok {
+		t.Error("an append must not be read as the whole message")
+	}
+}

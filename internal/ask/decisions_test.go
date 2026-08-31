@@ -249,3 +249,63 @@ func TestTheGeneratedFilesAreFormatStable(t *testing.T) {
 		}
 	}
 }
+
+// The defect that shipped as "answered questions come back": the key hashed
+// the section AS WRITTEN, so a decision whose body was reflowed (by a
+// formatter, by recording the decision under it, by a re-wrap) got a new key
+// and its recorded answer was orphaned — the queue re-asked what a human had
+// already settled.
+//
+// proved by: Question.Key() made to hash the text as written — the reflowed
+// section's answer no longer reads as settled and the question comes back.
+func TestAReflowedDecisionKeepsItsRecordedAnswer(t *testing.T) {
+	root := repo(t)
+	writeDecisions(t, root, `## Merge #187 before or after #181?
+
+- before: the gate fix lands first
+- after: one release
+`)
+	first, _ := Collect(root)
+	var q *Question
+	for i := range first {
+		if first[i].Source == "decision" && strings.Contains(first[i].Text, "Merge #187") {
+			q = &first[i]
+		}
+	}
+	if q == nil {
+		t.Fatal("no decision collected")
+	}
+
+	// The same decision, rewrapped across lines: same words, new breaks.
+	writeDecisions(t, root, `## Merge #187 before or after #181?
+
+- before: the gate fix
+  lands first
+- after: one release
+`)
+	second, _ := Collect(root)
+	var r Question
+	for _, qq := range second {
+		if qq.Source == "decision" {
+			r = qq
+		}
+	}
+	if r.Text == "" {
+		t.Fatal("no decision collected after the reflow")
+	}
+	if r.Key() != q.Key() {
+		t.Fatalf("a reflowed decision changed its key: %q → %q — its answer would be re-asked", q.Key(), r.Key())
+	}
+
+	// And both generations of record settle it: an answer stored under the
+	// stable key, and one stored under the legacy key a pre-upgrade store
+	// would still carry.
+	store := Answers{r.Key(): {Question: r.Text, Answer: "before"}}
+	if left := Unanswered([]Question{r}, store); len(left) != 0 {
+		t.Errorf("an answer recorded under the stable key did not settle the reflowed question: %v", left)
+	}
+	legacy := Answers{r.LegacyKey(): {Question: r.Text, Answer: "before"}}
+	if left := Unanswered([]Question{r}, legacy); len(left) != 0 {
+		t.Errorf("an answer recorded under the legacy key did not settle the question: %v", left)
+	}
+}
