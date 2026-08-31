@@ -1529,20 +1529,118 @@ func specCmd(args []string) int {
 // P-CONTROL. Multiple files are separated by headers so the agent can tell
 // which output belongs to which file.
 func formatCmd(files []string) int {
+	if clash := collidingOutput(files, os.Stdout); clash != "" {
+		// Say it and stop. The truncation has already happened — the shell
+		// empties the target before the command is exec'd — so nothing can be
+		// read and there is no verdict to print. The only thing left worth doing
+		// is naming the recovery, instead of printing a plausible banner into the
+		// hole and exiting green, which is what the old success path did.
+		fmt.Fprintf(os.Stderr,
+			"procoder format: stdout IS %s, which the shell truncated before this command ran.\n"+
+				"Nothing was read and nothing was written. Restore the file (git checkout -- %s, or\n"+
+				"your editor's undo), then capture somewhere else and write it yourself:\n"+
+				"    procoder format %s > %s.formatted\n",
+			clash, clash, clash, clash)
+		return 1
+	}
+	return formatFiles(files, os.Stdout, os.Stderr)
+}
+
+// collidingOutput names the input file stdout points at, if any.
+//
+// This is the half of the loss an output contract cannot reach: with
+// `procoder format f > f` the shell has cut f to zero bytes before the process
+// exists, so the command reads an empty file whatever it then prints.
+// Detecting it is the value — silent data loss becomes a message that names the
+// file and the way back. A pipe, a terminal and /dev/null are never a
+// collision; only a regular file can be the same file as an argument.
+func collidingOutput(files []string, out *os.File) string {
+	if out == nil {
+		return ""
+	}
+	stat, err := out.Stat()
+	if err != nil || !stat.Mode().IsRegular() {
+		return ""
+	}
+	for _, f := range files {
+		if info, err := os.Stat(f); err == nil && os.SameFile(info, stat) {
+			return f
+		}
+	}
+	return ""
+}
+
+// formatFiles decides what a caller sees, and the rule took a repository's
+// documentation to learn: stdout is the bytes that belong in the file, in
+// EVERY verdict.
+//
+// Capturing this command's output was documented as `procoder format f > f`,
+// and there were two distinct ways to lose the file with it. The first is the
+// one this function owns: for as long as the three verdicts with no formatted
+// text printed a header and nothing after it, a caller that captured the output
+// to a temporary path and wrote it back — the correct pattern, and the only one
+// that can work — got a banner where a file used to be. It emptied a
+// 551-line documentation page in this repository (#120) and three more files
+// during the pi integration, twice of them uncommitted and rewritten from
+// memory. #120's fix was downstream: an emptied Markdown file became a blocking
+// finding, which catches one file type after the fact and leaves the trap set
+// for every other one.
+//
+// So the verdict line moves to stderr, where it belongs — it is for whoever is
+// reading a transcript, not for a pipe, and a banner that cannot be redirected
+// over a file cannot empty one. What lands on stdout is the tool's output for
+// Unformatted and the file's own bytes for the other three, which makes writing
+// a captured result back a no-op rather than a deletion.
+//
+// The second way to lose the file is the redirect itself, and it is refused in
+// formatCmd rather than papered over here: pointed at the file being read,
+// stdout is not the problem, the empty file is.
+//
+// More than one file keeps its headers, and keeps them on stdout, because five
+// files cannot share one stream without them. A multi-file run is read, never
+// redirected, and the header says so on the first line rather than assuming the
+// caller remembered which shape is safe.
+func formatFiles(files []string, out, notes io.Writer) int {
 	code := 0
+	labelled := len(files) > 1
 	for _, f := range files {
 		res := format.Check(f)
 		switch res.Verdict {
 		case format.Clean:
-			fmt.Printf("== %s — already formatted\n", f)
+			fmt.Fprintf(notes, "== %s — already formatted\n", f)
 		case format.OutOfScope:
-			fmt.Printf("== %s — out of scope: %s\n", f, res.Reason)
+			fmt.Fprintf(notes, "== %s — out of scope: %s\n", f, res.Reason)
 		case format.Unchecked:
-			fmt.Printf("== %s — NOT checked: %s\n", f, res.Reason)
+			fmt.Fprintf(notes, "== %s — NOT checked: %s\n", f, res.Reason)
 			code = 1
 		case format.Unformatted:
-			fmt.Printf("== %s — formatted result (%s), review and write it:\n", f, res.Tool)
-			os.Stdout.Write(res.Formatted)
+			fmt.Fprintf(notes, "== %s — formatted result (%s), review and write it:\n", f, res.Tool)
+		}
+
+		content := res.Formatted
+		if res.Verdict != format.Unformatted {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				// Nothing on stdout for a file that cannot be read. The verdict
+				// line above says why, and there is nothing here to destroy: a
+				// file that cannot be read cannot be redirected over either.
+				continue
+			}
+			content = raw
+		}
+		if labelled {
+			// The header is what makes a multi-file run readable, and what makes
+			// it unsafe to redirect onto any one of these files. Say which.
+			fmt.Fprintf(out, "== %s — these bytes belong in this file; do not redirect a multi-file run over one of them\n", f)
+		}
+		if _, err := out.Write(content); err != nil {
+			// A closed stdout (`| head`) is the ordinary case. Say which file did
+			// not make it out and leave a non-zero exit behind, because a format
+			// run that printed nothing is exactly the shape this command had when it
+			// was emptying files, and it must not read as success twice over.
+			fmt.Fprintf(notes, "== %s — could not be written out: %v\n", f, err)
+			code = 1
+			return code
 		}
 	}
 	return code

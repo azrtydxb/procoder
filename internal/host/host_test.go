@@ -14,7 +14,7 @@ import (
 // otherwise inherit the developer's machine and answer differently in CI.
 func clear(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"COPILOT_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "PLUGIN_DATA", "QODER_SESSION_ID"} {
+	for _, k := range []string{"COPILOT_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "PLUGIN_DATA", "QODER_SESSION_ID", "PI_CODING_AGENT"} {
 		t.Setenv(k, "")
 	}
 }
@@ -25,6 +25,8 @@ func clear(t *testing.T) {
 //
 // proved by: reordering Detect so the PLUGIN_DATA (Codex) check runs before
 // the Copilot check — the "copilot wins over codex" case then returns codex.
+// Or moving the PI_CODING_AGENT check above Copilot's, which the last two cases
+// catch.
 func TestDetectSelectsHostBySignalAndPrecedence(t *testing.T) {
 	cases := []struct {
 		name string
@@ -104,6 +106,55 @@ func TestDetectSelectsHostBySignalAndPrecedence(t *testing.T) {
 	}
 }
 
+// pi's own variable is a positive signal, which is why it beats the Claude
+// default — and Copilot's is a positive signal too, and outranks it because a
+// pi session run inside a Copilot one is answered by the host whose envelope
+// actually gets parsed.
+//
+// proved by: moving the PI_CODING_AGENT check above Copilot's in Detect — the
+// first case below then answers pi.
+func TestPiRanksBelowThePositiveSignalsAboveIt(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want Host
+	}{
+		{
+			name: "PI_CODING_AGENT names pi",
+			env:  map[string]string{"PI_CODING_AGENT": "true"},
+			want: Pi,
+		},
+		{
+			// CLAUDE_PLUGIN_ROOT alone is NOT a claim of being Claude Code: the
+			// cases above exist because a copilot session carries it too, so
+			// Detect already refuses to read it as a signal. It reaches the
+			// default only because nothing answered, and a positive signal beats
+			// a default. The cost, stated: a Claude Code session launched from
+			// inside a pi terminal answers pi, because pi's variable leaked into
+			// its environment and nothing here tells a leak from a host.
+			name: "pi beats the claude root it already refuses to trust",
+			env:  map[string]string{"CLAUDE_PLUGIN_ROOT": "/x/.claude/plugins/procoder", "PI_CODING_AGENT": "true"},
+			want: Pi,
+		},
+		{
+			name: "copilot wins over pi",
+			env:  map[string]string{"COPILOT_PLUGIN_DATA": "/c", "PI_CODING_AGENT": "true"},
+			want: Copilot,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clear(t)
+			for k, v := range c.env {
+				t.Setenv(k, v)
+			}
+			if got := Detect(); got != c.want {
+				t.Errorf("Detect() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // The four host names are written into hook envelopes and matched by string
 // elsewhere, so they are wire values: renaming one is a breaking change, not
 // a refactor.
@@ -119,6 +170,7 @@ func TestHostNamesAreTheWireValues(t *testing.T) {
 		{Codex, "codex"},
 		{Copilot, "copilot"},
 		{Qoder, "qoder"},
+		{Pi, "pi"},
 	} {
 		if string(c.got) != c.want {
 			t.Errorf("host constant = %q, want %q", c.got, c.want)

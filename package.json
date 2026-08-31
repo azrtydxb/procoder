@@ -7,12 +7,19 @@
     "type": "git",
     "url": "git+https://github.com/azrtydxb/procoder.git"
   },
+  "keywords": [
+    "procoder",
+    "pi-package",
+    "hooks",
+    "code-quality",
+    "gate"
+  ],
   "pi": {
     "extensions": [
       "./pi-extension/index.mjs"
     ],
     "skills": [
-      "./commands"
+      "./skills"
     ]
   }
 }
