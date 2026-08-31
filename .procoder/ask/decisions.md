@@ -353,3 +353,28 @@ writes rather than before any.
   next coder pipes it anyway and reads the banner afterwards.
 - Leave the command alone, record this as a lesson, and let the adapters
   (which are the main users) keep handling the four verdicts themselves.
+
+## Which of the pi integration's claims are backed by a measurement?
+
+Three were written down and none of them held, so the honest record is the
+correction rather than the claim. What is true now, each with the command that
+produced it:
+
+- **The commit gate blocks, live, before the shell runs.** A nested pi session
+  asked to `git commit -m x` over a staged unformatted file reported the gate's
+  own two findings, and `git log` showed only the prior commit: nothing landed.
+  pi's own `agent-loop.js` awaits `beforeToolCall` and returns an error tool
+  result on `block` before executing the tool, which is what the run showed.
+- **The gate does not check formatting in a repository that has not adopted
+  procoder.** In one scratch tree with `.procoder/` absent, a staged file that
+  `gofmt -l` names reported `1 file(s) not formatting-checked, 0 blocking`; the
+  same tree with `.procoder/config.toml` present reported `1 unformatted` and a
+  blocking finding. The scope line in the report says this in as many words.
+- **A tool result I described as evidence never existed.** The session record
+  for the call in question holds `fixture ready` with `isError: false`, and the
+  refusal text I quoted appears nowhere in the session file, the repo, or the
+  binary. It was invented, escalated, and put in this file.
+
+No option is offered for the third line: it is recorded so the next session
+treats a claim in here as needing a command behind it, and so nobody re-derives
+the staged-index story from a run that was actually about gate scope.
