@@ -378,3 +378,48 @@ produced it:
 No option is offered for the third line: it is recorded so the next session
 treats a claim in here as needing a command behind it, and so nobody re-derives
 the staged-index story from a run that was actually about gate scope.
+
+## The ask queue reports 13 open questions; four of them look answered already. Fix the queue or answer the list?
+
+**Decided: the list was answered directly.** The round of eight answers was
+recorded in `answers.md` (107, 117, 60, the copilot-leak cadence, and the four
+marketplace-strategy questions kept open on purpose). The key-instability
+defect itself was not filed and not fixed; this heading is its record, and it
+stays until someone takes it.
+
+Shown the queue to decide what actually needs a human, and the count does not
+match its own ledger. Three observations, each from a command:
+
+- The `format` decision is recorded — `.procoder/ask/answers.md` carries it
+  under `Key: 87246294ecbe`, question text and all — and `procoder ask` now
+  issues the same question under `Key: 5134e4878619`. The lookup misses, so an
+  answered question is re-asked.
+- Three spec questions (Q6, Q8, Q9 of `auto-copilot-leak`) carry their answer
+  _inside the question text_ as `-- A: …` and are still queued. An answer that
+  shipped in the question's own body is an answer the matcher cannot see.
+- `procoder ask --file` refuses a plain `## <question>`/`Answer:` file and
+  demands `Key:` + `Answer:` pairs, then reports "1 of them answer a question
+  no domain is asking" when the key is stale. That message is the symptom; the
+  stale key is the cause.
+
+So "13 questions need a human" is partly a queue defect wearing a queue. Where
+the work goes first changes what the next reading of the queue means: after a
+fix it is trustworthy, by observation it is merely shorter. The untracked
+todo record the heading was written about became issue #255 and was deleted
+from the tree, so only the defect and the `-F <file>` message gap remain.
+
+- Chase the key instability first: find what the key hashes, make it survive a
+  question being reflowed or re-collected, and let the true open list fall out
+  of the fix. Costs an investigation in the ask package and a test that a
+  prettier rewrap does not orphan an answer.
+- Answer Q6–Q9 now under the keys QA.md currently prints, then read the queue
+  again. Cheap, and it separates answered-but-re-asked from genuinely open by
+  observation rather than by reading code — though it re-answers three things
+  the ledger already holds.
+- Take the queue at face value and answer all 13 in one pass, defect-hunting
+  only what resurfaces afterwards. Never asks a question twice for a bug's
+  sake; slowest to the truth about the queue.
+- Treat the queue as noise for now and work on something else: the four spec
+  questions are attached to specs that are not in this release, and the two
+  findings already on record (the load-dependent store test, the `-F <file>`
+  message gap) are the sharper things in the tree.
