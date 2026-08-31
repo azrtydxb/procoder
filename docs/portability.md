@@ -33,23 +33,46 @@ gate; edit the master, then `procoder agents` prints the refreshed copies.
 
 ## Plugin tier — manifests and hooks
 
-| Host                     | Entry                                                | Notes                                                                                                                                                            |
-| ------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code              | `.claude-plugin/plugin.json`                         | the reference host — fully tested                                                                                                                                |
-| Codex CLI                | `.codex-plugin/plugin.json`                          | shares Claude's hooks file; the binary answers in Codex's JSON shape by host detection                                                                           |
-| GitHub Copilot CLI       | `.github/plugin/plugin.json`                         | own hook schema (`hooks/copilot-hooks.json`, bash+powershell); session-start injection only                                                                      |
-| Gemini CLI / Antigravity | `gemini-extension.json`                              | `contextFileName: AGENTS.md`; deliberately no root `hooks/hooks.json` (Gemini would auto-load it with incompatible events — its absence is enforced by the gate) |
-| OpenCode                 | `opencode.json` → `.opencode/plugins/procoder.mjs`   | JS shim injects `AGENTS.md` per turn; `.opencode/command/*.md` are generated twins of `commands/*.md` (parity pinned by test)                                    |
-| Grok Build               | root `plugin.json`                                   | skills only, no hooks                                                                                                                                            |
-| Devin CLI                | `.devin-plugin/plugin.json`                          | metadata + skills                                                                                                                                                |
-| Qoder (plugin tier)      | `.qoder-plugin/plugin.json`                          | skills + rules pointer                                                                                                                                           |
-| pi                       | `package.json` `pi` block → `pi-extension/index.mjs` | injects `AGENTS.md` at agent start                                                                                                                               |
-| Hermes Agent             | `plugin.yaml` + `__init__.py`                        | `pre_llm_call` hook injects `AGENTS.md`                                                                                                                          |
+| Host                     | Entry                                                | Notes                                                                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code              | `.claude-plugin/plugin.json`                         | the reference host — fully tested                                                                                                                                                                                                                                                                                |
+| Codex CLI                | `.codex-plugin/plugin.json`                          | shares Claude's hooks file; the binary answers in Codex's JSON shape by host detection                                                                                                                                                                                                                           |
+| GitHub Copilot CLI       | `.github/plugin/plugin.json`                         | own hook schema (`hooks/copilot-hooks.json`, bash+powershell); session-start injection only                                                                                                                                                                                                                      |
+| Gemini CLI / Antigravity | `gemini-extension.json`                              | `contextFileName: AGENTS.md`; deliberately no root `hooks/hooks.json` (Gemini would auto-load it with incompatible events — its absence is enforced by the gate)                                                                                                                                                 |
+| OpenCode                 | `opencode.json` → `.opencode/plugins/procoder.mjs`   | JS shim injects `AGENTS.md` per turn; `.opencode/command/*.md` are generated twins of `commands/*.md` (parity pinned by test)                                                                                                                                                                                    |
+| Grok Build               | root `plugin.json`                                   | skills only, no hooks                                                                                                                                                                                                                                                                                            |
+| Devin CLI                | `.devin-plugin/plugin.json`                          | metadata + skills                                                                                                                                                                                                                                                                                                |
+| Qoder (plugin tier)      | `.qoder-plugin/plugin.json`                          | skills + rules pointer                                                                                                                                                                                                                                                                                           |
+| pi                       | `package.json` `pi` block → `pi-extension/index.mjs` | every hook surface: `before_agent_start` injects the contract only when pi has not loaded `AGENTS.md` itself, `tool_call` gates a `git commit`, `tool_result` carries the write hook's findings, `agent_settled` writes the handoff; commands register at load as `/procoder:*`, and `skills/` is the skill path |
+| Hermes Agent             | `plugin.yaml` + `__init__.py`                        | `pre_llm_call` hook injects `AGENTS.md`                                                                                                                                                                                                                                                                          |
 
 Host detection lives in the binary (`internal/host`): `COPILOT_PLUGIN_DATA`
 (or a VS Code plugin-root path) → Copilot, `PLUGIN_DATA` → Codex,
-`QODER_SESSION_ID` → Qoder, else Claude. `procoder principles --hook`
-answers in each host's session-start shape.
+`QODER_SESSION_ID` → Qoder, `PI_CODING_AGENT` → pi, else Claude. `procoder
+principles --hook` answers in each host's session-start shape.
+
+### Where pi gets more than the reference host
+
+"Supported on host X" is not one claim across this table, and pretending it is
+would hide three places where pi has more than Claude Code:
+
+- `tool_result` lets the write hook's findings be patched into the result of the
+  write that caused them. Claude Code's PostToolUse hands the model an
+  `additionalContext` block beside the result, where somebody has to connect it
+  back to a file.
+- `agent_settled` fires whenever pi will not continue on its own, so the handoff
+  note and the unasked-decision check run at the end of a turn. Claude Code
+  learns a turn ended from `Stop`, and learns a compaction is coming only from
+  `PreCompact`.
+- the gate is also a callable tool. `check`, `test`, `lint`, `security`, `debt`,
+  `status`, `review`, `doctor` and `index` run without a shell, so the report a
+  session reads cannot come from a different version than the one the package
+  shipped. Mutating verbs are refused there: closing work, seeding the backlog
+  and releasing stay slash commands a human types.
+
+Everything else — the gate verdict, the format result, the secret findings, the
+handoff format, the unasked-decision rule and its dedupe — is the same binary
+entry points Claude Code calls. The adapter decides none of it.
 
 ## Test coverage per host
 

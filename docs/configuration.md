@@ -380,9 +380,12 @@ it wins; leave it out and Procoder's own is used.
 
 An **empty** template file is an error, not a fallback. It blocks, and
 Procoder uses its own template for that run while saying so. The reason is
-specific: `procoder format` prints a single header line for a file that is
-already formatted and nothing after it, so a pipeline that strips the
-header and writes the rest empties the file on the success path. Falling
+that an empty file is indistinguishable from an emptied one — written out
+by an editor, truncated by a bad merge, or replaced by a pipeline that
+printed a header and nothing else. (`procoder format` did exactly that on
+its already-formatted path until the contract changed: stdout now carries
+the bytes that belong in the file for every verdict, and the verdict line
+went to stderr where it cannot overwrite anything.) Either way, falling
 back quietly would mean a team discovers their customised template is gone
 when their next story comes out in Procoder's shape instead of theirs.
 
