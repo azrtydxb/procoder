@@ -2,10 +2,13 @@ package portability
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -24,59 +27,143 @@ import (
 // piFixture is a procoder that answers from FIXTURE_MODE and appends every
 // invocation to FIXTURE_LOG, so "did the gate spawn at all" is a question with
 // an answer on disk rather than one inferred from timing.
+//
+// It is compiled rather than scripted. A #!/bin/sh fixture is a test that only
+// exists on two of the three platforms the adapter ships to: on the Windows leg
+// the fixture cannot be exec'd, which — once launcher.cmd was made to honour
+// PROCODER_BIN the way launcher.sh always had — meant a fixture-driven
+// assertion silently became an assertion about the released binary. The go tool
+// is present by definition where `go test` runs, so the cost is one compile per
+// test run and the gain is one fixture with one behaviour everywhere.
 func piFixture(t *testing.T, dir string) (bin, log string) {
 	t.Helper()
-	bin = filepath.Join(dir, "procoder-fixture")
 	log = filepath.Join(dir, "invocations.log")
-	script := `#!/bin/sh
-# Every invocation is logged with the payload it was handed, so "was the gate
-# run at all, and told what" is answered from disk rather than inferred from
-# timing. Only the hook subcommands are given a payload: the adapter leaves
-# stdin inherited for the rest, and a fixture that waited on an inherited stdin
-# would sit there until the caller's own timeout expired — which is the failure
-# this script had the first time it was run.
-case "$1 $2" in
-  "hook pre-tool-use"|"hook post-tool-use"|"hook stop") payload=$(cat) ;;
-  *) payload="" ;;
-esac
-printf '%s %s\n' "$*" "$payload" >> "$FIXTURE_LOG"
-MODE="${FIXTURE_MODE:-deny}"
-if [ "$1 $2" = "hook post-tool-use" ]; then
-  printf '%s' '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"procoder [format]: x.go is not formatted"}}'
-  exit 0
-fi
-if [ "$1 $2" = "hook pre-tool-use" ]; then
-  case "$MODE" in
-    deny)  printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"procoder gate: 2 blocking findings"}}' ;;
-    allow) printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"commit message obligation cleared"}}' ;;
-    silent) : ;;
-  esac
-  exit 0
-fi
-if [ "$1 $2" = "hook stop" ]; then
-  if [ "${FIXTURE_STOP:-ok}" = block ]; then
-    printf '%s\n' 'procoder: a decision is waiting on the user and was not asked' >&2
-    exit 2
-  fi
-  exit 0
-fi
-if [ "$1" = "principles" ]; then
-  printf '%s\n' 'Build like a senior developer who has been paged at 3am.'
-  exit 0
-fi
-if [ "$1" = "check" ]; then
-  awk 'BEGIN { for (i = 0; i < 3000; i++) print "line " i }'
-  exit 0
-fi
-exit 0
-`
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// Created empty rather than left absent: "the gate never spawned" has to be
+	// an assertion that reads zero lines, not a ReadFile error.
 	if err := os.WriteFile(log, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return bin, log
+	return piFixtureBin(t), log
+}
+
+const piFixtureSource = `package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+// Every invocation is logged with the payload it was handed, so "was the gate
+// run at all, and told what" is answered from disk rather than inferred from
+// timing. Only the hook subcommands are given a payload: the adapter leaves
+// stdin inherited for the rest, and a fixture that waited on an inherited stdin
+// would sit there until the caller's own timeout expired.
+func main() {
+	args := os.Args[1:]
+	key := ""
+	if len(args) > 1 {
+		key = args[0] + " " + args[1]
+	}
+	payload := ""
+	switch key {
+	case "hook pre-tool-use", "hook post-tool-use", "hook stop":
+		raw, _ := io.ReadAll(os.Stdin)
+		payload = string(raw)
+	}
+	if path := os.Getenv("FIXTURE_LOG"); path != "" {
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			fmt.Fprintf(f, "%s %s\n", strings.Join(args, " "), payload)
+			f.Close()
+		}
+	}
+	mode := os.Getenv("FIXTURE_MODE")
+	if mode == "" {
+		mode = "deny"
+	}
+	switch key {
+	case "hook post-tool-use":
+		fmt.Print("{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"procoder [format]: x.go is not formatted\"}}")
+		return
+	case "hook pre-tool-use":
+		switch mode {
+		case "deny":
+			fmt.Print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"procoder gate: 2 blocking findings\"}}")
+		case "allow":
+			fmt.Print("{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"commit message obligation cleared\"}}")
+		}
+		return
+	case "hook stop":
+		if os.Getenv("FIXTURE_STOP") == "block" {
+			fmt.Fprintln(os.Stderr, "procoder: a decision is waiting on the user and was not asked")
+			os.Exit(2)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "principles" {
+		fmt.Println("Build like a senior developer who has been paged at 3am.")
+		return
+	}
+	if len(args) > 0 && args[0] == "check" {
+		for i := 0; i < 3000; i++ {
+			fmt.Printf("line %d\n", i)
+		}
+		return
+	}
+}
+`
+
+// The compile happens once for the package. A per-test build would add a
+// second of compile to each of the eleven tests that ask for a binary, and a
+// fixture is not interesting enough to earn that.
+var (
+	fixtureBuild    sync.Once
+	fixtureBinPath  string
+	fixtureBuildErr error
+)
+
+func piFixtureBin(t *testing.T) string {
+	t.Helper()
+	fixtureBuild.Do(func() {
+		dir, err := os.MkdirTemp("", "procoder-pi-fixture")
+		if err != nil {
+			fixtureBuildErr = err
+			return
+		}
+		// A module of its own, so the build is not read as part of this one:
+		// the fixture imports nothing from the tree and must not be able to.
+		write := func(name, body string) error {
+			return os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644)
+		}
+		if err := write("go.mod", "module procoder-pi-fixture\n\ngo 1.21\n"); err != nil {
+			fixtureBuildErr = err
+			return
+		}
+		if err := write("main.go", piFixtureSource); err != nil {
+			fixtureBuildErr = err
+			return
+		}
+		bin := filepath.Join(dir, "procoder-fixture"+exeSuffix())
+		cmd := exec.Command("go", "build", "-o", bin, ".")
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fixtureBuildErr = fmt.Errorf("building the pi fixture: %v\n%s", err, out)
+			return
+		}
+		fixtureBinPath = bin
+	})
+	if fixtureBuildErr != nil {
+		t.Fatal(fixtureBuildErr)
+	}
+	return fixtureBinPath
+}
+
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }
 
 // piHarness runs one harness mode against the real adapter and decodes its

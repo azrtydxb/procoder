@@ -21,7 +21,9 @@ if (!root) {
   console.error("PROCODER_REPO is not set");
   process.exit(2);
 }
-const adapter = await import(pathToFileURL(join(root, "pi-extension", "index.mjs")).href);
+const adapter = await import(
+  pathToFileURL(join(root, "pi-extension", "index.mjs")).href
+);
 
 const state = {
   handlers: {},
@@ -40,7 +42,9 @@ const pi = {
     state.commands[name] = {
       name,
       description: options.description ?? "",
-      completions: options.getArgumentCompletions ? options.getArgumentCompletions("") : null,
+      completions: options.getArgumentCompletions
+        ? options.getArgumentCompletions("")
+        : null,
     };
   },
   registerTool(definition) {
@@ -86,7 +90,9 @@ switch (mode) {
   case "registry": {
     const tool = state.tools.procoder;
     emit({
-      commands: Object.values(state.commands).sort((a, b) => a.name.localeCompare(b.name)),
+      commands: Object.values(state.commands).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
       tool: tool
         ? {
             name: tool.name,
@@ -103,7 +109,10 @@ switch (mode) {
     const { launcherPath, commandText } = adapter;
     emit({
       posix: launcherPath("darwin", "/opt/pkg/pi-extension"),
-      win32: launcherPath("win32", "C:\\Users\\me\\Documents\\pkg\\pi-extension"),
+      win32: launcherPath(
+        "win32",
+        "C:\\Users\\me\\Documents\\pkg\\pi-extension",
+      ),
       text: commandText(
         'The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"\n\nRun:\n\n    "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh" check $ARGUMENTS\n\nfile\'s formatted result with `launcher.sh format <file>`',
         '"/opt/pkg/hooks/launcher.sh"',
@@ -123,7 +132,8 @@ switch (mode) {
     };
     const first = await fire("before_agent_start", event, ctx);
     const second = await fire("before_agent_start", event, ctx);
-    const text = (first[0]?.message?.content ?? "") + (first[0]?.systemPrompt ?? "");
+    const text =
+      (first[0]?.message?.content ?? "") + (first[0]?.systemPrompt ?? "");
     emit({
       first: first.length,
       second: second.length,
@@ -137,7 +147,10 @@ switch (mode) {
   case "gate": {
     const results = await fire(
       "tool_call",
-      { toolName: config.toolName ?? "bash", input: { command: config.command } },
+      {
+        toolName: config.toolName ?? "bash",
+        input: { command: config.command },
+      },
       ctx,
     );
     emit({ results, notices: state.notices });
@@ -147,7 +160,11 @@ switch (mode) {
   case "write": {
     const results = await fire(
       "tool_result",
-      { toolName: config.toolName ?? "write", input: { path: config.path }, content: config.content ?? [] },
+      {
+        toolName: config.toolName ?? "write",
+        input: { path: config.path },
+        content: config.content ?? [],
+      },
       ctx,
     );
     emit({ results, notices: state.notices });
@@ -163,7 +180,13 @@ switch (mode) {
     let result;
     let threw = "";
     try {
-      result = await tool.execute("tc-1", config.params ?? {}, undefined, undefined, ctx);
+      result = await tool.execute(
+        "tc-1",
+        config.params ?? {},
+        undefined,
+        undefined,
+        ctx,
+      );
     } catch (e) {
       threw = String(e?.message ?? e);
     }
