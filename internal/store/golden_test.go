@@ -80,6 +80,34 @@ func replaceLinePrefix(text, prefix, with string) string {
 	return strings.Join(lines, "\n")
 }
 
+// underClaudeHost blanks every variable host.Detect consults, runs, and puts
+// them back.
+//
+// The principles golden is the Claude Code shape — raw text, no envelope — and
+// Detect answers from the environment, so this golden was always quietly
+// asserting that the developer's shell was not some other host. It is not a
+// hypothetical: run the suite from inside a pi session and PI_CODING_AGENT is
+// exported, the default branch is chosen, and the same code prints a JSON
+// envelope where the golden holds prose.
+func underClaudeHost(run func() string) string {
+	keys := []string{"COPILOT_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "PLUGIN_DATA", "QODER_SESSION_ID", "PI_CODING_AGENT"}
+	saved := map[string]string{}
+	for _, k := range keys {
+		saved[k] = os.Getenv(k)
+		os.Unsetenv(k)
+	}
+	defer func() {
+		for _, k := range keys {
+			if v := saved[k]; v != "" {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	}()
+	return run()
+}
+
 // captures are the outputs the harness compares. Each runs in process.
 //
 // What is NOT here is as deliberate as what is. `procoder check`, the
@@ -94,9 +122,11 @@ var captures = map[string]func(root string) string{
 		return b.String()
 	},
 	"principles-hook": func(root string) string {
-		var b strings.Builder
-		principles.RunHook(root, strings.NewReader("{}"), func(s string) { b.WriteString(s + "\n") })
-		return b.String()
+		return underClaudeHost(func() string {
+			var b strings.Builder
+			principles.RunHook(root, strings.NewReader("{}"), func(s string) { b.WriteString(s + "\n") })
+			return b.String()
+		})
 	},
 	"handoff": func(root string) string {
 		hook.Stop(strings.NewReader("{}"), root)
