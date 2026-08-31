@@ -247,7 +247,9 @@ func openQuestions(root, path string) (unanswered []string, answered int) {
 		return questions, 0
 	}
 	for _, q := range questions {
-		if _, ok := recorded[answers.Key("spec", name, q)]; ok {
+		// Settled, not a bare lookup: an answer recorded under the legacy
+		// key — the store predates KeyStable — is an answer too.
+		if recorded.Settled("spec", name, q) {
 			answered++
 			continue
 		}

@@ -27,11 +27,13 @@ type Answers = answers.Store
 // Path is where one of the two files lives.
 func Path(root, name string) string { return filepath.Join(root, filepath.FromSlash(Dir), name) }
 
-// Unanswered is the questions still waiting on a person.
+// Unanswered is the questions still waiting on a person. A question answered
+// under the legacy key — the store was written before KeyStable — counts as
+// answered, or the upgrade would re-ask everything already settled.
 func Unanswered(qs []Question, answers Answers) []Question {
 	var out []Question
 	for _, q := range qs {
-		if _, done := answers[q.Key()]; !done {
+		if !answers.Settled(q.Source, q.Origin, q.Text) {
 			out = append(out, q)
 		}
 	}

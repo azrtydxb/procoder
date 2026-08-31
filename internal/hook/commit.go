@@ -77,7 +77,14 @@ func PreToolUse(stdin io.Reader, stdout io.Writer) int {
 	}
 
 	if c.message == "" && c.messageFile != "" {
-		c.message = readMessageFile(commitDir(p.Cwd, c.dir), c.messageFile)
+		// The command's own heredoc may be what the file will hold when git
+		// reads it, and the shell has not run yet, so the file read is the
+		// honest fallback only when the command does not write to it.
+		if body, ok := heredocInto(p.ToolInput.Command, c.messageFile); ok {
+			c.message = body
+		} else {
+			c.message = readMessageFile(commitDir(p.Cwd, c.dir), c.messageFile)
+		}
 	}
 
 	code, findings, timedOut := runGate(root, c.message)
@@ -328,6 +335,83 @@ func cutFlagValue(word, long, short string) (string, bool) {
 		return v, true
 	}
 	return "", false
+}
+
+// heredocInto returns the body of the heredoc the command WRITES to file —
+// what `git commit -F <file>` will read once the command's own shell has
+// run — and says whether the command's heredocs write to it at all.
+//
+// The message file a commit names is often the command's own output: `cat >
+// msg.txt <<'EOF' … EOF` followed by `git commit -F msg.txt`. The gate
+// judges the command BEFORE the shell runs, so the file does not exist yet
+// and a read of it hands back empty — the acknowledgment line was in the
+// heredoc all along, right in the command line, and this reads it from
+// there. The same shape that blocked a real merge: a resolved file whose
+// message was staged through a heredoc-built file, the gate reporting "no
+// commit message reached this check" while the message was sitting in the
+// command it was judging.
+//
+// What it deliberately does not attempt: a `>>` append (the file's prior
+// content is not knowable), a heredoc piped through another command, or a
+// target spelled differently from the `-F` argument (an absolute path
+// against a relative one). When none of the command's heredocs truncate
+// exactly the file the commit names, the read of the file stands and the
+// message stays empty, said as such.
+func heredocInto(command, file string) (string, bool) {
+	lines := strings.Split(command, "\n")
+	var body []string
+	inBody, stripTabs := false, false
+	delim, target := "", ""
+	for _, line := range lines {
+		if inBody {
+			c := strings.TrimRight(line, " \t\r")
+			if stripTabs {
+				c = strings.TrimLeft(c, "\t")
+			}
+			if c == delim {
+				if target == file {
+					return strings.Join(body, "\n"), true
+				}
+				inBody, body = false, nil
+				continue
+			}
+			body = append(body, line)
+			continue
+		}
+		i := strings.Index(line, "<<")
+		if i < 0 {
+			continue
+		}
+		rest := line[i+2:]
+		// `<<-DELIM` lets the terminator be tab-indented; the minus is part
+		// of the marker, not the delimiter, and it is quoted forms that
+		// turn off expansion.
+		stripTabs = strings.HasPrefix(rest, "-")
+		rest = strings.TrimPrefix(rest, "-")
+		delim = strings.Trim(strings.TrimSpace(rest), "\"'")
+		if delim == "" {
+			continue // a `<<` with no delimiter on the line is not one we can vouch for
+		}
+		inBody = true
+		target = truncateTarget(line)
+	}
+	return "", false
+}
+
+// truncateTarget is the target of the last TRUNCATING redirect on the line,
+// read the way a shell reads `cat > f`: the word after a `>` that is not
+// itself `>>`. Append is deliberately not a target — the file's prior
+// content is not in the command, and a message the gate cannot fully see is
+// no message.
+func truncateTarget(line string) string {
+	var target string
+	fields := strings.Fields(line)
+	for i := 0; i < len(fields); i++ {
+		if fields[i] == ">" && i+1 < len(fields) {
+			target = fields[i+1]
+		}
+	}
+	return target
 }
 
 // heredocBody returns the body of the first heredoc in the command — what

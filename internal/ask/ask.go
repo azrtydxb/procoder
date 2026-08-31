@@ -32,9 +32,16 @@ type Question struct {
 	Text   string
 }
 
-// Key identifies the question across runs — see answers.Key for why it
-// hashes what was asked rather than where it appeared.
-func (q Question) Key() string { return answers.Key(q.Source, q.Origin, q.Text) }
+// Key identifies the question across runs — see answers.KeyStable for why
+// it hashes the question's words rather than its line breaks, and answers.Key
+// for the legacy identifier a store may still be written in.
+func (q Question) Key() string { return answers.KeyStable(q.Source, q.Origin, q.Text) }
+
+// LegacyKey is the pre-KeyStable identifier: the hash of the text as written.
+// Stores recorded before the change hold answers under it, so a lookup that
+// only knows Key would re-ask everything that was settled. Both readers of
+// the store try the stable key first and this one second.
+func (q Question) LegacyKey() string { return answers.Key(q.Source, q.Origin, q.Text) }
 
 // Label is the one-line heading a question is filed under.
 func (q Question) Label() string {
