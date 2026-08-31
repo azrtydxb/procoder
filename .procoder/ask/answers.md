@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-27 17:07 UTC. procoder reads this
+Written 2026-08-31 09:11 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -188,6 +188,34 @@ Answer: All six roadmap issues. Done: #194/#209/#211 in #227, #189 in #229, #192
 
 ## [decision] decisions.md
 
+Key: 7fc6bb7f721b
+Question: How do the 34 command files reach pi?
+
+`package.json` declares `pi.skills: ["./commands"]`. Measured, that yields one
+skill named `commands` — pi falls back to the parent directory name when a
+skill has no `name:` frontmatter, so all 34 files collide and it keeps the
+first (`adr.md`) and warns about the rest. The other 33 are invisible.
+
+They are also not skills: each is a user-typed command that expands `$ARGUMENTS`
+into a shell line. pi has exactly that shape, as prompt templates. But 33 of the
+34 invoke `"${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"`, and pi sets no plugin-root
+variable at all (grep for `PLUGIN_ROOT` in pi's dist: zero hits), so the line
+expands to `/hooks/launcher.sh` and fails.
+
+- Register them at load as extension commands, reading `commands/*.md` and
+  substituting the launcher path the extension resolves from its own module
+  URL: one source of truth, ~40 lines of glue, no second copy to drift.
+- Emit a pi-specific `.pi/prompts/*.md` at release time and pin it with the
+  portability drift guard, as the rule-file copies already are: 34 more files,
+  and the drift guard grows to cover generated command text.
+- Reword the canonical `commands/*.md` to name `procoder check` rather than the
+  launcher path, and make each host adapter responsible for putting a correct
+  `procoder` in front of it: cleanest text, but it changes what Claude Code runs.
+
+Answer: Register the 34 at load as pi extension commands named /procoder:<name>, reading commands/*.md and applying the twin transform in memory, with the launcher resolved from the extension's own module URL. No committed twin set. opencodeTwin moves out of the test file into a shared function both adapters use.
+
+## [decision] decisions.md
+
 Key: 815c92a8de33
 Question: Close #206, whose premise does not hold for procoder?
 
@@ -267,6 +295,26 @@ Question: Does `procoder prune` delete, or print what it would delete?
 
 Answer: report by default, delete on --apply — the safe thing stays the default and the reclaim still happens in one command
 
+## [decision] decisions.md
+
+Key: c649842b7895
+Question: Does the pi adapter match the Claude hook set, or use what pi offers?
+
+pi can do two things Claude Code's hook set cannot. `tool_result` lets the
+post-write findings land inside the write's own tool result instead of as a
+side-channel `additionalContext`, and `agent_settled` fires per turn rather than
+only at session end, so the handoff note and the unasked-decision block can run
+every turn.
+
+- Hook parity first: the four hooks, nothing more, so one comparison across
+  hosts stays honest and the pi row in docs/portability.md means what the
+  Claude row means.
+- Go further now, and record in docs/portability.md that pi gets strictly more
+  than Claude does — accepting that "supported on host X" stops being a
+  comparable claim across the host table.
+
+Answer: Advantage where pi genuinely offers it, parity otherwise — `tool_result` for the post-write findings, per-turn handoff and unasked-decision on `agent_settled`, and docs/portability.md states plainly where pi has more than Claude rather than leaving the rows looking equivalent.
+
 ## (no longer asked)
 
 Key: c9c26deda0a7
@@ -303,6 +351,27 @@ explicit flag, refuse rather than guess. No new boundary, no new mechanism.
 - close #192: the manual procedures it targets (#66-#73) are one-offs.
 
 Answer: Copy the `procoder run` shape — print by default, execute under an explicit flag, refuse rather than guess. Shipped in #228 as declarative markdown that executes nothing.
+
+## [decision] decisions.md
+
+Key: e41c4108da55
+Question: Where does the pi adapter get installed from?
+
+Every rule-file host gets a committed copy under its own path; every plugin-tier
+host gets a manifest and an install step. pi can take either shape, and the
+choice decides whether a governed repository carries pi files at all.
+
+- `pi install git:github.com/azrtydxb/procoder@vX` (user scope): one install per
+  machine, works in every repository, nothing committed, and the version is
+  pinned by hand rather than by the repo.
+- `pi install -l` writing a committed `.pi/settings.json`: the repo declares its
+  own procoder version, matching how `[release] files` pins versions; needs
+  project trust, and every adopter runs the install after cloning.
+- A committed `.pi/extensions/procoder.ts` copy, byte-identical to
+  `pi-extension/index.mjs`, pinned by the drift guard like the other rule files:
+  zero install step, and a copy to regenerate in every governed repository.
+
+Answer: Global — `pi install git:github.com/azrtydxb/procoder@vX` at user scope. Nothing committed into a governed repository; the adapter resolves its launcher from its own module URL, so it never depends on what is on PATH.
 
 ## [decision] decisions.md
 
