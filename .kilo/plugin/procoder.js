@@ -2,8 +2,24 @@
 // AGENTS.md contract into every turn, registers the command set, and holds
 // the commit gate at the tool boundary. Kilo's CLI is an OpenCode fork and
 // its plugin API is the same one, so this file ships byte-identical to both
-// `.opencode/plugins/procoder.mjs` and `.kilo/plugin/procoder.js` (the two
-// hosts scan different extensions); the parity test pins them together.
+// `.opencode/plugins/procoder.mjs` and `.kilo/plugin/procoder.js`; the parity
+// test pins them together.
+//
+// The extensions are load-bearing, and nothing about them fails loudly. Both
+// hosts DISCOVER plugins with the glob `{plugin,plugins}/*.{ts,js}` — read out
+// of the shipped binary (`grep -a -o '{plugin,plugins}[^"]*' $(which
+// opencode)`), `.mjs` is not in it. This file is found under `.opencode/`
+// because `opencode.json` names the path outright:
+//
+//     "plugin": ["./.opencode/plugins/procoder.mjs"]
+//
+// Which leaves two ways to break the integration quietly. Delete that config
+// line, or rename either copy to `.mjs` to "unify" the extensions: a host that
+// discovers by glob never sees the file and never says so, and the plugin is
+// simply absent while every other host keeps working. `.kilo/plugin/procoder.js`
+// therefore stays `.js`. (Kilo's glob is the same per the probe that closed
+// #107; Kilo's CLI is not installed here, so that half rests on the probe and
+// not on a re-read of a binary.)
 //
 // This shim is the one piece of non-Go glue in the repo — plugins must be JS
 // — and it stays thin: all content comes from AGENTS.md and the command

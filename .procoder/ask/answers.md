@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-31 12:44 UTC. procoder reads this
+Written 2026-08-31 15:50 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -66,6 +66,20 @@ checkable claim.
   dropped.
 
 Answer: Write it accurately. unlazy and agent-skills are named as SOURCES in influences.md; the convergence argument is made only for the gate and evidence-gated closes, which predate the 2026-08-26 research sweep.
+
+## [spec] marketplace-strategy
+
+Key: 2719610abe64
+Question: Which version of the Agent Plugins specification is current? (Research indicates v1.0.0 at agent-plugins.org)
+
+Answer: Keep open, deliberately. Not researched now, and the recorded "v1.0.0"
+
+## [spec] marketplace-strategy
+
+Key: 27d0beff60e8
+Question: What is the timeline for each marketplace review cycle?
+
+Answer: Keep open, deliberately. Not researched now.
 
 ## [decision] decisions.md
 
@@ -242,12 +256,45 @@ compiles. The exposure the issue describes is not there.
 
 Answer: not yet — do a deep analysis first, and close only if it is 100% certain
 
+## [decision] decisions.md
+
+Key: 856460402b0c
+Question: Issue #60: who sends the awesome-ai-plugins listing PR, and how far do we go?
+
+The blocking work is one README line in `hashgraph-online/awesome-ai-plugins`,
+under `## Community Plugins` → `### Development & Workflow`, between `Praxis`
+and `Project Autopilot`. Three hard gates: case-insensitive alphabetical order,
+the entry regex, and a reachable public repo — the last already passes.
+
+Everything else they describe is optional and declared so in their own
+CONTRIBUTING.md: scanner CI in procoder's own workflows (absence costs 10% of a
+trust score, blocks nothing), the local `plugin-scanner` preflight, the HOL
+registry ownership claim (a read-only GitHub OAuth grant), and the trust/Guard
+badges.
+
+- I fork and open the listing PR now, listing only, no scanner CI and no
+  registry claim — the smallest thing that satisfies what was already agreed
+  on the issue.
+- I prepare the branch and the exact diff, and you send it: the PR is outward
+  facing under your name in someone else's repository.
+- listing PR plus the pinned-SHA scanner action in procoder's CI: takes the
+  full trust score, at the cost of a third-party action in the pipeline.
+
+Answer: Keep #60 open. No listing PR is sent now, by us or by anyone — none of
+
 ## (no longer asked)
 
 Key: 87246294ecbe
 Question: `procoder format` prints content in one of four verdicts — fix the command, or the habit?
 
 Answer: Fix the command, the first option. Given as an instruction rather than a
+
+## [spec] auto-copilot-leak
+
+Key: 96707612e6f5
+Question: Q2: How often should auto-copilot checks run? Manual (`copilot-leak`)
+
+Answer: Follow best practice, which for this command means: no scheduler and no
 
 ## (no longer asked)
 
@@ -322,12 +369,51 @@ every turn.
 
 Answer: Advantage where pi genuinely offers it, parity otherwise — `tool_result` for the post-write findings, per-turn handoff and unasked-decision on `agent_settled`, and docs/portability.md states plainly where pi has more than Claude rather than leaving the rows looking equivalent.
 
+## [decision] decisions.md
+
+Key: c6ae2c5e09ef
+Question: Issue #107 is not reachable — close it, or ship the comment too?
+
+Probing the real host inverts the issue. OpenCode and Kilo are Bun binaries;
+Bun auto-detects module format and ignores `type`. A probe project with a
+`type`-less `.opencode/package.json` loaded BOTH an `import`-using plugin and
+one mixing `require()` with `export default` — which Node rejects under every
+setting. The reported failure cannot occur in a host.
+
+Worse, the discovery glob in both loaders is `{plugin,plugins}/*.{ts,js}`:
+`.mjs` is NOT matched, so renaming would silently stop Kilo loading procoder.
+The `.js` extension is load-bearing. And `.kilo/package.json` is Kilo-generated
+and gitignored (`.kilo/.gitignore:2`), so the proposed fix cannot ship at all;
+a root-level `"type"` works only until Kilo writes that file.
+
+The only real casualty is procoder's own Node harness
+(`TestEveryHostAdapterLoadsWithACallableDefault`), which leans on Node's
+syntax-detection fallback for the Kilo entry alone.
+
+- close #107 with the evidence, and add a comment to the plugin header saying
+  why the extension is `.js` and must stay `.js` — the rename risk is the only
+  live one, and nothing in the repo records it.
+- close #107 with the evidence and change no code: a rename already fails
+  loudly (`portability_test.go:307` t.Fatals, `adapter_test.go` names the
+  missing path), so the comment is belt on braces.
+- comment the findings on #107 but leave it open: keep it as the record until
+  someone with a real Kilo install confirms the fork matches OpenCode here.
+
+Answer: 1a — close it with the evidence, AND ship the comment. The `.js`
+
 ## (no longer asked)
 
 Key: c9c26deda0a7
 Question: Which is the next piece of work?
 
 Answer: #193, merge-conflict discipline
+
+## [spec] marketplace-strategy
+
+Key: d7c3720d2ad7
+Question: Does the Claude Code marketplace offer a "curated" tier beyond community that requires approval?
+
+Answer: Keep open, deliberately. Not researched now.
 
 ## [decision] decisions.md
 
@@ -358,6 +444,13 @@ explicit flag, refuse rather than guess. No new boundary, no new mechanism.
 - close #192: the manual procedures it targets (#66-#73) are one-offs.
 
 Answer: Copy the `procoder run` shape — print by default, execute under an explicit flag, refuse rather than guess. Shipped in #228 as declarative markdown that executes nothing.
+
+## [spec] marketplace-strategy
+
+Key: de6d0d01265d
+Question: Which sections of this spec's Criteria table are release blockers and which are follow-ups? [C-07] cannot be met on our own schedule — it depends on other people's review queues.
+
+Answer: Keep open, deliberately. The spec is not gating this release, so the
 
 ## [decision] decisions.md
 
@@ -398,6 +491,39 @@ is named to describe interoperation, never as a procoder feature name.
 - after #193: #193 was already chosen as the next piece of work.
 
 Answer: no — #193 as planned
+
+## [decision] decisions.md
+
+Key: f13acf27a984
+Question: Issue #117 (procoder as a service): the perf case is inverted — what now?
+
+Measured, 3.4.0 binary, 25 runs after warmup: bare spawn floor 2.9ms;
+`procoder hook pre-tool-use` direct 9.2ms; `curl` to a local HTTP service —
+the proposal's own hook command — 11.1ms; via `launcher.sh` 25.8ms;
+`principles --hook` 194ms direct, 235ms via launcher.
+
+A hook command is spawned either way, so the service pays a spawn PLUS a TCP
+round trip and comes out slower than the binary it replaces. The proposal's
+"~10-50ms to ~2-5ms" is wrong at both ends.
+
+"Stateless" conflates process state with system state: `.procoder/` already
+persists adr, ask, backlog, plans, specs, state, todo, index, security, bench.
+The real gap is that nothing is user-global — no `~/.procoder`, no
+`UserConfigDir` anywhere in `internal/`. That is a question of where the store
+lives, not whether a daemon fronts it.
+
+Three items survive: cross-repo memory (small, no daemon), a shared code-index
+cache (a cache-location problem), and inter-repo coordination (the only one
+that genuinely wants a long-lived process, and the least specified).
+
+- close #117 and open one narrow issue for the user-global store: take the
+  gap that is real, drop the architecture that was proposed to reach it.
+- comment the measurements on #117 and rescope it in place to "cross-repo
+  state without a daemon", keeping the discussion in one thread.
+- comment the measurements and leave #117 open as written: the inter-repo
+  coordination case is unproven either way and may still want a service.
+
+Answer: Verbatim: "i don't care about the speed." The measurements are not the
 
 ## (no longer asked)
 
