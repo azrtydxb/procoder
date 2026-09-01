@@ -20,7 +20,13 @@ type Credit struct {
 }
 
 var (
-	linkedHandle = regexp.MustCompile(`\[@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\]\(https://github\.com/`)
+	// A bot login is a login with a [bot] suffix, so the capture takes the
+	// whole thing: a credit written as the documentation tells it to be —
+	// `[@github-actions[bot]](https://github.com/github-actions[bot])` —
+	// has to count as a credit. The first version stopped at the bracket
+	// and reported every bot contributor as uncredited no matter what was
+	// written.
+	linkedHandle = regexp.MustCompile(`\[@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?)\]\(https://github\.com/`)
 	citedNumber  = regexp.MustCompile(`\[#(\d+)\]\(https://github\.com/azrtydxb/procoder/(?:pull|issues)/\d+\)`)
 )
 

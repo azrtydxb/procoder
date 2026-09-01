@@ -11,6 +11,18 @@ import (
 // proved by: gathered handles and numbers across the whole entry instead
 // of per paragraph — every contributor appears to have opened everything,
 // so no misattribution is detectable at all.
+// A bot credit is written exactly the way the documentation tells it to be
+// — `[@github-actions[bot]](https://github.com/github-actions[bot])` — and
+// counts: the capture takes the whole `[bot]` suffix, not a login
+// truncated at the bracket.
+func TestABotCreditIsRecognisedWhole(t *testing.T) {
+	entry := "_summary_\n\n**Changed — pins moved.**\n([#9](https://github.com/azrtydxb/procoder/pull/9)), contributed by\n[@github-actions[bot]](https://github.com/github-actions[bot]).\n"
+	got := CreditsIn(entry)
+	if len(got) != 1 || got[0].Handle != "github-actions[bot]" || len(got[0].Cites) != 1 || got[0].Cites[0] != 9 {
+		t.Fatalf("a bot credit names its handle whole and pairs it with the paragraph's cite: %+v", got)
+	}
+}
+
 func TestACreditIsPairedWithWhatItsOwnParagraphCites(t *testing.T) {
 	entry := `_summary_
 
