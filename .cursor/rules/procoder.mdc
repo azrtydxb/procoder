@@ -100,10 +100,35 @@ until its own gap is closed.
   across `[release] files`, the changelog entry, a clean tree, the
   gate, and the suite. It prints the `git tag` command; it never tags.
 
+## Parallel work
+
+- Fan out when the work decomposes: independent units — research, separate
+  files, separate verification — run in parallel. Subagents where the host
+  has them, parallel sessions where it does not. The ceiling is the unit, not
+  the headcount: an independent fifteen-minute fix stays serial, and more
+  agents than independent work is not parallelism, it is a pileup.
+- Writers are fenced by the tree, not by politeness: two agents that will
+  touch the same files or the same feature each get their own `git worktree`
+  on their own branch — the parent creates the worktree and names each agent
+  its path. Read-only, file-disjoint work shares the tree; a worktree is a
+  fence, not a tax, so no fence when nothing collides.
+- Convergence is the chain, not a shortcut: each writer lands a mergeable
+  diff on its own branch — one branch, one writer — and the merges go back
+  through the normal way: the gate on every merge, the four passes over the
+  merged result, not a share of them. The worktree is scratch; the branch
+  is what outlives it. Subagents inherit every rule in this file the way a
+  session does: the fence and the gate apply to their work, and their
+  "done" carries the same five answers.
+
 ## Which command, right now
 
-Read down; take the first row that matches. The chain above is the detail;
-this is the way in.
+Read down; take the first row that matches — and run it. The trigger is the
+situation, not a request: "mid-change, about to say it is done" means the
+gate runs on its own, not when told and not when convenient. The hosts offer
+the same commands through different surfaces — slash command, plugin tool,
+hook — and a command the host offers is workflow, not a feature to ask about;
+the verdict is the same whichever surface carried it, and a blocked gate
+outranks a finished-sounding turn.
 
 | Where you are                                | Start here               |
 | -------------------------------------------- | ------------------------ |
@@ -201,4 +226,3 @@ text).
 Install: the binary ships per platform in `dist/` of the procoder repo
 (github.com/azrtydxb/procoder); put the one for your platform on PATH,
 or use the Claude Code plugin which wires everything automatically.
-

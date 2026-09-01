@@ -180,6 +180,43 @@ export const ProcoderPlugin = async ({ client, directory } = {}) => {
       if (reason)
         await log(decision === "unavailable" ? "warn" : "info", reason);
     },
+    // OpenCode and Kilo give a plugin no way to refuse a turn (that is
+    // Claude's `Stop` and pi's `agent_settled`), but both emit
+    // `session.idle` when the agent's turn ends and `session.compacted`
+    // when its context is compacted — the same two moments Claude's Stop
+    // and PreCompact hooks use. `hook stop` writes the handoff and reports
+    // a decision that was put to the user in prose but never recorded;
+    // an event hook cannot send that back into the live turn, so what the
+    // blocking hooks elsewhere block, this one records: the handoff
+    // survives to the next session and the reminder lands in the session
+    // log. The asymmetry is documented in docs/portability.md — the host
+    // decides what a turn end may stop, and this one stops nothing.
+    event: async ({ event }) => {
+      if (event?.type !== "session.idle" && event?.type !== "session.compacted")
+        return;
+      const payload = JSON.stringify({ cwd: directory ?? ROOT });
+      await new Promise((resolve) => {
+        const child = execFile(
+          "procoder",
+          ["hook", "stop"],
+          { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 },
+          (err, _stdout, stderr) => {
+            const note = String(stderr || "").trim();
+            if (note) void log("info", note);
+            else if (err)
+              void log(
+                "warn",
+                "procoder hook stop did not run: " + err.message,
+              );
+            resolve();
+          },
+        );
+        // The same EPIPE the gate gets: a binary that is not there must
+        // not take the session down with it.
+        child.stdin.on("error", () => {});
+        child.stdin.end(payload);
+      });
+    },
   };
 };
 
