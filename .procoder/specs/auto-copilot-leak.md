@@ -188,10 +188,10 @@ used when creating issues, carrying the `auto-copilot` label by default.
 ## Interfaces
 
 - `procoder copilot-leak [--since <duration>] [--quiet]`
-  - `--since`: how far back to look (default `24h`; accepts what
-    `time.ParseDuration` accepts, plus plain day values like `2d` —
-    the parser extends the standard one, so a `2d` value is NOT
-    portable to stock Go duration parsing).
+  - `--since`: how far back to look (default `24h`; accepts the
+    standard duration forms such as `6h`, plus plain day values like
+    `2d` — the parser extends the standard Go one, so a `2d` value
+    will not parse in stock Go code).
   - `--quiet`: do not prompt; just report findings count and exit 0.
   - Exit 0: no findings, or user declined, or --quiet.
   - Exit 2: stdin is a terminal and user declined (reporting exit, not an error).
