@@ -73,15 +73,15 @@ func TestRunNeverExceedsTheDeliveryBudget(t *testing.T) {
 	}
 	ctx := resp.HookSpecificOutput.AdditionalContext
 
-	if len(ctx) > maxContextBytes+200 {
-		t.Fatalf("payload is %d bytes, past the %d the host actually delivers — "+
+	if len(ctx) > maxContextBytes {
+		t.Fatalf("payload is %d bytes, past the %d budget the host actually delivers — "+
 			"everything after the first 2KB reaches the agent as a file path nothing makes it read",
 			len(ctx), maxContextBytes)
 	}
 	// The fixture is built to overflow. If nothing was dropped it stopped
 	// overflowing, and this test went back to proving nothing — fail loudly
 	// rather than pass quietly.
-	if !strings.Contains(ctx, "NOT shown") {
+	if !strings.Contains(ctx, "omitted") {
 		t.Fatalf("the fixture no longer overflows the budget, so this test no longer "+
 			"exercises fit — re-tune it:\n%s", ctx)
 	}

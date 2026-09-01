@@ -54,10 +54,10 @@ Tools compute results and hand them over; **nothing modifies code,
 files, or state behind the agent's back**. The write hook does not
 format your file — it hands the agent the formatted content to review
 and write, or, when that content is too large to deliver intact, the
-command that prints it. `templates`, `agents`, `spec template`, `todo add` all print
-content for the agent to write. The two exceptions are Procoder's own
-state (`todo close` flips a Status line; the index refreshes itself),
-never your code.
+command that prints it. `templates`, `agents`, `spec template`,
+`todo add` all print content for the agent to write. The two exceptions
+are Procoder's own state (`todo close` flips a Status line; the index
+refreshes itself), never your code.
 
 Why: an agent that experiences its tools as collaborators uses them; an
 agent that gets silently overridden routes around its harness. And every

@@ -123,10 +123,15 @@ func askPart(root string) string {
 // kilobytes and crowd every other finding out of the payload.
 func oneLine(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
+	// Runes, not bytes. Slicing a byte index through this repository's
+	// em-dashes and ellipses produced invalid UTF-8, which json.Marshal
+	// then replaced with U+FFFD — a question delivered as mojibake. Found
+	// in review; the test only exercised ASCII.
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
 
 // Run handles one PostToolUse event end to end. It never returns an error to
@@ -142,10 +147,17 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		return 0
 	}
 
-	var parts []string
-	add := func(part string) {
-		if part != "" {
-			parts = append(parts, part)
+	var parts []part
+	add := func(text string) {
+		if text != "" {
+			parts = append(parts, part{text: text})
+		}
+	}
+	// A secret in a file the agent just wrote is the one finding here that
+	// blocks, and the budget is not a reason to withhold it.
+	addKeep := func(text string) {
+		if text != "" {
+			parts = append(parts, part{text: text, keep: true})
 		}
 	}
 
@@ -161,7 +173,7 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		add(markdownPart(root, p.ToolInput.FilePath))
 	} else {
 		add(driftPart(root, p.ToolInput.FilePath))
-		add(secretsPart(root, p.ToolInput.FilePath))
+		addKeep(secretsPart(root, p.ToolInput.FilePath))
 		add(lintPart(root, p.ToolInput.FilePath))
 	}
 	add(askPart(root))
@@ -256,37 +268,74 @@ func lintPart(root, file string) string {
 	return "procoder [lint]: findings in the file you just wrote — investigate, judge, and fix what is real:\n" + strings.Join(b, "\n")
 }
 
+// part is one section of the message, and whether it must survive the
+// budget. Only the secret scan sets keep: it is the blocking domain here.
+type part struct {
+	text string
+	keep bool
+}
+
 // fit joins the parts the agent will actually receive, and says so when it
 // had to leave some out.
 //
 // Parts are added in the order they were built — which is deliberate and
-// documented at each call site — and the first one that does not fit ends
-// the message. Nothing is truncated mid-part: half a finding is a finding
-// whose meaning cannot be trusted, and half a formatted file is a file
-// somebody may write back.
+// documented at each call site — and one that does not fit is SKIPPED, not
+// used to end the message: a small finding after a large one is worth
+// keeping. That is why the notice says the omitted findings are not
+// necessarily the last ones. Saying "further" would have implied a tail,
+// and an agent reading that would draw exactly the wrong conclusion about
+// which finding it is missing.
+//
+// Nothing is truncated mid-part: half a finding is a finding whose meaning
+// cannot be trusted, and half a formatted file is a file somebody may write
+// back over the whole thing.
 //
 // The notice is the point. A hook that quietly delivered four findings out
 // of seven would be the same silent-green this tool exists to remove.
-func fit(parts []string) string {
+func fit(parts []part) string {
+	// The notice has to fit INSIDE the budget, not be appended past it.
+	// Appending it afterwards returned 2144 bytes against a 2000 budget,
+	// which put the explanation of the truncation in the part that gets
+	// truncated. Found in review.
+	const noticeReserve = 220
+
+	// A must-keep part is placed first whatever its position in the
+	// message, because the budget is not a reason to withhold a secret.
+	// Review computed the case: a 900-byte formatted body plus five
+	// doc-drift notes leaves 259 bytes, and a three-secret finding is 270.
 	var kept []string
 	used := 0
 	dropped := 0
-	for _, p := range parts {
-		// +2 for the blank line between parts.
-		if used > 0 && used+len(p)+2 > maxContextBytes {
-			dropped++
-			continue
+	seen := make([]bool, len(parts))
+
+	take := func(i int, limit int) bool {
+		cost := len(parts[i].text)
+		if used > 0 {
+			cost += 2 // the blank line between parts
 		}
-		if used == 0 && len(p) > maxContextBytes {
-			dropped++
-			continue
+		if used+cost > limit {
+			return false
 		}
-		kept = append(kept, p)
-		used += len(p) + 2
+		kept = append(kept, parts[i].text)
+		used += cost
+		seen[i] = true
+		return true
+	}
+
+	limit := maxContextBytes - noticeReserve
+	for i := range parts {
+		if parts[i].keep {
+			take(i, maxContextBytes)
+		}
+	}
+	for i := range parts {
+		if !seen[i] && !take(i, limit) {
+			dropped++
+		}
 	}
 	if dropped > 0 {
 		kept = append(kept, fmt.Sprintf(
-			"== %d further finding(s) NOT shown — the host delivers only the first %d bytes of a hook's output. Run `procoder check` to see all of them.",
+			"== %d finding(s) omitted — they did not fit what the host delivers (the first %d bytes of a hook's output), and they are not necessarily the last ones. Run `procoder check` to see all of them.",
 			dropped, maxContextBytes))
 	}
 	return strings.Join(kept, "\n\n")

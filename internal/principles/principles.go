@@ -234,7 +234,7 @@ func hookText(root string) string {
 	text, _ := Effective(root)
 	var b strings.Builder
 	b.WriteString(receiptNotice)
-	b.WriteString(strings.TrimRight(text, "\n"))
+	b.WriteString(strings.TrimRight(stripMarker(text), "\n"))
 	b.WriteString("\n\n" + status.Header + "\n")
 	for _, line := range status.Report(root) {
 		b.WriteString(line + "\n")
@@ -274,6 +274,29 @@ const endMarker = "== procoder principles end =="
 // and conclude it had the whole thing — a confident receipt for a delivery
 // that did not happen, which is the exact failure this is here to catch.
 // The marker is self-describing; the notice only has to say to look for it.
+// stripMarker removes the end marker from text the repository supplied.
+//
+// hookText writes an adopter's .procoder/PRINCIPLES.md verbatim, and that
+// file may legitimately quote the marker — pasted from procoder's own docs,
+// or from a document ABOUT procoder. A quoted marker inside the first 2KB
+// makes the receipt check return a confident pass on a truncated payload,
+// which is the one thing it exists to prevent. Found in review; the tests
+// only ever exercised the built-in default.
+func stripMarker(text string) string {
+	if !strings.Contains(text, endMarker) {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.TrimSpace(l) == endMarker {
+			continue
+		}
+		out = append(out, strings.ReplaceAll(l, endMarker, "[end marker removed]"))
+	}
+	return strings.Join(out, "\n")
+}
+
 const receiptNotice = "RECEIPT CHECK — read this first. This message ends with a line marking its\n" +
 	"end, and that line says so in plain words. If the last thing you can see is\n" +
 	"not that end marker, your host inlined only a preview and wrote the rest to a\n" +
@@ -382,6 +405,12 @@ func Run(root string, out func(string)) int {
 	} else {
 		out("== engineering principles (procoder default — override with " + File + ")")
 	}
-	out(strings.TrimRight(text, "\n"))
+	out(strings.TrimRight(stripMarker(text), "\n"))
+	// The recovery route gets a receipt too. The hook's notice sends a
+	// reader here when its own payload was truncated, and this output is
+	// the same ten-kilobyte document — so without a marker the reader has
+	// no way to tell whether the SECOND read arrived whole either.
+	out("")
+	out(endMarker)
 	return 0
 }

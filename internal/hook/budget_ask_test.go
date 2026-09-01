@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,9 +23,10 @@ import (
 // part too large to fit, fit drops it, and this fails on the missing q&a
 // section.
 func TestQuestionsSurviveTheBudgetAsOneLineEach(t *testing.T) {
-	if _, err := exec.LookPath("gofmt"); err != nil {
-		t.Skip("gofmt not installed")
-	}
+	// No gofmt skip on purpose. Whatever verdict format.Check reaches
+	// without it, the questions still have to survive the budget — and
+	// without this, a machine with no gofmt has nothing exercising Run
+	// against the budget at all.
 	root := t.TempDir()
 
 	// A CLEAN file, so the format part contributes nothing and the ask queue

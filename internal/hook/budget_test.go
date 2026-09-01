@@ -3,6 +3,7 @@ package hook
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"procoder/internal/format"
 )
@@ -12,7 +13,7 @@ import (
 // finding happened to be built last.
 func TestFitStopsAtTheDeliveryBudget(t *testing.T) {
 	big := strings.Repeat("x", maxContextBytes)
-	got := fit([]string{"first", big, "third"})
+	got := fit([]part{{text: "first"}, {text: big}, {text: "third"}})
 
 	if !strings.Contains(got, "first") {
 		t.Fatal("the first part was dropped")
@@ -20,10 +21,13 @@ func TestFitStopsAtTheDeliveryBudget(t *testing.T) {
 	if strings.Contains(got, big) {
 		t.Fatal("a part that did not fit was included anyway")
 	}
-	if len(got) > maxContextBytes+200 {
+	// No tolerance: the notice is reserved INSIDE the budget, so the budget
+	// is the budget. A +200 slack here is what let a 2144-byte payload pass
+	// against a 2000-byte constant.
+	if len(got) > maxContextBytes {
 		t.Fatalf("payload is %d bytes, past the %d budget", len(got), maxContextBytes)
 	}
-	if !strings.Contains(got, "NOT shown") {
+	if !strings.Contains(got, "omitted") {
 		t.Fatalf("findings were dropped and the output does not say so:\n%s", got)
 	}
 }
@@ -36,11 +40,53 @@ func TestFitNeverTruncatesAPart(t *testing.T) {
 	b := strings.Repeat("b", 500)
 	c := strings.Repeat("c", 500)
 	d := strings.Repeat("d", 500)
-	got := fit([]string{a, b, c, d})
-	for _, part := range []string{a, b, c, d} {
-		if strings.Contains(got, part[:50]) && !strings.Contains(got, part) {
+	got := fit([]part{{text: a}, {text: b}, {text: c}, {text: d}})
+	for _, p := range []string{a, b, c, d} {
+		if strings.Contains(got, p[:50]) && !strings.Contains(got, p) {
 			t.Fatal("a part appears in the output but not in full")
 		}
+	}
+	// The positive half. Without it this passes on an empty return, or on a
+	// return carrying nothing but the notice — a test that cannot fail.
+	for _, p := range []string{a, b, c} {
+		if !strings.Contains(got, p) {
+			t.Fatal("a part that fits was dropped")
+		}
+	}
+	if strings.Contains(got, d) {
+		t.Fatal("a part past the budget was kept")
+	}
+	if !strings.Contains(got, "omitted") {
+		t.Fatal("a part was dropped and the output does not say so")
+	}
+}
+
+// proved by: ordering the parts by consequence is one fix for the
+// starvation; a must-keep set is the other. Whichever is in use, a secret
+// must not be the finding the budget discards.
+func TestASecretSurvivesTheBudget(t *testing.T) {
+	filler := strings.Repeat("f", maxContextBytes-100)
+	secret := "== secrets: 3 finding(s) in the file you just wrote"
+	got := fit([]part{{text: filler}, {text: secret, keep: true}})
+
+	if !strings.Contains(got, secret) {
+		t.Fatalf("the secret finding was dropped to make room for a larger part:\n%s", got)
+	}
+	if len(got) > maxContextBytes {
+		t.Fatalf("keeping it pushed the payload to %d, past the %d budget", len(got), maxContextBytes)
+	}
+}
+
+// proved by: slicing a byte index through an em-dash returns invalid UTF-8,
+// which json.Marshal replaces with U+FFFD — the question reaches the agent
+// as mojibake. The ASCII-only case cannot catch it.
+func TestOneLineDoesNotSplitARune(t *testing.T) {
+	got := oneLine(strings.Repeat("é", 400), 160)
+	if !utf8.ValidString(got) {
+		t.Fatalf("invalid UTF-8: %q", got)
+	}
+	if n := len([]rune(got)); n != 160 {
+		t.Fatalf("truncated to %d runes, want 160", n)
 	}
 }
 
