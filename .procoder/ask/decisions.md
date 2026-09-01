@@ -469,3 +469,13 @@ preview showed.
   agent layer (AGENTS.md, per-host rule files) carries much of the same
   material, and the loss may be tolerable.
 - Do nothing — treat the preview as sufficient.
+
+**Decided: measure, then budget the delivery (first option).** PR #266
+measured both mechanisms — 5.2 KB and 7.3 KB arrive whole; 9.9 KB and
+10.7 KB are persisted with only the first 2 KB inlined, so 2 KB is the
+preview size, not the threshold — and restructured the delivery to fit:
+the PostToolUse payload is now budgeted to the preview size (a keep part
+competes under the reserved limit, and what cannot fit is named in the
+omission notice rather than silently lost), while the SessionStart
+payload is left whole and made checkable, with the receipt check pinned
+inside the inlined window.
