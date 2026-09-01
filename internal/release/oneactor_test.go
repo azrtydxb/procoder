@@ -15,6 +15,11 @@ func TestOneActorComparesBotSpellings(t *testing.T) {
 		{"app/github-actions", "app/github-actions", true},
 		{"Acroaticum", "acroaticum", true},
 		{"github-actions[bot]", "github-actions2", false},
+		// The stem a bot and a person can share is not an actor: the bot
+		// never compares equal to the person whose login is its stem.
+		{"github-actions[bot]", "github-actions", false},
+		{"app/github-actions", "github-actions", false},
+		{"github-actions", "app/github-actions", false},
 		{"", "github-actions[bot]", false},
 	}
 	for _, c := range cases {

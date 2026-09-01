@@ -105,16 +105,20 @@ func authorOf(root string, number int) (string, error) {
 // A bot appears differently on the surfaces that answer for it: the issues
 // endpoint answers `github-actions[bot]`, the author field the pr/issue view
 // answers `app/github-actions`. The credit is written one way and resolved
-// from the other, so the comparison takes the bot's name without its
-// wrapper rather than demanding a spelling only one endpoint produces.
+// from the other, so the comparison canonicalizes to the form the issues
+// endpoint speaks: `app/x` becomes `x[bot]`, and a plain login is left
+// what it is. Two spellings of one bot therefore compare equal — and a
+// bot never compares equal to a person who shares its stem, because the
+// stem alone is not an actor.
 func oneActor(a, b string) bool {
 	if strings.EqualFold(a, b) {
 		return true
 	}
 	norm := func(s string) string {
 		s = strings.ToLower(strings.TrimSpace(s))
-		s = strings.TrimPrefix(s, "app/")
-		s = strings.TrimSuffix(s, "[bot]")
+		if strings.HasPrefix(s, "app/") {
+			return strings.TrimPrefix(s, "app/") + "[bot]"
+		}
 		return s
 	}
 	na, nb := norm(a), norm(b)

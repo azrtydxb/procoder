@@ -5,24 +5,27 @@ import (
 	"testing"
 )
 
-// A credit belongs to the thing its own paragraph cites. A handle in one
-// paragraph and a number in another are unrelated, and pairing them would
-// invent a claim the entry never made.
-// proved by: gathered handles and numbers across the whole entry instead
-// of per paragraph — every contributor appears to have opened everything,
-// so no misattribution is detectable at all.
 // A bot credit is written exactly the way the documentation tells it to be
-// — `[@github-actions[bot]](https://github.com/github-actions[bot])` — and
+// — `[@github-actions[bot]](https://github.com/apps/github-actions)` — and
 // counts: the capture takes the whole `[bot]` suffix, not a login
 // truncated at the bracket.
+// proved by: stopped the capture at the first bracket — the bot's credit
+// parsed without its suffix and every bot contributor read as uncredited,
+// which this test's whole-handle assertion is there to catch.
 func TestABotCreditIsRecognisedWhole(t *testing.T) {
-	entry := "_summary_\n\n**Changed — pins moved.**\n([#9](https://github.com/azrtydxb/procoder/pull/9)), contributed by\n[@github-actions[bot]](https://github.com/github-actions[bot]).\n"
+	entry := "_summary_\n\n**Changed — pins moved.**\n([#9](https://github.com/azrtydxb/procoder/pull/9)), contributed by\n[@github-actions[bot]](https://github.com/apps/github-actions).\n"
 	got := CreditsIn(entry)
 	if len(got) != 1 || got[0].Handle != "github-actions[bot]" || len(got[0].Cites) != 1 || got[0].Cites[0] != 9 {
 		t.Fatalf("a bot credit names its handle whole and pairs it with the paragraph's cite: %+v", got)
 	}
 }
 
+// A credit belongs to the thing its own paragraph cites. A handle in one
+// paragraph and a number in another are unrelated, and pairing them would
+// invent a claim the entry never made.
+// proved by: gathered handles and numbers across the whole entry instead
+// of per paragraph — every contributor appears to have opened everything,
+// so no misattribution is detectable at all.
 func TestACreditIsPairedWithWhatItsOwnParagraphCites(t *testing.T) {
 	entry := `_summary_
 
