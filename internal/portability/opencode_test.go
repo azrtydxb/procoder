@@ -34,7 +34,6 @@ func TestOpenCodeTurnEndRunsHookStop(t *testing.T) {
 	}
 	root := repoRoot(t)
 	plugin := filepath.Join(root, ".opencode", "plugins", "procoder.mjs")
-
 	fixtureDir := t.TempDir()
 	fixture := piFixtureBin(t)
 	raw, err := os.ReadFile(fixture)
@@ -52,7 +51,11 @@ func TestOpenCodeTurnEndRunsHookStop(t *testing.T) {
 
 	cwd := t.TempDir()
 	driver := filepath.Join(fixtureDir, "driver.mjs")
-	src := "import plugin from '" + plugin + "';\n" +
+	// A bare absolute path is a valid ESM specifier on POSIX but not on
+	// Windows ("On Windows, absolute paths must be valid file:// URLs"),
+	// so the driver converts through node's own pathToFileURL.
+	src := "import { pathToFileURL } from 'node:url';\n" +
+		"const plugin = (await import(pathToFileURL(process.env.PROCODER_PLUGIN).href)).default;\n" +
 		"const hooks = await plugin({ client: null, directory: process.env.PROCODER_OCWD });\n" +
 		"await hooks.event({ event: { type: 'session.idle' } });\n" +
 		"await hooks.event({ event: { type: 'session.compacted' } });\n" +
@@ -65,6 +68,7 @@ func TestOpenCodeTurnEndRunsHookStop(t *testing.T) {
 	cmd := exec.Command(node, driver)
 	cmd.Env = append(os.Environ(),
 		"PROCODER_OCWD="+cwd,
+		"PROCODER_PLUGIN="+plugin,
 		"FIXTURE_LOG="+log,
 		"FIXTURE_STOP=block",
 	)
