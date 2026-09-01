@@ -120,6 +120,13 @@ func Secrets(root string, paths []string) []gitx.Finding {
 	return out
 }
 
+// fileExists reports whether p exists; gitleaks config discovery needs
+// only presence, and a directory named .gitleaks.toml is not a config.
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
 // scanOne runs gitleaks over one source path. src is handed to gitleaks
 // verbatim and workdir is where it runs from, so a relative src keeps the
 // report's paths — and therefore .gitleaksignore fingerprints — relative.
@@ -146,6 +153,17 @@ func scanOne(bin, workdir, src string) []gitx.Finding {
 	report := filepath.Join(dir, "report.json")
 	common := []string{"--report-format", "json", "--report-path", report,
 		"--no-banner", "--exit-code", "1"}
+	// gitleaks hard-codes the DEFAULT config for single-file sources: a
+	// repo .gitleaks.toml is only auto-found for directory scans, so a
+	// repository-scoped allowlist would silently stop applying the
+	// moment a scan names a single file. Point gitleaks at the repo's
+	// config whenever one exists, for both scan shapes.
+	for _, name := range []string{".gitleaks.toml", ".gitleaks.yml"} {
+		if cfg := filepath.Join(workdir, name); fileExists(cfg) {
+			common = append(common, "--config", cfg)
+			break
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), secretsTimeout)
 	cmd := exec.CommandContext(ctx, bin, append([]string{"dir", src}, common...)...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = workdir

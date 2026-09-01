@@ -54,8 +54,14 @@ type stopPayload struct {
 // every path, including the ones where nothing could be written.
 func Stop(stdin io.Reader, root string) int {
 	raw, _ := readAll(stdin) // tolerant: any JSON, or none at all
-	if root == "" {
-		root = rootFromPayload(raw)
+	// The payload's cwd is where the host's session runs. The root the
+	// caller computed is where the binary itself was started — for the
+	// hosts that spawn it (the plugins and the hooks) that is the server
+	// process, and can be anywhere. A payload that names a repository wins
+	// over the process root; the process root remains the fallback for a
+	// direct call with no payload.
+	if pr := payloadRoot(raw); pr != "" {
+		root = pr
 	}
 
 	old, _ := store.LoadHandoff(root) // absent is the first handoff, not an error
@@ -82,18 +88,17 @@ func Stop(stdin io.Reader, root string) int {
 // read it. The host feeds this back to the model.
 var Stderr io.Writer = os.Stderr
 
-// rootFromPayload falls back to the host's working directory, then the
-// process's, so a caller with no root still writes the note in the right
-// repository.
-func rootFromPayload(raw []byte) string {
+// payloadRoot answers "the payload named a repository" and nothing else, so
+// Stop can prefer the host's working directory over the binary's own cwd
+// while a payload that carries no cwd still falls through to the caller's
+// root — the caller (the hook entry) already carries the process-cwd
+// fallback, which is what a direct call with no payload gets.
+func payloadRoot(raw []byte) string {
 	var p stopPayload
 	if json.Unmarshal(raw, &p) == nil && p.Cwd != "" {
 		return tools.RepoRoot(p.Cwd)
 	}
-	if wd, err := os.Getwd(); err == nil {
-		return tools.RepoRoot(wd)
-	}
-	return "."
+	return ""
 }
 
 // handoff renders the note: a freshly computed facts block, then whatever
