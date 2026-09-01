@@ -45,9 +45,10 @@ func CreditsIn(entry string) []Credit {
 		var nums []int
 		for _, m := range citedNumber.FindAllStringSubmatch(para, -1) {
 			var n int
-			// The regex already promised digits, so a failure here means
-			// only that the number does not fit an int — skipping it keeps
-			// the credit honest rather than citing a wrapped value.
+			// The regex already promised digits, so the only parse failure is a
+			// range error: a value too large to name a PR or issue, and the
+			// value the scanner leaves behind is not one the entry cited.
+			// Skipping it keeps the credit honest.
 			if _, perr := fmt.Sscanf(m[1], "%d", &n); perr != nil {
 				continue
 			}
