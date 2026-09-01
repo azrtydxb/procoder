@@ -162,11 +162,20 @@ var captures = map[string]func(root string) string{
 // proved by: any change to what these commands print, anywhere in the
 // twenty-five packages the seam touches, fails this with a diff.
 //
-// The goldens for status, principles-hook and handoff were captured from
-// c4bb353 — the commit before internal/store existed — so they assert that
-// moving every read and write behind the store changed nothing. The config
-// golden is captured from the new code, because task 4 changed that output
-// on purpose; it guards against drift from here, not against the seam.
+// The goldens for status and handoff were captured from c4bb353 — the commit
+// before internal/store existed — so they assert that moving every read and
+// write behind the store changed nothing.
+//
+// config and principles-hook are NOT parity goldens, and each stopped being
+// one for a stated reason. config gained the repo identity line on purpose.
+// principles-hook gained the receipt check and end marker on purpose, once
+// the host was measured inlining only the first 2KB of a 10KB payload — the
+// output HAD to change, because the old one was arriving four fifths missing
+// with nothing saying so. Both guard drift from here rather than parity with
+// before.
+//
+// Regenerating either of the remaining two is how a parity assertion stops
+// asserting anything. Do not.
 func TestMigrationOutputUnchanged(t *testing.T) {
 	if *update {
 		t.Skip("-update writes goldens; run TestUpdateGoldens instead")
@@ -201,7 +210,8 @@ func TestCapturesAreDeterministic(t *testing.T) {
 }
 
 // TestUpdateGoldens rewrites the golden files from the CURRENT code. It runs
-// only under -update and is how the config golden was made; the other three
+// only under -update and is how the config and principles-hook goldens were
+// made; the other two
 // were captured from the pre-store binary and must not be regenerated
 // casually, because regenerating them is exactly how a parity assertion
 // stops asserting anything.
