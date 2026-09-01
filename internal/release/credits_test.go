@@ -109,3 +109,27 @@ func TestGitHubNotAnsweringBlocksRatherThanPasses(t *testing.T) {
 		t.Errorf("naming what it could not check: %q", got[0])
 	}
 }
+
+// A cited number too large to be an int is skipped, not misread: the
+// regex already promised digits, so the only parse failure is a range
+// error, and an ignored Sscanf would have left n at its zero value —
+// crediting a #0 that the entry never cited, or owing a credit for it.
+// proved by: appending the parsed value anyway — the credit then carries a
+// zero citation (or the owed list asks GitHub who opened #0).
+func TestACitedNumberThatDoesNotFitAnIntIsSkipped(t *testing.T) {
+	big := "999999999999999999999999999999999999999999"
+	entry := "_summary_\n\n**Fixed — a thing.**\n([#" + big + "](https://github.com/azrtydxb/procoder/pull/1)), contributed by\n[@somebody](https://github.com/somebody).\n"
+	got := CreditsIn(entry)
+	if len(got) != 1 || got[0].Handle != "somebody" || len(got[0].Cites) != 0 {
+		t.Fatalf("a citation too large to be a number is skipped, not reinterpreted: %+v", got)
+	}
+
+	called := map[int]bool{}
+	gaps := missingCreditsWith(entry,
+		func() ([]string, error) { return []string{"the-releaser"}, nil },
+		func(n int) (origin, error) { called[n] = true; return origin{login: "x"}, nil },
+	)
+	if called[0] || len(gaps) != 0 {
+		t.Fatalf("an unparseable number is not a credit nor an owed one (resolve asked for: %v, gaps: %v)", called, gaps)
+	}
+}
