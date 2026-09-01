@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-09-01 21:56 UTC. procoder reads this
+Written 2026-09-01 22:15 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -194,6 +194,13 @@ Answer: All six roadmap issues. Done: #194/#209/#211 in #227, #189 in #229, #192
 
 ## (no longer asked)
 
+Key: 6a10163993b1
+Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
+
+## (no longer asked)
+
 Key: 7fc6bb7f721b
 Question: How do the 34 command files reach pi?
 
@@ -234,9 +241,37 @@ Question: Does the decisions queue and its principles change ship in v3.1.1, or 
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
 
-## [decision] decisions.md
+## (no longer asked)
 
 Key: a7529f7e0b7d
+Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
+
+## (no longer asked)
+
+Key: aa8ea1f17c0c
+Question: Do the four large features stay open as a roadmap?
+
+Answer: keep open, but label them roadmap/large so they stop reading as queued work
+
+## (no longer asked)
+
+Key: b2c54f852d82
+Question: Remove the cached 3.1.0 plugin too, or keep it as the rollback?
+
+Answer: Keep 3.1.0. prune's active-plus-one-previous policy stands; the rollback is worth ~45 MB.
+
+## (no longer asked)
+
+Key: b55269facb93
+Question: Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
+
+Answer: yes — rescope and merge now, before anyone starts on a duplicate
+
+## [decision] decisions.md
+
+Key: b57d64a5792e
 Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
 
 `procoder principles --hook` emits 10,281 bytes. Claude Code persists hook
@@ -271,7 +306,7 @@ preview showed.
 - File the evidence as a task and leave it: the persisted file exists, the
   agent layer (AGENTS.md, per-host rule files) carries much of the same
   material, and the loss may be tolerable.
-- Do nothing — treat the preview as sufficient. (ask)
+- Do nothing — treat the preview as sufficient.
 
 **Decided: measure, then budget the delivery (first option).** PR #266
 measured both mechanisms — 5.2 KB and 7.3 KB arrive whole; 9.9 KB and
@@ -284,27 +319,6 @@ payload is left whole and made checkable, with the receipt check pinned
 inside the inlined window.
 
 Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
-
-## (no longer asked)
-
-Key: aa8ea1f17c0c
-Question: Do the four large features stay open as a roadmap?
-
-Answer: keep open, but label them roadmap/large so they stop reading as queued work
-
-## (no longer asked)
-
-Key: b2c54f852d82
-Question: Remove the cached 3.1.0 plugin too, or keep it as the rollback?
-
-Answer: Keep 3.1.0. prune's active-plus-one-previous policy stands; the rollback is worth ~45 MB.
-
-## (no longer asked)
-
-Key: b55269facb93
-Question: Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
-
-Answer: yes — rescope and merge now, before anyone starts on a duplicate
 
 ## (no longer asked)
 
