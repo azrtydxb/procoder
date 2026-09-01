@@ -433,3 +433,37 @@ things" are both off the list.
   questions are attached to specs that are not in this release, and the two
   findings already on record (the load-dependent store test, the `-F <file>`
   message gap) are the sharper things in the tree.
+
+## The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+`procoder principles --hook` emits 10,281 bytes. Claude Code persists hook
+output past roughly 2KB to a file and inlines only a preview, so the model
+receives the first 2KB and a path. Observed directly: this session's own
+SessionStart reminder reads "Output too large (9.9KB). Full output saved
+to... Preview (first 2KB)", and the principles text cut off mid-sentence in
+the mutation-testing paragraph. Nothing reads the persisted file, so the
+remaining ~8KB never enters context.
+
+The behaviour was documented independently by the kload plugin
+(github.com/nightlionsec/kload), which hit the same cap injecting knowledge
+files and named the shape: silent, order-dependent loss with a confident
+receipt on top.
+
+Two things are unknown and worth separating from what is measured. Whether
+the same cap applies to the `additionalContext` JSON field is untested —
+that is a different mechanism from stdout, and `internal/hook/hook.go` sets
+`maxInlineBytes = 48 * 1024`, twenty-four times the observed stdout cap,
+chosen against no measurement. And the exact threshold is not established;
+2KB is what one preview showed.
+
+- Measure both mechanisms, then fix the delivery: establish the real cap for
+  stdout and for `additionalContext`, and restructure the principles hook to
+  fit under it — a short always-delivered core plus a pointer for the rest,
+  rather than a document that is silently cut.
+- Measure both mechanisms and file what we find, deciding the fix separately:
+  the measurement is cheap and the fix is a design question about what the
+  principles must say in 2KB.
+- File the evidence as a task and leave it: the persisted file exists, the
+  agent layer (AGENTS.md, per-host rule files) carries much of the same
+  material, and the loss may be tolerable.
+- Do nothing — treat the preview as sufficient. (ask)
