@@ -128,3 +128,22 @@ func TestFormattedBodyHasABoundedShare(t *testing.T) {
 		t.Fatalf("no pointer to the full result:\n%s", msg)
 	}
 }
+
+// proved by: a keep part larger than the whole budget being dropped
+// silently — the must-keep finding is exactly the one that then vanishes,
+// and an omission nobody was told about is the silent green this tool
+// exists to remove.
+func TestAnOversizedKeepPartIsNamedInTheOmission(t *testing.T) {
+	oversized := strings.Repeat("s", maxContextBytes+100)
+	got := fit([]part{{text: "a small finding"}, {text: oversized, keep: true}})
+
+	if strings.Contains(got, oversized) {
+		t.Fatal("a part larger than the whole budget was delivered anyway")
+	}
+	if len(got) > maxContextBytes {
+		t.Fatalf("the payload is %d bytes against a %d budget", len(got), maxContextBytes)
+	}
+	if !strings.Contains(got, "1 finding(s) omitted") {
+		t.Fatalf("the oversized keep part vanished without being named:\n%s", got)
+	}
+}

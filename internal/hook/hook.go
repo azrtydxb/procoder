@@ -301,8 +301,13 @@ func fit(parts []part) string {
 
 	// A must-keep part is placed first whatever its position in the
 	// message, because the budget is not a reason to withhold a secret.
-	// Review computed the case: a 900-byte formatted body plus five
-	// doc-drift notes leaves 259 bytes, and a three-secret finding is 270.
+	// It competes under the same reserved limit as everything else:
+	// a keep part LARGER than the budget cannot be delivered whole and
+	// nothing truncates mid-part, so it is dropped and NAMED in the
+	// omission notice rather than silently lost — a silent drop is
+	// exactly the shape the notice exists to prevent. A part that
+	// merely does not fit beside larger ones is the ordinary case and
+	// is handled the same way.
 	var kept []string
 	used := 0
 	dropped := 0
@@ -325,7 +330,7 @@ func fit(parts []part) string {
 	limit := maxContextBytes - noticeReserve
 	for i := range parts {
 		if parts[i].keep {
-			take(i, maxContextBytes)
+			take(i, limit)
 		}
 	}
 	for i := range parts {

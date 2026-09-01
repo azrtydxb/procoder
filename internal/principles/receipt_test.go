@@ -23,6 +23,10 @@ func TestTheReceiptCheckArrivesInsideTheInlinedWindow(t *testing.T) {
 	if i < 0 {
 		t.Fatal("no receipt check in the payload")
 	}
+	if i >= observedInlineWindow {
+		t.Fatalf("the receipt check starts at byte %d, past the %d-byte inlined window — the check that explains the truncation would itself be truncated",
+			i, observedInlineWindow)
+	}
 	end := strings.Index(text, endMarker)
 	if end < 0 {
 		t.Fatal("the notice names a marker the payload does not contain")
