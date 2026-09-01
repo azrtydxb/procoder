@@ -12,7 +12,7 @@ license: Apache-2.0
 metadata:
   category: development
   author: pascal-watteel
-  contract: "2"
+  contract: "3"
 ---
 
 # Procoder
@@ -111,6 +111,11 @@ until its own gap is closed.
 - `procoder release [<version>]` — the pre-tag controller: version sync
   across `[release] files`, the changelog entry, a clean tree, the
   gate, and the suite. It prints the `git tag` command; it never tags.
+  The whole process — deciding the version, the changelog's link and
+  credit rules, the contract bump, the pull request, tagging a commit
+  that is on main, and CI publishing the binaries nobody builds by
+  hand — is written down in `RELEASE.md` at the repository root, and
+  the tag command above is only its step 7.
 
 ## Parallel work
 

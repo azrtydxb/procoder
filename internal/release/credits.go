@@ -20,7 +20,15 @@ type Credit struct {
 }
 
 var (
-	linkedHandle = regexp.MustCompile(`\[@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\]\(https://github\.com/`)
+	// A bot login is a login with a [bot] suffix, so the capture takes the
+	// whole thing: a credit written as the documentation tells it to be —
+	// `[@github-actions[bot]](https://github.com/apps/github-actions)` —
+	// has to count as a credit. The link target is not read; only the
+	// text between the brackets and the `(https://github.com/` is, so the
+	// target may be the profile or the app page. The first version stopped
+	// at the bracket and reported every bot contributor as uncredited no
+	// matter what was written.
+	linkedHandle = regexp.MustCompile(`\[@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\[bot\])?)\]\(https://github\.com/`)
 	citedNumber  = regexp.MustCompile(`\[#(\d+)\]\(https://github\.com/azrtydxb/procoder/(?:pull|issues)/\d+\)`)
 )
 
@@ -93,6 +101,30 @@ func authorOf(root string, number int) (string, error) {
 //
 // GitHub not answering is NOT a pass. It is reported as unverified and
 // blocks, like every other check here that could not run.
+// oneActor answers whether two handle spellings are the same GitHub actor.
+// A bot appears differently on the surfaces that answer for it: the issues
+// endpoint answers `github-actions[bot]`, the author field the pr/issue view
+// answers `app/github-actions`. The credit is written one way and resolved
+// from the other, so the comparison canonicalizes to the form the issues
+// endpoint speaks: `app/x` becomes `x[bot]`, and a plain login is left
+// what it is. Two spellings of one bot therefore compare equal — and a
+// bot never compares equal to a person who shares its stem, because the
+// stem alone is not an actor.
+func oneActor(a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if strings.HasPrefix(s, "app/") {
+			return strings.TrimPrefix(s, "app/") + "[bot]"
+		}
+		return s
+	}
+	na, nb := norm(a), norm(b)
+	return na != "" && na == nb
+}
+
 func VerifyCredits(root, entry string) []string {
 	credits := CreditsIn(entry)
 	if len(credits) == 0 {
@@ -120,7 +152,7 @@ func VerifyCredits(root, entry string) []string {
 				}
 				authors[n] = who
 			}
-			if strings.EqualFold(who, c.Handle) {
+			if oneActor(who, c.Handle) {
 				matched = true
 				break
 			}

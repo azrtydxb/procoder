@@ -16,7 +16,9 @@ what is written here is what a person downloading the binary reads.
     ([#123](https://github.com/azrtydxb/procoder/pull/123)) Then the
     prose: what was wrong, what it cost the person using it, what is
     true now. Reported by
-    [@handle](https://github.com/handle). Paragraphs, not bullet lists —
+    [@handle](https://github.com/handle) — a bot is credited as
+    [@github-actions[bot]](https://github.com/apps/github-actions), the
+    `[bot]` suffix and all. Paragraphs, not bullet lists —
     a changelog is read, not parsed.
 
 Rules that earn their place:
@@ -48,6 +50,62 @@ Rules that earn their place:
   against GitHub and refuses to call a release ready when a credited
   handle opened none of what its paragraph cites.
 -->
+
+## 3.5.0 — 2026-09-01
+
+_Every host now holds the same turn end, and the record-keeping outlives the reflow._
+
+**Fixed — the documented format pipeline no longer empties files.**
+([#254](https://github.com/azrtydxb/procoder/pull/254)) Three files were
+lost in one session to the workflow `procoder format <file> > <file>`:
+the command wrote the formatted content only in one of its four verdicts,
+and a file that was already clean — or out of scope, or unchecked —
+replaced itself with a one-line banner. Stdout of `procoder format` is now
+the file's formatted bytes in every verdict, the banner moved to stderr,
+and a redirection that would overwrite the file being checked is refused
+outright rather than raced.
+
+**Fixed — the repository's gitleaks allowlist applies to the gate's
+scans again.** ([#260](https://github.com/azrtydxb/procoder/issues/260),
+commit `b16a000`) Per-file scans used gitleaks' hard-coded default config,
+so a repository's `.gitleaks.toml` silently stopped applying the moment a
+scan named a single file — which is exactly how the gate scans changed
+files. Allowlists are read from the repository now.
+
+**Fixed — a recorded answer outlives a reflow, and the gate sees a
+commit's own heredoc.**
+([#257](https://github.com/azrtydxb/procoder/pull/257)) The question key
+hashed the text as written, so a formatter rewrapping a decision section
+changed the key and the queue re-asked a settled question. Keys now hash
+the words, not the line breaks, with a fallback that reads stores written
+by older versions. Alongside it, an acknowledgment line sitting in the
+command's own heredoc — `cat > msg.txt <<'EOF'` then `git commit -F
+msg.txt` — now reaches the documentation obligation it was written to
+clear, instead of being reported as "no commit message reached this
+check".
+
+**Added — pi is a first-class host.**
+([#250](https://github.com/azrtydxb/procoder/pull/250)) The install line
+in the README covers it: `pi install git:github.com/azrtydxb/procoder`.
+pi gets the commit gate at the tool boundary, the write hook's findings
+patched into the tool result that caused them, the turn-end handoff, the
+command set registered as `/procoder:*`, and the contract injected only
+when pi has not loaded it itself.
+
+**Added — the rules reach every host, and every host has a turn end.**
+([#259](https://github.com/azrtydxb/procoder/pull/259)) The parallel-
+work policy — fan out where the work decomposes, fence writers in worktrees
+when they touch the same feature, converge one branch one writer through
+the chain — is in `AGENTS.md` and in every rule copy, drift-blocked by
+the gate. OpenCode and Kilo run `hook stop` on `session.idle` and
+`session.compacted`: where the host cannot refuse a turn, it records —
+and the handoff now goes into the repository the session names, not where
+the server process happens to sit.
+
+**Changed — pinned tools moved.** golangci-lint 2.13.2,
+([#251](https://github.com/azrtydxb/procoder/pull/251)), semgrep
+1.175.0, ([#252](https://github.com/azrtydxb/procoder/pull/252)), ruff
+0.16.5, ([#253](https://github.com/azrtydxb/procoder/pull/253)), contributed by [@github-actions[bot]](https://github.com/apps/github-actions).
 
 ## 3.4.0 — 2026-08-27
 

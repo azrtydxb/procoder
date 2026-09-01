@@ -57,7 +57,7 @@ nav:
       - The ten domains: domains.md
       - When each check runs: lifecycle.md
       - Every agent: portability.md
-      - Changelog: changelog.md
+      - Changelog (the root CHANGELOG.md): changelog.md
   - Explanation:
       - The quality chain: quality-chain.md
       - Architecture: architecture.md
