@@ -42,13 +42,13 @@ and their only escape is to stop using the domain.
 
 ## In scope
 
-- A `[tools]` table selecting among tools Procoder ships definitions for.
-- Security severities, thresholds and timeouts as typed config.
-- The `RULES.md` pattern extended to the domains that hold rule sets.
-- `.procoder/templates/` for the nine templates that have no override,
+- [S-1] A `[tools]` table selecting among tools Procoder ships definitions for.
+- [S-2] Security severities, thresholds and timeouts as typed config.
+- [S-3] The `RULES.md` pattern extended to the domains that hold rule sets.
+- [S-4] `.procoder/templates/` for the nine templates that have no override,
   and a changelog template.
-- Every setting that WEAKENS a default reported in the gate output.
-- `procoder config` printing the effective configuration and its source.
+- [S-5] Every setting that WEAKENS a default reported in the gate output.
+- [S-6] `procoder config` printing the effective configuration and its source.
 
 ## Out of scope
 
@@ -119,32 +119,32 @@ and their only escape is to stop using the domain.
 
 ## Acceptance criteria
 
-- [ ] A repository setting `[tools] js = "biome"` is formatted by biome,
+- [x] [S-1] A repository setting `[tools] js = "biome"` is formatted by biome,
       and `procoder doctor` lists biome rather than prettier.
-- [ ] A `[tools]` entry naming a tool Procoder does not ship is reported
+- [x] [S-1] A `[tools]` entry naming a tool Procoder does not ship is reported
       by name, lists what is available, and the default is used — the file
       is still checked.
-- [ ] `[security] sast_blocks_at = "WARNING"` makes a WARNING finding
+- [x] [S-2] `[security] sast_blocks_at = "WARNING"` makes a WARNING finding
       block, where the default blocks only at ERROR.
-- [ ] Setting a severity Procoder does not recognise names it and uses the
+- [x] [S-2] Setting a severity Procoder does not recognise names it and uses the
       default, and the run still reports findings.
-- [ ] A repository lowering any default gets a line in the gate output
+- [x] [S-5] A repository lowering any default gets a line in the gate output
       naming the setting, its value, and the default it replaced.
-- [ ] Raising a default prints no such line — strengthening is not a
+- [x] [S-5] Raising a default prints no such line — strengthening is not a
       warning.
-- [ ] `.procoder/templates/story.md` replaces the embedded story template
+- [x] [S-4] `.procoder/templates/story.md` replaces the embedded story template
       in `backlog story` output, and a repository without the file gets
       the embedded one unchanged.
-- [ ] An empty template file blocks rather than falling back to the
+- [x] [S-4] An empty template file blocks rather than falling back to the
       default, asserted against the existing empty-documentation guard.
-- [ ] A `## checks` list in a domain's RULES.md replaces that domain's
+- [x] [S-3] A `## checks` list in a domain's RULES.md replaces that domain's
       baseline check set; a RULES.md with no such section keeps the
       default.
-- [ ] `procoder config` prints every effective setting with its source,
+- [x] [S-6] `procoder config` prints every effective setting with its source,
       and a repository with no config.toml shows every source as default.
-- [ ] A config.toml that cannot be parsed reports the failure, blocks, and
+- [x] [S-6] A config.toml that cannot be parsed reports the failure, blocks, and
       does not silently run on defaults.
-- [ ] A repository upgrading with no config changes produces byte-identical
+- [x] [S-6] A repository upgrading with no config changes produces byte-identical
       gate output to the previous version, asserted on a fixture.
 
 ## Open questions

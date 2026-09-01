@@ -28,19 +28,19 @@ already does well everywhere else.
 
 ## In scope
 
-- `procoder test --name <pattern>` — narrow the run to matching tests.
+- [S-1] `procoder test --name <pattern>` — narrow the run to matching tests.
   Per ecosystem: Go `-run <pattern>`, pytest `-k <pattern>`, cargo
   `test <pattern>`, gradle `--tests <pattern>`, maven
   `-Dtest=<pattern>`, and the JS test script with the pattern appended
   after `--` (jest and vitest differ on `-t` semantics, so the pattern
   is passed through unchanged and the output says filtering is
   delegated to the runner).
-- Any ecosystem whose runner cannot express filtering reports NOT
+- [S-2] Any ecosystem whose runner cannot express filtering reports NOT
   filtered — named in the output, never silently running the whole
   suite while wearing a filtered label.
-- `--name` composes with the existing `[paths...]` narrowing and with
+- [S-3] `--name` composes with the existing `[paths...]` narrowing and with
   `--coverage`; both keep their current meaning.
-- `procoder run` — detect and PRINT the launch command(s) for this
+- [S-4] `procoder run` — detect and PRINT the launch command(s) for this
   repository, each with the evidence that declared it (the file and the
   line number), ranked most-specific first. Detection sources:
   package.json `scripts` (dev, start, serve — in that order), Makefile
@@ -49,15 +49,15 @@ already does well everywhere else.
   (`cargo run`), Python (manage.py → `python manage.py runserver`,
   `__main__.py`, pyproject `[project.scripts]`), docker-compose.yml
   (`docker compose up`), Procfile.
-- `procoder run --exec` — execute the command, but only when exactly
+- [S-5] `procoder run --exec` — execute the command, but only when exactly
   one candidate was found and it is not a detected long-running server.
   120s timeout with the hung-tool message. For CLIs, scripts, and
   one-shot commands.
-- The long-running heuristic: a command naming a known server verb
+- [S-6] The long-running heuristic: a command naming a known server verb
   (serve, runserver, dev, start, up, watch) refuses `--exec`, prints
   the command, and tells the agent to run it in its own background
   shell where log capture belongs.
-- A repository with no launch candidate says so plainly and exits 0 — a
+- [S-7] A repository with no launch candidate says so plainly and exits 0 — a
   library has nothing to run, and that is not a failure.
 
 ## Out of scope
@@ -174,30 +174,36 @@ bool, out func(string)) int`.
 
 ## Acceptance criteria
 
-- [ ] `procoder test --name <pattern>` on a Go fixture with two test
+- [x] [S-1] `procoder test --name <pattern>` on a Go fixture with two test
       functions runs only the matching one, verified by the reported
-      counts, and exits 0.
-- [ ] On a fixture whose ecosystem cannot express filtering, the same
+      counts, and exits 0 — `TestGoNameRunsOnlyTheMatchingTest` in
+      `internal/testrun`.
+- [x] [S-2] On a fixture whose ecosystem cannot express filtering, the same
       command reports "NOT filtered" for that ecosystem while the run
-      itself still reports its real verdict.
-- [ ] The JS path appends the pattern after `--` and the output states
-      that filtering is delegated to the runner, pinned by a unit test
+      itself still reports its real verdict — `TestUnfilterableRunnerSaysNotFiltered`.
+- [x] [S-1] [S-3] The JS path appends the pattern after `--` and the output states
+      that filtering is delegated to the runner, pinned by `TestCargoJSGradleMavenFilterArgs`
       over the constructed argv.
-- [ ] `--name` combined with `[paths...]` and `--coverage` in one
+- [x] [S-3] `--name` combined with `[paths...]` and `--coverage` in one
       invocation produces both the narrowed package list and a coverage
-      number, pinned by a test over the constructed argv per ecosystem.
-- [ ] `procoder run` on a fixture with package.json `dev` and `start`
+      number, pinned by `TestGoArgsCarryFilterPathsAndCoverage` per
+      ecosystem in `internal/testrun`.
+- [x] [S-4] `procoder run` on a fixture with package.json `dev` and `start`
       plus a Makefile `run` target prints all three candidates, each
-      with `source:line` evidence, most-specific first.
-- [ ] `procoder run` in a repository with no launch declaration prints
-      the no-candidates line and exits 0.
-- [ ] `procoder run --exec` with two or more candidates refuses and
+      with `source:line` evidence, most-specific first —
+      `TestDetectsPackageJSONScriptsWithEvidence` and
+      `TestRankingIsMostSpecificFirst` in `internal/runcmd`.
+- [x] [S-7] `procoder run` in a repository with no launch declaration prints
+      the no-candidates line and exits 0 — `TestNoCandidatesSaysSoAndExitsZero`.
+- [x] [S-4] [S-5] `procoder run --exec` with two or more candidates refuses and
       exits 2; with exactly one non-server candidate it executes the
-      command and exits with 0 on success, 1 on failure.
-- [ ] `procoder run --exec` on a single candidate naming a server verb
+      command and exits with 0 on success, 1 on failure —
+      `TestExecRefusesSeveralCandidates` in `internal/runcmd`.
+- [x] [S-5] [S-6] `procoder run --exec` on a single candidate naming a server verb
       (`npm run dev`) refuses, exits 2, and prints the command with the
-      instruction to run it in the agent's own background shell.
-- [ ] Every path in both commands' output uses forward slashes, pinned
+      instruction to run it in the agent's own background shell —
+      `TestExecRefusesALongRunningCandidate` in `internal/runcmd`.
+- [x] [S-1] Every path in both commands' output uses forward slashes, pinned
       by a test that rejects a backslash anywhere in the rendered
       output.
 - [ ] Usage lists `run`; docs.Commands, the docs site, commands/run.md

@@ -27,7 +27,7 @@ invalidate a document?" at the moment it can still be answered.
 
 ## In scope
 
-- A change-driven documentation obligation, computed from the diff and
+- [S-1] A change-driven documentation obligation, computed from the diff and
   the index, universal to any repository:
   - the changed files include a public-surface change (an exported
     symbol added, removed, or renamed per the index; a CLI subcommand
@@ -35,22 +35,22 @@ invalidate a document?" at the moment it can still be answered.
     removed), OR a documentation file names one of the changed files;
   - AND no documentation file changed in the same diff;
   - THEN the gate raises a documentation obligation naming the trigger.
-- `[docs] policy = "block" | "report"` in config.toml (D-OVERRIDE,
+- [S-2] `[docs] policy = "block" | "report"` in config.toml (D-OVERRIDE,
   default report — procoder never blocks a repository by surprise);
   this repository opts into block.
-- The obligation clears two ways, both explicit: change a documentation
+- [S-3] The obligation clears two ways, both explicit: change a documentation
   file, or record the decision — a `docs: none — <reason>` line in the
   commit message, or `procoder docs --ack "<reason>"` which prints that
   line for the agent to use. Silence never clears it.
-- The command-coverage check is replaced by universal public-surface
+- [S-4] The command-coverage check is replaced by universal public-surface
   coverage: the repository's own exported surface (from the index's
   entrypoints and exported symbols, capped and ranked) that no
   documentation file mentions at all, reported not blocking, with the
   identity gate and the hardcoded command list deleted.
-- The documentation corpus grows to include `AGENTS.md` and root-level
+- [S-5] The documentation corpus grows to include `AGENTS.md` and root-level
   Markdown files — what every non-Claude host reads and the current
   corpus ignores.
-- The docs backfill this rot created: AGENTS.md (19 commands absent),
+- [S-6] The docs backfill this rot created: AGENTS.md (19 commands absent),
   docs/configuration.md (four config keys absent), docs/domains.md (no
   testing domain; bench and deps unplaced), docs/workflow.md (no
   backlog, sprint, test, or release), docs/index.md, README.md, and the
@@ -137,31 +137,31 @@ invalidate a document?" at the moment it can still be answered.
 
 ## Acceptance criteria
 
-- [ ] In a fixture repository with no procoder identity, renaming an
+- [x] [S-1] In a fixture repository with no procoder identity, renaming an
       exported symbol with no documentation change raises the
       obligation naming the symbol; the same change with any doc edited
       raises nothing.
-- [ ] A change to a file that a documentation page names, with no doc
+- [x] [S-1] A change to a file that a documentation page names, with no doc
       edited, raises the obligation naming the page.
-- [ ] An internal change touching neither public surface nor
+- [x] [S-1] An internal change touching neither public surface nor
       doc-mentioned files raises nothing.
-- [ ] The block policy makes the obligation block the gate; the default
+- [x] [S-2] The block policy makes the obligation block the gate; the default
       report leaves the gate's verdict unchanged — both verified by
       test.
-- [ ] A `docs: none — internal refactor` line in the commit message
+- [x] [S-3] A `docs: none — internal refactor` line in the commit message
       clears the obligation; an empty reason does not.
-- [ ] The public-surface coverage check runs in a fixture repository
+- [x] [S-4] The public-surface coverage check runs in a fixture repository
       whose go.mod names another module, and reports exported surface
       that no document mentions.
-- [ ] AGENTS.md and root-level Markdown are part of the documentation
+- [x] [S-5] AGENTS.md and root-level Markdown are part of the documentation
       corpus — verified by a test where the only mention of a symbol
       lives in AGENTS.md.
-- [ ] Every command shipped in 0.29.0 appears in AGENTS.md,
+- [x] [S-6] Every command shipped in 0.29.0 appears in AGENTS.md,
       docs/configuration.md carries all config keys the binary reads,
       and docs/domains.md, workflow.md, index.md, README.md, and the
       mkdocs navigation describe the backlog, test, adr, deps, bench,
       and release capabilities.
-- [ ] A repository with no index gets the file-mention trigger and an
+- [x] [S-1] [S-4] A repository with no index gets the file-mention trigger and an
       explicit NOT-computed line for public surface.
 
 ## Open questions

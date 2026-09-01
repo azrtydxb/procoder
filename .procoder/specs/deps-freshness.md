@@ -18,7 +18,7 @@ would shell out ad hoc, differently every time.
 
 ## In scope
 
-- `procoder deps` — the freshness report, per ecosystem, native tools
+- [S-1] `procoder deps` — the freshness report, per ecosystem, native tools
   only:
   - Go: `go list -u -m all` — module, current, available.
   - JS: `npm outdated --json` (via the lockfile's manager where it
@@ -31,12 +31,12 @@ would shell out ad hoc, differently every time.
     reason.
     Counts summarized (N modules behind, M majors); report-only, exit 0
     with findings, 1 only when an ecosystem's tool errored.
-- Licenses, honest scope: Go via `go-licenses report` when installed
+- [S-2] Licenses, honest scope: Go via `go-licenses report` when installed
   (recommended by doctor for Go repos with dependencies but not
   required); everything else answers "licenses NOT checked — no
   canonical no-install tool for this ecosystem". Never a fake
   all-clear.
-- Findings capped per ecosystem at 30 with an "…N more" line.
+- [S-3] Findings capped per ecosystem at 30 with an "…N more" line.
 
 ## Out of scope
 
@@ -87,18 +87,20 @@ would shell out ad hoc, differently every time.
 
 ## Acceptance criteria
 
-- [ ] On procoder's own repo, `procoder deps` prints a Go section with
+- [x] [S-1] [S-2] On procoder's own repo, `procoder deps` prints a Go section with
       real freshness rows (or an explicit up-to-date line) and a
       licenses line that is either a go-licenses report or an honest
       NOT-checked with the install hint.
-- [ ] On a fixture npm project with a pinned old dependency, the JS
+- [x] [S-1] On a fixture npm project with a pinned old dependency, the JS
       section names it with current and latest versions.
-- [ ] A repo with no manifests answers with the no-manifests line and
+- [x] [S-1] A repo with no manifests answers with the no-manifests line and
       exit 0.
-- [ ] A missing optional tool (cargo-outdated) yields NOT checked
+- [x] [S-1] A missing optional tool (cargo-outdated) yields NOT checked
       naming the tool — verified by test with a stub PATH.
-- [ ] Parse tests cover npm outdated JSON and go list -u -m output
+- [x] [S-1] Parse tests cover npm outdated JSON and go list -u -m output
       shapes, including the everything-current case.
+- [x] [S-3] An ecosystem with more findings than the cap prints 30 rows and
+      a “…N more” line — `TestEmitCapsAtThirty` in `internal/deps`.
 
 ## Open questions
 

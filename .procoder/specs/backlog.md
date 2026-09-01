@@ -27,25 +27,25 @@ external tools procoder cannot gate.
 
 ## In scope
 
-- A backlog domain under `.procoder/backlog/` with three levels:
+- [S-1] A backlog domain under `.procoder/backlog/` with three levels:
   **milestone → epic → story**. The story is the execution unit of
   spec-based work and carries description, acceptance criteria, and
   evidence — the same rigor as a todo task.
-- The existing **todo domain stays untouched**: it remains the standalone
+- [S-2] The existing **todo domain stays untouched**: it remains the standalone
   list for tasks NOT related to spec-based development. Nothing about
   `procoder todo` changes.
-- `procoder backlog` subcommands: `milestone <title>`,
+- [S-3] `procoder backlog` subcommands: `milestone <title>`,
   `epic <title> [--milestone <id>]`, `story <title> --epic <id>`,
   `seed <spec> [--milestone <id>]`, `list`, `board`,
   `close <story|epic|milestone> <id>`.
-- `procoder sprint` subcommands: `open <goal>`, `pull <story-id>...`,
+- [S-4] `procoder sprint` subcommands: `open <goal>`, `pull <story-id>...`,
   `carry <story-id> <reason>`, `status`, `close`.
-- **Spec seeding**: `backlog seed <spec>` decomposes a COMPLETE spec into
+- [S-5] **Spec seeding**: `backlog seed <spec>` decomposes a COMPLETE spec into
   one epic plus one story per acceptance criterion, printed for the agent
   to review and write (P-CONTROL). The epic records the source spec and a
   content fingerprint; `board` flags the epic when the spec has changed
   since seeding (drift), and when the spec file is missing.
-- **Refusing controllers** (the lean/agile discipline, encoded):
+- [S-6] **Refusing controllers** (the lean/agile discipline, encoded):
   - Story close refuses until description is real, every acceptance
     criterion is checked, evidence is recorded, and the gate is clean —
     full rigor, identical in spirit to todo close.
@@ -57,11 +57,11 @@ external tools procoder cannot gate.
     explicitly carried back to the backlog with a reason — unfinished
     work is visible, never silent. The close writes a summary (committed,
     done, carried counts) into the sprint file.
-- Scope-boxed sprints: a sprint is a goal plus the stories pulled into
+- [S-7] Scope-boxed sprints: a sprint is a goal plus the stories pulled into
   it, opened and closed explicitly. `Created:` dates are recorded for
   humans; no calendar enforcement.
-- No estimation: sprint reports count stories, never points.
-- Documentation, usage text, skill files (`commands/backlog.md`,
+- [S-8] No estimation: sprint reports count stories, never points.
+- [S-9] Documentation, usage text, skill files (`commands/backlog.md`,
   `commands/sprint.md` + OpenCode twins), and tests, per the repo's
   rot guards (docs.Commands, usage pin test, twin parity test).
 
@@ -214,36 +214,39 @@ external tools procoder cannot gate.
 
 ## Acceptance criteria
 
-- [ ] `procoder backlog seed <complete-spec>` prints one epic file and
+- [x] [S-5] `procoder backlog seed <complete-spec>` prints one epic file and
       one story file per acceptance criterion, each with its target
       path; on an incomplete spec it refuses and prints the gaps.
-- [ ] `procoder backlog board` renders milestone → epic → story with
+- [x] [S-3] [S-5] `procoder backlog board` renders milestone → epic → story with
       statuses, shows an epic's spec-drift flag after the source spec
       file changes, and lists a story with a deleted epic under ORPHANS.
-- [ ] `procoder backlog close story <id>` refuses with a list naming
+- [x] [S-1] [S-6] `procoder backlog close story <id>` refuses with a list naming
       each gap (empty description, placeholder criteria, unchecked
       boxes, empty evidence, dirty gate) and closes only when all pass —
       verified by a test that walks a story from refused to closed.
-- [ ] `procoder backlog close epic <id>` refuses while any story
+- [x] [S-6] `procoder backlog close epic <id>` refuses while any story
       referencing it is open and closes when all are done; milestone
       close does the same over its epics.
-- [ ] `procoder sprint open` refuses while another sprint is active;
+- [x] [S-6] [S-7] `procoder sprint open` refuses while another sprint is active;
       exactly one sprint can be active, verified by test.
-- [ ] `procoder sprint pull` sets `Sprint:` in the story file; pulling a
+- [x] [S-4] `procoder sprint pull` sets `Sprint:` in the story file; pulling a
       done, missing, or already-pulled story refuses that story with a
       reason and exit 1 while other arguments still process.
-- [ ] `procoder sprint close` refuses while a committed story is
+- [x] [S-4] [S-6] `procoder sprint close` refuses while a committed story is
       neither done nor carried; after `sprint carry <id> <reason>` the
       story is back in the backlog carrying a `Carried:` line, and close
       succeeds writing committed/done/carried counts into `## Result`.
-- [ ] The todo domain's behaviour is unchanged (its tests pass
+- [x] [S-2] The todo domain's behaviour is unchanged (its tests pass
       untouched), and todo remains documented as the standalone list for
       non-spec work.
-- [ ] Usage text lists `backlog` and `sprint`; `docs.Commands`, the docs
+- [x] [S-9] Usage text lists `backlog` and `sprint`; `docs.Commands`, the docs
       site, `commands/backlog.md`, `commands/sprint.md`, and their
       OpenCode twins exist — the usage-pin, CommandCoverage, and twin
       parity tests all pass.
-- [ ] `go test ./...` passes on a tree where every new controller path
+- [x] [S-8] `TestSprintStatusCountsDoneAndCarried` in `internal/backlog` asserts
+      the status report counts stories ("1 of 2 stories done", "1 carried
+      back") — a report that ever carried points would fail it.
+- [x] [S-6] `go test ./...` passes on a tree where every new controller path
       (refuse and succeed) has at least one test.
 
 ## Open questions

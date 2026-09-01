@@ -43,16 +43,16 @@ the only thing standing between a red suite and a push is remembering.
 
 ## In scope
 
-- The asked-for checks run at the commit gate: SAST, dependency
+- [S-1] The asked-for checks run at the commit gate: SAST, dependency
   vulnerabilities, complexity, debt rot, environment drift, agents drift,
   and the test suite.
-- Each check runs to completion. Slowness is answered by giving a check
+- [S-2] Each check runs to completion. Slowness is answered by giving a check
   less to do, never by cutting it off partway.
-- Checks are scoped to the change where the tool allows it, and say so
+- [S-3] Checks are scoped to the change where the tool allows it, and say so
   where it does not.
-- `procoder status` names any check the gate deferred, so nobody reads a
+- [S-4] `procoder status` names any check the gate deferred, so nobody reads a
   green gate as coverage it did not have.
-- CI runs the whole-tree pass: `maintain`, `debt` and `deps` over the
+- [S-5] CI runs the whole-tree pass: `maintain`, `debt` and `deps` over the
   whole repository, alongside the `security --deep` and `docs --external`
   it already runs. The gate answers about the change; CI answers about
   the tree.
@@ -118,32 +118,32 @@ the only thing standing between a red suite and a push is remembering.
 
 ## Acceptance criteria
 
-- [ ] A commit touching a file with a SAST finding is blocked by the gate
+- [x] [S-1] A commit touching a file with a SAST finding is blocked by the gate
       at the configured severity, where previously only CI saw it.
-- [ ] SAST at the gate is given the changed files, not the whole tree,
+- [x] [S-1] [S-3] SAST at the gate is given the changed files, not the whole tree,
       asserted by a fixture where an untouched file carries a finding and
       the commit is not blocked by it.
-- [ ] A dependency manifest carrying a known vulnerability blocks the
+- [x] [S-1] A dependency manifest carrying a known vulnerability blocks the
       commit that changes it.
-- [ ] A commit adding a function past the complexity limit is blocked.
-- [ ] A debt marker with no revisit condition is reported at the gate.
-- [ ] Rule files that have drifted from AGENTS.md block the gate, making
+- [x] [S-1] A commit adding a function past the complexity limit is blocked.
+- [x] [S-1] A debt marker with no revisit condition is reported at the gate.
+- [x] [S-1] Rule files that have drifted from AGENTS.md block the gate, making
       the sentence already in docs/commands.md true.
-- [ ] A failing test suite blocks the commit where the repository set
+- [x] [S-1] A failing test suite blocks the commit where the repository set
       the test policy to block, and reports without blocking otherwise.
-- [ ] A check that is slow still completes and still reports its findings,
+- [x] [S-2] A check that is slow still completes and still reports its findings,
       asserted against a deliberately slow stub — the gate waits rather
       than reporting a verdict it did not reach.
-- [ ] The same commit produces the same findings on a fast and a slow
+- [x] [S-2] The same commit produces the same findings on a fast and a slow
       run, asserted by running the gate twice against stubs of different
       speeds and comparing the output.
-- [ ] `procoder status` names every check the gate deferred, and says
+- [x] [S-4] `procoder status` names every check the gate deferred, and says
       nothing when none were.
-- [ ] A repository with no test setup, no manifests and no rule files
+- [x] [S-1] A repository with no test setup, no manifests and no rule files
       commits without any new blocking finding.
-- [ ] CI runs `maintain`, `debt` and `deps` over the whole tree and fails
+- [x] [S-5] CI runs `maintain`, `debt` and `deps` over the whole tree and fails
       the job on a blocking finding from any of them.
-- [ ] A debt marker with no revisit condition, in a file the commit did
+- [x] [S-3] [S-5] A debt marker with no revisit condition, in a file the commit did
       not touch, is caught by CI and not by the gate — asserted so the two
       tiers cannot silently collapse into one.
 

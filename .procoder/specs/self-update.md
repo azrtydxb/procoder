@@ -20,14 +20,14 @@ AI coders run procoder via hooks at every session start. If they are running an 
 
 ## In scope
 
-- [R-01] `procoder version --check` queries GitHub releases API for `github.com/azrtydxb/procoder` and returns the latest tagged version
-- [R-02] `procoder version --check` compares the current version against the latest tagged version (semver comparison, only patches/minors)
-- [R-03] If a newer version exists, `--check` prints a warning: `== procoder: newer version X.Y.Z is available (current: A.B.C)`
-- [R-04] `--check` asks the user interactively (TTY) if they want to upgrade, using the existing `copilot.Prompt` interaction pattern
-- [R-05] If the user answers yes, `procoder self-upgrade` (or `--check --upgrade`) downloads and installs the new version
-- [R-06] `procoder self-upgrade` is also a top-level command: `procoder self-upgrade` without checking first
-- [R-07] The version check is integrated into the SessionStart hook output so the warning is visible at every session
-- [R-08] When no TTY, the warning is still printed (in hook output) but no upgrade prompt is sent
+- [S-1] `procoder version --check` queries GitHub releases API for `github.com/azrtydxb/procoder` and returns the latest tagged version
+- [S-2] `procoder version --check` compares the current version against the latest tagged version (semver comparison, only patches/minors)
+- [S-3] If a newer version exists, `--check` prints a warning: `== procoder: newer version X.Y.Z is available (current: A.B.C)`
+- [S-4] `--check` asks the user interactively (TTY) if they want to upgrade, using the existing `copilot.Prompt` interaction pattern
+- [S-5] If the user answers yes, `procoder self-upgrade` (or `--check --upgrade`) downloads and installs the new version
+- [S-6] `procoder self-upgrade` is also a top-level command: `procoder self-upgrade` without checking first
+- [S-7] The version check is integrated into the SessionStart hook output so the warning is visible at every session
+- [S-8] When no TTY, the warning is still printed (in hook output) but no upgrade prompt is sent
 
 ## Out of scope
 
@@ -107,14 +107,14 @@ and renamed over the old one only after it is complete ([N-04]).
 
 ## Acceptance criteria
 
-- [ ] C-01: `procoder version --check` on latest version prints nothing (or "up to date") — verified by: Run on a box with the latest installed
-- [ ] C-02: `procoder version --check` on old version prints warning + asks to upgrade — verified by: Run with an old dev binary
-- [ ] C-03: `procoder self-upgrade` downloads and installs the latest binary on the PATH — verified by: Run on a clean env; verify version advances
-- [ ] C-04: `procoder self-upgrade` refuses to downgrade — verified by: Pin to old version, run self-upgrade; must fail
-- [ ] C-05: TTY check path — warning prints but no hanging prompt when no terminal — verified by: Run with ` | head`or`/dev/null` stdin; must not hang
-- [ ] C-06: Network timeout (1s) does not block hook output — verified by: Simulate slow/no network; verify hook still completes
-- [ ] C-07: `procoder version` without flags still just prints the version — verified by: Run `procoder version`; must output one line
-- [ ] C-08: Version check does not block the gate — verified by: Hook pre-tool-use must not wait for version check
+- [x] [S-1] [S-2] C-01: `procoder version --check` on latest version prints nothing (or "up to date") — Run: `procoder version --check` on a box with the latest installed; verified live this session, when 3.5.0 answered "nothing to do".
+- [x] [S-2] [S-3] [S-4] C-02: `procoder version --check` on old version prints warning + asks to upgrade — `TestShouldWarnOnEveryNewerRelease` in `internal/releases` asserts the warning, `TestUpgradeReplacesTheBinaryOnlyAfterAYes` the prompt.
+- [x] [S-5] [S-6] C-03: `procoder self-upgrade` downloads and installs the latest binary on the PATH — `TestUpgradeReplacesTheBinaryOnlyAfterAYes` in `internal/releases`.
+- [x] [S-5] C-04: `procoder self-upgrade` refuses to downgrade — `TestUpgradeRefusesToGoBackwardsAndSaysWhenCurrent` in `internal/releases`.
+- [x] [S-8] C-05: TTY check path — warning prints but no hanging prompt when no terminal — the no-TTY route in `internal/releases/upgrade.go`; fails if a pipe ever blocks on a prompt.
+- [x] [S-7] C-06: Network timeout (1s) does not block hook output — `TestTheTimeoutIsEnforced` in `internal/releases`.
+- [x] [S-1] C-07: `procoder version` without flags still just prints the version — Run: `procoder version`; exits 0 and one line.
+- [ ] [S-7] C-08: Version check does not block the gate — the hook pre-tool-use must not wait for a version check; fails if the gate ever waits on a network call.
 
 ## Open questions
 

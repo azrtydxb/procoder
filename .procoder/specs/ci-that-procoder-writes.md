@@ -46,24 +46,24 @@ those two in step.
 
 ## In scope
 
-- `procoder ci --emit` prints a complete workflow for the repository it
+- [S-1] `procoder ci --emit` prints a complete workflow for the repository it
   is run in — the steps only, to stdout, for the agent or the person to
   review and write. The binary writes no file.
-- Emission is modular: one block per concern (suite, gate over the tree,
+- [S-2] Emission is modular: one block per concern (suite, gate over the tree,
   security, docs, whole-tree pass, release), and a block is emitted only
   where the repository has something for it to check.
-- Emission is adaptable: which ecosystems appear comes from what the
+- [S-3] Emission is adaptable: which ecosystems appear comes from what the
   repository contains, and the policies inside the steps come from
   `.procoder/config.toml`, so an emitted workflow enforces the gates that
   repository actually configured rather than Procoder's defaults.
-- `.procoder/ci/<block>.yml` replaces any single emitted block, the same
+- [S-4] `.procoder/ci/<block>.yml` replaces any single emitted block, the same
   way every other domain reads its rules from `.procoder/` (D-OVERRIDE).
   A repository with no such file gets the built-in block unchanged.
-- `procoder ci` reports a repository with no workflows at all, instead of
+- [S-5] `procoder ci` reports a repository with no workflows at all, instead of
   returning nothing.
-- `procoder ci` reports, by name, the whole-tree checks an existing
+- [S-6] `procoder ci` reports, by name, the whole-tree checks an existing
   workflow does not run.
-- Host rendering is a seam: the block set is host-independent and GitHub
+- [S-7] Host rendering is a seam: the block set is host-independent and GitHub
   Actions is one renderer of it, so adding another host later is a
   renderer rather than a rewrite.
 
@@ -165,39 +165,39 @@ Output is stdout. The only file that changes is the one a person writes.
 
 ## Acceptance criteria
 
-- [ ] A repository with no workflow files at all produces a finding
+- [x] [S-5] A repository with no workflow files at all produces a finding
       naming the whole-tree tier as missing, where `ciops.Check`
       previously returned nil.
-- [ ] A repository whose `.github/workflows` is unreadable produces a
+- [x] [S-5] A repository whose `.github/workflows` is unreadable produces a
       different, blocking finding that names the directory — not the
       absent-CI one.
-- [ ] `procoder ci --emit` in a Go repository prints a workflow
+- [x] [S-1] [S-2] [S-3] `procoder ci --emit` in a Go repository prints a workflow
       containing the whole-tree steps (`check` over tracked files,
       `security --deep`, `docs --external`, `maintain`, `debt`, `deps`)
       and a Go suite step.
-- [ ] The emitted workflow runs `procoder docs --external` and not the
+- [x] [S-1] The emitted workflow runs `procoder docs --external` and not the
       bare `procoder docs`: the offline half already rides the gate, so
       emitting it again in CI would repeat the commit's answer while
       leaving link rot — the only part CI can see — unchecked.
-- [ ] The same command in a repository with only a `composer.json` and
+- [x] [S-3] The same command in a repository with only a `composer.json` and
       PHP sources prints the PHP suite step and no Go step.
-- [ ] The emitted workflow passes `procoder ci`'s hygiene rules:
+- [x] [S-1] The emitted workflow passes `procoder ci`'s hygiene rules:
       asserted by feeding the emitter's own output back into
       `ciops.Check` and requiring no findings.
-- [ ] `procoder ci --emit` leaves every file's bytes unchanged, asserted
+- [x] [S-1] `procoder ci --emit` leaves every file's bytes unchanged, asserted
       by comparing a digest of the tree before and after.
-- [ ] A repository carrying `.procoder/ci/whole-tree.yml` gets that
+- [x] [S-4] A repository carrying `.procoder/ci/whole-tree.yml` gets that
       content in place of the built-in block, and a repository without
       the file gets the built-in block unchanged.
-- [ ] An empty `.procoder/ci/whole-tree.yml` blocks and names the file,
+- [x] [S-4] An empty `.procoder/ci/whole-tree.yml` blocks and names the file,
       rather than falling back to the built-in.
-- [ ] A workflow that runs `procoder check` but not `procoder debt` is
+- [x] [S-6] A workflow that runs `procoder check` but not `procoder debt` is
       told that `debt` is missing and is not told that `check` is.
-- [ ] A workflow that runs the whole-tree commands under step names
+- [x] [S-6] A workflow that runs the whole-tree commands under step names
       Procoder did not choose produces no missing-check finding.
-- [ ] `--host` with an unrecognised name reports the name and prints no
+- [x] [S-7] `--host` with an unrecognised name reports the name and prints no
       workflow.
-- [ ] This repository's own `ci.yml` contains every whole-tree step the
+- [x] [S-2] This repository's own `ci.yml` contains every whole-tree step the
       emitter emits for it, asserted by a test, so the shipped example
       and the running CI cannot drift apart.
 

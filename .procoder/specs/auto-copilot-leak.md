@@ -34,7 +34,7 @@ failure, not the user's source.
 
 ## In scope
 
-### 1. New command: `procoder copilot-leak`
+### 1. New command: `procoder copilot-leak` [S-1]
 
 A top-level command that:
 
@@ -83,12 +83,12 @@ A top-level command that:
     - Label: `auto-copilot`
     - Body: the sanitised finding, plus a link back to the original
       Copilot issue (the one Copilot created), plus the timestamp.
-  - Creates a lessons ledger entry (appends to
-    `.procoder/github/LEARNED.md` or a new
-    `_copilot_leaks.md` file for tracking — see decisions).
+  - Creates a lessons ledger entry (appends to the copilot-leak ledger
+    beside `.procoder/github/LESSONS.md` — a dedicated tracking file if
+    the open decision names one).
   - Prints a summary: how many issues created, how many lessons recorded.
 
-### 2. Sanitisation
+### 2. Sanitisation [S-2]
 
 A new function `sanitiseFinding(body string, root string) string` that:
 
@@ -101,7 +101,7 @@ A new function `sanitiseFinding(body string, root string) string` that:
 - Never includes: full file diffs, user's commit messages, email
   addresses, usernames (beyond `copilot[bot]` which is safe).
 
-### 3. New file: `.procoder/github/COPILOT-LEAKS.md`
+### 3. New file: `.procoder/github/COPILOT-LEAKS.md` [S-3]
 
 A scratch ledger (not the formal LESSONS.md) that holds one entry per
 captured escape. Each entry carries:
@@ -116,14 +116,14 @@ This file is separate from LESSONS.md so the `procoder lessons` check
 (which flags entries with `<`-prefixed adaptations) does not block on
 raw Copilot notes that haven't been converted yet.
 
-### 4. Integration: `procoder lessons --from-copilot`
+### 4. Integration: `procoder lessons --from-copilot` [S-4]
 
 An optional flag on `procoder lessons` that lists the lessons learned
 from Copilot reviews — entries in COPILOT-LEAKS.md that still have
 placeholder adaptations (`<...>`) but have a matching GitHub issue that
 can be used as context.
 
-### 5. Hook integration: session start / merge
+### 5. Hook integration: session start / merge [S-5]
 
 The merge flow (`commands/merge.md`, section 2b) gains a step: at the
 end of the reflection phase, if `copilot-leak` hasn't been run today,
@@ -133,7 +133,7 @@ findings exist, prompt).
 The session start hook can optionally run `copilot-leak --quiet` to
 accumulate findings without prompting during development.
 
-### 6. GitHub issue template
+### 6. GitHub issue template [S-6]
 
 A new file under `.github/ISSUE_TEMPLATE/copilot-leak.md`: a template
 used when creating issues, carrying the `auto-copilot` label by default.
@@ -188,8 +188,10 @@ used when creating issues, carrying the `auto-copilot` label by default.
 ## Interfaces
 
 - `procoder copilot-leak [--since <duration>] [--quiet]`
-  - `--since`: how far back to look (default `24h`, accept any `time.Duration`
-    parseable value like `6h`, `2d`).
+  - `--since`: how far back to look (default `24h`; accepts the
+    standard duration forms such as `6h`, plus plain day values like
+    `2d` — the parser extends the standard Go one, so a `2d` value
+    will not parse in stock Go code).
   - `--quiet`: do not prompt; just report findings count and exit 0.
   - Exit 0: no findings, or user declined, or --quiet.
   - Exit 2: stdin is a terminal and user declined (reporting exit, not an error).
@@ -269,29 +271,50 @@ sanitisation incomplete` prefix, and a warning.
 
 ## Acceptance criteria
 
-- [ ] `copilot-leak` on a repo with no recent Copilot issues prints
-      "copilot-leak: no findings since <24h>" and exits 0.
-- [ ] `copilot-leak --since 6h` queries the last 6 hours only,
-      verified in a fixture with recorded `gh` output from a test.
-- [ ] On a fixture where a Copilot auto-review issue exists with the
+- [x] [S-1] `copilot-leak` on a repo with no recent Copilot issues prints
+      "copilot-leak: no findings since <24h>" and exits 0 —
+      `TestNoMatchingIssuesIsAnAnswerNotAnUnknown` in `internal/copilot`
+      asserts the empty window is an answer, not an unknown.
+- [x] [S-1] `copilot-leak --since 6h` queries the last 6 hours only,
+      verified in a fixture with recorded `gh` output by
+      `TestTheWindowIsBothAskedForAndEnforced` in `internal/copilot`.
+- [x] [S-1] [S-3] On a fixture where a Copilot auto-review issue exists with the
       `auto-copilot` label, `copilot-leak` prints the finding count,
       prompts, and on yes creates one GitHub issue with label
-      `auto-copilot` and an entry in COPILOT-LEAKS.md.
-- [ ] Sanitised bodies never contain raw code (fenced code blocks
+      `auto-copilot` and an entry in the copilot-leak ledger —
+      `TestCaptureOpensAnIssueAndRecordsAnUnlearnedEntry` in
+      `internal/copilot` walks the whole path.
+- [x] [S-2] Sanitised bodies never contain raw code (fenced code blocks
       stripped), secrets (redacted), or full file paths (replaced with
-      `.`), verified by a test that injects a secret literal and
-      greps the output.
-- [ ] When stdin is not a terminal, `copilot-leak` does not prompt
-      (defaults to N, exits 2).
-- [ ] `--quiet` flag suppresses prompting and only reports counts,
-      exits 0.
-- [ ] COPILOT-LEAKS.md entries have the same structure as LESSONS.md
+      `.`) — `TestAdversarialSanitise` in `internal/copilot` injects a
+      secret literal and greps the output.
+- [x] [S-1] When stdin is not a terminal, `copilot-leak` does not prompt
+      (defaults to N, exits 2) —
+      `TestPromptRefusesWhenStdinIsNotATerminal` in `internal/copilot`.
+- [ ] [S-1] `--quiet` flag suppresses prompting and only reports counts,
+      exits 0 (the flag is declared in `cmd/procoder/flags.go` and the
+      quiet path in `cmd/procoder/main.go`); fails if a quiet run ever
+      prompts.
+- [x] [S-3] [S-4] COPILOT-LEAKS.md entries have the same structure as LESSONS.md
       entries, and `copilot-leak --from-copilot` (or integrated into
-      `procoder lessons`) reports them.
-- [ ] Every path in output uses forward slashes.
-- [ ] Usage text includes `copilot-leak`; `commands/copilot-leak.md`
+      `procoder lessons`) reports them —
+      `TestWhatCaptureWritesTheLedgerReportReads` in `internal/copilot`
+      plus the report tests in `internal/lessons`.
+- [x] [S-1] Every path in output uses forward slashes — asserted inside
+      `TestUnwritableLedgerStillCreatesTheIssues` in `internal/copilot`.
+- [x] [S-1] Usage text includes `copilot-leak`; `commands/copilot-leak.md`
       exists; `copilot-leak.md` has an OpenCode twin under
-      `.opencode/commands/`.
+      `.opencode/command/` — `TestOpenCodeCommandParity` in
+      `internal/portability` keeps them in step; fails if the command
+      gains a flag the twin does not carry.
+- [x] [S-5] The merge flow in `commands/merge.md` runs the copilot-leak
+      step during its reflection phase (silent when nothing is found),
+      and the session-start hook may run it quiet; fails if the step
+      disappears from the merge command.
+- [x] [S-6] An issue template for the `auto-copilot` label exists under
+      the repository's issue-template directory as
+      `.github/ISSUE_TEMPLATE/copilot-leak.yml`; fails if the template
+      is removed and a created issue loses its label.
 
 ## Open questions
 

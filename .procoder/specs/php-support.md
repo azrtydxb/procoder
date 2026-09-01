@@ -24,16 +24,16 @@ their language. People have asked for it.
 
 ## In scope
 
-- Formatting `.php` through prettier's PHP plugin, which prints the
+- [S-1] Formatting `.php` through prettier's PHP plugin, which prints the
   formatted source to stdout and leaves the file untouched.
-- Linting `.php`: phpstan when the project carries a phpstan config, phpcs
+- [S-2] Linting `.php`: phpstan when the project carries a phpstan config, phpcs
   when it carries a phpcs config, and `php -l` as the floor when it carries
   neither.
-- Running phpunit as a detected test runner in `procoder test`, with pass,
+- [S-3] Running phpunit as a detected test runner in `procoder test`, with pass,
   fail, counts and `--name` filtering.
-- `doctor` and `init` knowing the PHP tools: what is missing, and the line
+- [S-4] `doctor` and `init` knowing the PHP tools: what is missing, and the line
   that installs it.
-- Documentation: the language table in the docs gains PHP.
+- [S-5] Documentation: the language table in the docs gains PHP.
 
 ## Out of scope
 
@@ -113,32 +113,32 @@ their language. People have asked for it.
 
 ## Acceptance criteria
 
-- [ ] `procoder format` on a fixture `.php` file prints the formatted
+- [x] [S-1] `procoder format` on a fixture `.php` file prints the formatted
       source, exits 0, and leaves the file's bytes unchanged — asserted by
       comparing the file's digest before and after.
-- [ ] A repository whose `node_modules` has no `@prettier/plugin-php`
+- [x] [S-1] A repository whose `node_modules` has no `@prettier/plugin-php`
       reports its `.php` files out of scope with the install line, and the
       gate counts them as out of scope rather than clean.
-- [ ] On a fixture carrying `phpstan.neon`, `procoder lint` over a file
+- [x] [S-2] On a fixture carrying `phpstan.neon`, `procoder lint` over a file
       with a wrong return type names the file, the line, and the message,
       parsed from phpstan's raw format including its missing space.
-- [ ] On a fixture carrying `phpcs.xml`, `procoder lint` names a PSR-12
+- [x] [S-2] On a fixture carrying `phpcs.xml`, `procoder lint` names a PSR-12
       finding with its file and line.
-- [ ] On a fixture carrying both configs, findings from both tools appear.
-- [ ] On a fixture carrying neither, a file with a syntax error is reported
+- [x] [S-2] On a fixture carrying both configs, findings from both tools appear.
+- [x] [S-2] On a fixture carrying neither, a file with a syntax error is reported
       with its line, and a file that parses produces no finding at all.
-- [ ] With `php` absent from a stub PATH, `procoder lint` over a `.php`
+- [x] [S-2] With `php` absent from a stub PATH, `procoder lint` over a `.php`
       file prints a NOT-checked line naming php and never reports clean.
-- [ ] `procoder test` on a fixture with `phpunit.xml` and a passing suite
+- [x] [S-3] `procoder test` on a fixture with `phpunit.xml` and a passing suite
       reports passed with its test count; the same fixture with one failing
       test reports failed and exits 1.
-- [ ] `procoder test --name <pattern>` passes the pattern to phpunit's
+- [x] [S-3] `procoder test --name <pattern>` passes the pattern to phpunit's
       `--filter` and the reported count reflects the narrowed run.
-- [ ] `procoder test --coverage` on a phpunit project reports coverage NOT
+- [x] [S-3] `procoder test --coverage` on a phpunit project reports coverage NOT
       measured rather than a number.
-- [ ] `procoder doctor` names every PHP tool it looked for, with a version
+- [x] [S-4] `procoder doctor` names every PHP tool it looked for, with a version
       when present and an install line when absent.
-- [ ] The documentation's language table lists PHP with its tools, and the
+- [x] [S-5] The documentation's language table lists PHP with its tools, and the
       docs gate passes.
 
 ## Open questions
