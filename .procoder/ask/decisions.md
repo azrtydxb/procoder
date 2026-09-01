@@ -450,11 +450,13 @@ files and named the shape: silent, order-dependent loss with a confident
 receipt on top.
 
 Two things are unknown and worth separating from what is measured. Whether
-the same cap applies to the `additionalContext` JSON field is untested —
-that is a different mechanism from stdout, and `internal/hook/hook.go` sets
-`maxInlineBytes = 48 * 1024`, twenty-four times the observed stdout cap,
-chosen against no measurement. And the exact threshold is not established;
-2KB is what one preview showed.
+the host caps the `additionalContext` JSON field the way it caps stdout is
+untested — and `maxInlineBytes` is not the mechanism to look at: in
+`internal/hook/hook.go` that constant only decides whether a formatted
+file's output is inlined into a message, and `additionalContext` is always
+emitted on stdout as JSON, so any limit on it is the host's, not the
+hook's. And the exact threshold is not established; 2KB is what one
+preview showed.
 
 - Measure both mechanisms, then fix the delivery: establish the real cap for
   stdout and for `additionalContext`, and restructure the principles hook to
