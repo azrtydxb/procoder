@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-09-01 16:30 UTC. procoder reads this
+Written 2026-09-01 22:15 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -194,6 +194,13 @@ Answer: All six roadmap issues. Done: #194/#209/#211 in #227, #189 in #229, #192
 
 ## (no longer asked)
 
+Key: 6a10163993b1
+Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
+
+## (no longer asked)
+
 Key: 7fc6bb7f721b
 Question: How do the 34 command files reach pi?
 
@@ -236,6 +243,13 @@ Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enfo
 
 ## (no longer asked)
 
+Key: a7529f7e0b7d
+Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
+
+## (no longer asked)
+
 Key: aa8ea1f17c0c
 Question: Do the four large features stay open as a roadmap?
 
@@ -254,6 +268,57 @@ Key: b55269facb93
 Question: Rescope #198 and #191, and merge #200 with #201 and #204 with #208?
 
 Answer: yes — rescope and merge now, before anyone starts on a duplicate
+
+## [decision] decisions.md
+
+Key: b57d64a5792e
+Question: The principles hook delivers 2KB of a 10KB document — what do we do about it?
+
+`procoder principles --hook` emits 10,281 bytes. Claude Code persists hook
+output past roughly 2KB to a file and inlines only a preview, so the model
+receives the first 2KB and a path. Observed directly: this session's own
+SessionStart reminder reads "Output too large (9.9KB). Full output saved
+to... Preview (first 2KB)", and the principles text cut off mid-sentence in
+the mutation-testing paragraph. Nothing reads the persisted file, so the
+remaining ~8KB never enters context.
+
+The behaviour was documented independently by the kload plugin
+(github.com/nightlionsec/kload), which hit the same cap injecting knowledge
+files and named the shape: silent, order-dependent loss with a confident
+receipt on top.
+
+Two things are unknown and worth separating from what is measured. Whether
+the host caps the `additionalContext` JSON field the way it caps stdout is
+untested — and `maxInlineBytes` is not the mechanism to look at: in
+`internal/hook/hook.go` that constant only decides whether a formatted
+file's output is inlined into a message, and `additionalContext` is always
+emitted on stdout as JSON, so any limit on it is the host's, not the
+hook's. And the exact threshold is not established; 2KB is what one
+preview showed.
+
+- Measure both mechanisms, then fix the delivery: establish the real cap for
+  stdout and for `additionalContext`, and restructure the principles hook to
+  fit under it — a short always-delivered core plus a pointer for the rest,
+  rather than a document that is silently cut.
+- Measure both mechanisms and file what we find, deciding the fix separately:
+  the measurement is cheap and the fix is a design question about what the
+  principles must say in 2KB.
+- File the evidence as a task and leave it: the persisted file exists, the
+  agent layer (AGENTS.md, per-host rule files) carries much of the same
+  material, and the loss may be tolerable.
+- Do nothing — treat the preview as sufficient.
+
+**Decided: measure, then budget the delivery (first option).** PR #266
+measured both mechanisms — 5.2 KB and 7.3 KB arrive whole; 9.9 KB and
+10.7 KB are persisted with only the first 2 KB inlined, so 2 KB is the
+preview size, not the threshold — and restructured the delivery to fit:
+the PostToolUse payload is now budgeted to the preview size (a keep part
+competes under the reserved limit, and what cannot fit is named in the
+omission notice rather than silently lost), while the SessionStart
+payload is left whole and made checkable, with the receipt check pinned
+inside the inlined window.
+
+Answer: Option 1 — measure both mechanisms, then fix the delivery. Done in #266 (merged): the PostToolUse payload is budgeted to the preview size (a keep part competes under the reserved limit, and what cannot fit is named in the omission notice), the SessionStart payload is left whole and made checkable, with the receipt check pinned inside the inlined window.
 
 ## (no longer asked)
 
