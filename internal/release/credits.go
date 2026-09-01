@@ -45,7 +45,12 @@ func CreditsIn(entry string) []Credit {
 		var nums []int
 		for _, m := range citedNumber.FindAllStringSubmatch(para, -1) {
 			var n int
-			fmt.Sscanf(m[1], "%d", &n)
+			// The regex already promised digits, so a failure here means
+			// only that the number does not fit an int — skipping it keeps
+			// the credit honest rather than citing a wrapped value.
+			if _, perr := fmt.Sscanf(m[1], "%d", &n); perr != nil {
+				continue
+			}
 			nums = append(nums, n)
 		}
 		for _, m := range linkedHandle.FindAllStringSubmatch(para, -1) {
@@ -332,7 +337,9 @@ func missingCreditsWith(entry string, who func() ([]string, error), resolve func
 		var nums []int
 		for _, m := range citedNumber.FindAllStringSubmatch(para, -1) {
 			var n int
-			fmt.Sscanf(m[1], "%d", &n)
+			if _, perr := fmt.Sscanf(m[1], "%d", &n); perr != nil {
+				continue
+			}
 			nums = append(nums, n)
 		}
 		if len(nums) == 0 {
