@@ -99,6 +99,26 @@ func authorOf(root string, number int) (string, error) {
 //
 // GitHub not answering is NOT a pass. It is reported as unverified and
 // blocks, like every other check here that could not run.
+// oneActor answers whether two handle spellings are the same GitHub actor.
+// A bot appears differently on the surfaces that answer for it: the issues
+// endpoint answers `github-actions[bot]`, the author field the pr/issue view
+// answers `app/github-actions`. The credit is written one way and resolved
+// from the other, so the comparison takes the bot's name without its
+// wrapper rather than demanding a spelling only one endpoint produces.
+func oneActor(a, b string) bool {
+	if strings.EqualFold(a, b) {
+		return true
+	}
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.TrimPrefix(s, "app/")
+		s = strings.TrimSuffix(s, "[bot]")
+		return s
+	}
+	na, nb := norm(a), norm(b)
+	return na != "" && na == nb
+}
+
 func VerifyCredits(root, entry string) []string {
 	credits := CreditsIn(entry)
 	if len(credits) == 0 {
@@ -126,7 +146,7 @@ func VerifyCredits(root, entry string) []string {
 				}
 				authors[n] = who
 			}
-			if strings.EqualFold(who, c.Handle) {
+			if oneActor(who, c.Handle) {
 				matched = true
 				break
 			}
