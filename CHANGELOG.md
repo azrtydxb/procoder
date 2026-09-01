@@ -17,7 +17,7 @@ what is written here is what a person downloading the binary reads.
     prose: what was wrong, what it cost the person using it, what is
     true now. Reported by
     [@handle](https://github.com/handle) — a bot is credited as
-    [@github-actions[bot]](https://github.com/github-actions[bot]), the
+    [@github-actions[bot]](https://github.com/apps/github-actions), the
     `[bot]` suffix and all. Paragraphs, not bullet lists —
     a changelog is read, not parsed.
 
@@ -105,7 +105,7 @@ the server process happens to sit.
 **Changed — pinned tools moved.** golangci-lint 2.13.2,
 ([#251](https://github.com/azrtydxb/procoder/pull/251)), semgrep
 1.175.0, ([#252](https://github.com/azrtydxb/procoder/pull/252)), ruff
-0.16.5, ([#253](https://github.com/azrtydxb/procoder/pull/253)), contributed by [@github-actions[bot]](https://github.com/github-actions[bot]).
+0.16.5, ([#253](https://github.com/azrtydxb/procoder/pull/253)), contributed by [@github-actions[bot]](https://github.com/apps/github-actions).
 
 ## 3.4.0 — 2026-08-27
 

@@ -40,8 +40,8 @@ ones, that have each blocked a release:
   A retroactive PR is not a substitute; it is a lie about history.
 - Every outside contributor cited in the entry is credited in the
   paragraph that cites their work, as a markdown profile link. A bot is
-  credited with its suffix, `[@github-actions[bot]](https://github.com/
-github-actions[bot])`; the two spellings GitHub uses for one bot
+  credited with its suffix, `[@github-actions[bot]](https://github.com/apps/
+github-actions)`; the two spellings GitHub uses for one bot
   (`name[bot]` and `app/name`) compare equal and both are accepted.
 
 ## 4. Bump the contract if behaviour moved

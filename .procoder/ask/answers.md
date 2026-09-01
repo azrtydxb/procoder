@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-08-31 18:31 UTC. procoder reads this
+Written 2026-09-01 16:30 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -46,6 +46,73 @@ Question: The tracked-tree gate is 787 gitleaks process startups — batch it?
 
 Answer: Batch above a threshold — one whole-tree gitleaks scan when the path set is large, per-file below it, so a three-file commit does not scan a monorepo.
 
+## [spec] auto-copilot-leak
+
+Key: 2e68c781af56
+Question: or automatic (hook/post-tool-use/merge)? -- A: Manual by default, automatic in merge flow only. A periodic background poll is Part B if the user wants it.
+
+Answer: Manual by default, automatic in the merge flow only. A periodic background poll is Part B, only if the user wants it.
+
+## [decision] decisions.md
+
+Key: 2ebf4f884047
+Question: The ask queue reports 13 open questions; four of them look answered already. Fix the queue or answer the list?
+
+**Decided: the list was answered directly, and the defects it named were fixed
+in #257 (with #256's records).** The round of eight answers was recorded in
+`answers.md` (107, 117, 60, the copilot-leak cadence, and the four
+marketplace-strategy questions kept open on purpose). The key-instability
+mechanism shipped as `answers.KeyStable` + `answers.Settled`: a question is
+keyed by its words, not its line breaks, so a reflow keeps its recorded
+answer while a reworded question is asked again; stores written under the
+legacy key keep reading as settled. The `-F <file>` gap shipped alongside it:
+the gate now reads the body of the heredoc the command writes to the named
+file, so an acknowledgment in `cat > msg.txt <<'EOF'` reaches the obligation
+it was written to clear. The store flake the heading was written about is
+issue #255, and the format decision was re-filed under its stable key, since
+its original record was keyed by a hash of the section's text as written —
+the exact orphaning this fix exists to stop.
+
+Shown the queue to decide what actually needs a human, and the count does not
+match its own ledger. Three observations, each from a command:
+
+- The `format` decision is recorded — `.procoder/ask/answers.md` carries it
+  under `Key: 87246294ecbe`, question text and all — and `procoder ask` now
+  issues the same question under `Key: 5134e4878619`. The lookup misses, so an
+  answered question is re-asked.
+- Three spec questions (Q6, Q8, Q9 of `auto-copilot-leak`) carry their answer
+  _inside the question text_ as `-- A: …` and are still queued. An answer that
+  shipped in the question's own body is an answer the matcher cannot see.
+- `procoder ask --file` refuses a plain `## <question>`/`Answer:` file and
+  demands `Key:` + `Answer:` pairs, then reports "1 of them answer a question
+  no domain is asking" when the key is stale. That message is the symptom; the
+  stale key is the cause.
+
+So "13 questions need a human" is partly a queue defect wearing a queue. Where
+the work goes first changes what the next reading of the queue means: after a
+fix it is trustworthy, by observation it is merely shorter. The load-dependent
+store test it named is issue #255, and the `-F <file>` message gap it named is
+fixed in #257 alongside the key mechanism, so the heading's own "two sharper
+things" are both off the list.
+
+- Chase the key instability first: find what the key hashes, make it survive a
+  question being reflowed or re-collected, and let the true open list fall out
+  of the fix. Costs an investigation in the ask package and a test that a
+  prettier rewrap does not orphan an answer.
+- Answer Q6–Q9 now under the keys QA.md currently prints, then read the queue
+  again. Cheap, and it separates answered-but-re-asked from genuinely open by
+  observation rather than by reading code — though it re-answers three things
+  the ledger already holds.
+- Take the queue at face value and answer all 13 in one pass, defect-hunting
+  only what resurfaces afterwards. Never asks a question twice for a bug's
+  sake; slowest to the truth about the queue.
+- Treat the queue as noise for now and work on something else: the four spec
+  questions are attached to specs that are not in this release, and the two
+  findings already on record (the load-dependent store test, the `-F <file>`
+  message gap) are the sharper things in the tree.
+
+Answer: Fix the queue — its defects shipped as `answers.KeyStable` +
+
 ## (no longer asked)
 
 Key: 32f242effa43
@@ -66,6 +133,36 @@ Key: 5517b4921f0f
 Question: Does the decisions queue and its principles change ship in v3.1.1, or wait?
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
+
+## [decision] decisions.md
+
+Key: 5b76032ac137
+Question: Which of the pi integration's claims are backed by a measurement?
+
+Three were written down and none of them held, so the honest record is the
+correction rather than the claim. What is true now, each with the command that
+produced it:
+
+- **The commit gate blocks, live, before the shell runs.** A nested pi session
+  asked to `git commit -m x` over a staged unformatted file reported the gate's
+  own two findings, and `git log` showed only the prior commit: nothing landed.
+  pi's own `agent-loop.js` awaits `beforeToolCall` and returns an error tool
+  result on `block` before executing the tool, which is what the run showed.
+- **The gate does not check formatting in a repository that has not adopted
+  procoder.** In one scratch tree with `.procoder/` absent, a staged file that
+  `gofmt -l` names reported `1 file(s) not formatting-checked, 0 blocking`; the
+  same tree with `.procoder/config.toml` present reported `1 unformatted` and a
+  blocking finding. The scope line in the report says this in as many words.
+- **A tool result I described as evidence never existed.** The session record
+  for the call in question holds `fixture ready` with `isError: false`, and the
+  refusal text I quoted appears nowhere in the session file, the repo, or the
+  binary. It was invented, escalated, and put in this file.
+
+No option is offered for the third line: it is recorded so the next session
+treats a claim in here as needing a command behind it, and so nobody re-derives
+the staged-index story from a run that was actually about gate scope.
+
+Answer: Record the correction rather than the claim. Measured and standing:
 
 ## (no longer asked)
 
@@ -230,12 +327,26 @@ Question: `procoder wizard` (#192): what shape may it take?
 
 Answer: Copy the `procoder run` shape — print by default, execute under an explicit flag, refuse rather than guess. Shipped in #228 as declarative markdown that executes nothing.
 
+## [spec] auto-copilot-leak
+
+Key: da2ab5da8026
+Question: Q1: Should COPILOT-LEAKS.md be merged into LESSONS.md, or kept separate? Keeping it separate means two files to check; merging means the lessons check sees raw Copilot findings that need classification first. -- A: Keep separate. Raw Copilot notes need a human step to become a real lesson (classify the class: mechanical/judgment/taste, name the adaptation). Merging skips that step.
+
+Answer: Keep separate. Raw Copilot notes need a human step to become a real lesson (classify the class: mechanical/judgment/taste, name the adaptation). Merging skips that step.
+
 ## [spec] marketplace-strategy
 
 Key: de6d0d01265d
 Question: Which sections of this spec's Criteria table are release blockers and which are follow-ups? [C-07] cannot be met on our own schedule — it depends on other people's review queues.
 
 Answer: Keep open, deliberately. The spec is not gating this release, so the
+
+## [spec] auto-copilot-leak
+
+Key: e3a6495c7e4b
+Question: Q3: The `copilot[bot]` — should we also check for `copilot[bot]` as issue author? Some instances use `copilot-preview[bot]`. -- A: Check for authors matching `copilot.*\[bot\]` regex. Cover both variants.
+
+Answer: Check for authors matching the `copilot.*\[bot\]` regex, covering both `copilot[bot]` and `copilot-preview[bot]`.
 
 ## (no longer asked)
 
