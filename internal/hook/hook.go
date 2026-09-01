@@ -56,12 +56,22 @@ const stdinDeadline = 5 * time.Second
 // whatever comes after the format part, and a secret finding is one of the
 // things that comes after.
 //
-// Measured, not documented: two previews observed at exactly 2KB, one on
-// SessionStart stdout at 9.9KB of output and one on this hook's
-// additionalContext at 10.7KB. The threshold at which the host starts
-// persisting is NOT established — only that 2KB is what it inlines when it
-// does. So 2KB is treated as the whole budget, which is safe whatever the
-// persist threshold turns out to be.
+// Measured, not documented, and the threshold is BRACKETED rather than
+// pinned: payloads of 5.2KB and 7.3KB were delivered whole, while 9.9KB
+// and 10.7KB were persisted with a 2KB preview. So the host tolerates
+// more than 2KB — it is the preview size, not the limit.
+//
+// The budget is the preview size anyway, deliberately. Guessing high fails
+// silently: a payload over the real threshold loses everything past 2KB
+// with nothing saying so, and the tail is where the findings are. Guessing
+// low costs only that a formatted body over its share arrives as the
+// command that prints it, which is a documented path an agent already
+// takes. One of those failures is recoverable by the reader and the other
+// is not.
+//
+// Raising this is reasonable once the threshold is pinned rather than
+// bracketed. It should not be raised on the strength of two lucky
+// deliveries.
 const maxContextBytes = 2000
 
 // maxInlineFormatted is the formatted body's own share of that budget. It

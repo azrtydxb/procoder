@@ -246,13 +246,18 @@ func hookText(root string) string {
 // endMarker closes the payload, and the notice above it says what to do
 // when it does not arrive.
 //
-// The host does not deliver an unbounded SessionStart payload: past roughly
-// two kilobytes it writes the output to a file and inlines a preview of the
-// first 2KB. This text is ten. Measured in a real session — the reminder
-// read "Output too large (9.9KB). Full output saved to... Preview (first
-// 2KB)" and the principles stopped mid-sentence — so for every session
-// since this document reached that size, four fifths of it has been arriving
-// as a path nothing made anybody read.
+// The host does not deliver an unbounded SessionStart payload: past some
+// size it writes the output to a file and inlines a preview of the first
+// 2KB. This text is ten kilobytes. Measured in a real session — the
+// reminder read "Output too large (9.9KB). Full output saved to...
+// Preview (first 2KB)" and the principles stopped mid-sentence — so for
+// every session since this document reached that size, four fifths of it
+// has been arriving as a path nothing made anybody read.
+//
+// The threshold is bracketed, not pinned: 5.2KB and 7.3KB were delivered
+// whole, 9.9KB and 10.7KB were not. Which is why this is a receipt check
+// and not a size limit — the marker is true whatever the threshold is, and
+// stays true if it changes.
 //
 // Truncating the document to fit is the wrong fix: it is the repository's
 // own text, an adopter's `.procoder/PRINCIPLES.md` is whatever they wrote,
