@@ -19,7 +19,7 @@ retrospective, lean's actual learning loop, does not exist.
 
 ## In scope
 
-- `procoder backlog bug <title> [--epic <id>] [--severity s1|s2|s3|s4]`
+- [S-1] `procoder backlog bug <title> [--epic <id>] [--severity s1|s2|s3|s4]`
   — prints a story file (same directory, same lifecycle) with
   `Type: bug` and `Severity:` header lines, a Description section
   prompting for reproduction steps and observed-vs-expected, and the
@@ -27,15 +27,15 @@ retrospective, lean's actual learning loop, does not exist.
   criterion: a regression test that fails before the fix and passes
   after. Severity defaults to s3; --epic is optional (a bug may predate
   any epic).
-- Story close on a bug additionally refuses while the Severity header
+- [S-2] Story close on a bug additionally refuses while the Severity header
   is missing or not one of s1–s4.
-- Board and list mark bugs: list shows kind `bug`; the board line uses
+- [S-3] Board and list mark bugs: list shows kind `bug`; the board line uses
   `[B]`-style marking plus the severity, so open s1/s2 bugs are visible
   at a glance. The board summary counts open bugs separately.
-- Sprint close writes a `## Retro` section (guidance comments: what
+- [S-4] Sprint close writes a `## Retro` section (guidance comments: what
   slowed us, what we change, one adaptation) after the Result — content
   the agent/user fills by editing the file.
-- `procoder sprint open` refuses while the most recently closed sprint
+- [S-5] `procoder sprint open` refuses while the most recently closed sprint
   has an empty Retro section — the retro is the price of the next
   sprint. A repo can disable that with `[sprint] retro = "off"` in
   config.toml (D-OVERRIDE).
@@ -96,18 +96,18 @@ retrospective, lean's actual learning loop, does not exist.
 
 ## Acceptance criteria
 
-- [ ] `procoder backlog bug "login 500s" --severity s1` prints a story
+- [x] [S-1] [S-2] `procoder backlog bug "login 500s" --severity s1` prints a story
       file with Type, Severity, the repro-prompting description, and
       the pre-seeded regression-test criterion; writing and closing it
       without a Severity header is refused.
-- [ ] The board marks an open bug with its severity and the summary
+- [x] [S-3] The board marks an open bug with its severity and the summary
       counts open bugs; list shows kind bug.
-- [ ] Sprint close writes a Retro scaffold; `sprint open` then refuses
+- [x] [S-4] [S-5] Sprint close writes a Retro scaffold; `sprint open` then refuses
       until the Retro has real content, and proceeds after one
       sentence is added — verified by a test walking the sequence.
-- [ ] `[sprint] retro = "off"` disables the retro gate, verified by
+- [x] [S-5] `[sprint] retro = "off"` disables the retro gate, verified by
       test.
-- [ ] All existing backlog and sprint tests pass unmodified.
+- [x] All existing backlog and sprint tests pass unmodified.
 
 ## Open questions
 

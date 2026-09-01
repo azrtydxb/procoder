@@ -21,27 +21,27 @@ nowhere.
 
 ## In scope
 
-- `procoder test [paths...]` — detect the ecosystem's canonical runner
+- [S-1] `procoder test [paths...]` — detect the ecosystem's canonical runner
   and run it: Go (`go test ./...`), Rust (`cargo test`), JS/TS (the
   package.json `test` script via the lockfile's package manager: npm /
   pnpm / yarn / bun), Python (pytest when pytest.ini / pyproject
   `[tool.pytest]` / a tests directory with test files exists), Java
   (`./gradlew test` or `mvn -q test` when the build files exist).
   Multiple ecosystems in one repo all run; each reports separately.
-- Honest verdicts: PASS with parsed counts where the output allows,
+- [S-2] Honest verdicts: PASS with parsed counts where the output allows,
   FAIL with the failing lines excerpted, and "NOT run" when no runner
   is detected or the tool is missing — never silence, never fake green.
   Exit 0 all pass, 1 any fail, 2 nothing could run at all.
-- `procoder test --coverage` — report the covered percentage where the
+- [S-3] `procoder test --coverage` — report the covered percentage where the
   runner measures it natively (Go's -cover; pytest with pytest-cov
   installed). A number is reported, never enforced; ecosystems without
   native coverage say "not measured".
-- `[test] policy = "block"` in config.toml (D-OVERRIDE): todo close and
+- [S-4] `[test] policy = "block"` in config.toml (D-OVERRIDE): todo close and
   backlog story close run the suite and add "the test suite fails" to
   the refusal when it does. Without the policy, closes do not run
   tests (unchanged behaviour).
-- procoder's own repo adopts the policy in its `.procoder/config.toml`.
-- A 10-minute per-runner timeout with the hung-tool message.
+- [S-5] procoder's own repo adopts the policy in its `.procoder/config.toml`.
+- [S-6] A 10-minute per-runner timeout with the hung-tool message.
 
 ## Out of scope
 
@@ -113,23 +113,30 @@ bool) []Result`; `func Suite(root string) func() (bool, string)` —
 
 ## Acceptance criteria
 
-- [ ] `procoder test` on a Go fixture with one passing and one failing
+- [x] [S-1] [S-2] `procoder test` on a Go fixture with one passing and one failing
       package reports FAIL with the failing test named and exits 1;
       after fixing, it reports PASS and exits 0.
-- [ ] On a fixture with package.json (npm lockfile) plus a Go module,
+- [x] [S-1] On a fixture with package.json (npm lockfile) plus a Go module,
       both runners execute and report separately.
-- [ ] A repo with no detectable test setup answers "NOT run" per the
+- [x] [S-2] A repo with no detectable test setup answers "NOT run" per the
       honesty rule and exits 2.
-- [ ] `procoder test --coverage` on a Go fixture prints a coverage
+- [x] [S-3] `procoder test --coverage` on a Go fixture prints a coverage
       percentage; on an ecosystem without native coverage it prints
       "not measured".
-- [ ] With `[test] policy = "block"`, `procoder todo close` and
+- [x] [S-4] With `[test] policy = "block"`, `procoder todo close` and
       `procoder backlog close story` refuse while the suite fails and
       pass once it is green — verified by tests walking both.
-- [ ] Without the policy, close behaviour is byte-identical to today —
+- [x] [S-4] Without the policy, close behaviour is byte-identical to today —
       existing todo/backlog close tests pass unmodified.
-- [ ] procoder's own .procoder/config.toml carries the block policy and
+- [x] [S-5] procoder's own .procoder/config.toml carries the block policy and
       the repository's suite passes under `procoder test`.
+- [ ] [S-6] A runner that gives no answer within ten minutes is reported
+      NOT run with the hung-tool line ("gave no answer in 10m0s"), fails
+      if a hung runner is ever allowed to keep running. The per-runner
+      lines are the `notRun` returns in `internal/testrun` over the
+      `runTimeout` const; the path itself is not exercised by a test
+      (ten minutes is not a test budget), so this criterion stays
+      unticked until it is.
 - [ ] Usage lists `test`; docs.Commands, the docs site, and
       commands/test.md with its OpenCode twin exist; all rot-guard
       tests pass.

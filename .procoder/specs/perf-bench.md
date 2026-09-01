@@ -17,20 +17,20 @@ eyeballing the difference.
 
 ## In scope
 
-- `procoder bench` — run the repository's Go benchmarks
+- [S-1] `procoder bench` — run the repository's Go benchmarks
   (`go test -bench . -benchmem -run ^$` over packages that contain
   Benchmark functions), print the results, and compare against the
   stored baseline when one exists: per benchmark, ns/op and B/op with
   percentage delta, regressions beyond the threshold marked loudly.
-- `procoder bench --save` — additionally write the run to
+- [S-2] `procoder bench --save` — additionally write the run to
   `.procoder/bench/baseline.txt` (procoder-owned state, committed) so
   future runs compare against it. Saving is explicit — a baseline is a
   decision.
-- `[bench] threshold = 10` (percent, default 10) in config.toml.
-- Go only in v1, said in every output where it matters: other
+- [S-3] `[bench] threshold = 10` (percent, default 10) in config.toml.
+- [S-4] Go only in v1, said in every output where it matters: other
   ecosystems answer "NOT run — bench covers Go in this version" so the
   scope is never silently narrower than it looks.
-- Comparison is name-matched: new benchmarks are listed as new,
+- [S-5] Comparison is name-matched: new benchmarks are listed as new,
   vanished ones as gone — both informational.
 
 ## Out of scope
@@ -89,14 +89,17 @@ eyeballing the difference.
 
 ## Acceptance criteria
 
-- [ ] On a fixture with one benchmark, `bench --save` writes the
+- [x] [S-1] [S-2] On a fixture with one benchmark, `bench --save` writes the
       baseline with the header; a second run reports ~0% delta and
       exits 0.
-- [ ] Slowing the benchmarked code (fixture with a tunable loop) makes
+- [x] [S-1] [S-3] Slowing the benchmarked code (fixture with a tunable loop) makes
       `bench` mark the regression and exit 1 at the default threshold.
-- [ ] A repo with no benchmarks answers the no-benchmarks line, exit 0.
-- [ ] Baseline parsing and delta math have unit tests over recorded
+- [x] [S-1] A repo with no benchmarks answers the no-benchmarks line, exit 0.
+- [x] [S-2] [S-5] Baseline parsing and delta math have unit tests over recorded
       `go test -bench` output, including the renamed-benchmark case.
+- [x] [S-4] A repository whose manifest is not Go answers
+      "NOT run — bench covers Go in this version" —
+      `TestNonGoRepoWithOtherManifestSaysScope` in `internal/bench`.
 - [ ] The perf skill instructs measuring via `procoder bench` and its
       OpenCode twin matches.
 

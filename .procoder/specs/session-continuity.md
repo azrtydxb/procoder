@@ -22,25 +22,25 @@ built to prevent, reappearing at the session boundary.
 
 ## In scope
 
-- `procoder status` — the state-of-play report, computed fresh, no
+- [S-1] `procoder status` — the state-of-play report, computed fresh, no
   arguments: current branch and how it compares to the default, dirty
   file count, the active sprint with its done/total story count, the
   stories in that sprint that are still open, open todo tasks, the
   unlearned lesson count, and whether an index exists and is stale.
   Every line is a fact the binary can compute; nothing is guessed.
-- SessionStart injection grows: `principles --hook` output gains the
+- [S-2] SessionStart injection grows: `principles --hook` output gains the
   `procoder status` block after the principles text, so a session opens
   knowing the state. Speed is a constraint, not a nicety (see below).
-- A handoff note, written by the binary when a session ends or before a
+- [S-3] A handoff note, written by the binary when a session ends or before a
   compaction: `.procoder/state/handoff.md` records the same computed
   facts plus the timestamp and the HEAD commit — facts only, never a
   guess at intent. The agent may append its own intent lines under a
   marked section, which survive the next rewrite of the facts block.
-- `procoder hook stop` — the binary side, reading the host's Stop or
+- [S-4] `procoder hook stop` — the binary side, reading the host's Stop or
   PreCompact payload on stdin and writing the handoff note.
-- hooks/claude-hooks.json gains Stop and PreCompact registrations; the
+- [S-5] hooks/claude-hooks.json gains Stop and PreCompact registrations; the
   portability table states which other hosts can carry them.
-- The status report is included at the top of the handoff note, so the
+- [S-6] The status report is included at the top of the handoff note, so the
   file reads as the answer to "where was I".
 
 ## Out of scope
@@ -123,25 +123,28 @@ built to prevent, reappearing at the session boundary.
 
 ## Acceptance criteria
 
-- [ ] `procoder status` on this repository prints branch, dirty count,
+- [x] [S-1] `procoder status` on this repository prints branch, dirty count,
       active sprint (or none), open stories, open tasks, and index
       freshness — every line a computed fact, exit 0.
-- [ ] `procoder status` in a non-git temporary directory reports the
+- [x] [S-1] `procoder status` in a non-git temporary directory reports the
       git-derived lines as unknown with a reason and still exits 0.
-- [ ] `principles --hook` output contains the status block after the
+- [x] [S-2] `principles --hook` output contains the status block after the
       principles text, in each host envelope it already supports.
-- [ ] The SessionStart path completes within the 3-second budget on a
+- [x] [S-2] The SessionStart path completes within the 3-second budget on a
       repository with a built index and an active sprint — verified by
       a timed test.
-- [ ] `procoder hook stop` writes `.procoder/state/handoff.md`
+- [x] [S-3] [S-4] [S-6] `procoder hook stop` writes `.procoder/state/handoff.md`
       containing the facts block and today's HEAD.
-- [ ] Agent-authored notes survive a second `hook stop` — verified by a
+- [x] [S-3] Agent-authored notes survive a second `hook stop` — verified by a
       test that writes notes, re-runs, and asserts they remain while
       the facts block updates.
-- [ ] An unwritable state directory leaves `hook stop` exiting 0 with
+- [x] [S-4] An unwritable state directory leaves `hook stop` exiting 0 with
       no output — verified by a test.
-- [ ] `.procoder/state/` appears in the gitignore guidance the docs
+- [x] [S-3] `.procoder/state/` appears in the gitignore guidance the docs
       domain checks.
+- [x] [S-5] hooks/claude-hooks.json registers Stop and PreCompact, and
+      docs/portability.md states which hosts can carry a turn-end hook —
+      the table's "What a turn end may stop" section.
 
 ## Open questions
 

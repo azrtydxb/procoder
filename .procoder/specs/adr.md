@@ -18,18 +18,18 @@ decision gets relitigated or accidentally reversed.
 
 ## In scope
 
-- `.procoder/adr/NNNN-<slug>.md` — architecture decision records,
+- [S-1] `.procoder/adr/NNNN-<slug>.md` — architecture decision records,
   numbered, committed with the repo.
-- `procoder adr new <title>` — prints the next-numbered ADR file
+- [S-2] `procoder adr new <title>` — prints the next-numbered ADR file
   (Status: proposed, Date, Context / Decision / Consequences sections
   with guidance comments) for the agent to write.
-- `procoder adr list` — number, title, status, date; proposed first.
-- `procoder adr check` — the controller: refuses (exit 1) on ADRs with
+- [S-3] `procoder adr list` — number, title, status, date; proposed first.
+- [S-4] `procoder adr check` — the controller: refuses (exit 1) on ADRs with
   empty Context, Decision, or Consequences; on statuses outside
   proposed/accepted/superseded-by-NNNN; and on superseded references
   pointing at ADRs that do not exist. Reports the count of records
   still `proposed` (informational — deciding takes a human).
-- The audit sweep includes `adr check` findings when the directory
+- [S-5] The audit sweep includes `adr check` findings when the directory
   exists.
 
 ## Out of scope
@@ -78,15 +78,15 @@ decision gets relitigated or accidentally reversed.
 
 ## Acceptance criteria
 
-- [ ] `adr new` prints 0001 for an empty repo and 0003 when 0002
+- [x] [S-1] [S-2] `adr new` prints 0001 for an empty repo and 0003 when 0002
       exists; the printed file carries all three sections and today's
       date; nothing is written by the binary.
-- [ ] `adr check` refuses on an empty Decision section, an unknown
+- [x] [S-4] `adr check` refuses on an empty Decision section, an unknown
       status, a dangling supersede reference, and a duplicated number
       — each named — and passes on a valid set.
-- [ ] `adr list` orders proposed before accepted and shows
+- [x] [S-3] `adr list` orders proposed before accepted and shows
       superseded-by targets.
-- [ ] `procoder audit` on a repo with a broken ADR includes the
+- [x] [S-5] `procoder audit` on a repo with a broken ADR includes the
       finding.
 
 ## Open questions
