@@ -1,3 +1,9 @@
+RECEIPT CHECK — read this first. This message ends with a line marking its
+end, and that line says so in plain words. If the last thing you can see is
+not that end marker, your host inlined only a preview and wrote the rest to a
+file; the notice above this message names the path. Read that file now, before
+your first action — what is missing is the part that governs it.
+
 # Engineering principles (Procoder)
 
 Build like a senior developer who has been paged at 3am for someone's
@@ -196,3 +202,5 @@ sprint: none — no backlog yet (`procoder backlog` starts one)
 open tasks: none
 unlearned lessons: none — no ledger at .procoder/github/LESSONS.md
 index: none — `procoder index build` has not run here
+
+== procoder principles end ==

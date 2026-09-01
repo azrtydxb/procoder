@@ -35,6 +35,7 @@ it carries; the repository is judged on all of it.
 <li><span class="procoder-verdict procoder-verdict--info">Info</span><span><b>state of play</b><i>Branch against the default, dirty count, active sprint, open stories, unlearned lessons, index freshness — inside a hard three-second budget.</i></span></li>
 <li><span class="procoder-verdict procoder-verdict--info">Info</span><span><b>deferred suites</b><i>Names the test suites the gate will not run here, so a green gate is never mistaken for a suite that passed.</i></span></li>
 <li><span class="procoder-verdict procoder-verdict--info">Info</span><span><b>version check</b><i>Asks GitHub off the critical path — a slow network cannot hold a session open.</i></span></li>
+<li><span class="procoder-verdict procoder-verdict--info">Info</span><span><b>receipt check</b><i>The payload opens with an instruction and closes with an end marker. A host that inlines only the first 2KB and writes the rest to a file leaves a reader holding a preview — the marker is how it can tell, and the instruction says to go and read the remainder.</i></span></li>
 </ul>
 </div>
 </section>

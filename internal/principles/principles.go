@@ -233,13 +233,75 @@ func Effective(root string) (string, bool) {
 func hookText(root string) string {
 	text, _ := Effective(root)
 	var b strings.Builder
-	b.WriteString(strings.TrimRight(text, "\n"))
+	b.WriteString(receiptNotice)
+	b.WriteString(strings.TrimRight(stripMarker(text), "\n"))
 	b.WriteString("\n\n" + status.Header + "\n")
 	for _, line := range status.Report(root) {
 		b.WriteString(line + "\n")
 	}
+	b.WriteString("\n" + endMarker + "\n")
 	return b.String()
 }
+
+// endMarker closes the payload, and the notice above it says what to do
+// when it does not arrive.
+//
+// The host does not deliver an unbounded SessionStart payload: past some
+// size it writes the output to a file and inlines a preview of the first
+// 2KB. This text is ten kilobytes. Measured in a real session — the
+// reminder read "Output too large (9.9KB). Full output saved to...
+// Preview (first 2KB)" and the principles stopped mid-sentence — so for
+// every session since this document reached that size, four fifths of it
+// has been arriving as a path nothing made anybody read.
+//
+// The threshold is bracketed, not pinned: 5.2KB and 7.3KB were delivered
+// whole, 9.9KB and 10.7KB were not. Which is why this is a receipt check
+// and not a size limit — the marker is true whatever the threshold is, and
+// stays true if it changes.
+//
+// Truncating the document to fit is the wrong fix: it is the repository's
+// own text, an adopter's `.procoder/PRINCIPLES.md` is whatever they wrote,
+// and deciding which of somebody's engineering rules to drop is not a
+// delivery concern. So the payload stays whole and becomes CHECKABLE
+// instead. procoder guarantees delivery to the boundary; the reader
+// verifies receipt, and the marker is how it can.
+const endMarker = "== procoder principles end =="
+
+// receiptNotice deliberately does NOT quote endMarker.
+//
+// A notice carrying the marker verbatim would appear in the PREVIEW as well,
+// so a reader searching for the marker would find it in a truncated payload
+// and conclude it had the whole thing — a confident receipt for a delivery
+// that did not happen, which is the exact failure this is here to catch.
+// The marker is self-describing; the notice only has to say to look for it.
+// stripMarker removes the end marker from text the repository supplied.
+//
+// hookText writes an adopter's .procoder/PRINCIPLES.md verbatim, and that
+// file may legitimately quote the marker — pasted from procoder's own docs,
+// or from a document ABOUT procoder. A quoted marker inside the first 2KB
+// makes the receipt check return a confident pass on a truncated payload,
+// which is the one thing it exists to prevent. Found in review; the tests
+// only ever exercised the built-in default.
+func stripMarker(text string) string {
+	if !strings.Contains(text, endMarker) {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.TrimSpace(l) == endMarker {
+			continue
+		}
+		out = append(out, strings.ReplaceAll(l, endMarker, "[end marker removed]"))
+	}
+	return strings.Join(out, "\n")
+}
+
+const receiptNotice = "RECEIPT CHECK — read this first. This message ends with a line marking its\n" +
+	"end, and that line says so in plain words. If the last thing you can see is\n" +
+	"not that end marker, your host inlined only a preview and wrote the rest to a\n" +
+	"file; the notice above this message names the path. Read that file now, before\n" +
+	"your first action — what is missing is the part that governs it.\n\n"
 
 // RunHook prints the principles in the shape the running host's
 // SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
@@ -343,6 +405,12 @@ func Run(root string, out func(string)) int {
 	} else {
 		out("== engineering principles (procoder default — override with " + File + ")")
 	}
-	out(strings.TrimRight(text, "\n"))
+	out(strings.TrimRight(stripMarker(text), "\n"))
+	// The recovery route gets a receipt too. The hook's notice sends a
+	// reader here when its own payload was truncated, and this output is
+	// the same ten-kilobyte document — so without a marker the reader has
+	// no way to tell whether the SECOND read arrived whole either.
+	out("")
+	out(endMarker)
 	return 0
 }
