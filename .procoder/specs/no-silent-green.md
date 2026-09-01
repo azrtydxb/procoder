@@ -37,15 +37,15 @@ TypeScript twins do not, which is not a decision anybody made.
 
 ## In scope
 
-- A check that could not run is BLOCKING, in every domain, matching the
+- [S-1] A check that could not run is BLOCKING, in every domain, matching the
   rule domain 1 already follows.
-- Formatting never reports out of scope for want of a config: clang-format
+- [S-2] Formatting never reports out of scope for want of a config: clang-format
   gets a procoder baseline style, and a missing prettier PHP plugin is a
   missing tool rather than a style opinion.
-- TypeScript with no project config is linted against a procoder baseline.
-- Every extension procoder formats reaches a linter, or is told plainly
+- [S-3] TypeScript with no project config is linted against a procoder baseline.
+- [S-4] Every extension procoder formats reaches a linter, or is told plainly
   that none ran.
-- doctor and init know every default tool, so the loud refusal has a
+- [S-5] doctor and init know every default tool, so the loud refusal has a
   remedy the same command can carry out.
 
 ## Out of scope
@@ -103,31 +103,31 @@ TypeScript twins do not, which is not a decision anybody made.
 
 ## Acceptance criteria
 
-- [ ] With no linter installed, `procoder check` over a file of that
+- [x] [S-1] With no linter installed, `procoder check` over a file of that
       language exits 1 and the NOT-checked line is BLOCKING, not info.
-- [ ] A C++ file in a repository with no `.clang-format` is formatted
+- [x] [S-2] A C++ file in a repository with no `.clang-format` is formatted
       against procoder's baseline style and reported clean or unformatted,
       never out of scope.
-- [ ] A repository carrying its own `.clang-format` is formatted by that
+- [x] [S-2] A repository carrying its own `.clang-format` is formatted by that
       file, asserted by a style that differs from the baseline.
-- [ ] A PHP file with no prettier plugin is UNCHECKED with the install
+- [x] [S-2] [S-4] A PHP file with no prettier plugin is UNCHECKED with the install
       line and fails the gate, where it previously passed as out of scope.
-- [ ] A `.ts` file in a repository with no eslint config is linted against
+- [x] [S-3] A `.ts` file in a repository with no eslint config is linted against
       procoder's baseline and reports a real finding.
-- [ ] `.mts` and `.cts` files reach the same linter as `.ts`, and `.pyi`
+- [x] [S-4] `.mts` and `.cts` files reach the same linter as `.ts`, and `.pyi`
       reaches ruff, asserted by a fixture of each.
-- [ ] A C++ file reaches clang-tidy and a real finding is reported with its
+- [x] [S-4] A C++ file reaches clang-tidy and a real finding is reported with its
       file and line.
 - [x] A language procoder formats but cannot lint reports NOT linted,
       naming the language — never nothing. — SUPERSEDED: blocking
       unconditionally is impossible to escape for a language with no
       linter to install, see D-7. Now governed by `[lint] policy`, the
       same as every other lint finding.
-- [ ] A file type procoder does not claim is still out of scope and still
+- [x] [S-4] A file type procoder does not claim is still out of scope and still
       passes, asserted so the change cannot swallow every unknown file.
-- [ ] `procoder doctor` lists every new default tool with its install line,
+- [x] [S-5] `procoder doctor` lists every new default tool with its install line,
       and `procoder init` plans to install them.
-- [ ] No domain anywhere in the tree reports a check that did not run as
+- [x] [S-1] No domain anywhere in the tree reports a check that did not run as
       merely informational — asserted by an audit over the source, so a
       domain that does not exist yet is covered too.
 

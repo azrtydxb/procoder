@@ -19,7 +19,7 @@ version and only CI (at best) notices.
 
 ## In scope
 
-- `procoder release <version>` — the pre-tag controller. It verifies,
+- [S-1] `procoder release <version>` — the pre-tag controller. It verifies,
   in one pass, ALL of:
   - every file listed under `[release] files` in config.toml
     (D-OVERRIDE, no default guessing) contains the literal version;
@@ -31,9 +31,9 @@ version and only CI (at best) notices.
     remain. On success it prints the tag command
     (`git tag -a v<version> -m <version>`) for the agent to run —
     P-CONTROL, the binary tags nothing.
-- `procoder release` with no argument reports the newest version found
+- [S-2] `procoder release` with no argument reports the newest version found
   in CHANGELOG.md and whether the checklist passes for it.
-- procoder's own config.toml lists its nine version-bearing files.
+- [S-3] procoder's own config.toml lists its nine version-bearing files.
 
 ## Out of scope
 
@@ -85,16 +85,16 @@ version and only CI (at best) notices.
 
 ## Acceptance criteria
 
-- [ ] On a fixture with two listed files, one stale, `procoder release
+- [x] [S-1] On a fixture with two listed files, one stale, `procoder release
 1.2.3` lists exactly the stale file, the missing changelog
       heading, and the dirty tree — all in one output — and exits 1.
-- [ ] After fixing all three, it prints the tag command and exits 0,
+- [x] [S-1] After fixing all three, it prints the tag command and exits 0,
       having tagged nothing.
-- [ ] With `[release] files` unset the output states version-sync
+- [x] [S-1] With `[release] files` unset the output states version-sync
       verified nothing.
-- [ ] `procoder release` (no argument) reads the newest changelog
+- [x] [S-2] `procoder release` (no argument) reads the newest changelog
       version and reports the checklist for it.
-- [ ] procoder's own config lists its version files and `procoder
+- [x] [S-3] procoder's own config lists its version files and `procoder
 release <current>` passes on a clean tree.
 
 ## Open questions

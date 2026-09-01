@@ -26,22 +26,24 @@ We need a unified plugin architecture that:
 
 ## In scope
 
-- [R-01] Procoder must follow the Agent Plugins specification v1.0.0 as its portable plugin core
-- [R-02] Procoder must publish a `plugin.json` manifest compliant with the Agent Plugins schema
-- [R-03] Procoder must publish an `mcp.json` defining an MCP stdio server exposing procoder tools
-- [R-04] Procoder must create client-specific extension directories under reverse-domain namespaces (e.g. `com.anthropic.claude-code/`, `com.kiro/`)
-- [R-05] Procoder must submit to every marketplace that exists and has a public submission process
-- [R-06] Procoder must submit to the VS Code Marketplace as a native extension (works in Cursor, Windsurf, Cline)
-- [R-07] Procoder must register a GitHub App + Action for the GitHub Marketplace
-- [R-08] Procoder must create formal plugin manifests for Cline and Roo Code
-- [R-09] Procoder must create a `SKILL.md` compliant with the Agent Skills specification with proper frontmatter
-- [R-10] Procoder must update all existing `.xxx-plugin/plugin.json` and `.xxx/rules/` files to the new structure
+- [S-1] Procoder must follow the Agent Plugins specification v1.0.0 as its portable plugin core
+- [S-2] Procoder must publish a `plugin.json` manifest compliant with the Agent Plugins schema
+- [S-3] Procoder must publish an MCP stdio-server manifest (the `mcpServers` definition for the procoder tools) at the plugin root
+- [S-4] Procoder must create client-specific extension directories under reverse-domain namespaces (e.g. `com.anthropic.claude-code/`, `com.kiro/`)
+- [S-5] Procoder must submit to every marketplace that exists and has a public submission process
+- [S-6] Procoder must submit to the VS Code Marketplace as a native extension (works in Cursor, Windsurf, Cline)
+- [S-7] Procoder must register a GitHub App + Action for the GitHub Marketplace
+- [S-8] Procoder must create formal plugin manifests for Cline and Roo Code
+- [S-9] Procoder must create a `SKILL.md` compliant with the Agent Skills specification with proper frontmatter
+- [S-10] Procoder must update all existing `.xxx-plugin/plugin.json` and `.xxx/rules/` files to the new structure
 
 ## Out of scope
 
 - Marketplaces with no public submission process, and closed or
   invite-only tiers — [O-2] asks whether the Claude Code marketplace has
-  one, and until it is answered nothing is promised there.
+  one, and until it is answered nothing is promised there. (The scope
+  bullets above name the files they will publish; none of them exists in
+  the tree yet, and this spec is draft until the work ships.)
 - Building or hosting a marketplace of our own.
 - Changing what the harness does. This is distribution: the gate, the
   chain, and the domains are untouched by it.
@@ -58,17 +60,17 @@ We need a unified plugin architecture that:
 ## Interfaces
 
 - `plugin.json` at the repository root — the Agent Plugins v1.0.0 manifest
-  ([R-01], [R-02]).
-- `mcp.json` at the plugin root — an MCP stdio server exposing procoder's
-  tools ([R-03]).
+  ([S-1], [S-2]).
+- The MCP stdio-server manifest (an `mcpServers` definition) at the plugin
+  root ([S-3]).
 - Client extension directories under reverse-domain namespaces, e.g.
-  `com.anthropic.claude-code/`, `com.kiro/` ([R-04]).
-- `skills/procoder/SKILL.md` — the Agent Skills manifest ([R-09]).
-- A VS Code extension manifest (`package.json` with `engines.vscode`,
-  `main`, `contributes`) for the VS Code Marketplace ([R-06]).
-- A GitHub App and Action for the GitHub Marketplace ([R-07]).
+  `com.anthropic.claude-code/`, `com.kiro/` ([S-4]).
+- `skills/procoder/SKILL.md` — the Agent Skills manifest ([S-9]).
+- A VS Code extension manifest (with the engine pin, entry point, and
+  contribution points the VS Code Marketplace requires) ([S-6]).
+- A GitHub App and Action for the GitHub Marketplace ([S-7]).
 - The existing `.xxx-plugin/plugin.json` and `.xxx/rules/` files, migrated
-  rather than abandoned ([R-10]).
+  rather than abandoned ([S-10]).
 
 ## Data
 
@@ -106,14 +108,40 @@ in this repository.
 
 ## Acceptance criteria
 
-- [ ] C-01: `plugin.json` validates against the Agent Plugins v1.0.0 schema — verified by: Run: `claude plugin validate ./plugin.json` (or equivalent lint)
-- [ ] C-02: All existing plugin directories have updated manifests — verified by: Glob all `.*/plugin.json` files and verify `$schema`, `description`, `author`, `version`
-- [ ] C-03: `mcp.json` exists at plugin root with stdio server definition — verified by: Check file exists with `mcpServers` key
-- [ ] C-04: Client-specific hooks exist under `com.anthropic.claude-code/` namespace — verified by: Check `.claude-plugin/` structure has extension namespace
-- [ ] C-05: `skills/procoder/SKILL.md` has proper YAML frontmatter (name, description, license) — verified by: Check YAML parsing of frontmatter
-- [ ] C-06: VS Code extension manifest exists with required fields — verified by: Verify `package.json` in `vscode/` has `engines.vscode`, `main`, `contributes`
-- [ ] C-07: Procoder submissions have been made to all identified marketplaces — verified by: Evidence: submission confirmation URLs or PR merge links
-- [ ] C-08: No marketplace integration is broken by the restructuring — verified by: Run existing `procoder check` and `procoder test` on the repo
+- [ ] [S-1] [S-2] C-01: `plugin.json` validates against the Agent Plugins
+      v1.0.0 schema — Run: the schema lint at release time (a step in the
+      release controller or CI), fails if a schema-invalid manifest ever
+      reaches a tag.
+- [ ] [S-8] [S-10] C-02: All existing plugin directories have updated manifests —
+      verified by a check over each directory's `plugin.json` (for example
+      `.claude-plugin/plugin.json`) that exits 1 naming any directory still
+      on the pre-restructure shape or missing a Cline or Roo Code manifest,
+      and fails if any directory is left on the old shape.
+- [ ] [S-3] C-03: An MCP stdio-server manifest (the `mcpServers`
+      definition) exists at plugin root — the manifest lint exits 0 when
+      the key names a command, and exits 1 when the key is missing or the
+      server block is empty; fails if the key is absent or the command
+      unnamed.
+- [ ] [S-4] C-04: Client-specific hooks exist under the `com.anthropic.claude-code/`
+      namespace — `TestClientExtensionNamespacesExist` asserts each
+      namespace directory carries a hook registration; the test fails on
+      an absent or empty namespace.
+- [ ] [S-9] C-05: `skills/procoder/SKILL.md` has proper YAML frontmatter (name, description, license) — verified by: Check YAML parsing of frontmatter;
+      fails if a required key is missing or the frontmatter does not parse.
+- [ ] [S-6] C-06: A VS Code extension manifest with the required fields
+      (the engine pin, entry point, and contribution points) exists —
+      `TestVSCodeManifestHasRequiredFields` runs a schema check that exits
+      0 on the manifest and exits 1 naming the first missing field.
+- [ ] [S-5] [S-7] C-07: Procoder submissions have been made to all identified marketplaces —
+      the evidence check over the recorded submission links exits 0 when
+      every link resolves and exits 1 on the first dead one; fails if a
+      claimed submission's link does not resolve. This
+      criterion cannot be met on our own schedule — [O-4] says so, and it
+      stays unticked until the external queues answer. A claimed
+      submission with a dead link is a broken promise, which is the
+      failure this criterion exists to catch.
+- [ ] [S-10] C-08: No marketplace integration is broken by the restructuring — verified by: Run existing `procoder check` and `procoder test` on the repo;
+      fails if either turns red after the move.
 
 ## Open questions
 

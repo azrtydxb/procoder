@@ -26,7 +26,7 @@ last synced, and has CI seen this commit.
 
 ## In scope
 
-- `procoder env` — what changed in the project's environment since the
+- [S-1] `procoder env` — what changed in the project's environment since the
   last recorded sync, three checks against `.procoder/state/env.json`:
   - lockfile hashes — package-lock.json, pnpm-lock.yaml, yarn.lock,
     bun.lock, bun.lockb, go.sum, Cargo.lock, poetry.lock, uv.lock,
@@ -45,24 +45,24 @@ last synced, and has CI seen this commit.
   - `.env.example` / `.env.sample` / `.env.template` keys absent from
     the local `.env` print "new env var(s) declared: X, Y" — key names
     only, never a value from either file.
-- `procoder env --sync` records the current tree as the new baseline —
+- [S-2] `procoder env --sync` records the current tree as the new baseline —
   the explicit act of saying "I have installed and migrated" — and
   prints what it recorded (counts, not contents).
-- Bare `procoder env` reports only: exit 0 with findings, exit 1 only
+- [S-3] Bare `procoder env` reports only: exit 0 with findings, exit 1 only
   when a check could not run (an unreadable lockfile, migration
   directory, or state file); every check that did not run prints a NOT
   checked line naming the reason.
-- The first run with no baseline says so plainly — "no sync baseline
+- [S-4] The first run with no baseline says so plainly — "no sync baseline
   recorded — run `procoder env --sync` once your setup is done" —
   lists the files it would track, and exits 0.
-- `procoder ci --runs` — the CI verdict for the current branch via
+- [S-5] `procoder ci --runs` — the CI verdict for the current branch via
   `gh`: per workflow, the newest run's status, conclusion, and age,
   plus the failing job names when it failed.
-- The staleness verdict: when the newest run's head commit is not
+- [S-6] The staleness verdict: when the newest run's head commit is not
   HEAD's, and HEAD is pushed, print "the newest run predates your
   latest push — CI has not judged this commit yet" — the forgotten
   step this exists to catch.
-- `.procoder/state/` joins the gitignore guidance: per-machine derived
+- [S-7] `.procoder/state/` joins the gitignore guidance: per-machine derived
   state, tracked no more than `.procoder/index/` is.
 
 ## Out of scope
@@ -198,39 +198,42 @@ last synced, and has CI seen this commit.
 
 ## Acceptance criteria
 
-- [ ] On a fixture with a recorded baseline and a mutated
+- [x] [S-1] On a fixture with a recorded baseline and a mutated
       package-lock.json, `procoder env` names package-lock.json and
       prints `npm ci`, exiting 0.
-- [ ] On a fixture whose `db/migrate` gained two files since the
+- [x] [S-1] On a fixture whose `db/migrate` gained two files since the
       baseline, the output reads "2 migration(s) added since your last
       sync" and lists both names.
-- [ ] On a fixture whose `.env.example` declares DATABASE_URL and
+- [x] [S-1] On a fixture whose `.env.example` declares DATABASE_URL and
       REDIS_URL with only DATABASE_URL in `.env`, the output names
       REDIS_URL and no value from either file appears anywhere in the
       output — asserted by a test that plants a distinctive secret
       string as both values and greps the whole output for it.
-- [ ] With no `.procoder/state/env.json`, `procoder env` prints the
+- [x] [S-2] [S-4] With no `.procoder/state/env.json`, `procoder env` prints the
       no-baseline line naming `--sync` and exits 0; after a
       `--sync` run on the same tree, a second bare run reports no
       changes and exits 0.
-- [ ] `procoder env --sync` writes exactly one file
+- [x] [S-2] `procoder env --sync` writes exactly one file
       (`.procoder/state/env.json`) — a test snapshots the tree before
       and after and asserts a single added path — and the written JSON
       contains no `.env` value.
-- [ ] A lockfile made unreadable yields a NOT-checked line naming it
+- [x] [S-3] A lockfile made unreadable yields a NOT-checked line naming it
       and exit 1, while the other lockfiles in the same fixture still
       report their verdicts.
-- [ ] With gh absent from a stub PATH, `procoder ci --runs` prints the
+- [x] [S-5] With gh absent from a stub PATH, `procoder ci --runs` prints the
       NOT-checked line naming gh and exits 1, and the same fixture run
       as bare `procoder ci` prints the unchanged hygiene findings.
-- [ ] Parse tests over recorded `gh run list --json` output cover a
+- [x] [S-5] [S-6] Parse tests over recorded `gh run list --json` output cover a
       failing run (with failing job names), an in-progress run, an
       empty run list, and a newest run whose headSha differs from a
       pushed HEAD — the last producing the "newest run predates your
       latest push" line.
-- [ ] Every path printed by either half uses forward slashes, asserted
+- [x] [S-1] Every path printed by either half uses forward slashes, asserted
       by a test that builds a nested fixture path and rejects any
       backslash in the output.
+- [x] [S-7] `.procoder/state/` appears in the gitignore guidance the docs
+      domain checks, alongside the state files `docs/commands.md` already
+      names.
 
 ## Open questions
 

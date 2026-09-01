@@ -22,23 +22,23 @@ it is done. The product's headline claim is currently an honour system.
 
 ## In scope
 
-- A PreToolUse hook on Bash that inspects the command about to run and,
+- [S-1] A PreToolUse hook on Bash that inspects the command about to run and,
   when it is a `git commit`, runs the gate first: blocking findings stop
   the commit and are handed back to the agent as the reason; a clean
   gate lets it through untouched.
-- `procoder hook pre-tool-use` — the binary side of that hook, reading
+- [S-2] `procoder hook pre-tool-use` — the binary side of that hook, reading
   the host's PreToolUse payload on stdin and answering in the host's
   JSON shape (Claude Code today; the same envelope work `principles
 --hook` already does per host).
-- Escape hatches, both visible: `git commit --no-verify` passes through
+- [S-3] Escape hatches, both visible: `git commit --no-verify` passes through
   with a loud note that the gate was bypassed, and
   `[git] commit_gate = "report" | "off"` in config.toml (D-OVERRIDE)
   downgrades or disables the interception. Default is `block`.
-- `procoder hook install-git` — prints a `.git/hooks/pre-commit` script
+- [S-4] `procoder hook install-git` — prints a `.git/hooks/pre-commit` script
   (and the one command that installs it) so the gate also holds for
   commits made outside any agent: a human in a terminal, an IDE button,
   another tool. Printed, never written: `.git/hooks` is the user's.
-- Host coverage stated honestly in docs/portability.md: which hosts
+- [S-5] Host coverage stated honestly in docs/portability.md: which hosts
   support command interception, and which fall back to the git hook.
 
 ## Out of scope
@@ -119,22 +119,22 @@ it is done. The product's headline claim is currently an honour system.
 
 ## Acceptance criteria
 
-- [ ] With the hook installed, a `git commit` on a tree with a blocking
+- [x] [S-1] With the hook installed, a `git commit` on a tree with a blocking
       finding is stopped and the refusal names the finding.
-- [ ] The same commit succeeds once the finding is fixed, with no extra
+- [x] [S-1] The same commit succeeds once the finding is fixed, with no extra
       ceremony.
-- [ ] `git commit --no-verify` proceeds and the output says the gate was
+- [x] [S-3] `git commit --no-verify` proceeds and the output says the gate was
       bypassed.
-- [ ] A compound `... && git commit -m x` is detected; `echo "commit"`
+- [x] [S-1] A compound `... && git commit -m x` is detected; `echo "commit"`
       and `gh pr merge` are not.
-- [ ] `[git] commit_gate = "report"` prints findings and allows the
+- [x] [S-3] `[git] commit_gate = "report"` prints findings and allows the
       commit; `"off"` skips the check entirely.
-- [ ] A malformed payload allows the command and says the gate could
+- [x] [S-2] A malformed payload allows the command and says the gate could
       not judge — verified by a test feeding broken stdin.
-- [ ] `procoder hook install-git` prints a working pre-commit script
+- [x] [S-4] `procoder hook install-git` prints a working pre-commit script
       that runs the gate and returns non-zero on blocking findings, and
       writes nothing itself.
-- [ ] docs/portability.md states, per host, whether command
+- [x] [S-5] docs/portability.md states, per host, whether command
       interception is supported or the git hook is the fallback.
 
 ## Open questions

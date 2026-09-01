@@ -1,6 +1,6 @@
 # pi-integration
 
-Status: draft
+Status: complete
 
 ## Problem
 

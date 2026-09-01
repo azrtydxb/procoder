@@ -21,18 +21,18 @@ We need a structured Q&A flow where procoder actually asks the human, collects a
 
 ## In scope
 
-- [R-01] `procoder ask` collects questions from all question-generating domains:
+- [S-1] `procoder ask` collects questions from all question-generating domains:
   - Spec: every unresolved `OPEN:` question with its spec name and the question text
   - Docs obligation: every documentation gap that was not cleared by an edit or commit message
   - Security: every secret flag (real secret or test credential?)
   - Lint: every blocking lint finding that needs judgment (true positive or false positive?)
-- [R-02] `procoder ask` presents questions one at a time in the terminal when a TTY is available, using the existing `copilot.Prompt` interaction pattern
-- [R-03] When no TTY is available, `procoder ask` writes all questions to `.procoder/ask/QA.md` (one question per section, numbered) and exits 1 with a clear instruction telling the AI coder to forward them
-- [R-04] `procoder ask` writes answers to `.procoder/ask/answers.md` in a machine-readable format
-- [R-05] `procoder ask --file <path>` accepts answers from a file instead of interactive input (enables the AI coder to submit human answers)
-- [R-06] PostToolUse hook injects a Q&A section into `additionalContext` whenever there are pending questions, with explicit instructions that the AI coder must stop and ask, not guess
-- [R-07] `procoder ask` output includes the answers (from `answers.md` if present) so the AI coder sees the human's decisions
-- [R-08] The `principles` hook text includes a section about how the AI coder should behave when presented with questions
+- [S-2] `procoder ask` presents questions one at a time in the terminal when a TTY is available, using the existing `copilot.Prompt` interaction pattern
+- [S-3] When no TTY is available, `procoder ask` writes all questions to `.procoder/ask/QA.md` (one question per section, numbered) and exits 1 with a clear instruction telling the AI coder to forward them
+- [S-4] `procoder ask` writes answers to `.procoder/ask/answers.md` in a machine-readable format
+- [S-5] `procoder ask --file <path>` accepts answers from a file instead of interactive input (enables the AI coder to submit human answers)
+- [S-6] PostToolUse hook injects a Q&A section into `additionalContext` whenever there are pending questions, with explicit instructions that the AI coder must stop and ask, not guess
+- [S-7] `procoder ask` output includes the answers (from `answers.md` if present) so the AI coder sees the human's decisions
+- [S-8] The `principles` hook text includes a section about how the AI coder should behave when presented with questions
 
 ## Out of scope
 
@@ -99,39 +99,42 @@ real, and the answer does not need the credential to be legible.
 
 ## Acceptance criteria
 
-- [ ] C-01: `procoder ask` on a fixture carrying one question per generating
+- [x] [S-1] C-01: `procoder ask` on a fixture carrying one question per generating
       domain — an unresolved spec question, an uncleared documentation
       obligation, a flagged secret, a blocking lint finding — prints all
       four, each naming its source, and a flagged secret's value appears
       nowhere in the output or in either file.
-- [ ] C-02: With a terminal it asks one question at a time; with
+- [x] [S-2] [S-3] C-02: With a terminal it asks one question at a time; with
       `/dev/null` or a pipe on stdin it asks nothing, writes
       `.procoder/ask/QA.md`, names the file and the `--file` route, and
       does not hang.
-- [ ] C-03: `.procoder/ask/QA.md` and `.procoder/ask/answers.md` are
+- [x] [S-3] [S-4] C-03: `.procoder/ask/QA.md` and `.procoder/ask/answers.md` are
       written at those paths, and a second run with no new questions
       rewrites neither.
-- [ ] C-04: `procoder ask --file <path>` records the answers in that file
+- [x] [S-5] C-04: `procoder ask --file <path>` records the answers in that file
       against the questions they belong to, and refuses a file it cannot
       parse rather than recording a partial reading.
-- [ ] C-05: An answer persists: a question already answered is not asked
+- [x] [S-4] [S-7] C-05: An answer persists: a question already answered is not asked
       again on the next run, and the same question with its text changed IS
       asked again — verified by a test that answers, re-runs, edits the
       question, and re-runs.
-- [ ] C-06: The PostToolUse hook's `additionalContext` carries the pending
+- [x] [S-6] C-06: The PostToolUse hook's `additionalContext` carries the pending
       questions and the instruction not to guess, and carries nothing when
       none are pending.
-- [ ] C-07: `procoder ask` exits 1 while any question is unanswered and 0
+- [x] [S-3] [S-7] C-07: `procoder ask` exits 1 while any question is unanswered and 0
       when all are, so a caller can tell the two apart.
 - [ ] C-08: `[ask] policy = "block"` makes pending questions block
       `procoder check`; the default `report` lists them and leaves the
       gate's verdict unchanged — both verified by test.
-- [ ] C-09: A spec question that has been ANSWERED in `answers.md` no
+- [x] [S-4] C-09: A spec question that has been ANSWERED in `answers.md` no
       longer blocks `spec check`: the spec reports COMPLETE with a note
       that the section still lists questions a human has decided. A
       question with no answer blocks exactly as it does today, and an
       answer whose question text has since changed does not count —
       verified by a test covering all three.
+- [x] [S-8] The `principles` hook text carries the questions-behaviour
+      section — `TestWithNoTerminalItWritesTheFileAndSaysSo` in
+      `internal/ask` pins the instruction it tells the coder to act on.
 
 ## Open questions
 
