@@ -338,7 +338,7 @@ func TestBreakingAStaleLockIsSerialised(t *testing.T) {
 	}
 	restore()
 	Notice = io.Discard
-	t.Cleanup(func() { Notice = os.Stderr })
+	t.Cleanup(func() { Notice = io.Discard })
 	release, err := Lock(root, rel)
 	if err != nil {
 		t.Fatalf("the stale lock was not breakable once the break file went: %v", err)
