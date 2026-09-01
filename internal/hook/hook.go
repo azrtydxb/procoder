@@ -45,11 +45,40 @@ type hookOutput struct {
 // hard wall.
 const stdinDeadline = 5 * time.Second
 
-// Formatted output larger than this is not injected into the agent's context —
-// a giant paste displaces the work the agent was doing. The agent is told the
-// file is unformatted and where to get the full result instead. The threshold
-// is generous: real source files the hook sees are almost always far below it.
-const maxInlineBytes = 48 * 1024
+// The host does not deliver an unbounded hook payload. Past roughly two
+// kilobytes it writes the output to a file and inlines only a PREVIEW of
+// the first 2KB, so anything after that reaches the agent as a path it has
+// to go and read — which nothing makes it do.
+//
+// That is worse than losing the tail. This hook's format part says "review
+// it and write it to the file", and a truncated formatted body under that
+// instruction is a file with its end cut off. It also silently drops
+// whatever comes after the format part, and a secret finding is one of the
+// things that comes after.
+//
+// Measured, not documented, and the threshold is BRACKETED rather than
+// pinned: payloads of 5.2KB and 7.3KB were delivered whole, while 9.9KB
+// and 10.7KB were persisted with a 2KB preview. So the host tolerates
+// more than 2KB — it is the preview size, not the limit.
+//
+// The budget is the preview size anyway, deliberately. Guessing high fails
+// silently: a payload over the real threshold loses everything past 2KB
+// with nothing saying so, and the tail is where the findings are. Guessing
+// low costs only that a formatted body over its share arrives as the
+// command that prints it, which is a documented path an agent already
+// takes. One of those failures is recoverable by the reader and the other
+// is not.
+//
+// Raising this is reasonable once the threshold is pinned rather than
+// bracketed. It should not be raised on the strength of two lucky
+// deliveries.
+const maxContextBytes = 2000
+
+// maxInlineFormatted is the formatted body's own share of that budget. It
+// is the only part that can be arbitrarily large — a findings line is tens
+// of bytes and a file is not — so without a share of its own it starves
+// everything after it.
+const maxInlineFormatted = 900
 
 // askPart carries the questions no domain can answer for itself into the
 // place the coder actually reads. Without it these reach the coder as a
@@ -75,7 +104,7 @@ func askPart(root string) string {
 		limit = 5
 	}
 	for _, q := range pending[:limit] {
-		fmt.Fprintf(&b, "  - %s %s\n", q.Label(), q.Text)
+		fmt.Fprintf(&b, "  - %s %s\n", q.Label(), oneLine(q.Text, 160))
 	}
 	if len(pending) > limit {
 		fmt.Fprintf(&b, "  … and %d more\n", len(pending)-limit)
@@ -84,6 +113,25 @@ func askPart(root string) string {
 	b.WriteString("reads as a decision once it is written down. Put them to the user, write\n")
 	b.WriteString("their answers into the file, and record them with `procoder ask --file`.")
 	return b.String()
+}
+
+// oneLine flattens a question to a single line of at most n characters.
+//
+// The loop above was written as one line per question and was not: a
+// question derived from a decision record carries the whole record as its
+// text, blank lines and all, so five questions could run to eight
+// kilobytes and crowd every other finding out of the payload.
+func oneLine(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	// Runes, not bytes. Slicing a byte index through this repository's
+	// em-dashes and ellipses produced invalid UTF-8, which json.Marshal
+	// then replaced with U+FFFD — a question delivered as mojibake. Found
+	// in review; the test only exercised ASCII.
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
 }
 
 // Run handles one PostToolUse event end to end. It never returns an error to
@@ -99,10 +147,17 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		return 0
 	}
 
-	var parts []string
-	add := func(part string) {
-		if part != "" {
-			parts = append(parts, part)
+	var parts []part
+	add := func(text string) {
+		if text != "" {
+			parts = append(parts, part{text: text})
+		}
+	}
+	// A secret in a file the agent just wrote is the one finding here that
+	// blocks, and the budget is not a reason to withhold it.
+	addKeep := func(text string) {
+		if text != "" {
+			parts = append(parts, part{text: text, keep: true})
 		}
 	}
 
@@ -118,11 +173,11 @@ func Run(stdin io.Reader, stdout io.Writer) int {
 		add(markdownPart(root, p.ToolInput.FilePath))
 	} else {
 		add(driftPart(root, p.ToolInput.FilePath))
-		add(secretsPart(root, p.ToolInput.FilePath))
+		addKeep(secretsPart(root, p.ToolInput.FilePath))
 		add(lintPart(root, p.ToolInput.FilePath))
 	}
 	add(askPart(root))
-	msg := strings.Join(parts, "\n\n")
+	msg := fit(parts)
 
 	if msg == "" {
 		return 0
@@ -213,6 +268,84 @@ func lintPart(root, file string) string {
 	return "procoder [lint]: findings in the file you just wrote — investigate, judge, and fix what is real:\n" + strings.Join(b, "\n")
 }
 
+// part is one section of the message, and whether it must survive the
+// budget. Only the secret scan sets keep: it is the blocking domain here.
+type part struct {
+	text string
+	keep bool
+}
+
+// fit joins the parts the agent will actually receive, and says so when it
+// had to leave some out.
+//
+// Parts are added in the order they were built — which is deliberate and
+// documented at each call site — and one that does not fit is SKIPPED, not
+// used to end the message: a small finding after a large one is worth
+// keeping. That is why the notice says the omitted findings are not
+// necessarily the last ones. Saying "further" would have implied a tail,
+// and an agent reading that would draw exactly the wrong conclusion about
+// which finding it is missing.
+//
+// Nothing is truncated mid-part: half a finding is a finding whose meaning
+// cannot be trusted, and half a formatted file is a file somebody may write
+// back over the whole thing.
+//
+// The notice is the point. A hook that quietly delivered four findings out
+// of seven would be the same silent-green this tool exists to remove.
+func fit(parts []part) string {
+	// The notice has to fit INSIDE the budget, not be appended past it.
+	// Appending it afterwards returned 2144 bytes against a 2000 budget,
+	// which put the explanation of the truncation in the part that gets
+	// truncated. Found in review.
+	const noticeReserve = 220
+
+	// A must-keep part is placed first whatever its position in the
+	// message, because the budget is not a reason to withhold a secret.
+	// It competes under the same reserved limit as everything else:
+	// a keep part LARGER than the budget cannot be delivered whole and
+	// nothing truncates mid-part, so it is dropped and NAMED in the
+	// omission notice rather than silently lost — a silent drop is
+	// exactly the shape the notice exists to prevent. A part that
+	// merely does not fit beside larger ones is the ordinary case and
+	// is handled the same way.
+	var kept []string
+	used := 0
+	dropped := 0
+	seen := make([]bool, len(parts))
+
+	take := func(i int, limit int) bool {
+		cost := len(parts[i].text)
+		if used > 0 {
+			cost += 2 // the blank line between parts
+		}
+		if used+cost > limit {
+			return false
+		}
+		kept = append(kept, parts[i].text)
+		used += cost
+		seen[i] = true
+		return true
+	}
+
+	limit := maxContextBytes - noticeReserve
+	for i := range parts {
+		if parts[i].keep {
+			take(i, limit)
+		}
+	}
+	for i := range parts {
+		if !seen[i] && !take(i, limit) {
+			dropped++
+		}
+	}
+	if dropped > 0 {
+		kept = append(kept, fmt.Sprintf(
+			"== %d finding(s) omitted — they did not fit what the host delivers (the first %d bytes of a hook's output), and they are not necessarily the last ones. Run `procoder check` to see all of them.",
+			dropped, maxContextBytes))
+	}
+	return strings.Join(kept, "\n\n")
+}
+
 // message turns a Result into what the agent is told. Clean and OutOfScope are
 // silent here — the write hook speaks only when there is something to act on;
 // the counting of skipped files is `procoder check`'s job, where a human reads
@@ -220,7 +353,7 @@ func lintPart(root, file string) string {
 func message(res format.Result) string {
 	switch res.Verdict {
 	case format.Unformatted:
-		if len(res.Formatted) > maxInlineBytes {
+		if len(res.Formatted) > maxInlineFormatted {
 			return fmt.Sprintf(
 				"procoder [format]: %s is not formatted (%s). The formatted result is %d bytes — too large to inline. Run `procoder format %q` to see it, then write it.",
 				res.File, res.Tool, len(res.Formatted), res.File)

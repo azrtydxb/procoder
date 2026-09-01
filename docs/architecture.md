@@ -53,10 +53,11 @@ session continue rather than failing it.
 Tools compute results and hand them over; **nothing modifies code,
 files, or state behind the agent's back**. The write hook does not
 format your file — it hands the agent the formatted content to review
-and write. `templates`, `agents`, `spec template`, `todo add` all print
-content for the agent to write. The two exceptions are Procoder's own
-state (`todo close` flips a Status line; the index refreshes itself),
-never your code.
+and write, or, when that content is too large to deliver intact, the
+command that prints it. `templates`, `agents`, `spec template`,
+`todo add` all print content for the agent to write. The two exceptions
+are Procoder's own state (`todo close` flips a Status line; the index
+refreshes itself), never your code.
 
 Why: an agent that experiences its tools as collaborators uses them; an
 agent that gets silently overridden routes around its harness. And every
@@ -104,10 +105,23 @@ platform tool gaps), the fix lands in the shared path.
 ## The write hook, end to end
 
 `PostToolUse` on every Write/Edit: payload on stdin → format verdict
-(fixed content included if unformatted) → lint findings for that file →
-markdown/doc checks if prose → secrets scan → doc-drift notes → index
-refresh. Answer in the same turn, file untouched. Cost in practice:
-sub-second per write.
+(formatted content included if it fits the budget below, a pointer to
+`procoder format` if not) → lint findings for that file → markdown/doc
+checks if prose → secrets scan → doc-drift notes → index refresh. Answer
+in the same turn, file untouched. Cost in practice: sub-second per write.
+
+**The payload is budgeted, because delivery is.** A host does not inline
+unbounded hook output: past roughly two kilobytes Claude Code writes the
+output to a file and inlines only a preview of the first 2KB. So the hook
+keeps its whole message under that, gives the formatted body a bounded
+share of it — the only part that can be arbitrarily large — and DROPS any
+part that will not fit rather than truncating it. Half a finding is a
+finding whose meaning cannot be trusted, and half a formatted file is one
+somebody may write back over the whole thing.
+
+What was dropped is counted in the output, with `procoder check` named as
+the way to see all of it. A hook that quietly delivered four findings out
+of seven would be the silent green this tool exists to remove.
 
 ## Testing philosophy
 
