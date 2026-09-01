@@ -33,7 +33,12 @@ holding.
 2026-09-01, after v3.5.0 was published (release job 33537811388, green, the
 five platform binaries and SHA256SUMS under the GitHub release):
 
-- `pi remove ../../Development/procoder` then
+- The local entry in the settings file had been reworded since this record
+  was written — the Description names the absolute
+  `/Users/pascal/Development/procoder`; on 2026-09-01 the entry read the
+  relative `../../Development/procoder`, and `pi remove` takes the spec
+  string as written. So the command was
+  `pi remove ../../Development/procoder`, then
   `pi install git:github.com/azrtydxb/procoder@v3.5.0`; the settings file now
   carries `"packages": ["git:github.com/azrtydxb/procoder@v3.5.0"]` and the
   local path entry is gone. The clone sits at
