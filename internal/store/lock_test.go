@@ -25,11 +25,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func impatient(t *testing.T) {
+func impatient(t *testing.T) func() {
 	t.Helper()
 	was := lockTimeout
 	lockTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { lockTimeout = was })
+	restore := func() { lockTimeout = was }
+	t.Cleanup(restore)
+	return restore
 }
 
 // plant writes a lock file for rel with the given pid and unix time, so a
@@ -306,10 +308,16 @@ func TestAHeldLockIsNotBrokenWhileItsOwnerWorks(t *testing.T) {
 // and both then hold. The fix is that only the holder of the break file
 // may remove, so the second caller never reaches its remove.
 //
+// Both assertions are about BEHAVIOUR, not speed: the impatient budget is
+// pure suite hygiene, and a phase that must SUCCEED inside it is a claim
+// that the scheduler grants 50ms of continuity, which a loaded runner
+// does not grant (issue #255). The phase that needs success therefore
+// restores the full budget before it asks for it.
+//
 // proved by: removing the break file's O_EXCL guard makes this test break
 // the lock anyway and fail.
 func TestBreakingAStaleLockIsSerialised(t *testing.T) {
-	impatient(t)
+	restore := impatient(t)
 	root := t.TempDir()
 	const rel = ".procoder/state/dispatch.json"
 	plant(t, root, rel, os.Getpid(), time.Now().Add(-31*time.Second).Unix())
@@ -328,6 +336,7 @@ func TestBreakingAStaleLockIsSerialised(t *testing.T) {
 	if err := os.Remove(bp); err != nil {
 		t.Fatal(err)
 	}
+	restore()
 	Notice = io.Discard
 	t.Cleanup(func() { Notice = os.Stderr })
 	release, err := Lock(root, rel)
