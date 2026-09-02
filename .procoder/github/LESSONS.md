@@ -443,3 +443,32 @@ closes #209` — and after merging a PR that claimed to close more than
   reading for "is this race fixed" is a different question from reading for
   "does this shape appear anywhere".
 
+## 2026-09-02 hook delivery budget (self) — the fixes for a review are the code nobody reviews
+
+- Class: judgment
+
+- Adaptation: the pre-PR review of #266 found that a formatted body could
+  starve the secret scan. The fix was a must-keep path, and that path
+  shipped with two defects of its own: keep parts were placed against the
+  FULL budget rather than the reserved one, so the omission notice could
+  push the payload past the constant it existed to enforce; and a keep part
+  larger than the whole budget was dropped without being counted, so the one
+  finding declared un-droppable vanished silently. Copilot found both on the
+  PR.
+
+  Neither is subtle. They are in eleven lines written in direct response to
+  a review finding, on the path that finding said was the important one —
+  and nothing read them, because the reviewer had already run. A review is a
+  snapshot of the diff as it was; everything written to satisfy it is newer
+  than the review.
+
+  The same session had already shown the fix. During #249 a verification
+  pass over the fix diff caught a race reintroduced ONE COMMIT after the
+  original was fixed. That pass was not run here.
+
+  The rule: an exception path added to satisfy a finding — a must-keep, a
+  bypass, a special case — is the least-reviewed code in the change. Read
+  those hunks last and hardest, or re-run the reviewer over the fix diff.
+  REVIEW.md now carries it, alongside the budget-excludes-its-own-overhead
+  shape that was the concrete form it took here.
+
