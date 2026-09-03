@@ -310,8 +310,9 @@ Around the checks, the skills encode the workflow: a worktree per
 feature (a git practice the skills prescribe — Procoder creates and
 removes none of them itself), `/procoder:pr` (defer to an existing PR,
 docs-impact question, pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
-polling, every review thread answered, the reflection step for anything
-that escaped, then merge and full cleanup).
+polling, every review thread answered — fixed, argued down, or tracked as
+its own task before the merge — the reflection step for anything that
+escaped, then merge and full cleanup).
 
 Tagging is the last step and has its own controller. `procoder release`
 verifies in one pass that every file in `[release] files` carries the
