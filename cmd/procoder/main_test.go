@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"procoder/internal/docs"
 	"procoder/internal/gitx"
+	"procoder/internal/host"
 )
 
 // The usage text and the docs-coverage command list are pinned to each
@@ -130,7 +133,7 @@ func TestCopilotLeakAcceptsEveryFlagTheUsageTextPromises(t *testing.T) {
 		if flag == "--since" {
 			args = append(args, "1h")
 		}
-		if out := capture(t, func() { copilotLeakCmd(args) }); strings.Contains(out, "unknown argument") {
+		if out := capture(t, func() { processSession().copilotLeakCmd(args) }); strings.Contains(out, "unknown argument") {
 			t.Errorf("usage promises %s but the parser refuses it: %s", flag, strings.TrimSpace(out))
 		}
 	}
@@ -160,4 +163,46 @@ func capture(t *testing.T, f func()) string {
 	out := <-done
 	_ = r.Close()
 	return out
+}
+
+// run writes to the session it was given, and reads its repository from
+// the session's working directory — never from the process.
+//
+// One daemon serves several sessions in several checkouts. A run that
+// reached for os.Getwd or os.Stdout would answer for whichever session
+// started the daemon, and would answer every later one wrongly.
+//
+// proved by: pointing session.root back at doctor.Root — the command then
+// reports the repository this test runs in rather than the temp one.
+func TestRunUsesTheSessionNotTheProcess(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatalf("could not make the fixture repository: %v", err)
+	}
+
+	// os.Stdout is swapped for a pipe so a write to it is observable
+	// rather than merely invisible in the test output.
+	real := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("could not open a pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = real }()
+
+	var out, errs bytes.Buffer
+	s := session{stdin: strings.NewReader(""), stdout: &out, stderr: &errs, cwd: dir, env: host.Env{}}
+	if code := run([]string{"config"}, s); code != 0 {
+		t.Fatalf("config exited %d: %s", code, errs.String())
+	}
+	if out.Len() == 0 {
+		t.Fatal("config wrote nothing to the session's stdout")
+	}
+
+	w.Close()
+	os.Stdout = real
+	leaked, _ := io.ReadAll(r)
+	if len(leaked) != 0 {
+		t.Fatalf("run wrote to the process stdout: %q", leaked)
+	}
 }

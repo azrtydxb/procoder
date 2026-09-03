@@ -479,3 +479,42 @@ competes under the reserved limit, and what cannot fit is named in the
 omission notice rather than silently lost), while the SessionStart
 payload is left whole and made checkable, with the receipt check pinned
 inside the inlined window.
+
+## What lands in the first `feat/command-api` commit?
+
+`.procoder/specs/command-api.md` is written and passes its controller
+(COMPLETE — sections answered, no open questions, criteria testable), the
+gate is clean, and it sits uncommitted on `feat/command-api`. It carries 11
+scope items and 13 acceptance criteria.
+
+The spec's own controller names the next step: seed one task per criterion
+group from the 13 criteria. Doing that before the commit makes the branch
+sprint-ready in one change; doing it after keeps the spec reviewable on its
+own.
+
+- commit the spec alone, so the widening of #117 D5 is reviewed before any
+  work is decomposed against it.
+- seed the backlog from the 13 criteria first, and commit spec and stories
+  together as one sprint-ready change.
+- leave it uncommitted and change the spec first — the scope that widens
+  #117, or the three deferrals (structured output, interactive commands
+  over the socket, the team server).
+
+## Which part of `command-api` changes before it is committed?
+
+The spec is complete and uncommitted; the call was to revise it rather than
+commit or decompose it. Four candidates, and they are independent — more
+than one may apply.
+
+- the #117 relationship: the spec currently supersedes D5 outright, so all
+  47 commands are served. It could instead stay hooks-only, or keep full
+  parity but be filed as its own issue rather than a rewrite of #117's
+  scope.
+- structured output: currently out of scope, so the response carries the
+  same prose bytes the CLI prints today. Bringing it in gives callers typed
+  results and makes the byte-identical parity test unwritable as specified.
+- the six asking commands: currently out of scope, so they take their
+  non-interactive path over the socket. A confirmation field in the
+  envelope would make them reachable.
+- the team server (#248): currently out of scope. In scope would mean a
+  network transport, auth and multi-user, which is a different spec.
