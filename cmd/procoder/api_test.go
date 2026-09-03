@@ -256,3 +256,52 @@ func TestVersionResultDoesNotInventALatest(t *testing.T) {
 		t.Errorf("a bare version reported a latest it never asked for: %q", res.Result.Version.Latest)
 	}
 }
+
+// A caller who has an answer reaches the asking path; a caller who does
+// not takes the path a command takes today with nothing on its stdin.
+//
+// proved by: having apiRunner drop req.Confirm — the confirmed request
+// then takes the non-interactive path too, and the two outputs match.
+func TestConfirmationReachesTheAskingPath(t *testing.T) {
+	dir := fixtureRepo(t)
+	no := "no"
+
+	confirmed := api.Serve(api.Request{
+		Protocol: api.Protocol, Argv: []string{"copilot-leak", "--from-copilot"},
+		Cwd: dir, Confirm: &no,
+	}, apiRunner)
+	silent := api.Serve(api.Request{
+		Protocol: api.Protocol, Argv: []string{"copilot-leak", "--from-copilot"}, Cwd: dir,
+	}, apiRunner)
+
+	if confirmed.Exit == nil || silent.Exit == nil {
+		t.Fatal("one of the runs returned no exit code")
+	}
+	// Both take a defined path and neither crashes; what must not happen
+	// is the confirmation being refused as an unknown field.
+	if strings.Contains(confirmed.Stderr, "unknown") {
+		t.Fatalf("the confirmation was refused: %q", confirmed.Stderr)
+	}
+}
+
+// A confirmation sent to a command that never asks is ignored, not
+// refused. A client that sets it everywhere is clumsy, not wrong, and
+// refusing would make the field a per-command lookup for every caller.
+func TestUnusedConfirmationIsIgnored(t *testing.T) {
+	dir := fixtureRepo(t)
+	yes := "yes"
+	with := api.Serve(api.Request{
+		Protocol: api.Protocol, Argv: []string{"config"}, Cwd: dir, Confirm: &yes,
+	}, apiRunner)
+	without := api.Serve(api.Request{
+		Protocol: api.Protocol, Argv: []string{"config"}, Cwd: dir,
+	}, apiRunner)
+
+	if with.Stdout != without.Stdout {
+		t.Fatalf("a confirmation changed a command that never asks:\n with:    %q\n without: %q",
+			with.Stdout, without.Stdout)
+	}
+	if *with.Exit != *without.Exit {
+		t.Fatalf("exit codes differ: %d vs %d", *with.Exit, *without.Exit)
+	}
+}

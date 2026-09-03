@@ -465,7 +465,12 @@ type session struct {
 	// col is nil for the CLI. Nothing a command does may depend on it —
 	// see collect.go.
 	col *collector
-	env host.Env
+	// confirm is what a person would have typed, carried from the caller.
+	// nil is "there was no person", which is the non-interactive path a
+	// command takes today when nothing is attached to its stdin — it is
+	// not a no.
+	confirm *string
+	env     host.Env
 }
 
 // out is the reporting sink for a command that writes to stdout — the
@@ -1200,12 +1205,12 @@ func (s session) announceThenAsk(latest string) bool {
 // upgradeConsent asks before anything is downloaded or run (N-08). No
 // terminal is not a yes: it is a question nobody was asked.
 func (s session) upgradeConsent(latest string) bool {
-	if !copilot.CanAsk(s.stdinFile) {
+	if !copilot.CanAskWith(s.stdinFile, s.confirm) {
 		s.out("no terminal to ask on — an upgrade needs an explicit yes, so nothing was installed")
 		return false
 	}
 	s.out("Upgrade procoder " + version + " → " + latest + "? [y/N]")
-	return copilot.ReadYes(s.stdinFile)
+	return copilot.ReadYesFrom(s.stdinFile, s.confirm)
 }
 
 // copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit
@@ -1263,8 +1268,8 @@ func (s session) copilotLeakCmd(args []string) int {
 		s.out(fmt.Sprintf("copilot-leak: %d finding(s) since %s — run without --quiet to capture them", len(safe), since))
 		return 0
 	}
-	if !copilot.Prompt(s.stdinFile, s.out, len(safe), since) {
-		if copilot.CanAsk(s.stdinFile) {
+	if !copilot.PromptWith(s.stdinFile, s.confirm, s.out, len(safe), since) {
+		if copilot.CanAskWith(s.stdinFile, s.confirm) {
 			s.out("copilot-leak: skipped — nothing was published and nothing was recorded")
 		} else {
 			s.out(fmt.Sprintf("copilot-leak: %d finding(s) since %s, and no terminal to ask on — publishing needs an explicit yes, so nothing was captured", len(safe), since))

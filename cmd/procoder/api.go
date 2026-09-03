@@ -36,12 +36,13 @@ func apiRunner(req api.Request, stdout, stderr io.Writer) (int, *api.Result) {
 	}
 	col := &collector{}
 	code := run(req.Argv, session{
-		stdin:  bytes.NewReader(req.Stdin),
-		stdout: stdout,
-		stderr: stderr,
-		cwd:    cwd,
-		env:    env,
-		col:    col,
+		stdin:   bytes.NewReader(req.Stdin),
+		stdout:  stdout,
+		stderr:  stderr,
+		cwd:     cwd,
+		env:     env,
+		col:     col,
+		confirm: req.Confirm,
 	})
 	return code, col.result()
 }
