@@ -387,16 +387,18 @@ const usage = `usage: procoder <command> [args]
                        status | close — one active sprint at a time, close
                        refuses while a committed story is neither done nor
                        explicitly carried back with a reason
-  serve [--socket <path>] [--exec]
+  serve [--socket <path>] [--exec] [--idle <duration>]
                        run the local daemon: every command answers over a
                        unix socket at ~/.procoder/run/procoder.sock (mode
                        0600 — the permission bits are the whole
                        authentication, there is no port and no token).
                        --exec opens the second socket, which serves the
                        four commands that run what a repository declared
-                       and which the hooks are never told about. The CLI is
-                       unaffected: every command still runs in-process with
-                       no daemon, in CI and on a fresh clone
+                       and which the hooks are never told about. --idle sets
+                       how long a repository stays warm (default 30m); a
+                       daemon holding nothing exits. The CLI is unaffected:
+                       every command still runs in-process with no daemon,
+                       in CI and on a fresh clone
   status               the state of play, computed fresh: branch, dirty
                        files, the active sprint and its open stories, open
                        tasks, unlearned lessons, index freshness

@@ -6,6 +6,7 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/store"
 	"procoder/internal/tools"
+	"time"
 )
 
 // serveCmd runs the daemon in the foreground until its listener closes.
@@ -18,10 +19,23 @@ import (
 func (s session) serveCmd(args []string) int {
 	exec := false
 	socket := ""
+	idle := time.Duration(0)
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--exec":
 			exec = true
+		case "--idle":
+			if i+1 >= len(args) {
+				s.out("serve: --idle takes a duration")
+				return 2
+			}
+			i++
+			d, err := time.ParseDuration(args[i])
+			if err != nil {
+				s.out("serve: --idle is not a duration: " + args[i])
+				return 2
+			}
+			idle = d
 		case "--socket":
 			if i+1 >= len(args) {
 				s.out("serve: --socket takes a path")
@@ -49,7 +63,7 @@ func (s session) serveCmd(args []string) int {
 	}
 
 	srv := &api.Server{
-		Run: apiRunner, Version: version, Exec: exec, Notice: s.stderr,
+		Run: apiRunner, Version: version, Exec: exec, Notice: s.stderr, Idle: idle,
 		// The identity ladder lives in the store, which is where the
 		// question "which repository is this" was already answered — a
 		// path is not a key, and two machines holding the same checkout

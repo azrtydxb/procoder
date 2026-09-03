@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 // Server answers requests on one socket.
@@ -34,8 +35,13 @@ type Server struct {
 	// question.
 	Identity func(cwd string) string
 
+	// Idle is how long a repository's warm state outlives its last
+	// request. Zero means DefaultIdle.
+	Idle time.Duration
+
 	queues queues
 	jobs   jobs
+	warm   warm
 }
 
 // Listen opens the socket at path, replacing a stale one.
@@ -64,14 +70,63 @@ func (s *Server) Listen(path string) (net.Listener, error) {
 	return l, nil
 }
 
-// Accept serves until the listener is closed.
+// Accept serves until the listener is closed, or until the daemon has
+// been holding nothing for a whole idle window.
+//
+// A daemon holding nothing has nothing to be warm for, and staying
+// resident to serve a request that may never come is how a convenience
+// becomes something a person has to remember to kill. Exiting is safe
+// because starting is free: the next session's hook starts another, and a
+// client that finds no daemon runs in-process.
 func (s *Server) Accept(l net.Listener) {
+	s.warm.window = s.Idle
+	stop := make(chan struct{})
+	defer close(stop)
+	go s.evictUntilEmpty(l, stop)
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			return // the listener was closed; nothing else ends this loop
 		}
 		go s.serveConn(conn)
+	}
+}
+
+// evictUntilEmpty drops expired repositories and closes the listener once
+// none is left, which is what ends Accept.
+//
+// The sweep runs at a fraction of the window rather than on a timer per
+// repository: one goroutine for the daemon is cheaper to reason about
+// than one per checkout, and being a minute late to release an index
+// costs nothing.
+func (s *Server) evictUntilEmpty(l net.Listener, stop <-chan struct{}) {
+	window := s.warm.idle()
+	tick := window / 6
+	if tick <= 0 {
+		tick = time.Second
+	}
+	t := time.NewTicker(tick)
+	defer t.Stop()
+
+	started := time.Now()
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-t.C:
+			if s.warm.evict(now) > 0 {
+				started = now
+				continue
+			}
+			// Nothing held. A daemon that has just started holds nothing
+			// too, so it gets a whole window to be given some work before
+			// it decides nobody wants it.
+			if now.Sub(started) >= window {
+				l.Close()
+				return
+			}
+		}
 	}
 }
 
@@ -118,6 +173,9 @@ func (s *Server) serveConn(conn net.Conn) {
 	if s.Identity != nil {
 		identity = s.Identity(req.Cwd)
 	}
+	// Touching the repository is what keeps it warm, and what keeps the
+	// daemon alive: a daemon serving work is never one holding nothing.
+	s.warm.get(identity)
 
 	if IsLongRunning(req.Argv) {
 		// Started INSIDE the queue so the repository's serialisation still
