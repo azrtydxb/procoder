@@ -387,6 +387,16 @@ const usage = `usage: procoder <command> [args]
                        status | close — one active sprint at a time, close
                        refuses while a committed story is neither done nor
                        explicitly carried back with a reason
+  serve [--socket <path>] [--exec]
+                       run the local daemon: every command answers over a
+                       unix socket at ~/.procoder/run/procoder.sock (mode
+                       0600 — the permission bits are the whole
+                       authentication, there is no port and no token).
+                       --exec opens the second socket, which serves the
+                       four commands that run what a repository declared
+                       and which the hooks are never told about. The CLI is
+                       unaffected: every command still runs in-process with
+                       no daemon, in CI and on a fresh clone
   status               the state of play, computed fresh: branch, dirty
                        files, the active sprint and its open stories, open
                        tasks, unlearned lessons, index freshness
@@ -577,6 +587,8 @@ func run(args []string, s session) int {
 		return s.analyzeCmd(args[1:])
 	case "audit":
 		return audit.Run(s.root(), s.out)
+	case "serve":
+		return s.serveCmd(args[1:])
 	case "status":
 		return status.Run(s.root(), s.out)
 	case "env":
@@ -1484,6 +1496,8 @@ func (s session) sprintCmd(args []string) int {
 			return usageErr(s.stderr)
 		}
 		return backlog.SprintCarry(root, args[1], strings.Join(args[2:], " "), out)
+	case "serve":
+		return s.serveCmd(args[1:])
 	case "status":
 		return backlog.SprintStatus(root, out)
 	case "close":

@@ -42,6 +42,7 @@ var knownFlags = map[string][]string{
 	"run":          {"--exec"},
 	"security":     {"--deep"},
 	"self-upgrade": {"--force"},
+	"serve":        {"--socket", "--exec"},
 	"test":         {"--coverage", "--name"},
 	"version":      {"--check"},
 }

@@ -1263,6 +1263,48 @@ checked, never what they held. A pattern that does not compile reports
   front of you and then discarded; procoder does not store them, print
   them, or put them in your CI. Paste them yourself.
 
+#### `procoder serve [--socket <path>] [--exec]`
+
+The local daemon. Every command answers over a unix socket, so a caller
+that would rather make a call than spawn a process can — and gets the same
+bytes and the same exit code either way.
+
+**The CLI does not move.** Every command still runs in-process, with no
+daemon, no socket and no setup, in CI and on a fresh clone. That is not a
+transitional state: a second door is only useful if the first one is
+always open. `procoder check` on a machine that has never heard of the
+daemon behaves exactly as it always did.
+
+The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
+0700 directory. **The permission bits are the whole authentication** —
+there is no port and no token, because a unix socket is a filesystem
+object and the filesystem has already answered "who may talk to this".
+A loopback port would not: it is reachable by every process and every
+other user on the box, and gets forwarded out of devcontainers by
+accident.
+
+What that buys is also what it costs, and it is worth saying plainly: the
+socket authenticates the **user**, not the process. Every process running
+as you can reach it, including an agent session's own shell. That is why
+the four commands which run what a repository declared —
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade` — are not
+served there at all. They live behind `--exec` on a second socket
+(`procoder-exec.sock`) with its own opt-in, and the hooks are never told
+its address. A path that runs an agent-written command must not be
+reachable by something running unattended; see the "look but don't run"
+boundary in ARCHITECTURE.
+
+`serve` runs in the foreground and stops when its listener closes.
+Whatever started it owns it — a shell, or the session-start hook. It does
+not daemonise itself, for the same reason `procoder run` refuses to own a
+server's lifetime: a process nobody can see is worse than no process.
+
+A response carries the command's exact bytes on stdout and stderr, its
+exit code, and — where the command has one — a typed result beside them.
+The bytes are what a person reads and what the parity test compares; the
+result is what a client acts on. Both, so that no caller has to be a
+parser and none has to be a renderer.
+
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
 Bare `version` prints one line and asks nobody anything.
