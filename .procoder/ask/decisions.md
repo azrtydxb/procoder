@@ -518,3 +518,34 @@ than one may apply.
   envelope would make them reachable.
 - the team server (#248): currently out of scope. In scope would mean a
   network transport, auth and multi-user, which is a different spec.
+
+## `feat/command-api` is 18 commits and done — where does it go?
+
+All sixteen tasks of `.procoder/plans/command-api.md` are built, each
+committed gate-clean with the suite green. `spec check` and `plan check`
+both say COMPLETE. Nothing is pushed and no PR exists.
+
+One thing to weigh first, from this ledger rather than from the branch.
+"Issue #117 (procoder as a service): the perf case is inverted" is still
+unanswered above, and it carries measurements: a hook command is spawned
+either way, so a service pays a spawn PLUS a round trip. Those numbers
+were taken against `curl` to a local HTTP service (11.1ms) — this branch
+is a unix socket dialled from inside the binary, so the extra spawn does
+not apply — but the load-bearing half of that finding does. The daemon
+here saves the WORK, not the spawn: a warm index and a warm config. That
+case is still unmeasured, because `[learn] record` is off and there is no
+learn data on disk.
+
+What the branch buys that is not in doubt: every command reachable as a
+call, typed results beside the bytes, jobs for the nine long-running
+commands, and the #201 boundary held structurally.
+
+- open the PR now, and measure the warm-index case separately — the API
+  surface stands on its own whatever the latency turns out to be.
+- turn on `[learn] record`, gather a week of real numbers first, and let
+  the measurement decide whether the daemon half ships or only the
+  envelope and typed results do.
+- push the branch without a PR, so it exists and is reviewable while #117
+  itself is resolved above.
+- answer the #117 perf decision first, since this branch is that issue's
+  architecture and the two should not be settled in opposite directions.
