@@ -548,7 +548,7 @@ func run(args []string, s session) int {
 		case "post-tool-use":
 			return hook.Run(s.stdin, s.stdout)
 		case "pre-tool-use":
-			return hook.PreToolUse(s.stdin, s.stdout)
+			return hook.PreToolUse(s.stdin, s.stdout, s.env)
 		case "install-git":
 			return hook.InstallGit(s.root(), s.out)
 		case "stop":
@@ -778,7 +778,7 @@ func run(args []string, s session) int {
 		return portability.Agents(s.root(), s.out)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
-			return principles.RunHook(s.root(), s.stdin, s.out)
+			return principles.RunHook(s.root(), s.env, s.stdin, s.out)
 		}
 		return principles.Run(s.root(), s.out)
 	case "templates":
