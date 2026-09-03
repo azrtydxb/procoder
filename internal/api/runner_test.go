@@ -15,10 +15,10 @@ import (
 // with its lock notices spliced into it.
 func TestServeCapturesBothStreams(t *testing.T) {
 	res := Serve(Request{Protocol: Protocol, Argv: []string{"anything"}},
-		func(_ Request, stdout, stderr io.Writer) int {
+		func(_ Request, stdout, stderr io.Writer) (int, *Result) {
 			fmt.Fprint(stdout, "out")
 			fmt.Fprint(stderr, "err")
-			return 3
+			return 3, nil
 		})
 	if res.Stdout != "out" || res.Stderr != "err" {
 		t.Fatalf("the streams were not kept apart: stdout %q stderr %q", res.Stdout, res.Stderr)
@@ -34,7 +34,7 @@ func TestServeCapturesBothStreams(t *testing.T) {
 // A command that reports no findings carries no result at all, which is
 // not the same as reporting an empty list.
 func TestServeWithoutFindingsCarriesNoResult(t *testing.T) {
-	res := Serve(Request{Protocol: Protocol}, func(Request, io.Writer, io.Writer) int { return 0 })
+	res := Serve(Request{Protocol: Protocol}, func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil })
 	if res.Result != nil {
 		t.Fatalf("a command that reports nothing returned a result: %+v", res.Result)
 	}

@@ -47,7 +47,7 @@ func TestUsageAndCoverageListAgree(t *testing.T) {
 func TestPrintFindingsRendersLocationMarkAndCount(t *testing.T) {
 	root := "/repo"
 	var lines []string
-	code := printFindings(root, "demo", []gitx.Finding{
+	code := session{}.printFindings(root, "demo", []gitx.Finding{
 		{File: "/repo/a.go", Line: 12, Message: "a thing"},
 		{File: "/repo/b.go", Message: "a whole-file thing", Blocking: true},
 		{Message: "no file at all"},
@@ -76,7 +76,7 @@ func TestPrintFindingsRendersLocationMarkAndCount(t *testing.T) {
 // fail the caller's build over findings that are explicitly judgment.
 func TestPrintFindingsWithoutBlockingExitsZero(t *testing.T) {
 	var lines []string
-	code := printFindings("/repo", "demo", []gitx.Finding{{File: "/repo/a.go", Message: "just so you know"}},
+	code := session{}.printFindings("/repo", "demo", []gitx.Finding{{File: "/repo/a.go", Message: "just so you know"}},
 		func(s string) { lines = append(lines, s) })
 	if code != 0 {
 		t.Fatalf("information is not failure, got exit %d\n%s", code, strings.Join(lines, "\n"))
@@ -89,7 +89,7 @@ func TestPrintFindingsWithoutBlockingExitsZero(t *testing.T) {
 // as a long climb out of the repository.
 func TestPrintFindingsLeavesOutsidePathsAlone(t *testing.T) {
 	var lines []string
-	printFindings("/repo", "demo", []gitx.Finding{{File: "/elsewhere/x.go", Line: 3, Message: "m"}},
+	session{}.printFindings("/repo", "demo", []gitx.Finding{{File: "/elsewhere/x.go", Line: 3, Message: "m"}},
 		func(s string) { lines = append(lines, s) })
 	// exact, not Contains: "../elsewhere/x.go:3" contains the absolute form
 	// as a substring, so a Contains assertion here proves nothing

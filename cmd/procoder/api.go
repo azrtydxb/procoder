@@ -18,7 +18,7 @@ import (
 // no file handle at either end. The third is not a limitation to work
 // around: over a socket there is genuinely no terminal and no redirect,
 // and nil is what says so.
-func apiRunner(req api.Request, stdout, stderr io.Writer) int {
+func apiRunner(req api.Request, stdout, stderr io.Writer) (int, *api.Result) {
 	env := host.Env{}
 	for k, v := range req.Env {
 		env[k] = v
@@ -34,11 +34,14 @@ func apiRunner(req api.Request, stdout, stderr io.Writer) int {
 			cwd = wd
 		}
 	}
-	return run(req.Argv, session{
+	col := &collector{}
+	code := run(req.Argv, session{
 		stdin:  bytes.NewReader(req.Stdin),
 		stdout: stdout,
 		stderr: stderr,
 		cwd:    cwd,
 		env:    env,
+		col:    col,
 	})
+	return code, col.result()
 }

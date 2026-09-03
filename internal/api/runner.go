@@ -12,18 +12,19 @@ import (
 // The import runs one way only. cmd/procoder imports internal/api to hand
 // it a Runner; internal/api never imports cmd/procoder, which it could not
 // do anyway, and would not want to if it could.
-type Runner func(req Request, stdout, stderr io.Writer) int
+type Runner func(req Request, stdout, stderr io.Writer) (int, *Result)
 
 // Serve runs one request and builds its response. No socket: this is the
 // whole of what a daemon does to a request, minus the transport, which is
 // what makes parity testable without one.
 func Serve(req Request, run Runner) Response {
 	var stdout, stderr bytes.Buffer
-	code := run(req, &stdout, &stderr)
+	code, result := run(req, &stdout, &stderr)
 	return Response{
 		Protocol: Protocol,
 		Exit:     &code,
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
+		Result:   result,
 	}
 }

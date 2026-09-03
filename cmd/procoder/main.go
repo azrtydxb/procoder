@@ -461,7 +461,10 @@ type session struct {
 	// nil, which is the truthful answer — there is nobody.
 	stdinFile *os.File
 	cwd       string
-	env       host.Env
+	// col is nil for the CLI. Nothing a command does may depend on it —
+	// see collect.go.
+	col *collector
+	env host.Env
 }
 
 // out is the reporting sink for a command that writes to stdout — the
@@ -498,7 +501,8 @@ func processSession() session {
 // findings fail, information does not. Four commands each had their own
 // copy of this loop, which is how three of them drift while the fourth
 // gets fixed.
-func printFindings(root, label string, findings []gitx.Finding, out func(string)) int {
+func (s session) printFindings(root, label string, findings []gitx.Finding, out func(string)) int {
+	s.col.add(label, findings)
 	blocking := 0
 	for _, f := range findings {
 		mark := "  info "
@@ -642,7 +646,7 @@ func run(args []string, s session) int {
 		if paths == nil {
 			paths = args[1:]
 		}
-		return gate.Run(paths, s.root(), s.stdout)
+		return gate.RunCollecting(paths, s.root(), "", s.stdout, s.col.add)
 	case "config":
 		return config.Report(s.root(), s.stdout)
 	case "doctor":
@@ -657,14 +661,14 @@ func run(args []string, s session) int {
 		if len(args) > 1 && args[1] == "--runs" {
 			return ciops.Runs(root, s.out)
 		}
-		return printFindings(root, "ci", ciops.Check(root, config.Load(root).PinActions), s.out)
+		return s.printFindings(root, "ci", ciops.Check(root, config.Load(root).PinActions), s.out)
 	case "infra":
 		root := s.root()
 		if infra.Detect(root).Empty() {
 			s.out("procoder infra: no infrastructure files in this repository")
 			return 0
 		}
-		return printFindings(root, "infra", infra.Check(root), s.out)
+		return s.printFindings(root, "infra", infra.Check(root), s.out)
 	case "maintain":
 		return maintain.Run(s.root(), s.out)
 	case "security":
@@ -712,7 +716,7 @@ func run(args []string, s session) int {
 			// never asked.
 			findings = append(findings, security.SastChanged(root, changed)...)
 		}
-		return printFindings(root, "security", findings, s.out)
+		return s.printFindings(root, "security", findings, s.out)
 	case "learn":
 		root := s.root()
 		cfg := config.Load(root)
@@ -1112,7 +1116,7 @@ func (s session) lintCmd(args []string) int {
 	if types {
 		findings = append(findings, lint.Types(root, paths, cfg.LintBlock)...)
 	}
-	return printFindings(root, "lint", findings, s.out)
+	return s.printFindings(root, "lint", findings, s.out)
 }
 
 func (s session) testCmd(args []string) int {
@@ -1740,7 +1744,7 @@ func (s session) reviewCmd(args []string) int {
 	// be read must not be discovered halfway down a review the reader has
 	// already started acting on.
 	if len(problems) > 0 {
-		printFindings(root, "review", problems, s.out)
+		s.printFindings(root, "review", problems, s.out)
 		return 1
 	}
 
