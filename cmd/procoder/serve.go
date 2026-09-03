@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"procoder/internal/api"
+	"procoder/internal/config"
+	"procoder/internal/store"
+	"procoder/internal/tools"
 )
 
 // serveCmd runs the daemon in the foreground until its listener closes.
@@ -45,7 +48,17 @@ func (s session) serveCmd(args []string) int {
 		}
 	}
 
-	srv := &api.Server{Run: apiRunner, Version: version, Exec: exec, Notice: s.stderr}
+	srv := &api.Server{
+		Run: apiRunner, Version: version, Exec: exec, Notice: s.stderr,
+		// The identity ladder lives in the store, which is where the
+		// question "which repository is this" was already answered — a
+		// path is not a key, and two machines holding the same checkout
+		// must agree.
+		Identity: func(cwd string) string {
+			root := tools.RepoRoot(cwd)
+			return store.IdentityFor(root, config.Load(root).ServiceRepo).Key
+		},
+	}
 	l, err := srv.Listen(socket)
 	if err != nil {
 		s.out(err.Error())

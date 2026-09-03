@@ -26,6 +26,14 @@ type Server struct {
 	// Notice is where the server says what it did. Stderr by default; a
 	// test points it somewhere it can read.
 	Notice io.Writer
+	// Identity names the repository a request is about, so requests
+	// against one are queued rather than run at once. Supplied rather than
+	// computed here: the identity ladder lives in internal/store, which
+	// this package would otherwise have to import to answer a transport
+	// question.
+	Identity func(cwd string) string
+
+	queues queues
 }
 
 // Listen opens the socket at path, replacing a stale one.
@@ -82,7 +90,16 @@ func (s *Server) serveConn(conn net.Conn) {
 			Protocol, req.Protocol))
 		return
 	}
-	_ = WriteResponse(conn, Serve(req, s.Run))
+	identity := ""
+	if s.Identity != nil {
+		identity = s.Identity(req.Cwd)
+	}
+	// Held across the whole command, not just its writes: the store's lock
+	// is per file, and two requests interleaving between a read and a
+	// write of the same ledger is exactly what it cannot see.
+	s.queues.do(identity, func() {
+		_ = WriteResponse(conn, Serve(req, s.Run))
+	})
 }
 
 // refuse answers with an exit code and a reason on stderr, which is where
