@@ -17,6 +17,9 @@ type Result struct {
 	// absent: an empty list is "this command reports findings and found
 	// none", and a nil Result is "this command does not report findings".
 	Findings []Finding `json:"findings,omitempty"`
+	Settings []Setting `json:"settings,omitempty"`
+	Tasks    []Task    `json:"tasks,omitempty"`
+	Version  *Version  `json:"version,omitempty"`
 }
 
 // KindFindings is the shape the reporting commands answer in.

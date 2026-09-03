@@ -20,6 +20,28 @@ type collector struct {
 	// caller that flattened the two would read a clean gate and a version
 	// number the same way.
 	reported bool
+	// A command answers in exactly one kind. Findings is the default and
+	// the common case; these three are set by the commands that have a
+	// value of their own, and setting one clears the findings default.
+	kind     string
+	settings []api.Setting
+	tasks    []api.Task
+	version  *api.Version
+}
+
+// settingsResult, tasksResult and versionResult are how a command with a
+// value of its own answers. Each one is the whole answer: a command sets
+// one and never two.
+func (c *collector) setSettings(v []api.Setting) { c.set(api.KindConfig); c.settings = v }
+func (c *collector) setTasks(v []api.Task)       { c.set(api.KindTodo); c.tasks = v }
+func (c *collector) setVersion(v *api.Version)   { c.set(api.KindVersion); c.version = v }
+
+func (c *collector) set(kind string) {
+	if c == nil {
+		return
+	}
+	c.reported = true
+	c.kind = kind
 }
 
 // add records one domain's findings. A domain that found nothing still
@@ -45,6 +67,14 @@ func (c *collector) add(domain string, findings []gitx.Finding) {
 func (c *collector) result() *api.Result {
 	if c == nil || !c.reported {
 		return nil
+	}
+	switch c.kind {
+	case api.KindConfig:
+		return &api.Result{Kind: api.KindConfig, Settings: c.settings}
+	case api.KindTodo:
+		return &api.Result{Kind: api.KindTodo, Tasks: c.tasks}
+	case api.KindVersion:
+		return &api.Result{Kind: api.KindVersion, Version: c.version}
 	}
 	// Never nil where reported: the JSON must carry [] rather than
 	// omitting the key, so a client can tell an empty list from an absent

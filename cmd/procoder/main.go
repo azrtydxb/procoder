@@ -18,6 +18,7 @@ import (
 	"procoder/internal/actions"
 	"procoder/internal/adr"
 	"procoder/internal/analysis"
+	"procoder/internal/api"
 	"procoder/internal/ask"
 	"procoder/internal/audit"
 	"procoder/internal/backlog"
@@ -648,7 +649,19 @@ func run(args []string, s session) int {
 		}
 		return gate.RunCollecting(paths, s.root(), "", s.stdout, s.col.add)
 	case "config":
-		return config.Report(s.root(), s.stdout)
+		root := s.root()
+		if s.col != nil {
+			cfg := config.Load(root)
+			settings := make([]api.Setting, 0, len(cfg.Settings))
+			for _, set := range cfg.Settings {
+				settings = append(settings, api.Setting{
+					Key: set.Key, Value: set.Value, Source: set.Source,
+					Relaxed: set.Relaxed, Default: set.Default,
+				})
+			}
+			s.col.setSettings(settings)
+		}
+		return config.Report(root, s.stdout)
 	case "doctor":
 		return doctor.Run(s.root(), s.stdout)
 	case "init":
@@ -810,6 +823,10 @@ func run(args []string, s session) int {
 			return s.versionCheckCmd()
 		}
 		// N-05: bare `version` stays one line and asks nobody anything.
+		// Latest stays empty for the same reason: nobody asked GitHub, and
+		// reporting the running version as the newest would be an answer
+		// this command did not compute.
+		s.col.setVersion(&api.Version{Running: version})
 		s.out(version)
 		return 0
 	case "self-upgrade":
@@ -1494,12 +1511,16 @@ func (s session) todoCmd(args []string) int {
 			return 1
 		}
 		if len(tasks) == 0 {
+			s.col.setTasks([]api.Task{})
 			out("no tasks — `procoder todo add <title>` starts one")
 			return 0
 		}
+		listed := make([]api.Task, 0, len(tasks))
 		for _, t := range tasks {
 			out(fmt.Sprintf("  [%s]  %s  %s", t.Status, t.ID, t.Title))
+			listed = append(listed, api.Task{ID: t.ID, Title: t.Title, State: t.Status})
 		}
+		s.col.setTasks(listed)
 		return 0
 	case "add":
 		if len(args) < 2 {

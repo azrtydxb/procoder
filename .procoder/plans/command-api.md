@@ -299,51 +299,83 @@ func (s session) collect(domain string, f []gitx.Finding)
 Files:
 
 - `internal/api/kinds.go` — one declaration per non-findings kind.
-- `cmd/procoder/main.go` — the six commands fill theirs.
+- `cmd/procoder/main.go` — the three commands fill theirs.
 - `internal/api/kinds_test.go` — the declaration guard.
+
+Three commands, not six. `config`, `todo` and `version` already compute
+the values they print — `cfg.Settings` carries key, value, source and the
+default it was relaxed from; `todo.List` returns `[]todo.Task`; the
+version pair is two strings. Filling a typed result for those is reading a
+value that exists.
+
+`status`, `spec check` and the `index` queries are line-oriented all the
+way down: `status.Report` returns `[]string` and its branch, dirty and
+sprint lines are formatted inside six helpers; `spec.Check` and
+`codeindex.Find` take an `out func(string)` and never hold a value.
+Giving those three a typed result means restructuring their domains to
+build data and render from it, which is a different change from adding an
+envelope — and doing it here would mean either parsing our own output back
+(fragile, and a second place to keep in step) or duplicating the git calls
+`status` already makes. Task 16 does it properly.
 
 Interfaces this task produces:
 
 ```go
 // internal/api
-type Status struct {
-	Branch  string   `json:"branch"`
-	Dirty   []string `json:"dirty"`
-	Sprint  string   `json:"sprint"`
-	Open    int      `json:"open"`
+type Setting struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Source  string `json:"source"`
+	Relaxed bool   `json:"relaxed"`
+	Default string `json:"default,omitempty"`
 }
-type Setting struct{ Key, Value, Source string }
-type Task struct{ ID, Title, State string }
-type SpecVerdict struct{ Name, Verdict string; Gaps []string }
-type Symbol struct{ Name, File string; Line int }
-type Version struct{ Running, Latest string }
-// Result gains, each omitempty: Status, Settings, Tasks, Spec, Symbols, Version
+type Task struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	State string `json:"state"`
+}
+type Version struct {
+	Running string `json:"running"`
+	Latest  string `json:"latest,omitempty"`
+}
+// Result gains, each omitempty: Settings []Setting, Tasks []Task, Version *Version
 const (
-	KindStatus = "status"; KindConfig = "config"; KindTodo = "todo"
-	KindSpec = "spec"; KindIndex = "index"; KindVersion = "version"
+	KindConfig  = "config"
+	KindTodo    = "todo"
+	KindVersion = "version"
 )
 func Kinds() []string // every declared kind, for the guard
 ```
 
 - [ ] Write the failing test `TestTypedResultsAreDeclaredOnce` in
       `internal/api/kinds_test.go`: assert `api.Kinds()` has no duplicate
-      entries and that every `Kind*` constant in the package appears in it,
-      by reading `kinds.go` and `result.go` with `go/parser` and comparing
-      the constant names to the slice. Run `go test ./internal/api/` and
-      expect FAIL with "undefined: api.Kinds".
-- [ ] Write `kinds.go` with the six types, the six constants and `Kinds()`
-      returning all seven kind strings including `KindFindings`.
+      entries, and that every `Kind*` constant declared in the package
+      appears in it — found by parsing the package's own non-test files
+      with `go/parser` and collecting the `Kind`-prefixed constant names.
+      Run `go test ./internal/api/` and expect FAIL with "undefined:
+      api.Kinds".
+- [ ] Write `kinds.go` with the three types, the three constants, the
+      three `Result` fields and `Kinds()` returning all four kind strings
+      including `KindFindings`.
 - [ ] Run `go test ./internal/api/` and expect PASS.
-- [ ] Write the failing test `TestStatusResultCarriesTheBranch` in
-      `cmd/procoder/api_test.go`: serve `status` in a temp repository on a
-      branch named `probe` and assert `Result.Kind == "status"` and
-      `Result.Status.Branch == "probe"`. Run `go test ./cmd/procoder/` and
-      expect FAIL with "Result is nil".
-- [ ] Fill the result in each of the six dispatch branches from the values
-      those commands already compute, without changing a line they print.
+- [ ] Write the failing test `TestConfigResultCarriesTheSettings` in
+      `cmd/procoder/api_test.go`: serve `config` in a fixture repository
+      whose `.procoder/config.toml` sets `max_file_mb = 10`, and assert
+      `Result.Kind == "config"`, that a setting with `Key` `git.max_file_mb`
+      is present with `Value` `10`, and that its `Relaxed` is true. Run
+      `go test ./cmd/procoder/` and expect FAIL with "Result is nil".
+- [ ] Fill the result in the `config`, `todo list` and `version` branches
+      from the values those commands already compute, without changing a
+      line they print. `session.col` gains a `kind` and the three typed
+      slices, so a command sets one or the other and never both.
+- [ ] Write the failing test `TestTodoResultListsTheTasks`: serve
+      `todo list` in a fixture repository holding two task files and assert
+      `Result.Kind == "todo"` with two entries carrying their ids and
+      states. Run `go test ./cmd/procoder/` and expect FAIL with "want 2
+      tasks, got 0".
 - [ ] Run `go test ./...` and expect PASS, then
       `./dist/darwin-arm64/procoder check` and expect 0 blocking.
-- [ ] Commit: `feat: the six commands whose answer is not a finding`.
+- [ ] Commit: `feat: the commands whose answer is not a finding`.
 
 ## Task 6: The confirmation
 
@@ -724,3 +756,73 @@ Interfaces this task consumes: `run`, `processSession`, `apiRunner`,
 - [ ] Run `go test ./...` and expect PASS, then
       `./dist/darwin-arm64/procoder check` and expect 0 blocking.
 - [ ] Commit: `test: every command answers the same over either door`.
+
+## Task 16: Structured answers for the three line-oriented commands
+
+Files:
+
+- `internal/status/status.go` — build a value, render from it.
+- `internal/spec/spec.go` — `Check` returns its verdict as well as printing.
+- `internal/codeindex/query.go` — `Find` and `Search` return their hits.
+- `cmd/procoder/main.go` — the three branches fill their results.
+- `internal/api/kinds.go` — three more kinds.
+- `internal/status/status_test.go`, `internal/spec/spec_test.go`,
+  `internal/codeindex/query_test.go`, `cmd/procoder/api_test.go`.
+
+Interfaces this task produces:
+
+```go
+// internal/status
+type Data struct {
+	Branch  string
+	Default string
+	Dirty   []string
+	Sprint  string
+	Open    int
+}
+func Data(root string) Data   // what report() builds; Report renders it
+
+// internal/spec
+type Verdict struct{ Name, Verdict string; Gaps []string }
+func CheckVerdict(root, name string) Verdict
+
+// internal/codeindex
+type Hit struct{ Symbol, File string; Line int }
+func FindHits(root, symbol string) []Hit
+func SearchHits(root, query string) []Hit
+
+// internal/api
+const (KindStatus = "status"; KindSpec = "spec"; KindIndex = "index")
+```
+
+- [ ] Write the failing test `TestStatusDataCarriesTheBranch` in
+      `internal/status/status_test.go`: build a fixture repository on a
+      branch named `probe` and assert `status.Data(root).Branch == "probe"`.
+      Run `go test ./internal/status/` and expect FAIL with "undefined:
+      status.Data".
+- [ ] Restructure `report` to fill a `Data` and render its lines from it,
+      so the value and the text cannot disagree. `Report` keeps its
+      signature and its exact output; `TestReportStaysInsideTheBudget` and
+      the existing content tests must pass unchanged.
+- [ ] Run `go test ./internal/status/` and expect PASS.
+- [ ] Write the failing test `TestCheckVerdictNamesItsGaps` in
+      `internal/spec/spec_test.go`: run `CheckVerdict` against a spec with
+      one unanswered question and assert `Verdict == "NOT ready"` with one
+      gap naming the open question. Run `go test ./internal/spec/` and
+      expect FAIL with "undefined: spec.CheckVerdict".
+- [ ] Have `Check` call `CheckVerdict` and render it, so the printed lines
+      and the verdict are the same computation.
+- [ ] Run `go test ./internal/spec/` and expect PASS.
+- [ ] Write the failing test `TestFindHitsCarriesTheLocation` in
+      `internal/codeindex/query_test.go`: build an index over a fixture
+      holding one known symbol and assert `FindHits` returns one hit with
+      that file and a line above zero. Run `go test ./internal/codeindex/`
+      and expect FAIL with "undefined: codeindex.FindHits".
+- [ ] Have `Find` and `Search` render the hits their new siblings return.
+- [ ] Write the failing test `TestStatusSpecIndexResultsAreTyped` in
+      `cmd/procoder/api_test.go`: serve each of the three and assert the
+      kind and one field of each. Run `go test ./cmd/procoder/` and expect
+      FAIL with "Result is nil".
+- [ ] Run `go test ./...` and expect PASS, then
+      `./dist/darwin-arm64/procoder check` and expect 0 blocking.
+- [ ] Commit: `feat: status, spec and index answer with values too`.

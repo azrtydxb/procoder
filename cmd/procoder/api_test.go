@@ -178,8 +178,81 @@ func TestEmptyFindingsIsNotNull(t *testing.T) {
 		t.Fatal("the findings list is nil rather than empty — a client cannot tell it from absent")
 	}
 
-	version := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"version"}, Cwd: dir}, apiRunner)
-	if version.Result != nil {
-		t.Fatalf("a command that reports no findings returned a result: %+v", version.Result)
+	// principles prints text and computes no value of its own, so it is a
+	// command with genuinely no result. version used to stand here and
+	// acquired a kind of its own in Task 5, which is exactly the drift
+	// this assertion is watching for.
+	text := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"principles"}, Cwd: dir}, apiRunner)
+	if text.Result != nil {
+		t.Fatalf("a command that reports nothing returned a result: %+v", text.Result)
+	}
+}
+
+// config answers with its settings as values, and the loosened one says
+// so — which is the whole point of the command, and a client reading only
+// the table would have to parse a column to learn it.
+func TestConfigResultCarriesTheSettings(t *testing.T) {
+	dir := fixtureRepo(t)
+	cfg := filepath.Join(dir, ".procoder", "config.toml")
+	if err := os.WriteFile(cfg, []byte("[git]\nmax_file_mb = 10\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"config"}, Cwd: dir}, apiRunner)
+	if res.Result == nil || res.Result.Kind != api.KindConfig {
+		t.Fatalf("config did not answer in its own kind: %+v", res.Result)
+	}
+	var relaxed bool
+	for _, set := range res.Result.Settings {
+		if strings.Contains(set.Key, "max_file_mb") {
+			if set.Value != "10" {
+				t.Errorf("max_file_mb reads %q, want 10", set.Value)
+			}
+			relaxed = set.Relaxed
+		}
+	}
+	if !relaxed {
+		t.Errorf("a setting weaker than the default is not marked relaxed: %+v", res.Result.Settings)
+	}
+}
+
+// todo list answers with the tasks, and an empty list is still the todo
+// kind rather than no result — the list being empty is an answer.
+func TestTodoResultListsTheTasks(t *testing.T) {
+	dir := fixtureRepo(t)
+	todoDir := filepath.Join(dir, ".procoder", "todo")
+	if err := os.MkdirAll(todoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"20260101-first.md", "20260102-second.md"} {
+		body := "# " + name + "\n\nStatus: open\nCreated: 2026-01-01\n"
+		if err := os.WriteFile(filepath.Join(todoDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"todo", "list"}, Cwd: dir}, apiRunner)
+	if res.Result == nil || res.Result.Kind != api.KindTodo {
+		t.Fatalf("todo list did not answer in its own kind: %+v", res.Result)
+	}
+	if len(res.Result.Tasks) != 2 {
+		t.Fatalf("want 2 tasks, got %d: %+v", len(res.Result.Tasks), res.Result.Tasks)
+	}
+	for _, task := range res.Result.Tasks {
+		if task.ID == "" || task.State == "" {
+			t.Errorf("a task came back without an id or a state: %+v", task)
+		}
+	}
+}
+
+// version answers with what is running, and with no latest — nobody asked
+// GitHub, and reporting the running version as the newest would be an
+// answer this command did not compute.
+func TestVersionResultDoesNotInventALatest(t *testing.T) {
+	dir := fixtureRepo(t)
+	res := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"version"}, Cwd: dir}, apiRunner)
+	if res.Result == nil || res.Result.Version == nil {
+		t.Fatalf("version answered with no version: %+v", res.Result)
+	}
+	if res.Result.Version.Latest != "" {
+		t.Errorf("a bare version reported a latest it never asked for: %q", res.Result.Version.Latest)
 	}
 }
