@@ -694,7 +694,17 @@ func run(args []string, s session) int {
 		return doctor.Run(s.root(), s.stdout)
 	case "init":
 		execute := len(args) > 1 && args[1] == "--yes"
-		return initcmd.Run(s.root(), execute, s.stdout)
+		root := s.root()
+		code := initcmd.Run(root, execute, s.stdout)
+		// Asked after the formatters, because that is what somebody ran
+		// init for. Nobody to ask writes nothing: a repository must never
+		// acquire a daemon because a script ran init.
+		if answer := s.askServerMode(); answer != nil {
+			if err := initcmd.AskAboutTheServer(root, answer, s.stdout); err != nil {
+				fmt.Fprintln(s.stderr, err.Error())
+			}
+		}
+		return code
 	case "git":
 		return gitcmd.Status(s.root(), s.stdout)
 	case "ci":

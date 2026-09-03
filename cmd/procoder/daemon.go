@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"procoder/internal/api"
 	"procoder/internal/config"
 	"procoder/internal/copilot"
+	"procoder/internal/initcmd"
 )
 
 // tryDaemon answers the command over the socket where a machine asked for
@@ -150,4 +153,27 @@ func (s session) ensureDaemon() {
 	if err := api.EnsureDaemon(); err != nil {
 		fmt.Fprintln(s.stderr, err.Error())
 	}
+}
+
+// askServerMode puts the local-server question to whoever is there, and
+// answers nil when nobody is.
+//
+// A supplied confirmation counts as somebody: over the API the question
+// was already put, wherever the caller put it. A terminal is asked
+// directly. Anything else — CI, a pipe, a hook — is nobody, and nobody is
+// not a no: it is nothing written at all.
+func (s session) askServerMode() *string {
+	if s.confirm != nil {
+		return s.confirm
+	}
+	if !copilot.CanAsk(s.stdinFile) {
+		return nil
+	}
+	s.out(initcmd.ServerQuestion)
+	line, err := bufio.NewReader(s.stdinFile).ReadString('\n')
+	if err != nil && line == "" {
+		return nil
+	}
+	line = strings.TrimSpace(line)
+	return &line
 }
