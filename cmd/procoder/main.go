@@ -601,7 +601,14 @@ func run(args []string, s session) int {
 	case "serve":
 		return s.serveCmd(args[1:])
 	case "status":
-		return status.Run(s.root(), s.out)
+		root := s.root()
+		data, lines := status.ReportData(root)
+		s.col.setStatus(&api.Status{Branch: data.Branch, Default: data.Default, Dirty: data.Dirty})
+		s.out(status.Header)
+		for _, line := range lines {
+			s.out(line)
+		}
+		return 0
 	case "env":
 		sync := len(args) > 1 && args[1] == "--sync"
 		if len(args) > 1 && !sync {
@@ -1367,8 +1374,10 @@ func (s session) indexCmd(args []string) int {
 		}
 		switch args[0] {
 		case "find":
+			s.collectSymbols(codeindex.FindTags(root, args[1]))
 			return codeindex.Find(root, args[1], out)
 		case "search":
+			s.collectSymbols(codeindex.SearchTags(root, args[1]))
 			return codeindex.Search(root, args[1], out)
 		case "refs":
 			return codeindex.Refs(root, args[1], out)
@@ -1641,7 +1650,18 @@ func (s session) specCmd(args []string) int {
 		if len(args) > 1 {
 			name = args[1]
 		}
-		return spec.Check(root, name, out)
+		if s.col == nil {
+			return spec.Check(root, name, out)
+		}
+		// One pass that prints and collects, so the lines and the
+		// verdicts cannot disagree and the controller does not run twice.
+		code, verdicts := spec.CheckVerdict(root, name, out)
+		got := make([]api.SpecVerdict, 0, len(verdicts))
+		for _, v := range verdicts {
+			got = append(got, api.SpecVerdict{Name: v.Name, Verdict: v.Verdict, Gaps: v.Gaps})
+		}
+		s.col.setSpecs(got)
+		return code
 	default:
 		return usageErr(s.stderr)
 	}

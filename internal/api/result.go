@@ -20,6 +20,10 @@ type Result struct {
 	Settings []Setting `json:"settings,omitempty"`
 	Tasks    []Task    `json:"tasks,omitempty"`
 	Version  *Version  `json:"version,omitempty"`
+
+	Status  *Status       `json:"status,omitempty"`
+	Specs   []SpecVerdict `json:"specs,omitempty"`
+	Symbols []Symbol      `json:"symbols,omitempty"`
 }
 
 // KindFindings is the shape the reporting commands answer in.

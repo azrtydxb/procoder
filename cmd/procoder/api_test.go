@@ -305,3 +305,81 @@ func TestUnusedConfirmationIsIgnored(t *testing.T) {
 		t.Fatalf("exit codes differ: %d vs %d", *with.Exit, *without.Exit)
 	}
 }
+
+// status, spec check and the index lookups answer with values too, and
+// each value is the one its own lines are rendered from.
+//
+// proved by: computing any of the three separately from its output — the
+// value and the text drift the first time either is reworded, and a
+// client acting on one gets a different answer from a person reading the
+// other.
+func TestStatusSpecIndexResultsAreTyped(t *testing.T) {
+	dir := fixtureRepo(t)
+
+	t.Run("status", func(t *testing.T) {
+		res := api.Serve(api.Request{Protocol: api.Protocol, Argv: []string{"status"}, Cwd: dir}, apiRunner)
+		if res.Result == nil || res.Result.Kind != api.KindStatus {
+			t.Fatalf("status did not answer in its own kind: %+v", res.Result)
+		}
+		if res.Result.Status == nil {
+			t.Fatal("the status kind carries no status")
+		}
+		if res.Result.Status.Branch != "main" {
+			t.Errorf("branch is %q, want main", res.Result.Status.Branch)
+		}
+		if !strings.Contains(res.Stdout, "branch: main") {
+			t.Errorf("the value and the lines disagree:\n%s", trimTo(res.Stdout, 300))
+		}
+	})
+
+	t.Run("spec", func(t *testing.T) {
+		specDir := filepath.Join(dir, ".procoder", "specs")
+		if err := os.MkdirAll(specDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// A spec with nothing in it: the controller must refuse it and
+		// say why, and the value must carry the same gaps.
+		if err := os.WriteFile(filepath.Join(specDir, "hollow.md"),
+			[]byte("# hollow\n\nStatus: draft\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		res := api.Serve(api.Request{
+			Protocol: api.Protocol, Argv: []string{"spec", "check", "hollow"}, Cwd: dir,
+		}, apiRunner)
+		if res.Result == nil || res.Result.Kind != api.KindSpec {
+			t.Fatalf("spec check did not answer in its own kind: %+v", res.Result)
+		}
+		if len(res.Result.Specs) != 1 {
+			t.Fatalf("want one verdict, got %d", len(res.Result.Specs))
+		}
+		v := res.Result.Specs[0]
+		if v.Name != "hollow" || v.Verdict != "NOT ready" {
+			t.Errorf("verdict is %+v, want hollow NOT ready", v)
+		}
+		if len(v.Gaps) == 0 {
+			t.Error("a refused spec carries no gaps — the caller is told no and not why")
+		}
+		if !strings.Contains(res.Stdout, "NOT ready") {
+			t.Errorf("the value and the lines disagree:\n%s", trimTo(res.Stdout, 300))
+		}
+	})
+
+	t.Run("index", func(t *testing.T) {
+		res := api.Serve(api.Request{
+			Protocol: api.Protocol, Argv: []string{"index", "find", "nothingcalledthis"}, Cwd: dir,
+		}, apiRunner)
+		// No index in the fixture: the lookup could not run, so there is
+		// no symbol list — an empty one would say the index answered and
+		// found none.
+		if res.Result != nil && res.Result.Kind == api.KindIndex && res.Result.Symbols != nil {
+			t.Errorf("a lookup that could not run returned a symbol list: %+v", res.Result.Symbols)
+		}
+	})
+}
+
+func trimTo(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "..."
+	}
+	return s
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"procoder/internal/api"
+	"procoder/internal/codeindex"
 	"procoder/internal/gitx"
 )
 
@@ -27,6 +28,9 @@ type collector struct {
 	settings []api.Setting
 	tasks    []api.Task
 	version  *api.Version
+	status   *api.Status
+	specs    []api.SpecVerdict
+	symbols  []api.Symbol
 }
 
 // setSettings, setTasks and setVersion are how a command with a value of
@@ -53,6 +57,24 @@ func (c *collector) setTasks(v []api.Task) {
 func (c *collector) setVersion(v *api.Version) {
 	if c.set(api.KindVersion) {
 		c.version = v
+	}
+}
+
+func (c *collector) setStatus(v *api.Status) {
+	if c.set(api.KindStatus) {
+		c.status = v
+	}
+}
+
+func (c *collector) setSpecs(v []api.SpecVerdict) {
+	if c.set(api.KindSpec) {
+		c.specs = v
+	}
+}
+
+func (c *collector) setSymbols(v []api.Symbol) {
+	if c.set(api.KindIndex) {
+		c.symbols = v
 	}
 }
 
@@ -98,6 +120,12 @@ func (c *collector) result() *api.Result {
 		return &api.Result{Kind: api.KindTodo, Tasks: c.tasks}
 	case api.KindVersion:
 		return &api.Result{Kind: api.KindVersion, Version: c.version}
+	case api.KindStatus:
+		return &api.Result{Kind: api.KindStatus, Status: c.status}
+	case api.KindSpec:
+		return &api.Result{Kind: api.KindSpec, Specs: c.specs}
+	case api.KindIndex:
+		return &api.Result{Kind: api.KindIndex, Symbols: c.symbols}
 	}
 	// Never nil where reported: the JSON must carry [] rather than
 	// omitting the key, so a client can tell an empty list from an absent
@@ -107,4 +135,21 @@ func (c *collector) result() *api.Result {
 		findings = []api.Finding{}
 	}
 	return &api.Result{Kind: api.KindFindings, Findings: findings}
+}
+
+// collectSymbols records an index lookup's hits, and records nothing when
+// the lookup itself failed — an empty symbol list would say the index
+// answered and found none.
+func (s session) collectSymbols(tags []codeindex.Tag, err error) {
+	if s.col == nil || err != nil {
+		return
+	}
+	got := make([]api.Symbol, 0, len(tags))
+	for _, t := range tags {
+		got = append(got, api.Symbol{
+			Name: t.Name, File: t.Path, Line: t.Line,
+			Kind: t.Kind, Signature: t.Signature,
+		})
+	}
+	s.col.setSymbols(got)
 }

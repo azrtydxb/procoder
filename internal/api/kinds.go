@@ -16,7 +16,41 @@ const (
 	KindTodo = "todo"
 	// KindVersion is `procoder version`.
 	KindVersion = "version"
+	// KindStatus is `procoder status`.
+	KindStatus = "status"
+	// KindSpec is `procoder spec check`.
+	KindSpec = "spec"
+	// KindIndex is the index's lookups: find, search.
+	KindIndex = "index"
 )
+
+// Status is where the work stands.
+type Status struct {
+	Branch string `json:"branch,omitempty"`
+	// Default is the branch Branch is measured against, empty when there
+	// is none to measure against.
+	Default string `json:"default,omitempty"`
+	// Dirty is -1 when git did not answer, which is not the same as a
+	// clean tree — and a caller that read it as zero would call an
+	// unknown tree clean.
+	Dirty int `json:"dirty"`
+}
+
+// SpecVerdict is one spec's answer from the quality controller.
+type SpecVerdict struct {
+	Name    string   `json:"name"`
+	Verdict string   `json:"verdict"`
+	Gaps    []string `json:"gaps,omitempty"`
+}
+
+// Symbol is one hit from the code index.
+type Symbol struct {
+	Name      string `json:"name"`
+	File      string `json:"file"`
+	Line      int    `json:"line"`
+	Kind      string `json:"kind,omitempty"`
+	Signature string `json:"signature,omitempty"`
+}
 
 // Setting is one effective setting and its provenance.
 type Setting struct {
@@ -51,5 +85,5 @@ type Version struct {
 // constants out of the source and compares them to this, so the two
 // cannot drift.
 func Kinds() []string {
-	return []string{KindFindings, KindConfig, KindTodo, KindVersion}
+	return []string{KindFindings, KindConfig, KindTodo, KindVersion, KindStatus, KindSpec, KindIndex}
 }
