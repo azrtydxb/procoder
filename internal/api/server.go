@@ -34,6 +34,7 @@ type Server struct {
 	Identity func(cwd string) string
 
 	queues queues
+	jobs   jobs
 }
 
 // Listen opens the socket at path, replacing a stale one.
@@ -90,9 +91,25 @@ func (s *Server) serveConn(conn net.Conn) {
 			Protocol, req.Protocol))
 		return
 	}
+	// A poll is not a command: it reads a job's accumulated answer and
+	// must not queue behind the very command it is asking about.
+	if req.Job != "" {
+		_ = WriteResponse(conn, s.jobs.poll(req.Job))
+		return
+	}
+
 	identity := ""
 	if s.Identity != nil {
 		identity = s.Identity(req.Cwd)
+	}
+
+	if IsLongRunning(req.Argv) {
+		// Started INSIDE the queue so the repository's serialisation still
+		// holds, and answered immediately: the caller gets an id in
+		// milliseconds and the command keeps running behind it.
+		job := s.jobs.start(req, s.runQueued(identity))
+		_ = WriteResponse(conn, Response{Protocol: Protocol, Job: &job})
+		return
 	}
 	// Held across the whole command, not just its writes: the store's lock
 	// is per file, and two requests interleaving between a read and a
@@ -100,6 +117,16 @@ func (s *Server) serveConn(conn net.Conn) {
 	s.queues.do(identity, func() {
 		_ = WriteResponse(conn, Serve(req, s.Run))
 	})
+}
+
+// runQueued is the runner with the repository's queue around it, for a
+// job — which runs after its connection is gone and so cannot be wrapped
+// by the caller.
+func (s *Server) runQueued(identity string) Runner {
+	return func(req Request, stdout, stderr io.Writer) (code int, result *Result) {
+		s.queues.do(identity, func() { code, result = s.Run(req, stdout, stderr) })
+		return code, result
+	}
 }
 
 // refuse answers with an exit code and a reason on stderr, which is where

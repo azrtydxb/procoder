@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"procoder/internal/api"
 	"procoder/internal/config"
@@ -75,6 +76,9 @@ func tryDaemon(args []string, s session) (int, bool) {
 		}
 		return 0, false
 	}
+	if res.Job != nil && res.Exit == nil {
+		return followJob(res.Job.ID, path, s)
+	}
 	io.WriteString(s.stdout, res.Stdout)
 	io.WriteString(s.stderr, res.Stderr)
 	if res.Exit == nil {
@@ -82,3 +86,50 @@ func tryDaemon(args []string, s session) (int, bool) {
 	}
 	return *res.Exit, true
 }
+
+// followJob waits out a long-running command and writes what it produces
+// as it appears.
+//
+// A CLI caller asked for `procoder test` and expects `procoder test`: the
+// job exists so the SOCKET does not have to hold a suite open, not so the
+// person has to poll. What a client with something else to do gets is the
+// job id; what the CLI gets is the command it asked for.
+//
+// Only the new bytes are written on each poll, because a poll returns
+// everything accumulated so far and reprinting it would repeat the suite's
+// output once per tick.
+func followJob(id, path string, s session) (int, bool) {
+	client := api.Client{Path: path, Version: version}
+	var wroteOut, wroteErr int
+	for {
+		res, err := client.Do(api.Request{Job: id})
+		if err != nil {
+			// The daemon went away mid-job. The command's own state is
+			// unknown, so the caller is told rather than being handed a
+			// verdict nobody computed — and it is NOT re-run in-process,
+			// which could run a release or a suite twice.
+			fmt.Fprintf(s.stderr, "procoder: lost the daemon while %s was running (%v)\n", id, err)
+			return 1, true
+		}
+		if len(res.Stdout) > wroteOut {
+			io.WriteString(s.stdout, res.Stdout[wroteOut:])
+			wroteOut = len(res.Stdout)
+		}
+		if len(res.Stderr) > wroteErr {
+			io.WriteString(s.stderr, res.Stderr[wroteErr:])
+			wroteErr = len(res.Stderr)
+		}
+		if res.Job != nil && res.Job.State == api.JobLost {
+			fmt.Fprintf(s.stderr, "procoder: job %s is gone — the daemon restarted while it was running\n", id)
+			return 1, true
+		}
+		if res.Exit != nil {
+			return *res.Exit, true
+		}
+		time.Sleep(jobPollInterval)
+	}
+}
+
+// jobPollInterval is short enough that a suite's output does not feel
+// batched, and long enough that following one is not a busy loop.
+const jobPollInterval = 100 * time.Millisecond
