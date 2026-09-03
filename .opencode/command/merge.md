@@ -34,7 +34,12 @@ Loop until done:
    reviewers (Copilot included) exactly like humans: read every comment and
    recommendation, and for each one either
    - fix it (commit, push, then reply to the thread saying what changed), or
-   - reply with a concrete reason why not.
+   - reply with a concrete reason why not, or
+   - when it is real but too large for this PR, TRACK IT BEFORE MERGING:
+     `procoder todo add`, or a backlog story where it belongs, naming
+     the PR it came from. Then reply with that id. "Out of scope for this
+     PR" is only true if something now holds it; said on its own it is how
+     a real finding is answered and then lost.
      No comment is skipped silently. Resolve threads only after fixing or
      answering (`gh api graphql` resolveReviewThread), never to hide them.
 
