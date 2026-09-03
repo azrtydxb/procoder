@@ -445,7 +445,11 @@ func main() {
 	config.Version = version
 	releases.Running = version
 
-	os.Exit(run(os.Args[1:], processSession()))
+	s := processSession()
+	if code, served := tryDaemon(os.Args[1:], s); served {
+		os.Exit(code)
+	}
+	os.Exit(run(os.Args[1:], s))
 }
 
 // session is everything a command needs to know about its caller: where
@@ -547,6 +551,11 @@ func (s session) printFindings(root, label string, findings []gitx.Finding, out 
 	return 0
 }
 
+// run dispatches one command.
+//
+// The daemon, where a machine asked for one, is tried by tryDaemon before
+// this is reached — never inside it, so that every path below is the same
+// path a CLI caller takes and the two doors cannot drift.
 func run(args []string, s session) int {
 	if len(args) == 0 {
 		fmt.Fprint(s.stderr, usage)

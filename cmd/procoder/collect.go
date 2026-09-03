@@ -29,19 +29,42 @@ type collector struct {
 	version  *api.Version
 }
 
-// settingsResult, tasksResult and versionResult are how a command with a
-// value of its own answers. Each one is the whole answer: a command sets
-// one and never two.
-func (c *collector) setSettings(v []api.Setting) { c.set(api.KindConfig); c.settings = v }
-func (c *collector) setTasks(v []api.Task)       { c.set(api.KindTodo); c.tasks = v }
-func (c *collector) setVersion(v *api.Version)   { c.set(api.KindVersion); c.version = v }
+// setSettings, setTasks and setVersion are how a command with a value of
+// its own answers. Each one is the whole answer: a command sets one and
+// never two.
+//
+// Every one is nil-safe, because the CLI's collector IS nil and a command
+// must not have to know which caller it has. The first version of these
+// guarded inside set() and assigned outside it, which compiled, passed
+// every test that went through apiRunner, and segfaulted on `procoder
+// version` at a terminal.
+func (c *collector) setSettings(v []api.Setting) {
+	if c.set(api.KindConfig) {
+		c.settings = v
+	}
+}
 
-func (c *collector) set(kind string) {
+func (c *collector) setTasks(v []api.Task) {
+	if c.set(api.KindTodo) {
+		c.tasks = v
+	}
+}
+
+func (c *collector) setVersion(v *api.Version) {
+	if c.set(api.KindVersion) {
+		c.version = v
+	}
+}
+
+// set records the kind and reports whether there is a collector to record
+// into at all.
+func (c *collector) set(kind string) bool {
 	if c == nil {
-		return
+		return false
 	}
 	c.reported = true
 	c.kind = kind
+	return true
 }
 
 // add records one domain's findings. A domain that found nothing still

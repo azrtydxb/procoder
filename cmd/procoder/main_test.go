@@ -206,3 +206,33 @@ func TestRunUsesTheSessionNotTheProcess(t *testing.T) {
 		t.Fatalf("run wrote to the process stdout: %q", leaked)
 	}
 }
+
+// Every command runs with no collector, because that is what the CLI is.
+//
+// The collector is nil at a terminal and non-nil over the socket, and a
+// command must not have to know which caller it has. The first version of
+// the setters guarded the nil inside set() and assigned outside it: it
+// compiled, passed every test that went through apiRunner, and segfaulted
+// on `procoder version` at a terminal.
+//
+// proved by: assigning to a collector field outside the nil guard in
+// collect.go — this test panics on the command that does it.
+func TestCommandsSurviveANilCollector(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{
+		{"version"}, {"config"}, {"todo", "list"}, {"principles"}, {"status"},
+	} {
+		argv := argv
+		t.Run(argv[0], func(t *testing.T) {
+			s := session{
+				stdin: strings.NewReader(""), stdout: io.Discard, stderr: io.Discard,
+				cwd: dir, env: host.Env{}, col: nil,
+			}
+			// A panic here is the failure; the exit code is not the point.
+			run(argv, s)
+		})
+	}
+}
