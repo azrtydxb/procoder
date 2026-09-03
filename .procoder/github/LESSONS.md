@@ -450,7 +450,7 @@ closes #209` — and after merging a PR that claimed to close more than
 - Adaptation: the pre-PR review of #266 found that a formatted body could
   starve the secret scan. The fix was a must-keep path, and that path
   shipped with two defects of its own: keep parts were placed against the
-  FULL budget rather than the reserved one, so the omission notice could
+  _full_ budget rather than the reserved one, so the omission notice could
   push the payload past the constant it existed to enforce; and a keep part
   larger than the whole budget was dropped without being counted, so the one
   finding declared un-droppable vanished silently. Copilot found both on the
@@ -463,7 +463,7 @@ closes #209` — and after merging a PR that claimed to close more than
   than the review.
 
   The same session had already shown the fix. During #249 a verification
-  pass over the fix diff caught a race reintroduced ONE COMMIT after the
+  pass over the fix diff caught a race reintroduced _one commit_ after the
   original was fixed. That pass was not run here.
 
   The rule: an exception path added to satisfy a finding — a must-keep, a
