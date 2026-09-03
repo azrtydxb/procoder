@@ -33,19 +33,15 @@ values (ADR 0003) and everything else is prose intended for a person. A
 caller that wants a structured answer parses the prose, which makes every
 line of output a compatibility surface nobody declared.
 
-Issue #117 proposed a local daemon and scoped it to the four hook
-entrypoints; its D5 says plain CLI commands always run in-process, and only
-hooks use the daemon. That decision stands and is not rewritten here. This
-is a different piece of work with a different goal — feature parity for all
-47 commands over an API call, so a session can drive procoder as functions
-rather than as a subprocess — and it needs its own issue.
+The goal is feature parity for all 47 commands over an API call, so a
+session can drive procoder as functions rather than as a subprocess. The
+four hook entrypoints are the first consumers of the socket this spec
+defines and not its only ones: a caller who wants the other 43 may have
+them.
 
-The two meet at the transport and nowhere else. #117's four hook
-entrypoints become the first consumers of the socket this spec defines, and
-D5's real content survives intact: no CLI command requires a daemon, in CI
-or on a fresh clone. What this spec adds is that a caller who wants the
-other 43 over the socket may have them. Where #117 says hooks are the only
-client, this says they are the first.
+One property is not traded away for any of it. No CLI command requires a
+daemon, in CI or on a fresh clone — a second door is only useful if the
+first one is always open.
 
 The rewrite left the engine unusually ready for this. Nothing under
 `internal/` writes to `os.Stdout` or calls `fmt.Print`; 123 functions
@@ -61,10 +57,10 @@ what a repository declared.
   stdout it parses. It also needs to start the suite and keep working.
 - **A hook** — needs what it needs today, unchanged: a JSON envelope in the
   running host's shape, within the host's timeout, degrading to silence
-  rather than taking the session down. #117 phase 1 is this user.
+  rather than taking the session down.
 - **A person at a terminal** — needs `procoder check` to behave identically
   with no daemon, no socket and no setup, in CI and on a fresh clone.
-  This is #117 D5's real content and it survives here intact.
+  A second door is only useful if the first one is always open.
 - **Whoever writes the second client** — an editor extension, a CI step, a
   test harness — needs one documented envelope, not 47 output formats.
 - **Whoever reviews this change** — needs to see that no command's behaviour
@@ -75,7 +71,7 @@ what a repository declared.
 - [S-1] `procoder serve`: a daemon listening on a unix socket at
   `~/.procoder/run/procoder.sock`, mode 0600, a named pipe of the same name
   on Windows. One daemon per machine, serving every repository. File
-  permissions are the authentication — no port, no token (#117 D2).
+  permissions are the authentication — no port, no token.
 - [S-2] One request envelope and one response envelope, for every command.
   The request carries argv, the working directory, the environment the
   caller wants applied, stdin bytes and a protocol version. The response
@@ -107,8 +103,8 @@ what a repository declared.
   repository's warm state is evicted after its own idle window; the daemon
   exits when it holds none.
 - [S-9] The SessionStart hook starts the daemon when the socket is dead,
-  single-flight via a lock file. No launchd, no systemd, no install step
-  (#117 D3).
+  single-flight via a lock file. No launchd, no systemd, no install
+  step.
 - [S-10] A parity test over every command: the same argv, working
   directory, environment and stdin produce a byte-identical exit code and
   output whether the command ran in-process or over the socket. The test
@@ -128,7 +124,7 @@ what a repository declared.
   takes the non-interactive path exactly as it does today, and the response
   says which path it took.
 - [S-11] `[service] mode` in `.procoder/config.toml` — `off` by default, so
-  no repository changes behaviour because it upgraded (#117 D4) — and
+  no repository changes behaviour because it upgraded — and
   `procoder init` asks whether this machine runs the local CLI or the local
   server, rather than leaving the key to be hand-edited.
 
@@ -138,7 +134,7 @@ what a repository declared.
   multi-user. Designed and parked in #248.
 - **Removing or thinning the CLI.** Every command runs in-process exactly
   as it does today when there is no daemon, with no setup, in CI and on a
-  fresh clone (#117 D5, D8). The API is a second door, never the only one.
+  fresh clone. The API is a second door, never the only one.
 - **Proactive work.** The daemon does nothing unasked: no filesystem
   watching, no scheduled checks, no cross-repo coordination.
 - **Changing what any command decides.** The gate reaches the same verdict
@@ -365,7 +361,7 @@ and format, so a repository that opts in and back out sees no diff.
   run in-process.
 - **The daemon is unreachable mid-request.** The client runs the command
   in-process and reports that it did. A degraded transport never costs a
-  caller its answer (#117 D6).
+  caller its answer.
 - **The daemon is slow.** Every client wait is bounded. A hook past its
   bound abandons the daemon and runs in-process, because the host's timeout
   is the real ceiling and losing to it is worse than losing the warm index.
@@ -491,7 +487,8 @@ and format, so a repository that opts in and back out sees no diff.
 <!-- Empty deliberately: any non-empty line in this section counts as an
      open question, "None." included.
 
-     The four #117 left open are settled in the sections above — the index
+     The four questions this design left open are settled in the sections
+     above — the index
      is held in memory per repository and evicted per repository with the
      daemon persisting (S-8), `procoder init` asks rather than assumes
      (S-11), and `self-upgrade` stops the daemon explicitly (S-7). The
