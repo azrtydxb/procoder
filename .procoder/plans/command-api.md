@@ -137,6 +137,10 @@ Files:
 
 - `internal/api/envelope.go` — the request and response types and their
   encoding.
+- `internal/api/result.go` — the `Result` and `Finding` types the response
+  field is declared as. Declared here rather than in Task 4 because
+  `Response.Result` does not compile without them; Task 4 fills the value,
+  this task only names the shape.
 - `internal/api/envelope_test.go` — the tests.
 
 Interfaces this task produces:
@@ -240,7 +244,6 @@ func apiRunner(req api.Request, stdout, stderr io.Writer) int // adapts run()
 
 Files:
 
-- `internal/api/result.go` — the `Result` type and the findings kind.
 - `cmd/procoder/main.go` — `printFindings` also collects.
 - `internal/api/result_test.go`, `cmd/procoder/api_test.go` — the tests.
 
@@ -274,8 +277,6 @@ func (s session) collect(domain string, f []gitx.Finding)
       that `Stdout` is byte-identical to the same command run through
       `run`. Run `go test ./cmd/procoder/` and expect FAIL with "Result is
       nil".
-- [ ] Add `Result`, `Finding` and `KindFindings` to
-      `internal/api/result.go`.
 - [ ] Give `session` a `*collector` (nil for the CLI) and have
       `printFindings` append to it as well as writing its lines, taking the
       `label` it already receives as the domain. Fill `Response.Result`
