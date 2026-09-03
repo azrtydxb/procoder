@@ -133,3 +133,21 @@ func followJob(id, path string, s session) (int, bool) {
 // jobPollInterval is short enough that a suite's output does not feel
 // batched, and long enough that following one is not a busy loop.
 const jobPollInterval = 100 * time.Millisecond
+
+// ensureDaemon starts the local daemon where a machine asked for one and
+// none is listening.
+//
+// Called from the session-start hook: the moment a machine has something
+// for a daemon to do, and the only moment nobody is waiting on a command's
+// answer. Every failure is silent to stdout — a session whose daemon would
+// not start is a session that runs in-process, which is every session
+// today, and a hook that printed about it would put its noise inside the
+// JSON envelope three of the four hosts parse.
+func (s session) ensureDaemon() {
+	if config.Load(s.root()).ServiceMode != "local" {
+		return
+	}
+	if err := api.EnsureDaemon(); err != nil {
+		fmt.Fprintln(s.stderr, err.Error())
+	}
+}
