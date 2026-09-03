@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -28,46 +29,57 @@ import (
 // socket or not at all, and a client that offered them here would put a
 // path that runs what a repository declared behind the same door the hooks
 // use.
-func tryDaemon(args []string, s session) (int, bool) {
+//
+// The third return is the stdin the caller must use if this did not serve
+// the request. Reading stdin to build a request CONSUMES it, and the
+// in-process path that runs next needs those same bytes — without them a
+// PostToolUse hook reads an empty payload, decides there is no file to
+// check, and the formatting gate silently stops running.
+func tryDaemon(args []string, s session) (code int, served bool, stdin io.Reader) {
 	if len(args) == 0 || args[0] == "serve" {
 		// serve is the daemon. Asking a daemon to start one is a loop.
-		return 0, false
+		return 0, false, s.stdin
 	}
 	cfg := config.Load(s.root())
 	if cfg.ServiceMode != "local" {
-		return 0, false
+		return 0, false, s.stdin
 	}
 	if api.Executes(args) {
-		return 0, false
+		return 0, false, s.stdin
 	}
 
 	path, err := api.WorkSocket()
 	if err != nil {
-		return 0, false
+		return 0, false, s.stdin
 	}
 
 	// Read stdin only where there is something to read. A terminal has
 	// nothing waiting and ReadAll on one blocks forever — which would turn
 	// every interactive command on a daemon-configured machine into a
 	// hang, and the daemon is supposed to be invisible.
-	var stdin []byte
+	var payload []byte
+	// rest is what the in-process path gets if this attempt does not serve
+	// the request: the bytes already read, never a reader they were taken
+	// out of.
+	rest := s.stdin
 	if copilot.CanAsk(s.stdinFile) {
 		// A character device that is not /dev/null: a person is there and
 		// whatever they type belongs to the command, not to this read.
-		stdin = nil
+		payload = nil
 	} else if s.stdin != nil {
 		b, err := io.ReadAll(s.stdin)
 		if err != nil {
-			return 0, false
+			return 0, false, bytes.NewReader(nil)
 		}
-		stdin = b
+		payload = b
+		rest = bytes.NewReader(b)
 	}
 
 	res, err := api.Client{Path: path, Version: version}.Do(api.Request{
 		Argv:    args,
 		Cwd:     s.cwd,
 		Env:     s.env,
-		Stdin:   stdin,
+		Stdin:   payload,
 		Confirm: s.confirm,
 	})
 	if err != nil {
@@ -77,17 +89,18 @@ func tryDaemon(args []string, s session) (int, bool) {
 		if !errors.Is(err, api.ErrNoDaemon) {
 			fmt.Fprintln(s.stderr, err.Error()+" — running in-process")
 		}
-		return 0, false
+		return 0, false, rest
 	}
 	if res.Job != nil && res.Exit == nil {
-		return followJob(res.Job.ID, path, s)
+		code, served := followJob(res.Job.ID, path, s)
+		return code, served, rest
 	}
 	io.WriteString(s.stdout, res.Stdout)
 	io.WriteString(s.stderr, res.Stderr)
 	if res.Exit == nil {
-		return 0, true
+		return 0, true, rest
 	}
-	return *res.Exit, true
+	return *res.Exit, true, rest
 }
 
 // followJob waits out a long-running command and writes what it produces

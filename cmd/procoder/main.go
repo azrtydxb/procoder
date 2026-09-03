@@ -448,9 +448,14 @@ func main() {
 	releases.Running = version
 
 	s := processSession()
-	if code, served := tryDaemon(os.Args[1:], s); served {
+	// The daemon attempt reads stdin to build its request, so the reader
+	// it hands back — not the drained original — is what the in-process
+	// path must use.
+	code, served, stdin := tryDaemon(os.Args[1:], s)
+	if served {
 		os.Exit(code)
 	}
+	s.stdin = stdin
 	os.Exit(run(os.Args[1:], s))
 }
 

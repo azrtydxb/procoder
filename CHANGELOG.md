@@ -51,6 +51,63 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## Unreleased
+
+_Every command can be called instead of spawned._
+
+**Added — a second door: every command answers over a local socket.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) `procoder serve`
+runs a local daemon, and a caller that would rather make a call than spawn
+a process may. A response carries the command's exact bytes on stdout and
+stderr, its exit code, and — where the command has one — a typed result
+beside them: findings with their file, line, domain and whether they
+block, and named shapes for `config`, `todo list`, `version`, `status`,
+`spec check` and the index lookups. Both, so that no caller has to parse
+prose and none has to render it.
+
+The first door does not move. Every command still runs in-process, with no
+daemon, no socket and no setup, in CI and on a fresh clone; `[service]
+mode` is `off` until a machine says otherwise, and `procoder init` asks
+rather than choosing. A daemon that cannot be reached — absent, from
+another build, gone mid-request — costs you its speed and never your
+answer.
+
+`TestParityAcrossEveryCommand` reads the command list out of the usage
+text and runs all 48 twice, comparing stdout, stderr and the exit code
+byte for byte. A command added without a parity case fails it.
+
+The nine commands that run a whole toolchain over a whole tree — `test`,
+`audit`, `release`, `bench`, `deps`, and `security --deep`,
+`docs --external`, `ci --runs`, `index build` — answer with a job in
+milliseconds and keep running behind it, so a suite no longer holds a
+connection open for its duration.
+
+**Added — the commands that run things have their own door, or none.**
+([#272](https://github.com/azrtydxb/procoder/pull/272))
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade` run what
+a repository, or a prior agent session, declared. They are refused on the
+ordinary socket and served only on a second one, opt-in via `[service]
+exec`, whose address the hooks are never told. The socket's 0600 mode
+authenticates the user and not the process — every process running as you
+can open it, an agent session's own shell included — so "look but don't
+run" is held by the shape of the thing rather than by a rule.
+
+**Fixed — one daemon no longer contends with itself over a repository's
+own ledgers.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) The state lock is a lockfile with a heartbeat and no
+in-process registry, so two requests for one repository inside a single
+daemon did not queue: the second waited out the five-second timeout and
+reported that its write was not made. Requests are serialised per
+repository now. Rare while every hook was its own process; ordinary the
+moment one process serves several sessions.
+
+**Fixed — the session-start hook answers in the calling host's shape, not
+the daemon's.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) Host detection read the process environment, so one daemon
+started by a Claude session and later serving a Copilot or Qoder one
+shaped its answer for the wrong host, with the payload identical and
+nothing to see. The environment travels with the request.
+
 ## 3.5.0 — 2026-09-01
 
 _Every host now holds the same turn end, and the record-keeping outlives the reflow._

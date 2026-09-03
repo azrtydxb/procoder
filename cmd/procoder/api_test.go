@@ -383,3 +383,55 @@ func trimTo(s string, n int) string {
 	}
 	return s
 }
+
+// The daemon path must not eat the caller's stdin.
+//
+// tryDaemon reads stdin so it can put it in the request. When the daemon
+// is not there — the ordinary case on a machine that configured one and
+// has not started it yet — the command runs in-process instead, and it
+// must see the bytes that were read on its behalf.
+//
+// The first version did not hand them back. `[service] mode = "local"`
+// with no daemon listening made every PostToolUse hook produce NOTHING:
+// an empty payload reads as "no file to check", so the formatting gate
+// silently stopped running. Silent green is the one failure procoder
+// exists to prevent.
+//
+// proved by: dropping the returned reader in main and passing the drained
+// session to run — this test gets an empty envelope.
+func TestFallbackKeepsTheCallersStdin(t *testing.T) {
+	dir := fixtureRepo(t)
+	cfg := filepath.Join(dir, ".procoder", "config.toml")
+	if err := os.WriteFile(cfg, []byte("[service]\nmode = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(dir, "x.md")
+	if err := os.WriteFile(bad, []byte("#    ragged   heading\n\n\n\ntext\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := `{"tool_name":"Write","tool_input":{"file_path":"` + bad + `"}}`
+	var out, errs bytes.Buffer
+	s := session{
+		stdin: strings.NewReader(payload), stdout: &out, stderr: &errs,
+		cwd: dir, env: host.Env{},
+	}
+
+	// The whole path main takes: try the daemon, then run in-process with
+	// whatever stdin the attempt left behind.
+	code, served, stdin := tryDaemon([]string{"hook", "post-tool-use"}, s)
+	if served {
+		t.Fatalf("no daemon is listening, yet the request was reported served (exit %d)", code)
+	}
+	s.stdin = stdin
+	if code := run([]string{"hook", "post-tool-use"}, s); code != 0 {
+		t.Fatalf("the hook exited %d: %s", code, errs.String())
+	}
+
+	if out.Len() == 0 {
+		t.Fatal("the hook produced nothing — the daemon attempt ate the payload and the gate silently did not run")
+	}
+	if !strings.Contains(out.String(), "not formatted") {
+		t.Fatalf("the hook did not report the unformatted file: %s", trimTo(out.String(), 300))
+	}
+}

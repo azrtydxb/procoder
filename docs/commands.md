@@ -1263,7 +1263,7 @@ checked, never what they held. A pattern that does not compile reports
   front of you and then discarded; procoder does not store them, print
   them, or put them in your CI. Paste them yourself.
 
-#### `procoder serve [--socket <path>] [--exec]`
+#### `procoder serve [--socket <path>] [--exec] [--idle <duration>]`
 
 The local daemon. Every command answers over a unix socket, so a caller
 that would rather make a call than spawn a process can — and gets the same
@@ -1293,6 +1293,15 @@ served there at all. They live behind `--exec` on a second socket
 its address. A path that runs an agent-written command must not be
 reachable by something running unattended; see the "look but don't run"
 boundary in ARCHITECTURE.
+
+Each repository stays warm for `--idle` (30 minutes by default) after its
+last request, and is released on its own schedule — a morning's work in
+one checkout does not keep nine others' indexes resident. A daemon holding
+nothing exits, because staying resident to serve a request that may never
+come is how a convenience becomes a process somebody has to remember to
+kill. Exiting is safe precisely because starting is free: the next
+session's hook starts another, and a client that finds no daemon runs
+in-process.
 
 `serve` runs in the foreground and stops when its listener closes.
 Whatever started it owns it — a shell, or the session-start hook. It does

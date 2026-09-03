@@ -456,6 +456,42 @@ contents and nothing identifying a person.
 | Key    | Default    | What it does                                                         |
 | ------ | ---------- | -------------------------------------------------------------------- |
 | `repo` | _computed_ | The repository's stable name, overriding the one procoder works out. |
+| `mode` | `off`      | `local` runs commands through the daemon when one is listening.      |
+| `exec` | `false`    | Opens the second socket, which serves the commands that run things.  |
+
+#### `mode`
+
+`off` is the default and stays the default: no repository changes
+behaviour because it upgraded. `local` means a command tries the socket
+first, and falls back to running in-process on any failure — no daemon, a
+daemon from another build, a socket that went away mid-request. A degraded
+transport costs you the daemon's speed and never your answer.
+
+The CLI is unaffected either way. Every command still runs in-process with
+no daemon and no setup, in CI and on a fresh clone. `procoder init` asks
+which this machine should be rather than choosing for you, and a value
+that is neither `off` nor `local` leaves the machine where it was rather
+than in a state nobody chose.
+
+`procoder serve` is the daemon itself — see
+[Commands](commands.md#procoder-serve---socket-path---exec---idle-duration).
+
+#### `exec`
+
+Four commands run what a repository — or a prior agent session — declared:
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade`. They are
+never served on the ordinary socket, whatever this key says.
+
+`exec = true` opens a **second** socket for them alone, at
+`~/.procoder/run/procoder-exec.sock`, whose address the hooks are never
+told. That separation is the point rather than a detail: the socket's 0600
+mode authenticates the **user**, not the process, so every process running
+as you can open it — including an agent session's own shell. A path that
+runs an agent-written command must not be reachable by something running
+unattended.
+
+Leave it `false` unless you specifically want a caller to be able to run
+those four. The binary always can, and that is the door meant for them.
 
 Procoder needs a name for this repository that means the same thing on
 somebody else's machine. A filesystem path does not: the same repository
