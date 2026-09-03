@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 )
 
 // Server answers requests on one socket.
@@ -91,6 +92,21 @@ func (s *Server) serveConn(conn net.Conn) {
 			Protocol, req.Protocol))
 		return
 	}
+	// #201's boundary, enforced at the door rather than trusted to the
+	// caller. The work socket serves everything except the four commands
+	// that run what a repository — or a prior agent session — declared;
+	// they are served here only where this is the exec socket, which the
+	// hooks are never told the address of.
+	if Executes(req.Argv) && !s.Exec {
+		path, _ := ExecSocket()
+		s.refuse(conn, 2, "procoder: "+strings.Join(req.Argv, " ")+
+			" is not served on this socket — a path that runs what a repository declared"+
+			" must not be reachable by something running unattended (#201).\n"+
+			"It is served on the exec socket ("+path+") when [service] exec = true,"+
+			" and by the binary itself always.")
+		return
+	}
+
 	// A poll is not a command: it reads a job's accumulated answer and
 	// must not queue behind the very command it is asking about.
 	if req.Job != "" {
