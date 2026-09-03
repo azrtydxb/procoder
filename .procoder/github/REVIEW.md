@@ -48,6 +48,19 @@ Check every hunk for:
   the terminator variants, the case the happy path skips.
 - Test fixtures that trip our own scanners: assemble marker/secret-like
   content at runtime, never as a literal.
+- THE FIXES MADE FOR AN EARLIER FINDING, read as new code. A pre-PR review
+  runs once, on the diff as it was; whatever is written to satisfy its
+  findings then ships unreviewed. An exception path added to satisfy a
+  finding — a must-keep, a bypass, a special case — is the least-reviewed
+  code in the change and sits on the path the finding said was important.
+  Read those hunks last and hardest, or run the reviewer again over the fix
+  diff.
+- A BUDGET THAT EXCLUDES ITS OWN OVERHEAD. A size limit whose error
+  message, notice, separator, or envelope is added after the limit is
+  applied does not hold: the overflow lands in the very thing that was
+  meant to explain it. Reserve the overhead inside the limit, and assert
+  the assembled result against the constant with no slack — a tolerance in
+  the test is how the overflow passes.
 - CHECK-THEN-ACT on a shared file: a stat (or a read, or an exists test)
   followed by a remove, rename, or create, with nothing binding the two to
   the same file. Between them another process can replace what was
