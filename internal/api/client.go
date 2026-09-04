@@ -38,9 +38,9 @@ type Client struct {
 
 // Do sends one request and returns the response.
 //
-// Every error means the same thing to a caller: run it in-process. That is
-// the contract that lets the daemon be optional — a degraded transport
-// costs the caller its speed and never its answer.
+// Every error means the same thing to a caller: this command did not run.
+// There is no second path — a machine set to the daemon uses the daemon,
+// and a failure here is reported rather than worked around.
 func (c Client) Do(req Request) (Response, error) {
 	conn, err := net.DialTimeout("unix", c.Path, DialTimeout)
 	if err != nil {

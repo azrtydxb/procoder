@@ -27,11 +27,9 @@ type Server struct {
 	Exec bool
 	// Notice is where the server says what it served.
 	//
-	// A line per request, and it is not decoration. The client falls back
-	// to running in-process on every failure, silently and by design, so
-	// the output of a served request and a fallback are identical — which
-	// leaves no way to answer "is the daemon actually being used?" except
-	// by asking the daemon. This is that answer.
+	// A line per request, and it is not decoration: it is how anybody
+	// answers "what is this daemon actually doing", for a process that
+	// otherwise runs silently for hours.
 	//
 	// Stderr by default; a test points it somewhere it can read.
 	Notice io.Writer

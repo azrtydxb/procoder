@@ -361,10 +361,12 @@ and format, so a repository that opts in and back out sees no diff.
   run in-process.
 - **The daemon is unreachable mid-request.** The client runs the command
   in-process and reports that it did. A degraded transport never costs a
-  caller its answer.
-- **The daemon is slow.** Every client wait is bounded. A hook past its
-  bound abandons the daemon and runs in-process, because the host's timeout
-  is the real ceiling and losing to it is worse than losing the warm index.
+  caller nothing it could have had: the command did not run, and the
+  reason says so.
+- **The daemon is slow.** Every client wait is bounded, and a wait that
+  runs out is reported as one. The command is not then run here instead:
+  it may already be half-done inside the daemon, and running it twice is
+  worse than saying it did not finish.
 - **A command's typed result cannot be built.** The bytes are still
   returned, `result` is null, and stderr says the result was unavailable.
   Losing the typed answer must never lose the human one — the prose is the
@@ -429,9 +431,9 @@ and format, so a repository that opts in and back out sees no diff.
       uses for the hook package. Asserted by
       `TestClientTransportExecutesNothing`; fails if that import is added,
       and the test names the file that added it.
-- [ ] [S-7] A client whose version differs from the daemon's runs the command
-      in-process and says so, and `self-upgrade` leaves no daemon running.
-      Asserted by `TestVersionSkewFallsBackInProcess` and
+- [ ] [S-7] A client whose version differs from the daemon's refuses to use
+      it and says so, running nothing, and `self-upgrade` leaves no daemon
+      running. Asserted by `TestVersionSkewIsRefused` and
       `TestSelfUpgradeStopsTheDaemon`; fails if a mismatched daemon serves
       the request, or if a daemon survives the upgrade.
 - [ ] [S-8] After serving two repositories and idling past the window the

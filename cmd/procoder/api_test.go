@@ -384,54 +384,83 @@ func trimTo(s string, n int) string {
 	return s
 }
 
-// The daemon path must not eat the caller's stdin.
+// There is no fallback: a machine configured for the server does not
+// quietly run the command itself when the server is not there.
 //
-// tryDaemon reads stdin so it can put it in the request. When the daemon
-// is not there — the ordinary case on a machine that configured one and
-// has not started it yet — the command runs in-process instead, and it
-// must see the bytes that were read on its behalf.
+// The alternative was tried and removed. A silent fallback means two
+// possible answers to "where did this verdict come from", identical from
+// the outside — and a machine configured for the daemon can spend weeks
+// never reaching it with nothing saying so.
 //
-// The first version did not hand them back. `[service] mode = "local"`
-// with no daemon listening made every PostToolUse hook produce NOTHING:
-// an empty payload reads as "no file to check", so the formatting gate
-// silently stopped running. Silent green is the one failure procoder
-// exists to prevent.
-//
-// proved by: dropping the returned reader in main and passing the drained
-// session to run — this test gets an empty envelope.
-func TestFallbackKeepsTheCallersStdin(t *testing.T) {
+// proved by: running the command in-process when the client errors — this
+// test then sees exit 0 and the command's output instead of a refusal.
+func TestNoDaemonIsAFailureNotAFallback(t *testing.T) {
 	dir := fixtureRepo(t)
 	cfg := filepath.Join(dir, ".procoder", "config.toml")
 	if err := os.WriteFile(cfg, []byte("[service]\nmode = \"local\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	bad := filepath.Join(dir, "x.md")
-	if err := os.WriteFile(bad, []byte("#    ragged   heading\n\n\n\ntext\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// Point the run directory somewhere with no daemon in it.
+	t.Setenv("HOME", t.TempDir())
 
-	payload := `{"tool_name":"Write","tool_input":{"file_path":"` + bad + `"}}`
 	var out, errs bytes.Buffer
 	s := session{
-		stdin: strings.NewReader(payload), stdout: &out, stderr: &errs,
+		stdin: strings.NewReader(""), stdout: &out, stderr: &errs,
 		cwd: dir, env: host.Env{},
 	}
+	code, handled := viaDaemon([]string{"config"}, s)
+	if !handled {
+		t.Fatal("a machine set to mode=local did not have its command taken by the daemon path")
+	}
+	if code == 0 {
+		t.Fatal("no daemon answered and the command still reported success")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("the command produced output without a daemon: %q", trimTo(out.String(), 200))
+	}
+	if !strings.Contains(errs.String(), "procoder serve") {
+		t.Errorf("the failure does not say how to fix it: %q", trimTo(errs.String(), 300))
+	}
+}
 
-	// The whole path main takes: try the daemon, then run in-process with
-	// whatever stdin the attempt left behind.
-	code, served, stdin := tryDaemon([]string{"hook", "post-tool-use"}, s)
-	if served {
-		t.Fatalf("no daemon is listening, yet the request was reported served (exit %d)", code)
+// mode = off is the CLI, and the daemon path does not take the command at
+// all.
+func TestModeOffLeavesTheCommandAlone(t *testing.T) {
+	dir := fixtureRepo(t)
+	var out, errs bytes.Buffer
+	s := session{
+		stdin: strings.NewReader(""), stdout: &out, stderr: &errs,
+		cwd: dir, env: host.Env{},
 	}
-	s.stdin = stdin
-	if code := run([]string{"hook", "post-tool-use"}, s); code != 0 {
-		t.Fatalf("the hook exited %d: %s", code, errs.String())
+	if _, handled := viaDaemon([]string{"config"}, s); handled {
+		t.Fatal("a machine with no [service] mode had its command taken by the daemon path")
 	}
+	if errs.Len() != 0 {
+		t.Errorf("the CLI path complained about a daemon it was never asked to use: %q", errs.String())
+	}
+}
 
-	if out.Len() == 0 {
-		t.Fatal("the hook produced nothing — the daemon attempt ate the payload and the gate silently did not run")
+// The commands that run what a repository declared are refused on a
+// server machine that has not opened the exec socket — not quietly run
+// here instead.
+func TestExecutingCommandsRefusedWithoutTheExecSocket(t *testing.T) {
+	dir := fixtureRepo(t)
+	cfg := filepath.Join(dir, ".procoder", "config.toml")
+	if err := os.WriteFile(cfg, []byte("[service]\nmode = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "not formatted") {
-		t.Fatalf("the hook did not report the unformatted file: %s", trimTo(out.String(), 300))
+	t.Setenv("HOME", t.TempDir())
+
+	var out, errs bytes.Buffer
+	s := session{
+		stdin: strings.NewReader(""), stdout: &out, stderr: &errs,
+		cwd: dir, env: host.Env{},
+	}
+	code, handled := viaDaemon([]string{"run", "--exec"}, s)
+	if !handled || code != 2 {
+		t.Fatalf("want exit 2 and handled, got %d handled=%v", code, handled)
+	}
+	if !strings.Contains(errs.String(), "exec = true") {
+		t.Errorf("the refusal does not name the setting that opens the door: %q", trimTo(errs.String(), 300))
 	}
 }

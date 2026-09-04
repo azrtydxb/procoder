@@ -11,12 +11,11 @@ import (
 )
 
 // A daemon speaking another protocol is not used, and the command has not
-// run — the client must be able to run it in-process without running it
-// twice.
+// run. The caller is told; nothing is run behind its back.
 //
 // proved by: having Do return the response anyway — the caller then gets
 // another release's behaviour with nothing saying so.
-func TestVersionSkewFallsBackInProcess(t *testing.T) {
+func TestVersionSkewIsRefused(t *testing.T) {
 	path := filepath.Join(shortDir(t), "s.sock")
 	l, err := net.Listen("unix", path)
 	if err != nil {
@@ -44,8 +43,9 @@ func TestVersionSkewFallsBackInProcess(t *testing.T) {
 	}
 }
 
-// A socket file with nothing behind it costs the caller the dial timeout
-// and nothing more.
+// A socket file with nothing behind it is reported quickly rather than
+// waited on: the command is not going to run, and the caller should hear
+// that in milliseconds.
 func TestDeadSocketCostsNothing(t *testing.T) {
 	path := filepath.Join(shortDir(t), "s.sock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {

@@ -461,17 +461,25 @@ contents and nothing identifying a person.
 
 #### `mode`
 
-`off` is the default and stays the default: no repository changes
-behaviour because it upgraded. `local` means a command tries the socket
-first, and falls back to running in-process on any failure — no daemon, a
-daemon from another build, a socket that went away mid-request. A degraded
-transport costs you the daemon's speed and never your answer.
+A machine is one or the other. `off` is the default and stays the default
+— no repository changes behaviour because it upgraded — and every command
+runs in this process, with no daemon and no setup, in CI and on a fresh
+clone.
 
-The CLI is unaffected either way. Every command still runs in-process with
-no daemon and no setup, in CI and on a fresh clone. `procoder init` asks
-which this machine should be rather than choosing for you, and a value
-that is neither `off` nor `local` leaves the machine where it was rather
-than in a state nobody chose.
+`local` means the daemon is the path. **There is no fallback.** A daemon
+that is not running, is from another build, or goes away mid-request is an
+error: the command does not run, and you are told what happened and how to
+fix it.
+
+That is a deliberate choice and not an oversight. A silent fallback would
+mean two possible answers to "where did this verdict come from",
+indistinguishable from the outside — and a machine configured for the
+daemon could spend weeks never reaching it with nothing saying so. An
+error is louder and shorter.
+
+`procoder init` asks which this machine should be rather than choosing for
+you, and a value that is neither `off` nor `local` leaves the machine
+where it was rather than in a state nobody chose.
 
 `procoder serve` is the daemon itself — see
 [Commands](commands.md#procoder-serve---socket-path---exec---idle-duration).
@@ -491,7 +499,10 @@ runs an agent-written command must not be reachable by something running
 unattended.
 
 Leave it `false` unless you specifically want a caller to be able to run
-those four. The binary always can, and that is the door meant for them.
+those four. On a machine set to `mode = "local"` they are refused while
+this is `false` — not quietly run in this process, because there is no
+fallback anywhere in this design. Set `mode = "off"` to run them as the
+CLI.
 
 Procoder needs a name for this repository that means the same thing on
 somebody else's machine. A filesystem path does not: the same repository

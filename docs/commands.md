@@ -1269,11 +1269,12 @@ The local daemon. Every command answers over a unix socket, so a caller
 that would rather make a call than spawn a process can — and gets the same
 bytes and the same exit code either way.
 
-**The CLI does not move.** Every command still runs in-process, with no
-daemon, no socket and no setup, in CI and on a fresh clone. That is not a
-transitional state: a second door is only useful if the first one is
-always open. `procoder check` on a machine that has never heard of the
-daemon behaves exactly as it always did.
+**A machine is one or the other.** Where `[service] mode` is `off` — the
+default — every command runs in-process, with no daemon, no socket and no
+setup, in CI and on a fresh clone. Where it is `local`, the daemon is the
+path and there is **no fallback**: a daemon that is not running is an
+error, not a command that quietly ran somewhere else. See
+[Configuration](configuration.md#service) for why.
 
 The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
 0700 directory. **The permission bits are the whole authentication** —
@@ -1304,11 +1305,9 @@ session's hook starts another, and a client that finds no daemon runs
 in-process.
 
 It prints a line per request — what it served, the exit code and how long
-it took. That is not decoration: the client falls back to running
-in-process on every failure, silently and by design, so a served request
-and a fallback produce identical output. The daemon's own log is the only
-way to answer "is it actually being used?", and it is where to look when
-you think it should be and the timings say otherwise.
+it took, and separately what it refused and what it started as a job. That
+is where to look when a command is slower than you expected, or when you
+want to see that the machine is using the daemon it was configured for.
 
 `serve` runs in the foreground and stops when its listener closes.
 Whatever started it owns it — a shell, or the session-start hook. It does

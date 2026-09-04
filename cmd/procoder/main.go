@@ -448,14 +448,12 @@ func main() {
 	releases.Running = version
 
 	s := processSession()
-	// The daemon attempt reads stdin to build its request, so the reader
-	// it hands back — not the drained original — is what the in-process
-	// path must use.
-	code, served, stdin := tryDaemon(os.Args[1:], s)
-	if served {
+	// A machine is either the CLI or the server. Where it is the server,
+	// viaDaemon owns the command outright — served or failed — and this
+	// process runs nothing.
+	if code, handled := viaDaemon(os.Args[1:], s); handled {
 		os.Exit(code)
 	}
-	s.stdin = stdin
 	os.Exit(run(os.Args[1:], s))
 }
 

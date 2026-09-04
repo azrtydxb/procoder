@@ -65,12 +65,14 @@ block, and named shapes for `config`, `todo list`, `version`, `status`,
 `spec check` and the index lookups. Both, so that no caller has to parse
 prose and none has to render it.
 
-The first door does not move. Every command still runs in-process, with no
-daemon, no socket and no setup, in CI and on a fresh clone; `[service]
-mode` is `off` until a machine says otherwise, and `procoder init` asks
-rather than choosing. A daemon that cannot be reached — absent, from
-another build, gone mid-request — costs you its speed and never your
-answer.
+A machine is one or the other, and `[service] mode` is `off` until it says
+otherwise — every command runs in-process, with no daemon and no setup, in
+CI and on a fresh clone, and `procoder init` asks rather than choosing.
+Where the mode is `local` the daemon is the path and there is no fallback:
+a daemon that is not running, is from another build, or goes away
+mid-request is an error naming the fix, never a command that quietly ran
+somewhere else. Two silent paths to one verdict would make "where did this
+come from" unanswerable from the outside.
 
 `TestParityAcrossEveryCommand` reads the command list out of the usage
 text and runs all 48 twice, comparing stdout, stderr and the exit code

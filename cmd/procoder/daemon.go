@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -15,65 +14,68 @@ import (
 	"procoder/internal/initcmd"
 )
 
-// tryDaemon answers the command over the socket where a machine asked for
-// a daemon, and says it could not otherwise.
+// viaDaemon answers the command over the socket, or fails saying why.
 //
-// The fallback is the whole contract. Every failure here — no daemon, a
-// daemon from another build, a socket that went away mid-request — costs
-// the caller the daemon's speed and never its answer: the command runs
-// in-process, exactly as it does on a machine that never had one. A
-// transport whose failure could cost a verdict would be a worse gate, not
-// a faster one.
+// There is no fallback, deliberately. A machine is either the CLI or the
+// server: with [service] mode = "local" the daemon is the only path, and a
+// daemon that does not answer is an error the caller is told about — never
+// a command that quietly ran somewhere else.
 //
-// The four executing commands are never sent. They are served on the exec
-// socket or not at all, and a client that offered them here would put a
-// path that runs what a repository declared behind the same door the hooks
-// use.
+// The reason is the same one the rest of this tool is built on. A
+// transport that silently ran the work elsewhere would mean two possible
+// answers to "where did this verdict come from", indistinguishable from
+// the outside, and a machine configured for the server could spend weeks
+// never using it with nothing saying so. Failing is louder and shorter.
 //
-// The third return is the stdin the caller must use if this did not serve
-// the request. Reading stdin to build a request CONSUMES it, and the
-// in-process path that runs next needs those same bytes — without them a
-// PostToolUse hook reads an empty payload, decides there is no file to
-// check, and the formatting gate silently stops running.
-func tryDaemon(args []string, s session) (code int, served bool, stdin io.Reader) {
+// The second return says whether this took the command. Under mode =
+// "local" it is always true — served or failed, the daemon owned it.
+func viaDaemon(args []string, s session) (code int, handled bool) {
 	if len(args) == 0 || args[0] == "serve" {
 		// serve is the daemon. Asking a daemon to start one is a loop.
-		return 0, false, s.stdin
+		return 0, false
 	}
 	cfg := config.Load(s.root())
 	if cfg.ServiceMode != "local" {
-		return 0, false, s.stdin
-	}
-	if api.Executes(args) {
-		return 0, false, s.stdin
+		return 0, false // this machine is the CLI
 	}
 
 	path, err := api.WorkSocket()
 	if err != nil {
-		return 0, false, s.stdin
+		fmt.Fprintln(s.stderr, err.Error())
+		return 1, true
 	}
 
-	// Read stdin only where there is something to read. A terminal has
-	// nothing waiting and ReadAll on one blocks forever — which would turn
-	// every interactive command on a daemon-configured machine into a
-	// hang, and the daemon is supposed to be invisible.
+	// The four that run what a repository declared are served on the exec
+	// socket or not at all. Not a fallback either: this is their route,
+	// and where it is closed they are refused rather than run behind the
+	// hooks' door.
+	if api.Executes(args) {
+		if !cfg.ServiceExec {
+			fmt.Fprintf(s.stderr,
+				"procoder: %s runs what this repository declared, and this machine serves commands from the daemon.\n"+
+					"It is served on the exec socket — set `exec = true` under [service] in .procoder/config.toml and\n"+
+					"run `procoder serve --exec` — or set `mode = \"off\"` to run commands in this process.\n",
+				strings.Join(args, " "))
+			return 2, true
+		}
+		if path, err = api.ExecSocket(); err != nil {
+			fmt.Fprintln(s.stderr, err.Error())
+			return 1, true
+		}
+	}
+
+	// Read stdin only for the commands that consume it. An open pipe with
+	// nothing coming — a CI runner, an agent's shell, a host holding a
+	// hook's pipe — never reaches EOF, and io.ReadAll on one waits forever
+	// while the daemon looks hung.
 	var payload []byte
-	// rest is what the in-process path gets if this attempt does not serve
-	// the request: the bytes already read, never a reader they were taken
-	// out of.
-	rest := s.stdin
-	// Read stdin only for the commands that consume it. Reading it for the
-	// rest is not merely wasteful: an open pipe with nothing coming — a CI
-	// runner, an agent's shell, a host holding a hook's pipe — never
-	// reaches EOF, and io.ReadAll on one waits forever while the daemon
-	// looks hung.
 	if api.ReadsStdin(args) && !copilot.CanAsk(s.stdinFile) && s.stdin != nil {
 		b, err := io.ReadAll(s.stdin)
 		if err != nil {
-			return 0, false, bytes.NewReader(nil)
+			fmt.Fprintf(s.stderr, "procoder: could not read the input for %s (%v)\n", args[0], err)
+			return 1, true
 		}
 		payload = b
-		rest = bytes.NewReader(b)
 	}
 
 	res, err := api.Client{Path: path, Version: version}.Do(api.Request{
@@ -84,24 +86,23 @@ func tryDaemon(args []string, s session) (code int, served bool, stdin io.Reader
 		Confirm: s.confirm,
 	})
 	if err != nil {
-		// Said out loud, at the level the failure deserves: a machine that
-		// configured a daemon and is not getting one should be able to see
-		// that, and a hook must not be told about it on every write.
-		if !errors.Is(err, api.ErrNoDaemon) {
-			fmt.Fprintln(s.stderr, err.Error()+" — running in-process")
+		fmt.Fprintln(s.stderr, err.Error())
+		if errors.Is(err, api.ErrNoDaemon) {
+			fmt.Fprintf(s.stderr,
+				"This machine runs commands from the daemon ([service] mode = \"local\").\n"+
+					"Start it with `procoder serve`, or set `mode = \"off\"` to run commands in this process.\n")
 		}
-		return 0, false, rest
+		return 1, true
 	}
 	if res.Job != nil && res.Exit == nil {
-		code, served := followJob(res.Job.ID, path, s)
-		return code, served, rest
+		return followJob(res.Job.ID, path, s)
 	}
 	io.WriteString(s.stdout, res.Stdout)
 	io.WriteString(s.stderr, res.Stderr)
 	if res.Exit == nil {
-		return 0, true, rest
+		return 0, true
 	}
-	return *res.Exit, true, rest
+	return *res.Exit, true
 }
 
 // followJob waits out a long-running command and writes what it produces
@@ -123,8 +124,7 @@ func followJob(id, path string, s session) (int, bool) {
 		if err != nil {
 			// The daemon went away mid-job. The command's own state is
 			// unknown, so the caller is told rather than being handed a
-			// verdict nobody computed — and it is NOT re-run in-process,
-			// which could run a release or a suite twice.
+			// verdict nobody computed.
 			fmt.Fprintf(s.stderr, "procoder: lost the daemon while %s was running (%v)\n", id, err)
 			return 1, true
 		}
