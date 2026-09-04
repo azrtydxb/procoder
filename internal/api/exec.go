@@ -44,3 +44,42 @@ func hasFlag(argv []string, flag string) bool {
 	}
 	return false
 }
+
+// ReadsStdin reports whether a command consumes piped input.
+//
+// A list, for the same reason IsLongRunning is one: which commands read
+// stdin is a fact about procoder, known here. Discovering it by reading
+// and seeing what happens means blocking on every command that does not —
+// an open pipe with nothing coming (a CI runner, an agent's shell, a host
+// that holds the hook's pipe) never reaches EOF, and io.ReadAll on one
+// waits forever.
+//
+// The interactive commands are deliberately absent. They ask a person
+// through a terminal, and over a socket there is none: what reaches them
+// is the request's confirmation, not its stdin.
+func ReadsStdin(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	switch argv[0] {
+	case "hook":
+		// post-tool-use, pre-tool-use and stop are all given the host's
+		// payload on stdin. install-git is not.
+		return len(argv) > 1 && argv[1] != "install-git"
+	case "principles":
+		// --hook reads the SessionStart payload to tell a resume from a
+		// fresh start.
+		return hasFlag(argv, "--hook")
+	case "scrub":
+		// `scrub -` reads the text to check from stdin.
+		return len(argv) > 1 && argv[1] == "-"
+	case "check":
+		// `check --paths-from -` reads the file list from stdin.
+		for i, a := range argv {
+			if a == "--paths-from" && i+1 < len(argv) && argv[i+1] == "-" {
+				return true
+			}
+		}
+	}
+	return false
+}

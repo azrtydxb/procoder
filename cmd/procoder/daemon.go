@@ -62,11 +62,12 @@ func tryDaemon(args []string, s session) (code int, served bool, stdin io.Reader
 	// the request: the bytes already read, never a reader they were taken
 	// out of.
 	rest := s.stdin
-	if copilot.CanAsk(s.stdinFile) {
-		// A character device that is not /dev/null: a person is there and
-		// whatever they type belongs to the command, not to this read.
-		payload = nil
-	} else if s.stdin != nil {
+	// Read stdin only for the commands that consume it. Reading it for the
+	// rest is not merely wasteful: an open pipe with nothing coming — a CI
+	// runner, an agent's shell, a host holding a hook's pipe — never
+	// reaches EOF, and io.ReadAll on one waits forever while the daemon
+	// looks hung.
+	if api.ReadsStdin(args) && !copilot.CanAsk(s.stdinFile) && s.stdin != nil {
 		b, err := io.ReadAll(s.stdin)
 		if err != nil {
 			return 0, false, bytes.NewReader(nil)

@@ -113,3 +113,34 @@ func TestClientTransportExecutesNothing(t *testing.T) {
 		t.Fatal("no files were read — the guard is not looking at anything")
 	}
 }
+
+// Only the commands that consume piped input have it read.
+//
+// proved by: returning true for everything — `procoder deps` then blocks
+// forever wherever stdin is an open pipe that never closes, which is a CI
+// runner and an agent's shell, and the daemon looks hung.
+func TestReadsStdinNamesOnlyTheCommandsThatDo(t *testing.T) {
+	reads := [][]string{
+		{"hook", "post-tool-use"},
+		{"hook", "pre-tool-use"},
+		{"hook", "stop"},
+		{"principles", "--hook"},
+		{"scrub", "-"},
+		{"check", "--paths-from", "-"},
+	}
+	for _, argv := range reads {
+		if !ReadsStdin(argv) {
+			t.Errorf("%v consumes stdin and is not being given it", argv)
+		}
+	}
+	ignores := [][]string{
+		{"deps"}, {"status"}, {"config"}, {"version"}, {"test"}, {"check"},
+		{"principles"}, {"scrub", "notes.md"}, {"hook", "install-git"},
+		{"check", "--paths-from", "list.txt"}, {},
+	}
+	for _, argv := range ignores {
+		if ReadsStdin(argv) {
+			t.Errorf("%v does not consume stdin and would block waiting for it", argv)
+		}
+	}
+}

@@ -1303,6 +1303,13 @@ kill. Exiting is safe precisely because starting is free: the next
 session's hook starts another, and a client that finds no daemon runs
 in-process.
 
+It prints a line per request — what it served, the exit code and how long
+it took. That is not decoration: the client falls back to running
+in-process on every failure, silently and by design, so a served request
+and a fallback produce identical output. The daemon's own log is the only
+way to answer "is it actually being used?", and it is where to look when
+you think it should be and the timings say otherwise.
+
 `serve` runs in the foreground and stops when its listener closes.
 Whatever started it owns it — a shell, or the session-start hook. It does
 not daemonise itself, for the same reason `procoder run` refuses to own a

@@ -25,8 +25,15 @@ type Server struct {
 	// Exec says this door serves the commands that execute what a
 	// repository declared. False everywhere except the exec socket.
 	Exec bool
-	// Notice is where the server says what it did. Stderr by default; a
-	// test points it somewhere it can read.
+	// Notice is where the server says what it served.
+	//
+	// A line per request, and it is not decoration. The client falls back
+	// to running in-process on every failure, silently and by design, so
+	// the output of a served request and a fallback are identical — which
+	// leaves no way to answer "is the daemon actually being used?" except
+	// by asking the daemon. This is that answer.
+	//
+	// Stderr by default; a test points it somewhere it can read.
 	Notice io.Writer
 	// Identity names the repository a request is about, so requests
 	// against one are queued rather than run at once. Supplied rather than
@@ -136,6 +143,7 @@ func (s *Server) evictUntilEmpty(l net.Listener, stop <-chan struct{}) {
 func (s *Server) serveConn(conn net.Conn) {
 	defer conn.Close()
 
+	started := time.Now()
 	req, err := ReadRequest(conn)
 	if err != nil {
 		s.refuse(conn, 2, err.Error())
@@ -153,6 +161,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	// they are served here only where this is the exec socket, which the
 	// hooks are never told the address of.
 	if Executes(req.Argv) && !s.Exec {
+		s.noticef("refused %s — not served on this socket", strings.Join(req.Argv, " "))
 		path, _ := ExecSocket()
 		s.refuse(conn, 2, "procoder: "+strings.Join(req.Argv, " ")+
 			" is not served on this socket — a path that runs what a repository declared"+
@@ -178,6 +187,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	s.warm.get(identity)
 
 	if IsLongRunning(req.Argv) {
+		s.noticef("started %s as a job", strings.Join(req.Argv, " "))
 		// Started INSIDE the queue so the repository's serialisation still
 		// holds, and answered immediately: the caller gets an id in
 		// milliseconds and the command keeps running behind it.
@@ -189,8 +199,22 @@ func (s *Server) serveConn(conn net.Conn) {
 	// is per file, and two requests interleaving between a read and a
 	// write of the same ledger is exactly what it cannot see.
 	s.queues.do(identity, func() {
-		_ = WriteResponse(conn, Serve(req, s.Run))
+		res := Serve(req, s.Run)
+		exit := -1
+		if res.Exit != nil {
+			exit = *res.Exit
+		}
+		s.noticef("served %s (exit %d, %dms)", strings.Join(req.Argv, " "), exit, time.Since(started).Milliseconds())
+		_ = WriteResponse(conn, res)
 	})
+}
+
+// noticef says what the daemon did, when anybody is listening.
+func (s *Server) noticef(format string, args ...any) {
+	if s.Notice == nil {
+		return
+	}
+	fmt.Fprintf(s.Notice, "procoder serve: "+format+"\n", args...)
 }
 
 // runQueued is the runner with the repository's queue around it, for a
