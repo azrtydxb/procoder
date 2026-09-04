@@ -843,13 +843,7 @@ func run(args []string, s session) int {
 		return portability.Agents(s.root(), s.out)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
-			code := principles.RunHook(s.root(), s.env, s.stdin, s.out)
-			// After the payload, never before it. The hook's stdout is
-			// parsed as JSON by three of the four hosts and the session is
-			// waiting on it; starting a daemon is worth up to two seconds
-			// and none of them should be spent in front of the answer.
-			s.ensureDaemon()
-			return code
+			return principles.RunHook(s.root(), s.env, s.stdin, s.out)
 		}
 		return principles.Run(s.root(), s.out)
 	case "templates":

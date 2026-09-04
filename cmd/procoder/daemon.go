@@ -64,6 +64,22 @@ func viaDaemon(args []string, s session) (code int, handled bool) {
 		}
 	}
 
+	// The session-start hook is what starts the daemon, so it has to do
+	// that BEFORE trying to use one — otherwise a server machine can
+	// never get its first daemon: the hook that starts one would be the
+	// hook that fails for want of one.
+	//
+	// Only this hook. It is the moment a machine has something for a
+	// daemon to do and the only moment nobody is waiting on a command's
+	// answer; every other command finding no daemon is a machine that has
+	// not started one, which is a thing to be told rather than papered
+	// over.
+	if isSessionStart(args) {
+		if startErr := api.EnsureDaemon(); startErr != nil {
+			fmt.Fprintln(s.stderr, startErr.Error())
+		}
+	}
+
 	// Read stdin only for the commands that consume it. An open pipe with
 	// nothing coming — a CI runner, an agent's shell, a host holding a
 	// hook's pipe — never reaches EOF, and io.ReadAll on one waits forever
@@ -166,24 +182,6 @@ func followJob(id, path string, s session) (int, bool) {
 // batched, and long enough that following one is not a busy loop.
 const jobPollInterval = 100 * time.Millisecond
 
-// ensureDaemon starts the local daemon where a machine asked for one and
-// none is listening.
-//
-// Called from the session-start hook: the moment a machine has something
-// for a daemon to do, and the only moment nobody is waiting on a command's
-// answer. Every failure is silent to stdout — a session whose daemon would
-// not start is a session that runs in-process, which is every session
-// today, and a hook that printed about it would put its noise inside the
-// JSON envelope three of the four hosts parse.
-func (s session) ensureDaemon() {
-	if config.Load(s.root()).ServiceMode != "local" {
-		return
-	}
-	if err := api.EnsureDaemon(); err != nil {
-		fmt.Fprintln(s.stderr, err.Error())
-	}
-}
-
 // askServerMode puts the local-server question to whoever is there, and
 // answers nil when nobody is.
 //
@@ -211,4 +209,9 @@ func (s session) askServerMode() *string {
 // deny rather than an error.
 func isPreToolUse(args []string) bool {
 	return len(args) > 1 && args[0] == "hook" && args[1] == "pre-tool-use"
+}
+
+// isSessionStart spots the hook that starts the daemon.
+func isSessionStart(args []string) bool {
+	return len(args) > 1 && args[0] == "principles" && args[1] == "--hook"
 }

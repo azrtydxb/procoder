@@ -16,7 +16,11 @@ const (
 	workSocketName = "procoder.sock"
 	execSocketName = "procoder-exec.sock"
 	startLockName  = "start.lock"
+	logName        = "serve.log"
 )
+
+// LogPath is where a daemon nobody started by hand writes what it served.
+func LogPath(runDir string) string { return filepath.Join(runDir, logName) }
 
 // RunDir is where the sockets and the start lock live, created 0700.
 //

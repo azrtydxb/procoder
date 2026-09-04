@@ -1314,6 +1314,11 @@ it took, and separately what it refused and what it started as a job. That
 is where to look when a command is slower than you expected, or when you
 want to see that the machine is using the daemon it was configured for.
 
+A daemon the session-start hook started has no terminal to print to, so it
+appends the same lines to `~/.procoder/run/serve.log`. That is the usual
+case — a daemon nobody started by hand is exactly the one whose log you
+end up wanting.
+
 `serve` runs in the foreground and stops when its listener closes.
 Whatever started it owns it — a shell, or the session-start hook. It does
 not daemonise itself, for the same reason `procoder run` refuses to own a

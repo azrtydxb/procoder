@@ -54,6 +54,10 @@ func EnsureDaemon() error {
 	if err != nil {
 		return err
 	}
+	dir, err := RunDir()
+	if err != nil {
+		return err
+	}
 	release, taken := takeStartLock(lock)
 	if !taken {
 		// Somebody else is starting one. Waiting for their socket rather
@@ -75,10 +79,17 @@ func EnsureDaemon() error {
 	// caller could point at another binary, so the only thing this can
 	// start is procoder itself.
 	cmd := exec.Command(bin, "serve") // nosemgrep -- bin is os.Executable(), fixed subcommand
-	// Detached from this process's streams: a daemon writing into a hook's
-	// stdout would put its own startup line inside the JSON envelope the
-	// host parses.
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+	// Never this process's streams: a daemon writing into a hook's stdout
+	// would put its own startup line inside the JSON envelope the host
+	// parses. But not /dev/null either — a daemon nobody started by hand
+	// is exactly the one whose log you need when a command is slow or a
+	// machine is not using the daemon it was configured for, and the first
+	// version of this discarded it.
+	cmd.Stdin = nil
+	if log, lerr := os.OpenFile(LogPath(dir), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); lerr == nil {
+		defer log.Close()
+		cmd.Stdout, cmd.Stderr = log, log
+	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("procoder: could not start the daemon (%v)", err)
 	}
