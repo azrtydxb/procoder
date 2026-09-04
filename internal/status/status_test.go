@@ -304,9 +304,14 @@ func TestAGitCallThatDidNotAnswerIsNotACleanTree(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // no time at all, deterministically
 
-	got := dirtyLine(ctx, root)
+	got, count := dirtyLine(ctx, root)
 	if strings.Contains(got, "clean tree") || strings.Contains(got, "none") {
 		t.Fatalf("git never answered; this is not a clean tree: %q", got)
+	}
+	// -1, not 0. A count nobody could take is not a clean tree, and a
+	// caller reading the value must not be told otherwise.
+	if count != -1 {
+		t.Errorf("a count git never answered came back as %d, want -1", count)
 	}
 	if !strings.Contains(got, "unknown") {
 		t.Errorf("the line must say unknown: %q", got)
@@ -336,7 +341,10 @@ func TestAGitCallThatDidNotAnswerIsNotACleanTree(t *testing.T) {
 	// branchLine takes the same deadline now too — the gap #145 filed and
 	// this test used to name rather than assert.
 	gitDir := filepath.Join(root, ".git")
-	b := branchLine(ctx, root, gitDir)
+	b, current, _ := branchLine(ctx, root, gitDir)
+	if current != "" {
+		t.Errorf("a branch git never answered came back as %q, want empty", current)
+	}
 	if !strings.Contains(b, "unknown") {
 		t.Errorf("branch must be unknown when git did not answer: %q", b)
 	}
@@ -374,5 +382,42 @@ func TestBranchLookupsHonourTheDeadline(t *testing.T) {
 	// branch back, so the deadline check is not swallowing good answers.
 	if got, err := currentBranch(context.Background(), root); err != nil || got != "main" {
 		t.Errorf("a live context must still resolve the real branch: %q %v", got, err)
+	}
+}
+
+// The values and the lines come from one pass, so they cannot disagree.
+//
+// proved by: computing Data separately from the lines — the two then drift
+// the first time either is reworded, and a caller acting on the value gets
+// a different answer from the person reading the text.
+func TestReportDataAgreesWithItsLines(t *testing.T) {
+	root := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-b", "probe"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "T"},
+	} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("git is not usable here: %v (%s)", err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	data, lines := ReportData(root)
+	if data.Branch != "probe" {
+		t.Errorf("branch is %q, want probe", data.Branch)
+	}
+	if data.Dirty != 1 {
+		t.Errorf("dirty is %d, want 1", data.Dirty)
+	}
+
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "branch: "+data.Branch) {
+		t.Errorf("the value and the line disagree about the branch:\n%s", joined)
+	}
+	if !strings.Contains(joined, "dirty files: 1") {
+		t.Errorf("the value and the line disagree about the dirty count:\n%s", joined)
 	}
 }

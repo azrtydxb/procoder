@@ -540,7 +540,7 @@ var Commands = map[string]bool{
 	"index": true, "learn": true, "infra": true, "init": true, "lessons": true, "lint": true,
 	"maintain": true, "plan": true, "principles": true, "prune": true,
 	"release": true, "review": true, "run": true, "scrub": true,
-	"security": true, "self-upgrade": true, "spec": true, "sprint": true,
+	"security": true, "self-upgrade": true, "serve": true, "spec": true, "sprint": true,
 	"status": true, "templates": true, "test": true, "todo": true,
 	"version": true, "wizard": true,
 }

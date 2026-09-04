@@ -18,6 +18,7 @@ import (
 	"procoder/internal/actions"
 	"procoder/internal/adr"
 	"procoder/internal/analysis"
+	"procoder/internal/api"
 	"procoder/internal/ask"
 	"procoder/internal/audit"
 	"procoder/internal/backlog"
@@ -40,6 +41,7 @@ import (
 	"procoder/internal/gitx"
 	"procoder/internal/glossary"
 	"procoder/internal/hook"
+	"procoder/internal/host"
 	"procoder/internal/infra"
 	"procoder/internal/initcmd"
 	"procoder/internal/learn"
@@ -385,6 +387,18 @@ const usage = `usage: procoder <command> [args]
                        status | close — one active sprint at a time, close
                        refuses while a committed story is neither done nor
                        explicitly carried back with a reason
+  serve [--socket <path>] [--exec] [--idle <duration>]
+                       run the local daemon: every command answers over a
+                       unix socket at ~/.procoder/run/procoder.sock (mode
+                       0600 — the permission bits are the whole
+                       authentication, there is no port and no token).
+                       --exec opens the second socket, which serves the
+                       four commands that run what a repository declared
+                       and which the hooks are never told about. --idle sets
+                       how long a repository stays warm (default 30m); a
+                       daemon holding nothing exits. The CLI is unaffected:
+                       every command still runs in-process with no daemon,
+                       in CI and on a fresh clone
   status               the state of play, computed fresh: branch, dirty
                        files, the active sprint and its open stories, open
                        tasks, unlearned lessons, index freshness
@@ -433,13 +447,78 @@ func main() {
 	config.Version = version
 	releases.Running = version
 
-	os.Exit(run(os.Args[1:]))
+	s := processSession()
+	// A machine is either the CLI or the server. Where it is the server,
+	// viaDaemon owns the command outright — served or failed — and this
+	// process runs nothing.
+	if code, handled := viaDaemon(os.Args[1:], s); handled {
+		os.Exit(code)
+	}
+	os.Exit(run(os.Args[1:], s))
 }
 
-// printLine is the reporting sink for a command that writes to stdout —
-// the domains all take an `out func(string)`, and this is the one every
-// caller here was spelling out inline.
-func printLine(s string) { fmt.Println(s) }
+// session is everything a command needs to know about its caller: where
+// its streams go, which directory it was called in, and what environment
+// it was called with.
+//
+// Every one of those used to be a process global — fmt.Println, os.Getwd,
+// os.Getenv — which was correct while procoder was a short-lived process
+// that served exactly one caller. A daemon serving several sessions in
+// several checkouts cannot answer from any of them: its own directory and
+// environment belong to whichever session started it, and every request
+// after the first would be answered for the wrong one.
+type session struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+	// stdoutFile is the CLI's stdout when it is a real file, and nil
+	// otherwise. Only collidingOutput wants it: `procoder format f > f`
+	// is a question about file identity that a buffer cannot be asked.
+	stdoutFile *os.File
+	// stdinFile is the same question asked of the other end: the asking
+	// commands test for a character device to find out whether there is a
+	// person there, and only a real handle can answer. Over a socket it is
+	// nil, which is the truthful answer — there is nobody.
+	stdinFile *os.File
+	cwd       string
+	// col is nil for the CLI. Nothing a command does may depend on it —
+	// see collect.go.
+	col *collector
+	// confirm is what a person would have typed, carried from the caller.
+	// nil is "there was no person", which is the non-interactive path a
+	// command takes today when nothing is attached to its stdin — it is
+	// not a no.
+	confirm *string
+	env     host.Env
+}
+
+// out is the reporting sink for a command that writes to stdout — the
+// domains all take an `out func(string)`, and this is the one every caller
+// here was spelling out inline.
+func (s session) out(line string) { fmt.Fprintln(s.stdout, line) }
+
+// root is the repository the caller is in. It is doctor.Root's body with
+// the working directory supplied rather than asked of the process.
+func (s session) root() string { return tools.RepoRoot(s.cwd) }
+
+// processSession is what the CLI is: this process's streams, directory and
+// environment. It is the only place in the command layer that reads any of
+// the three.
+func processSession() session {
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "."
+	}
+	return session{
+		stdin:      os.Stdin,
+		stdout:     os.Stdout,
+		stderr:     os.Stderr,
+		stdoutFile: os.Stdout,
+		stdinFile:  os.Stdin,
+		cwd:        wd,
+		env:        host.ProcessEnv(),
+	}
+}
 
 // printFindings renders a findings list the way every reporting command
 // renders one — the mark, the location relative to the repository, the
@@ -447,7 +526,8 @@ func printLine(s string) { fmt.Println(s) }
 // findings fail, information does not. Four commands each had their own
 // copy of this loop, which is how three of them drift while the fourth
 // gets fixed.
-func printFindings(root, label string, findings []gitx.Finding, out func(string)) int {
+func (s session) printFindings(root, label string, findings []gitx.Finding, out func(string)) int {
+	s.col.add(label, findings)
 	blocking := 0
 	for _, f := range findings {
 		mark := "  info "
@@ -476,76 +556,90 @@ func printFindings(root, label string, findings []gitx.Finding, out func(string)
 	return 0
 }
 
-func run(args []string) int {
+// run dispatches one command.
+//
+// The daemon, where a machine asked for one, is tried by tryDaemon before
+// this is reached — never inside it, so that every path below is the same
+// path a CLI caller takes and the two doors cannot drift.
+func run(args []string, s session) int {
 	if len(args) == 0 {
-		fmt.Fprint(os.Stderr, usage)
+		fmt.Fprint(s.stderr, usage)
 		return 2
 	}
 	currentCmd = args[0]
 	// A flag the command does not implement is a usage error (exit 2 per
 	// ADR 0003), never a path and never silence.
-	args, ok := checkFlags(args, os.Stderr)
+	args, ok := checkFlags(args, s.stderr)
 	if !ok {
 		return 2
 	}
 	switch args[0] {
 	case "hook":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		switch args[1] {
 		case "post-tool-use":
-			return hook.Run(os.Stdin, os.Stdout)
+			return hook.Run(s.stdin, s.stdout)
 		case "pre-tool-use":
-			return hook.PreToolUse(os.Stdin, os.Stdout)
+			return hook.PreToolUse(s.stdin, s.stdout, s.env)
 		case "install-git":
-			return hook.InstallGit(doctor.Root(), printLine)
+			return hook.InstallGit(s.root(), s.out)
 		case "stop":
-			return hook.Stop(os.Stdin, doctor.Root())
+			return hook.Stop(s.stdin, s.root())
 		default:
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 	case "format":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return formatCmd(args[1:])
+		return s.formatCmd(args[1:])
 	case "review":
-		return reviewCmd(args[1:])
+		return s.reviewCmd(args[1:])
 	case "analyze":
-		return analyzeCmd(args[1:])
+		return s.analyzeCmd(args[1:])
 	case "audit":
-		return audit.Run(doctor.Root(), printLine)
+		return audit.Run(s.root(), s.out)
+	case "serve":
+		return s.serveCmd(args[1:])
 	case "status":
-		return status.Run(doctor.Root(), printLine)
+		root := s.root()
+		data, lines := status.ReportData(root)
+		s.col.setStatus(&api.Status{Branch: data.Branch, Default: data.Default, Dirty: data.Dirty})
+		s.out(status.Header)
+		for _, line := range lines {
+			s.out(line)
+		}
+		return 0
 	case "env":
 		sync := len(args) > 1 && args[1] == "--sync"
 		if len(args) > 1 && !sync {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return envsync.Run(doctor.Root(), sync, printLine)
+		return envsync.Run(s.root(), sync, s.out)
 	case "run":
 		exec := len(args) > 1 && args[1] == "--exec"
 		if len(args) > 1 && !exec {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return runcmd.Run(doctor.Root(), exec, printLine)
+		return runcmd.Run(s.root(), exec, s.out)
 	case "adr":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return adrCmd(args[1:])
+		return s.adrCmd(args[1:])
 	case "bench":
-		root := doctor.Root()
+		root := s.root()
 		save := len(args) > 1 && args[1] == "--save"
 		if len(args) > 1 && !save {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return bench.Run(root, save, config.Load(root).BenchThreshold, printLine)
+		return bench.Run(root, save, config.Load(root).BenchThreshold, s.out)
 	case "deps":
-		return deps.Run(doctor.Root(), printLine)
+		return deps.Run(s.root(), s.out)
 	case "release":
-		root := doctor.Root()
+		root := s.root()
 		version := ""
 		creditsOnly := false
 		for _, a := range args[1:] {
@@ -561,21 +655,21 @@ func run(args []string) int {
 			// version files — all of which are meaningless on a pull
 			// request and would fail for reasons that have nothing to do
 			// with whether somebody is credited.
-			return release.Credits(root, version, printLine)
+			return release.Credits(root, version, s.out)
 		}
 		return release.Run(root, version, func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
-		}, suiteCheck(root), printLine)
+		}, s.suiteCheck(root), s.out)
 	case "backlog":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return backlogCmd(args[1:])
+		return s.backlogCmd(args[1:])
 	case "sprint":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return sprintCmd(args[1:])
+		return s.sprintCmd(args[1:])
 	case "check":
 		// --paths-from reads the file list from a file or stdin, so a
 		// whole-tree run is ONE invocation. `git ls-files | xargs procoder
@@ -584,40 +678,62 @@ func run(args []string) int {
 		// osv-scanner pass while reporting as though it were the only
 		// one. It fits in one batch today at 787 files, silently, which
 		// is the kind of thing that stops being true without telling you.
-		paths, handled, code := pathsFrom(args[1:], os.Stdin, printLine)
+		paths, handled, code := pathsFrom(args[1:], s.stdin, s.out)
 		if handled {
 			return code
 		}
 		if paths == nil {
 			paths = args[1:]
 		}
-		return gate.Run(paths, doctor.Root(), os.Stdout)
+		return gate.RunCollecting(paths, s.root(), "", s.stdout, s.col.add)
 	case "config":
-		return config.Report(doctor.Root(), os.Stdout)
+		root := s.root()
+		if s.col != nil {
+			cfg := config.Load(root)
+			settings := make([]api.Setting, 0, len(cfg.Settings))
+			for _, set := range cfg.Settings {
+				settings = append(settings, api.Setting{
+					Key: set.Key, Value: set.Value, Source: set.Source,
+					Relaxed: set.Relaxed, Default: set.Default,
+				})
+			}
+			s.col.setSettings(settings)
+		}
+		return config.Report(root, s.stdout)
 	case "doctor":
-		return doctor.Run(doctor.Root(), os.Stdout)
+		return doctor.Run(s.root(), s.stdout)
 	case "init":
 		execute := len(args) > 1 && args[1] == "--yes"
-		return initcmd.Run(doctor.Root(), execute, os.Stdout)
-	case "git":
-		return gitcmd.Status(doctor.Root(), os.Stdout)
-	case "ci":
-		root := doctor.Root()
-		if len(args) > 1 && args[1] == "--runs" {
-			return ciops.Runs(root, printLine)
+		root := s.root()
+		code := initcmd.Run(root, execute, s.stdout)
+		// Asked after the formatters, because that is what somebody ran
+		// init for. Nobody to ask writes nothing: a repository must never
+		// acquire a daemon because a script ran init.
+		if answer := s.askServerMode(); answer != nil {
+			if err := initcmd.AskAboutTheServer(root, answer, s.stdout); err != nil {
+				fmt.Fprintln(s.stderr, err.Error())
+			}
 		}
-		return printFindings(root, "ci", ciops.Check(root, config.Load(root).PinActions), printLine)
+		return code
+	case "git":
+		return gitcmd.Status(s.root(), s.stdout)
+	case "ci":
+		root := s.root()
+		if len(args) > 1 && args[1] == "--runs" {
+			return ciops.Runs(root, s.out)
+		}
+		return s.printFindings(root, "ci", ciops.Check(root, config.Load(root).PinActions), s.out)
 	case "infra":
-		root := doctor.Root()
+		root := s.root()
 		if infra.Detect(root).Empty() {
-			fmt.Println("procoder infra: no infrastructure files in this repository")
+			s.out("procoder infra: no infrastructure files in this repository")
 			return 0
 		}
-		return printFindings(root, "infra", infra.Check(root), printLine)
+		return s.printFindings(root, "infra", infra.Check(root), s.out)
 	case "maintain":
-		return maintain.Run(doctor.Root(), printLine)
+		return maintain.Run(s.root(), s.out)
 	case "security":
-		root := doctor.Root()
+		root := s.root()
 		deep := len(args) > 1 && args[1] == "--deep"
 		// Positional paths were read as nothing at all: `procoder security
 		// scripts/` scanned the change set and answered about that, so a
@@ -643,7 +759,7 @@ func run(args []string) int {
 				return 1
 			}
 			if len(changed) == 0 && !deep {
-				fmt.Println(nothingChanged("security"))
+				s.out(nothingChanged("security"))
 				return 0
 			}
 		}
@@ -661,9 +777,9 @@ func run(args []string) int {
 			// never asked.
 			findings = append(findings, security.SastChanged(root, changed)...)
 		}
-		return printFindings(root, "security", findings, printLine)
+		return s.printFindings(root, "security", findings, s.out)
 	case "learn":
-		root := doctor.Root()
+		root := s.root()
 		cfg := config.Load(root)
 		sub := ""
 		if len(args) > 1 {
@@ -671,181 +787,185 @@ func run(args []string) int {
 		}
 		switch sub {
 		case "", "measure":
-			return learn.Measure(root, cfg.LearnRecord, printLine)
+			return learn.Measure(root, cfg.LearnRecord, s.out)
 		case "propose":
-			return learn.Propose(root, cfg.LearnRecord, cfg.LearnMinSamples, printLine)
+			return learn.Propose(root, cfg.LearnRecord, cfg.LearnMinSamples, s.out)
 		case "verify":
-			return learn.Verify(root, printLine)
+			return learn.Verify(root, s.out)
 		}
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	case "lint":
-		return lintCmd(args[1:])
+		return s.lintCmd(args[1:])
 	case "docs":
-		root := doctor.Root()
+		root := s.root()
 		// --ack prints the line that clears the documentation obligation;
 		// the agent places it in the commit message, where a reviewer sees
 		// the decision instead of a silent skip
 		if len(args) > 1 && args[1] == "--ack" {
 			if len(args) < 3 || strings.TrimSpace(strings.Join(args[2:], " ")) == "" {
-				return usageErr(os.Stderr)
+				return usageErr(s.stderr)
 			}
-			fmt.Println(docs.AckLine(strings.Join(args[2:], " ")))
+			s.out(docs.AckLine(strings.Join(args[2:], " ")))
 			return 0
 		}
 		external := len(args) > 1 && args[1] == "--external"
 		changed, _ := gitx.ChangedFiles(root)
-		return docs.RunFor(root, changed, "", external, config.Load(root).DocsBlock, os.Stdout)
+		return docs.RunFor(root, changed, "", external, config.Load(root).DocsBlock, s.stdout)
 	case "index":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return indexCmd(args[1:])
+		return s.indexCmd(args[1:])
 	case "todo":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return todoCmd(args[1:])
+		return s.todoCmd(args[1:])
 	case "spec":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return specCmd(args[1:])
+		return s.specCmd(args[1:])
 	case "plan":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return planCmd(args[1:])
+		return s.planCmd(args[1:])
 	case "debt":
-		return debt.Run(doctor.Root(), printLine)
+		return debt.Run(s.root(), s.out)
 	case "lessons":
-		return lessons.Run(doctor.Root(), printLine)
+		return lessons.Run(s.root(), s.out)
 	case "copilot-leak":
-		return copilotLeakCmd(args[1:])
+		return s.copilotLeakCmd(args[1:])
 	case "ask":
-		return askCmd(args[1:])
+		return s.askCmd(args[1:])
 	case "agents":
-		return portability.Agents(doctor.Root(), printLine)
+		return portability.Agents(s.root(), s.out)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
-			return principles.RunHook(doctor.Root(), os.Stdin, printLine)
+			return principles.RunHook(s.root(), s.env, s.stdin, s.out)
 		}
-		return principles.Run(doctor.Root(), printLine)
+		return principles.Run(s.root(), s.out)
 	case "templates":
-		return gitcmd.Templates(doctor.Root(), os.Stdout)
+		return gitcmd.Templates(s.root(), s.stdout)
 	case "test":
-		return testCmd(args[1:])
+		return s.testCmd(args[1:])
 	case "scrub":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return gitcmd.Scrub(args[1], os.Stdin, os.Stdout)
+		return gitcmd.Scrub(args[1], s.stdin, s.stdout)
 	case "version":
 		// An unrecognised flag is refused rather than ignored: `version
 		// --chekc` printing the version and exiting 0 tells the user their
 		// check ran when nothing checked anything.
 		if len(args) > 2 {
-			printLine("version takes at most --check")
+			s.out("version takes at most --check")
 			return 2
 		}
 		if len(args) == 2 {
 			if args[1] != "--check" {
-				printLine("version: unknown argument " + args[1])
+				s.out("version: unknown argument " + args[1])
 				return 2
 			}
-			return versionCheckCmd()
+			return s.versionCheckCmd()
 		}
 		// N-05: bare `version` stays one line and asks nobody anything.
-		fmt.Println(version)
+		// Latest stays empty for the same reason: nobody asked GitHub, and
+		// reporting the running version as the newest would be an answer
+		// this command did not compute.
+		s.col.setVersion(&api.Version{Running: version})
+		s.out(version)
 		return 0
 	case "self-upgrade":
 		force := false
 		for _, a := range args[1:] {
 			if a != "--force" {
-				printLine("self-upgrade: unknown argument " + a)
+				s.out("self-upgrade: unknown argument " + a)
 				return 2
 			}
 			force = true
 		}
-		return releases.Upgrade(version, force, upgradeConsent, printLine)
+		return releases.Upgrade(version, force, s.upgradeConsent, s.out)
 	case "evidence":
 		if len(args) < 3 || args[1] != "record" {
-			printLine("evidence record <command> — runs it and prints a fingerprint, never its output")
+			s.out("evidence record <command> — runs it and prints a fingerprint, never its output")
 			return 2
 		}
-		return evidence.Record(doctor.Root(), args[2:], printLine)
+		return evidence.Record(s.root(), args[2:], s.out)
 	case "context":
-		root := doctor.Root()
+		root := s.root()
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		switch args[1] {
 		case "list":
-			return glossary.List(root, printLine)
+			return glossary.List(root, s.out)
 		case "check":
-			return glossary.Check(root, printLine)
+			return glossary.Check(root, s.out)
 		case "add":
 			if len(args) < 4 {
-				printLine("context add <term> <definition>")
+				s.out("context add <term> <definition>")
 				return 2
 			}
-			return glossary.Add(root, args[2], strings.Join(args[3:], " "), printLine)
+			return glossary.Add(root, args[2], strings.Join(args[3:], " "), s.out)
 		}
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	case "wizard":
-		root := doctor.Root()
+		root := s.root()
 		if len(args) < 2 {
-			return wizard.List(root, printLine)
+			return wizard.List(root, s.out)
 		}
 		switch args[1] {
 		case "list":
-			return wizard.List(root, printLine)
+			return wizard.List(root, s.out)
 		case "new":
 			if len(args) < 3 {
-				printLine("wizard new <name> — prints a wizard to write")
+				s.out("wizard new <name> — prints a wizard to write")
 				return 2
 			}
-			return wizard.Scaffold(args[2], printLine)
+			return wizard.Scaffold(args[2], s.out)
 		case "show":
 			if len(args) < 3 {
-				printLine("wizard show <name> — prints every step, runs nothing")
+				s.out("wizard show <name> — prints every step, runs nothing")
 				return 2
 			}
-			return wizard.Show(root, args[2], printLine)
+			return wizard.Show(root, args[2], s.out)
 		case "run":
 			if len(args) < 3 {
-				printLine("wizard run <name> — walks the steps one at a time")
+				s.out("wizard run <name> — walks the steps one at a time")
 				return 2
 			}
-			return wizard.Run(root, args[2], os.Stdin, printLine)
+			return wizard.Run(root, args[2], s.stdin, s.out)
 		}
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	case "dispatch":
 		if len(args) < 2 {
-			printLine("dispatch open|start|seal|return|status <wave-id> [--task <id>]")
+			s.out("dispatch open|start|seal|return|status <wave-id> [--task <id>]")
 			return 2
 		}
 		id := ""
 		if len(args) > 2 && !strings.HasPrefix(args[2], "--") {
 			id = args[2]
 		}
-		return dispatch.Run(doctor.Root(), args[1], id, flagValue(args[2:], "--task"), time.Now(), printLine)
+		return dispatch.Run(s.root(), args[1], id, flagValue(args[2:], "--task"), time.Now(), s.out)
 	case "claims":
 		// Subcommands rather than top-level verbs: `release` is already
 		// the release controller, and one word cannot mean two things.
-		root := doctor.Root()
+		root := s.root()
 		if len(args) < 2 {
-			return claims.List(root, printLine)
+			return claims.List(root, s.out)
 		}
 		switch args[1] {
 		case "list":
-			return claims.List(root, printLine)
+			return claims.List(root, s.out)
 		case "release":
 			by := flagValue(args[2:], "--by")
 			if by == "" {
-				printLine("claims release --by <agent> — whose claims to drop")
+				s.out("claims release --by <agent> — whose claims to drop")
 				return 2
 			}
-			return claims.Release(root, by, printLine)
+			return claims.Release(root, by, s.out)
 		case "add":
 			by := flagValue(args[2:], "--by")
 			var globs []string
@@ -859,21 +979,21 @@ func run(args []string) int {
 				}
 				globs = append(globs, args[i])
 			}
-			return claims.Add(root, by, globs, time.Now(), printLine)
+			return claims.Add(root, by, globs, time.Now(), s.out)
 		}
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	case "prune":
 		apply := false
 		for _, a := range args[1:] {
 			if a != "--apply" {
-				printLine("prune: unknown argument " + a)
+				s.out("prune: unknown argument " + a)
 				return 2
 			}
 			apply = true
 		}
-		return pruneCmd(apply, printLine)
+		return pruneCmd(apply, s.out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
@@ -939,20 +1059,20 @@ func pruneCmd(apply bool, out func(string)) int {
 
 // indexCmd dispatches the index subcommands; every query prints through one
 // line-writer so output stays uniform.
-func adrCmd(args []string) int {
-	root := doctor.Root()
+func (s session) adrCmd(args []string) int {
+	root := s.root()
 	switch args[0] {
 	case "new":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
-		return adr.New(root, strings.Join(args[1:], " "), printLine)
+		return adr.New(root, strings.Join(args[1:], " "), s.out)
 	case "list":
-		return adr.List(root, printLine)
+		return adr.List(root, s.out)
 	case "check":
-		return adr.Run(root, printLine)
+		return adr.Run(root, s.out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
@@ -1017,8 +1137,8 @@ func nothingChanged(cmd string) string {
 	return "procoder " + cmd + ": no changed files — nothing was checked (pass paths to check them anyway)"
 }
 
-func lintCmd(args []string) int {
-	root := doctor.Root()
+func (s session) lintCmd(args []string) int {
+	root := s.root()
 	types := false
 	var paths []string
 	for _, a := range args {
@@ -1031,11 +1151,11 @@ func lintCmd(args []string) int {
 	if len(paths) == 0 {
 		changed, err := gitx.ChangedFiles(root)
 		if err != nil {
-			fmt.Println(err)
+			s.out(fmt.Sprint(err))
 			return 1
 		}
 		if len(changed) == 0 {
-			fmt.Println(nothingChanged("lint"))
+			s.out(nothingChanged("lint"))
 			return 0
 		}
 		paths = changed
@@ -1061,10 +1181,10 @@ func lintCmd(args []string) int {
 	if types {
 		findings = append(findings, lint.Types(root, paths, cfg.LintBlock)...)
 	}
-	return printFindings(root, "lint", findings, printLine)
+	return s.printFindings(root, "lint", findings, s.out)
 }
 
-func testCmd(args []string) int {
+func (s session) testCmd(args []string) int {
 	coverage := false
 	name := ""
 	var paths []string
@@ -1079,27 +1199,27 @@ func testCmd(args []string) int {
 			paths = append(paths, args[i])
 		}
 	}
-	return testrun.Report(testrun.Run(doctor.Root(), paths, coverage, name), printLine)
+	return testrun.Report(testrun.Run(s.root(), paths, coverage, name), s.out)
 }
 
 // askCmd is `procoder ask`: the questions no domain can answer for itself,
 // put to a person. --file is the way an answer gets back in when there was
 // no terminal to ask on — the coder relays the questions, writes what the
 // human said, and hands the file over.
-func askCmd(args []string) int {
-	root := doctor.Root()
+func (s session) askCmd(args []string) int {
+	root := s.root()
 	if len(args) > 0 {
 		switch {
 		case args[0] == "--file" && len(args) > 1:
-			return ask.FromFile(root, args[1], printLine)
+			return ask.FromFile(root, args[1], s.out)
 		case args[0] == "--file":
-			printLine("ask: --file wants the path of the file holding the answers")
+			s.out("ask: --file wants the path of the file holding the answers")
 		default:
-			printLine("ask: unknown argument " + args[0])
+			s.out("ask: unknown argument " + args[0])
 		}
 		return 2
 	}
-	return ask.Run(root, os.Stdin, printLine)
+	return ask.Run(root, s.stdinFile, s.out)
 }
 
 // versionCheckCmd is `procoder version --check`: the version, then what
@@ -1108,39 +1228,39 @@ func askCmd(args []string) int {
 // deciding there meant two round trips, so a release published between them
 // installed a version the user was never shown, and a package-manager
 // refusal arrived only after they had already said yes.
-func versionCheckCmd() int {
-	printLine(version)
-	if config.Load(doctor.Root()).VersionCheckOff {
-		printLine("version check is off in .procoder/config.toml ([version] check)")
+func (s session) versionCheckCmd() int {
+	s.out(version)
+	if config.Load(s.root()).VersionCheckOff {
+		s.out("version check is off in .procoder/config.toml ([version] check)")
 		return 0
 	}
-	return releases.Upgrade(version, false, announceThenAsk, printLine)
+	return releases.Upgrade(version, false, s.announceThenAsk, s.out)
 }
 
 // announceThenAsk is the consent function `--check` hands to the upgrade: it
 // says what is newer before asking, because a bare prompt does not tell the
 // reader what they are agreeing to.
-func announceThenAsk(latest string) bool {
-	printLine(releases.WarningLine(version, latest))
-	return upgradeConsent(latest)
+func (s session) announceThenAsk(latest string) bool {
+	s.out(releases.WarningLine(version, latest))
+	return s.upgradeConsent(latest)
 }
 
 // upgradeConsent asks before anything is downloaded or run (N-08). No
 // terminal is not a yes: it is a question nobody was asked.
-func upgradeConsent(latest string) bool {
-	if !copilot.CanAsk(os.Stdin) {
-		printLine("no terminal to ask on — an upgrade needs an explicit yes, so nothing was installed")
+func (s session) upgradeConsent(latest string) bool {
+	if !copilot.CanAskWith(s.stdinFile, s.confirm) {
+		s.out("no terminal to ask on — an upgrade needs an explicit yes, so nothing was installed")
 		return false
 	}
-	printLine("Upgrade procoder " + version + " → " + latest + "? [y/N]")
-	return copilot.ReadYes(os.Stdin)
+	s.out("Upgrade procoder " + version + " → " + latest + "? [y/N]")
+	return copilot.ReadYesFrom(s.stdinFile, s.confirm)
 }
 
 // copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit
 // codes follow the spec's own Exit 2 line — declining, or having nobody to
 // ask, is a reporting exit rather than an error, and so is a check that could
 // not run. Only a real answer exits 0.
-func copilotLeakCmd(args []string) int {
+func (s session) copilotLeakCmd(args []string) int {
 	since := 24 * time.Hour
 	quiet, report := false, false
 	for i := 0; i < len(args); i++ {
@@ -1152,32 +1272,32 @@ func copilotLeakCmd(args []string) int {
 		case args[i] == "--since" && i+1 < len(args):
 			d, ok := parseWindow(args[i+1])
 			if !ok {
-				printLine("copilot-leak: --since wants a duration like 6h, 90m, or 2d — got " + args[i+1])
+				s.out("copilot-leak: --since wants a duration like 6h, 90m, or 2d — got " + args[i+1])
 				return 2
 			}
 			since, i = d, i+1
 		case args[i] == "--since":
-			printLine("copilot-leak: --since wants a duration like 6h, 90m, or 2d — none was given")
+			s.out("copilot-leak: --since wants a duration like 6h, 90m, or 2d — none was given")
 			return 2
 		default:
-			printLine("copilot-leak: unknown argument " + args[i])
+			s.out("copilot-leak: unknown argument " + args[i])
 			return 2
 		}
 	}
-	root := doctor.Root()
+	root := s.root()
 	if report {
 		// The ledger half of the loop: what was captured, and what nobody has
 		// turned into an adaptation yet. It reaches no network and asks
 		// nothing — reading back what the capture wrote is a different job
 		// from going to look for more.
-		return lessons.RunCopilotLeaks(root, printLine)
+		return lessons.RunCopilotLeaks(root, s.out)
 	}
-	finds, ok := copilot.Find(root, since, printLine)
+	finds, ok := copilot.Find(root, since, s.out)
 	if !ok {
 		return 2 // Find has already said what it could not check
 	}
 	if len(finds) == 0 {
-		printLine("copilot-leak: no findings since " + since.String())
+		s.out("copilot-leak: no findings since " + since.String())
 		return 0
 	}
 	// Sanitising before the count is printed, not after the answer: nothing
@@ -1188,22 +1308,22 @@ func copilotLeakCmd(args []string) int {
 		safe = append(safe, copilot.Sanitise(f, root))
 	}
 	if quiet {
-		printLine(fmt.Sprintf("copilot-leak: %d finding(s) since %s — run without --quiet to capture them", len(safe), since))
+		s.out(fmt.Sprintf("copilot-leak: %d finding(s) since %s — run without --quiet to capture them", len(safe), since))
 		return 0
 	}
-	if !copilot.Prompt(os.Stdin, printLine, len(safe), since) {
-		if copilot.CanAsk(os.Stdin) {
-			printLine("copilot-leak: skipped — nothing was published and nothing was recorded")
+	if !copilot.PromptWith(s.stdinFile, s.confirm, s.out, len(safe), since) {
+		if copilot.CanAskWith(s.stdinFile, s.confirm) {
+			s.out("copilot-leak: skipped — nothing was published and nothing was recorded")
 		} else {
-			printLine(fmt.Sprintf("copilot-leak: %d finding(s) since %s, and no terminal to ask on — publishing needs an explicit yes, so nothing was captured", len(safe), since))
+			s.out(fmt.Sprintf("copilot-leak: %d finding(s) since %s, and no terminal to ask on — publishing needs an explicit yes, so nothing was captured", len(safe), since))
 		}
 		return 2
 	}
 	issues, entries, notes := copilot.Capture(safe, root)
 	for _, n := range notes {
-		printLine(n)
+		s.out(n)
 	}
-	printLine(fmt.Sprintf("copilot-leak: %d issue(s) created, %d entry(ies) recorded in %s — each unlearned until you write its adaptation",
+	s.out(fmt.Sprintf("copilot-leak: %d issue(s) created, %d entry(ies) recorded in %s — each unlearned until you write its adaptation",
 		issues, entries, lessons.CopilotLeaksPath))
 	return 0
 }
@@ -1224,19 +1344,19 @@ func parseWindow(v string) (time.Duration, bool) {
 	return d, true
 }
 
-func indexCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) indexCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	switch args[0] {
 	case "build":
 		if err := codeindex.Build(root, out); err != nil {
-			fmt.Println(err)
+			s.out(fmt.Sprint(err))
 			return 1
 		}
 		return 0
 	case "callers":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return codeindex.Callers(root, args[1], out)
 	case "unused":
@@ -1247,12 +1367,14 @@ func indexCmd(args []string) int {
 		return codeindex.Graph(root, out)
 	case "find", "search", "refs", "outline", "impls":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		switch args[0] {
 		case "find":
+			s.collectSymbols(codeindex.FindTags(root, args[1]))
 			return codeindex.Find(root, args[1], out)
 		case "search":
+			s.collectSymbols(codeindex.SearchTags(root, args[1]))
 			return codeindex.Search(root, args[1], out)
 		case "refs":
 			return codeindex.Refs(root, args[1], out)
@@ -1275,29 +1397,29 @@ func indexCmd(args []string) int {
 			pos = append(pos, args[i])
 		}
 		if len(pos) != 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return codeindex.Rename(root, pos[0], pos[1], at, out)
 	case "impact":
 		changed, err := gitx.ChangedFiles(root)
 		if err != nil {
-			fmt.Println(err)
+			s.out(fmt.Sprint(err))
 			return 1
 		}
 		return codeindex.Impact(root, changed, out)
 	case "stats":
 		return codeindex.Stats(root, out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // backlogCmd dispatches the project layer. Creation subcommands parse
 // their flag in the loop style of `index rename --at`; closes route to
 // the refusing controllers.
-func backlogCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) backlogCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	// positional args with one optional flag, per subcommand
 	flagVal := func(name string, rest []string) (string, []string) {
 		val := ""
@@ -1315,32 +1437,32 @@ func backlogCmd(args []string) int {
 	switch args[0] {
 	case "milestone":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.Milestone(root, strings.Join(args[1:], " "), out)
 	case "epic":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) == 0 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.Epic(root, strings.Join(pos, " "), ms, out)
 	case "story":
 		epic, pos := flagVal("--epic", args[1:])
 		if len(pos) == 0 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.Story(root, strings.Join(pos, " "), epic, out)
 	case "bug":
 		epic, pos := flagVal("--epic", args[1:])
 		severity, pos := flagVal("--severity", pos)
 		if len(pos) == 0 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.Bug(root, strings.Join(pos, " "), epic, severity, out)
 	case "seed":
 		ms, pos := flagVal("--milestone", args[1:])
 		if len(pos) != 1 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.Seed(root, pos[0], ms, out)
 	case "list":
@@ -1361,7 +1483,7 @@ func backlogCmd(args []string) int {
 		return stall.Check(root, backlog.ItemFiles(root), 3, out)
 	case "close":
 		if len(args) < 3 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		switch args[1] {
 		case "story":
@@ -1369,57 +1491,59 @@ func backlogCmd(args []string) int {
 			// judge the tree, not a story
 			return backlog.CloseStories(root, args[2:], func() bool {
 				return gate.Run(nil, root, io.Discard) == 0
-			}, suiteCheck(root), out)
+			}, s.suiteCheck(root), out)
 		case "epic":
 			if len(args) != 3 {
-				return usageErr(os.Stderr)
+				return usageErr(s.stderr)
 			}
 			return backlog.CloseEpic(root, args[2], out)
 		case "milestone":
 			if len(args) != 3 {
-				return usageErr(os.Stderr)
+				return usageErr(s.stderr)
 			}
 			return backlog.CloseMilestone(root, args[2], out)
 		}
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // sprintCmd dispatches the sprint lifecycle over the backlog.
-func sprintCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) sprintCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	switch args[0] {
 	case "open":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.SprintOpen(root, strings.Join(args[1:], " "), out)
 	case "pull":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.SprintPull(root, args[1:], out)
 	case "carry":
 		if len(args) < 3 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return backlog.SprintCarry(root, args[1], strings.Join(args[2:], " "), out)
+	case "serve":
+		return s.serveCmd(args[1:])
 	case "status":
 		return backlog.SprintStatus(root, out)
 	case "close":
 		return backlog.SprintClose(root, out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // suiteCheck returns the test-suite verdict closure when the repo opted
 // into `[test] policy = "block"`, nil otherwise — closes then behave
 // exactly as before the policy existed.
-func suiteCheck(root string) func() (bool, string) {
+func (s session) suiteCheck(root string) func() (bool, string) {
 	if !config.Load(root).TestBlock {
 		return nil
 	}
@@ -1428,9 +1552,9 @@ func suiteCheck(root string) func() (bool, string) {
 
 // todoCmd dispatches the quality-gated task list. close runs the real gate
 // as its final criterion — a task is not done while the tree fails checks.
-func todoCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) todoCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	switch args[0] {
 	case "list":
 		tasks, err := todo.List(root)
@@ -1439,21 +1563,25 @@ func todoCmd(args []string) int {
 			return 1
 		}
 		if len(tasks) == 0 {
+			s.col.setTasks([]api.Task{})
 			out("no tasks — `procoder todo add <title>` starts one")
 			return 0
 		}
+		listed := make([]api.Task, 0, len(tasks))
 		for _, t := range tasks {
 			out(fmt.Sprintf("  [%s]  %s  %s", t.Status, t.ID, t.Title))
+			listed = append(listed, api.Task{ID: t.ID, Title: t.Title, State: t.Status})
 		}
+		s.col.setTasks(listed)
 		return 0
 	case "add":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return todo.Add(root, strings.Join(args[1:], " "), out)
 	case "show":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		path, err := todo.File(root, args[1])
 		if err != nil {
@@ -1465,30 +1593,30 @@ func todoCmd(args []string) int {
 			out("no task " + args[1] + " — `procoder todo list` shows what exists")
 			return 2
 		}
-		os.Stdout.Write(raw)
+		s.stdout.Write(raw)
 		return 0
 	case "close":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return todo.CloseWith(root, args[1], func() bool {
 			return gate.Run(nil, root, io.Discard) == 0
-		}, suiteCheck(root), out)
+		}, s.suiteCheck(root), out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // planCmd dispatches the plan quality controller.
-func planCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) planCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	switch args[0] {
 	case "list":
 		return plan.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return plan.PrintTemplate(args[1], out)
 	case "check":
@@ -1498,20 +1626,20 @@ func planCmd(args []string) int {
 		}
 		return plan.Check(root, name, out)
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // specCmd dispatches the spec quality controller.
-func specCmd(args []string) int {
-	root := doctor.Root()
-	out := printLine
+func (s session) specCmd(args []string) int {
+	root := s.root()
+	out := s.out
 	switch args[0] {
 	case "list":
 		return spec.List(root, out)
 	case "template":
 		if len(args) < 2 {
-			return usageErr(os.Stderr)
+			return usageErr(s.stderr)
 		}
 		return spec.PrintTemplate(args[1], out)
 	case "check":
@@ -1519,23 +1647,34 @@ func specCmd(args []string) int {
 		if len(args) > 1 {
 			name = args[1]
 		}
-		return spec.Check(root, name, out)
+		if s.col == nil {
+			return spec.Check(root, name, out)
+		}
+		// One pass that prints and collects, so the lines and the
+		// verdicts cannot disagree and the controller does not run twice.
+		code, verdicts := spec.CheckVerdict(root, name, out)
+		got := make([]api.SpecVerdict, 0, len(verdicts))
+		for _, v := range verdicts {
+			got = append(got, api.SpecVerdict{Name: v.Name, Verdict: v.Verdict, Gaps: v.Gaps})
+		}
+		s.col.setSpecs(got)
+		return code
 	default:
-		return usageErr(os.Stderr)
+		return usageErr(s.stderr)
 	}
 }
 
 // formatCmd prints each file's formatted result — it writes nothing, per
 // P-CONTROL. Multiple files are separated by headers so the agent can tell
 // which output belongs to which file.
-func formatCmd(files []string) int {
-	if clash := collidingOutput(files, os.Stdout); clash != "" {
+func (s session) formatCmd(files []string) int {
+	if clash := collidingOutput(files, s.stdoutFile); clash != "" {
 		// Say it and stop. The truncation has already happened — the shell
 		// empties the target before the command is exec'd — so nothing can be
 		// read and there is no verdict to print. The only thing left worth doing
 		// is naming the recovery, instead of printing a plausible banner into the
 		// hole and exiting green, which is what the old success path did.
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(s.stderr,
 			"procoder format: stdout IS %s, which the shell truncated before this command ran.\n"+
 				"Nothing was read and nothing was written. Restore the file (git checkout -- %s, or\n"+
 				"your editor's undo), then capture somewhere else and write it yourself:\n"+
@@ -1543,7 +1682,7 @@ func formatCmd(files []string) int {
 			clash, clash, clash, clash)
 		return 1
 	}
-	return formatFiles(files, os.Stdout, os.Stderr)
+	return formatFiles(files, s.stdout, s.stderr)
 }
 
 // collidingOutput names the input file stdout points at, if any.
@@ -1654,8 +1793,8 @@ func formatFiles(files []string, out, notes io.Writer) int {
 // one could not — a lens that failed to load is a refusal, and a review
 // that did not happen must not exit 0 — and 2 for a name that is not a
 // lens, which is a usage error rather than a finding about the code.
-func reviewCmd(args []string) int {
-	root := doctor.Root()
+func (s session) reviewCmd(args []string) int {
+	root := s.root()
 
 	var want []string
 	var paths []string
@@ -1670,7 +1809,7 @@ func reviewCmd(args []string) int {
 		case args[i] == "--perspectives":
 			perspectives = true
 		case strings.HasPrefix(args[i], "-"):
-			fmt.Fprintf(os.Stderr, "procoder review: unknown flag %q\n", args[i])
+			fmt.Fprintf(s.stderr, "procoder review: unknown flag %q\n", args[i])
 			return 2
 		default:
 			paths = append(paths, args[i])
@@ -1689,7 +1828,7 @@ func reviewCmd(args []string) int {
 	// be read must not be discovered halfway down a review the reader has
 	// already started acting on.
 	if len(problems) > 0 {
-		printFindings(root, "review", problems, printLine)
+		s.printFindings(root, "review", problems, s.out)
 		return 1
 	}
 
@@ -1704,7 +1843,7 @@ func reviewCmd(args []string) int {
 			if perspectives {
 				kind = "perspective"
 			}
-			fmt.Fprintf(os.Stderr, "procoder review: no such %s: %s — procoder has %s\n",
+			fmt.Fprintf(s.stderr, "procoder review: no such %s: %s — procoder has %s\n",
 				kind, strings.Join(unknown, ", "), strings.Join(review.Names(lenses), ", "))
 			return 2
 		}
@@ -1714,16 +1853,16 @@ func reviewCmd(args []string) int {
 	if len(paths) == 0 {
 		changed, err := gitx.ChangedFiles(root)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "procoder review: cannot list changed files (%v) — pass paths explicitly\n", err)
+			fmt.Fprintf(s.stderr, "procoder review: cannot list changed files (%v) — pass paths explicitly\n", err)
 			return 2
 		}
 		paths = changed
 	}
 
 	if perspectives {
-		review.PrintPerspectives(os.Stdout, paths, lenses)
+		review.PrintPerspectives(s.stdout, paths, lenses)
 	} else {
-		review.Print(os.Stdout, paths, lenses)
+		review.Print(s.stdout, paths, lenses)
 	}
 	return 0
 }
@@ -1731,21 +1870,21 @@ func reviewCmd(args []string) int {
 // analyzeCmd is the phase before the spec: it prints a document for the
 // agent to write, lists what exists, and refuses one nobody filled in.
 // The binary writes nothing here either.
-func analyzeCmd(args []string) int {
-	root := doctor.Root()
+func (s session) analyzeCmd(args []string) int {
+	root := s.root()
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
+		fmt.Fprintln(s.stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
 		return 2
 	}
 	switch args[0] {
 	case "brief":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name>")
+			fmt.Fprintln(s.stderr, "usage: procoder analyze brief <name>")
 			return 2
 		}
 		name := args[1]
 		if name != filepath.Base(name) || strings.Contains(name, "..") {
-			fmt.Fprintf(os.Stderr, "invalid analysis name %q — names are plain file names\n", name)
+			fmt.Fprintf(s.stderr, "invalid analysis name %q — names are plain file names\n", name)
 			return 2
 		}
 		fmt.Printf("== write this to %s/%s.md and fill it through the interview:\n",
@@ -1755,23 +1894,23 @@ func analyzeCmd(args []string) int {
 	case "list":
 		files := analysis.Files(root)
 		if len(files) == 0 {
-			printLine("no analysis yet — `procoder analyze brief <name>` starts one")
+			s.out("no analysis yet — `procoder analyze brief <name>` starts one")
 			return 0
 		}
 		for _, f := range files {
-			printLine(strings.TrimSuffix(filepath.Base(f), ".md"))
+			s.out(strings.TrimSuffix(filepath.Base(f), ".md"))
 		}
 		return 0
 	case "where":
-		return analysis.Where(root, printLine)
+		return analysis.Where(root, s.out)
 	case "check":
 		name := ""
 		if len(args) > 1 {
 			name = args[1]
 		}
-		return analysis.Check(root, name, printLine)
+		return analysis.Check(root, name, s.out)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
+		fmt.Fprintln(s.stderr, "usage: procoder analyze brief <name> | where | list | check [name|all]")
 		return 2
 	}
 }

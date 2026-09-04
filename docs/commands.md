@@ -1263,6 +1263,73 @@ checked, never what they held. A pattern that does not compile reports
   front of you and then discarded; procoder does not store them, print
   them, or put them in your CI. Paste them yourself.
 
+#### `procoder serve [--socket <path>] [--exec] [--idle <duration>]`
+
+The local daemon. Every command answers over a unix socket, so a caller
+that would rather make a call than spawn a process can — and gets the same
+bytes and the same exit code either way.
+
+**A machine is one or the other.** Where `[service] mode` is `off` — the
+default — every command runs in-process, with no daemon, no socket and no
+setup, in CI and on a fresh clone. Where it is `local`, the daemon is the
+path and there is **no fallback**: a daemon that is not running is an
+error, not a command that quietly ran somewhere else. Hooks fail the same
+way — with one difference that matters. The commit gate's hook **denies
+the commit** when it cannot reach the daemon, because the host's word for
+"do not run this" is a decision on stdout and not an exit code: a gate
+that merely errored would wave every commit past itself while looking like
+it had failed loudly. Nothing was checked, so nothing is passing. See
+[Configuration](configuration.md#service) for why there is no fallback.
+
+The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
+0700 directory. **The permission bits are the whole authentication** —
+there is no port and no token, because a unix socket is a filesystem
+object and the filesystem has already answered "who may talk to this".
+A loopback port would not: it is reachable by every process and every
+other user on the box, and gets forwarded out of devcontainers by
+accident.
+
+What that buys is also what it costs, and it is worth saying plainly: the
+socket authenticates the **user**, not the process. Every process running
+as you can reach it, including an agent session's own shell. That is why
+the four commands which run what a repository declared —
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade` — are not
+served there at all. They live behind `--exec` on a second socket
+(`procoder-exec.sock`) with its own opt-in, and the hooks are never told
+its address. A path that runs an agent-written command must not be
+reachable by something running unattended; see the "look but don't run"
+boundary in ARCHITECTURE.
+
+Each repository stays warm for `--idle` (30 minutes by default) after its
+last request, and is released on its own schedule — a morning's work in
+one checkout does not keep nine others' indexes resident. A daemon holding
+nothing exits, because staying resident to serve a request that may never
+come is how a convenience becomes a process somebody has to remember to
+kill. Exiting is safe precisely because starting is free: the next
+session's hook starts another, and a client that finds no daemon runs
+in-process.
+
+It prints a line per request — what it served, the exit code and how long
+it took, and separately what it refused and what it started as a job. That
+is where to look when a command is slower than you expected, or when you
+want to see that the machine is using the daemon it was configured for.
+
+A daemon the session-start hook started has no terminal to print to, so it
+appends the same lines to `~/.procoder/run/serve.log`. That is the usual
+case — a daemon nobody started by hand is exactly the one whose log you
+end up wanting.
+
+`serve` runs in the foreground and stops when its listener closes.
+Whatever started it owns it — a shell, or the session-start hook. It does
+not daemonise itself, for the same reason `procoder run` refuses to own a
+server's lifetime: a process nobody can see is worse than no process.
+
+A response carries the command's exact bytes on stdout and stderr, its
+exit code, and — where the command has one — a typed result beside them.
+The bytes are what a person reads and what the parity test compares; the
+result is what a client acts on. Both, so that no caller has to be a
+parser and none has to be a renderer.
+
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 
 Bare `version` prints one line and asks nobody anything.
