@@ -117,7 +117,7 @@ func (j *jobs) start(req Request, run Runner) Job {
 //
 // The output accumulated so far comes back on every poll, so a caller can
 // follow a suite without holding the connection that started it.
-func (j *jobs) poll(id string) Response {
+func (j *jobs) poll(id string, since, sinceErr int) Response {
 	j.mu.Lock()
 	st, ok := j.m[id]
 	j.mu.Unlock()
@@ -130,11 +130,27 @@ func (j *jobs) poll(id string) Response {
 	return Response{
 		Protocol: Protocol,
 		Exit:     st.exit,
-		Stdout:   st.stdout.String(),
-		Stderr:   st.stderr.String(),
+		Stdout:   after(st.stdout.String(), since),
+		Stderr:   after(st.stderr.String(), sinceErr),
 		Job:      &Job{ID: id, State: st.state},
 		Result:   st.result,
 	}
+}
+
+// after is the part of s the caller does not have yet.
+//
+// An offset past the end returns nothing rather than panicking: a client
+// that has more than the daemon does is a daemon that restarted, and the
+// answer to that is an empty read and a lost job, never a crash in the
+// one process everything else depends on.
+func after(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	if n >= len(s) {
+		return ""
+	}
+	return s[n:]
 }
 
 // newJobID is short enough to type and random enough not to collide

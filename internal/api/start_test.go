@@ -87,15 +87,39 @@ func TestFreshStartLockIsNotBroken(t *testing.T) {
 	}
 }
 
-// A half-written lock is one nobody is holding: the process died between
-// creating the file and writing its pid.
-func TestHalfWrittenStartLockIsStale(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "start.lock")
-	if err := os.WriteFile(path, []byte("12345\n"), 0o600); err != nil {
+// A lock with no timestamp yet is judged by its age, because that is the
+// only thing left that can tell the two cases apart: a process that died
+// between creating the file and writing to it, and the winner of the race
+// that has not finished writing YET.
+//
+// Calling it stale outright was a bug with a name. Ten sessions starting
+// at once had three of them win: the losers read the winner's empty file,
+// judged it abandoned, removed it and took their own — three daemons
+// where one was meant to be. It failed about one run in ten.
+//
+// proved by: returning true for a short lock regardless of age — the race
+// test below starts finding two and three winners again.
+func TestHalfWrittenStartLockIsJudgedByAge(t *testing.T) {
+	dir := t.TempDir()
+
+	fresh := filepath.Join(dir, "fresh.lock")
+	if err := os.WriteFile(fresh, []byte("12345\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !staleStartLock(path) {
-		t.Fatal("a lock with no timestamp was treated as live")
+	if staleStartLock(fresh) {
+		t.Error("a lock written moments ago was judged abandoned — that is the winner of the race, mid-write")
+	}
+
+	old := filepath.Join(dir, "old.lock")
+	if err := os.WriteFile(old, []byte("12345\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * startStale)
+	if err := os.Chtimes(old, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if !staleStartLock(old) {
+		t.Error("a half-written lock older than the stale window was treated as live — nothing would ever start")
 	}
 }
 

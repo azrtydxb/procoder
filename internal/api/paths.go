@@ -22,18 +22,33 @@ const (
 // LogPath is where a daemon nobody started by hand writes what it served.
 func LogPath(runDir string) string { return filepath.Join(runDir, logName) }
 
-// RunDir is where the sockets and the start lock live, created 0700.
+// runDirPath is where the sockets live. It answers the question and
+// creates nothing: naming a path is not a reason to make a directory, and
+// the refusal message for an executing command on the work socket names
+// the exec socket without ever intending to open it. The first version
+// created ~/.procoder/run in a test run's real home for exactly that
+// reason.
+func runDirPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("procoder: no home directory to put the socket in (%v)", err)
+	}
+	return filepath.Join(home, runDirName, runSubdir), nil
+}
+
+// RunDir is runDirPath, created 0700. Called by the two things that need
+// the directory to exist — listening on a socket, and taking the start
+// lock — and by nothing that merely wants to say where one is.
 //
 // The mode is the authentication. There is no port and no token: a unix
 // socket is a filesystem object, so the permission bits already answer
 // "who may talk to this daemon", and every other scheme would be a second
 // answer to a question the filesystem had settled.
 func RunDir() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := runDirPath()
 	if err != nil {
-		return "", fmt.Errorf("procoder: no home directory to put the socket in (%v)", err)
+		return "", err
 	}
-	dir := filepath.Join(home, runDirName, runSubdir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("procoder: could not create %s (%v)", dir, err)
 	}
@@ -61,7 +76,7 @@ func ExecSocket() (string, error) { return socketPath(execSocketName) }
 func StartLock() (string, error) { return socketPath(startLockName) }
 
 func socketPath(name string) (string, error) {
-	dir, err := RunDir()
+	dir, err := runDirPath()
 	if err != nil {
 		return "", err
 	}

@@ -45,6 +45,17 @@ type Request struct {
 	// Job names a job to poll instead of a command to run. Set means Argv
 	// is empty and the daemon is being asked how an earlier request got on.
 	Job string `json:"job"`
+	// Since is how many bytes of this job's output the caller already
+	// has, so a poll returns only what is new.
+	//
+	// Without it a poll returns everything accumulated, every time: a
+	// two-minute suite polled every 100ms re-sends a growing buffer 1200
+	// times, which is gigabytes of socket traffic for megabytes of output
+	// and gets worse the longer the job runs. The offset makes it linear.
+	//
+	// Counted separately per stream, because they grow independently.
+	Since    int `json:"since"`
+	SinceErr int `json:"since_err"`
 }
 
 // Job is a command that outlived the connection that asked for it.

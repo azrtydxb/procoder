@@ -154,20 +154,40 @@ func takeStartLock(path string) (release func(), taken bool) {
 func staleStartLock(path string) bool {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		// Unreadable but present: judged by its mtime instead, which is
-		// the only thing left to go on.
-		if info, serr := os.Stat(path); serr == nil {
-			return time.Since(info.ModTime()) > startStale
-		}
-		return false
+		// Unreadable but present: judged by its age instead, which is the
+		// only thing left to go on.
+		return olderThan(path, startStale)
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	if len(lines) < 2 {
-		return true // a half-written lock is one nobody is holding
+		// A lock with no timestamp yet is one of two things, and they
+		// need opposite answers: a process that died between creating the
+		// file and writing to it, or the winner of the race that has not
+		// finished writing YET. The two are told apart by age and nothing
+		// else, because the content that would tell them apart is exactly
+		// what is missing.
+		//
+		// Calling it stale outright was a bug with a name: ten sessions
+		// starting at once had three of them win, because the losers read
+		// the winner's empty file, judged it abandoned, removed it and
+		// took their own — and three daemons started where one was meant
+		// to. TestStartLockUnderRace failed roughly one run in ten.
+		return olderThan(path, startStale)
 	}
 	at, err := strconv.ParseInt(lines[1], 10, 64)
 	if err != nil {
-		return true
+		return olderThan(path, startStale)
 	}
 	return time.Since(time.Unix(at, 0)) > startStale
+}
+
+// olderThan judges a lock by its file age, for when its contents cannot.
+// A file that cannot be stat'd is not judged stale: unknown is never a
+// reason to break somebody else's lock.
+func olderThan(path string, d time.Duration) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) > d
 }

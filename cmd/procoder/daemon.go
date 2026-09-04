@@ -149,9 +149,11 @@ func viaDaemon(args []string, s session) (code int, handled bool) {
 // output once per tick.
 func followJob(id, path string, s session) (int, bool) {
 	client := api.Client{Path: path, Version: version}
+	// The offsets are what keep a long job's polling linear: the daemon
+	// sends only what this caller has not seen.
 	var wroteOut, wroteErr int
 	for {
-		res, err := client.Do(api.Request{Job: id})
+		res, err := client.Do(api.Request{Job: id, Since: wroteOut, SinceErr: wroteErr})
 		if err != nil {
 			// The daemon went away mid-job. The command's own state is
 			// unknown, so the caller is told rather than being handed a
@@ -159,14 +161,10 @@ func followJob(id, path string, s session) (int, bool) {
 			fmt.Fprintf(s.stderr, "procoder: lost the daemon while %s was running (%v)\n", id, err)
 			return 1, true
 		}
-		if len(res.Stdout) > wroteOut {
-			io.WriteString(s.stdout, res.Stdout[wroteOut:])
-			wroteOut = len(res.Stdout)
-		}
-		if len(res.Stderr) > wroteErr {
-			io.WriteString(s.stderr, res.Stderr[wroteErr:])
-			wroteErr = len(res.Stderr)
-		}
+		io.WriteString(s.stdout, res.Stdout)
+		wroteOut += len(res.Stdout)
+		io.WriteString(s.stderr, res.Stderr)
+		wroteErr += len(res.Stderr)
 		if res.Job != nil && res.Job.State == api.JobLost {
 			fmt.Fprintf(s.stderr, "procoder: job %s is gone — the daemon restarted while it was running\n", id)
 			return 1, true

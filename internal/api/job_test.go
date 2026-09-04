@@ -102,3 +102,72 @@ func TestLostJobSaysLostNotFailed(t *testing.T) {
 		t.Fatalf("a lost job reported an exit code: %d — a caller would read that as a verdict", *res.Exit)
 	}
 }
+
+// A poll returns only what the caller has not seen.
+//
+// Without the offset a poll returns everything accumulated, every time: a
+// two-minute suite polled every 100ms re-sends a growing buffer 1200
+// times, so the traffic is quadratic in the output and worst on exactly
+// the runs the job model exists to support.
+//
+// proved by: ignoring Since in jobs.poll — the second poll then repeats
+// the first chunk, and this test sees it twice.
+func TestPollReturnsOnlyWhatIsNew(t *testing.T) {
+	release := make(chan struct{})
+	var j jobs
+	job := j.start(Request{Argv: []string{"test"}}, func(_ Request, stdout, stderr io.Writer) (int, *Result) {
+		io.WriteString(stdout, "first")
+		io.WriteString(stderr, "e1")
+		<-release
+		io.WriteString(stdout, "second")
+		return 0, nil
+	})
+
+	first := waitForOutput(t, &j, job.ID, 0, 0)
+	if first.Stdout != "first" || first.Stderr != "e1" {
+		t.Fatalf("first poll: stdout %q stderr %q", first.Stdout, first.Stderr)
+	}
+
+	// Nothing new yet: the same offsets must return nothing at all, not
+	// the bytes already delivered.
+	repeat := j.poll(job.ID, len("first"), len("e1"))
+	if repeat.Stdout != "" || repeat.Stderr != "" {
+		t.Fatalf("a poll with nothing new repeated itself: stdout %q stderr %q", repeat.Stdout, repeat.Stderr)
+	}
+
+	close(release)
+	second := waitForOutput(t, &j, job.ID, len("first"), len("e1"))
+	if second.Stdout != "second" {
+		t.Fatalf("second poll returned %q, want only the new bytes", second.Stdout)
+	}
+}
+
+// An offset past what the daemon holds reads empty rather than crashing.
+// A client with more than the daemon has is a daemon that restarted.
+func TestPollBeyondTheEndIsEmptyNotAPanic(t *testing.T) {
+	var j jobs
+	job := j.start(Request{Argv: []string{"test"}}, func(_ Request, stdout, _ io.Writer) (int, *Result) {
+		io.WriteString(stdout, "short")
+		return 0, nil
+	})
+	waitForOutput(t, &j, job.ID, 0, 0)
+	res := j.poll(job.ID, 9999, 9999)
+	if res.Stdout != "" || res.Stderr != "" {
+		t.Fatalf("an offset past the end returned %q / %q", res.Stdout, res.Stderr)
+	}
+}
+
+func waitForOutput(t *testing.T, j *jobs, id string, since, sinceErr int) Response {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		res := j.poll(id, since, sinceErr)
+		if res.Stdout != "" || res.Stderr != "" {
+			return res
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the job produced no output")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

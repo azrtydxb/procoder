@@ -5,6 +5,8 @@ import (
 	"go/token"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -142,5 +144,43 @@ func TestReadsStdinNamesOnlyTheCommandsThatDo(t *testing.T) {
 		if ReadsStdin(argv) {
 			t.Errorf("%v does not consume stdin and would block waiting for it", argv)
 		}
+	}
+}
+
+// Naming a socket creates nothing.
+//
+// The refusal for an executing command names the exec socket's path
+// without any intention of opening it, and `procoder config` may print
+// these too. A path lookup that made a directory meant a test run created
+// ~/.procoder/run in the developer's real home — a side effect outside
+// anything the test was about, and a plausible source of interference
+// between a test and a daemon the same person happened to be running.
+//
+// proved by: pointing socketPath back at RunDir — this test finds the
+// directory it just asserted was absent.
+func TestNamingASocketCreatesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	for _, get := range []func() (string, error){WorkSocket, ExecSocket, StartLock} {
+		if _, err := get(); err != nil {
+			t.Fatalf("naming a path failed: %v", err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".procoder", "run")); !os.IsNotExist(err) {
+		t.Fatalf("naming a socket created the run directory (stat err: %v)", err)
+	}
+
+	// RunDir is the one that does create it, because two callers need it
+	// to exist.
+	if _, err := RunDir(); err != nil {
+		t.Fatalf("RunDir: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(home, ".procoder", "run"))
+	if err != nil {
+		t.Fatalf("RunDir did not create the directory: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Fatalf("run directory is %04o, want 0700", perm)
 	}
 }

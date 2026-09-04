@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -58,6 +59,12 @@ type Server struct {
 // being 0700, which is why RunDir insists on that mode rather than
 // assuming it.
 func (s *Server) Listen(path string) (net.Listener, error) {
+	// The directory has to exist and has to be 0700 before anything is
+	// bound in it: the socket's own mode is set after net.Listen, and the
+	// directory is what closes that window.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("procoder: could not create %s (%v)", filepath.Dir(path), err)
+	}
 	// A socket file with nobody behind it is what a daemon that died
 	// leaves. Connecting to it fails, so removing it is safe; removing a
 	// LIVE one would not be, which is why the caller dials first.
@@ -172,7 +179,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	// A poll is not a command: it reads a job's accumulated answer and
 	// must not queue behind the very command it is asking about.
 	if req.Job != "" {
-		_ = WriteResponse(conn, s.jobs.poll(req.Job))
+		_ = WriteResponse(conn, s.jobs.poll(req.Job, req.Since, req.SinceErr))
 		return
 	}
 
