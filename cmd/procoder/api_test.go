@@ -464,3 +464,77 @@ func TestExecutingCommandsRefusedWithoutTheExecSocket(t *testing.T) {
 		t.Errorf("the refusal does not name the setting that opens the door: %q", trimTo(errs.String(), 300))
 	}
 }
+
+// A commit gate that could not reach the daemon DENIES the commit.
+//
+// The host's vocabulary for "do not run this" is a JSON decision on
+// stdout, not an exit code: a non-zero exit reads as the hook erroring and
+// the command goes ahead. So a gate that failed with exit 1 would wave
+// every commit past itself while looking like it had failed loudly —
+// which is the silent green this tool exists to prevent, and worse than
+// having no gate, because the failure looks handled.
+//
+// proved by: returning 1 from the failure path for pre-tool-use instead of
+// denying — this test sees no decision, and a commit on a machine whose
+// daemon has died is committed unchecked.
+func TestGateDeniesWhenTheDaemonIsUnreachable(t *testing.T) {
+	dir := fixtureRepo(t)
+	cfg := filepath.Join(dir, ".procoder", "config.toml")
+	if err := os.WriteFile(cfg, []byte("[service]\nmode = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	payload := `{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"cwd":"` + dir + `"}`
+	var out, errs bytes.Buffer
+	s := session{
+		stdin: strings.NewReader(payload), stdout: &out, stderr: &errs,
+		cwd: dir, env: host.Env{},
+	}
+	code, handled := viaDaemon([]string{"hook", "pre-tool-use"}, s)
+	if !handled {
+		t.Fatal("the gate hook was not taken by the daemon path on a server machine")
+	}
+	if code != 0 {
+		t.Fatalf("exit %d — the host reads a non-zero exit as the hook erroring and lets the commit through", code)
+	}
+	if !strings.Contains(out.String(), `"permissionDecision":"deny"`) {
+		t.Fatalf("the gate did not deny the commit: %q", trimTo(out.String(), 300))
+	}
+	if !strings.Contains(out.String(), "NOT verified") {
+		t.Errorf("the denial does not say the commit was never checked: %q", trimTo(out.String(), 300))
+	}
+	if errs.Len() == 0 {
+		t.Error("nothing on stderr — a person looking for why has nowhere to look")
+	}
+}
+
+// The other three hooks have no deny to give, so they fail outright.
+func TestOtherHooksFailWhenTheDaemonIsUnreachable(t *testing.T) {
+	dir := fixtureRepo(t)
+	cfg := filepath.Join(dir, ".procoder", "config.toml")
+	if err := os.WriteFile(cfg, []byte("[service]\nmode = \"local\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	for _, argv := range [][]string{
+		{"hook", "post-tool-use"}, {"hook", "stop"}, {"principles", "--hook"},
+	} {
+		argv := argv
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			var out, errs bytes.Buffer
+			s := session{
+				stdin: strings.NewReader("{}"), stdout: &out, stderr: &errs,
+				cwd: dir, env: host.Env{},
+			}
+			code, handled := viaDaemon(argv, s)
+			if !handled || code == 0 {
+				t.Fatalf("want a failure, got exit %d handled=%v", code, handled)
+			}
+			if out.Len() != 0 {
+				t.Errorf("the hook produced output with no daemon: %q", trimTo(out.String(), 200))
+			}
+		})
+	}
+}

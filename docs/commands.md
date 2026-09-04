@@ -1273,8 +1273,13 @@ bytes and the same exit code either way.
 default — every command runs in-process, with no daemon, no socket and no
 setup, in CI and on a fresh clone. Where it is `local`, the daemon is the
 path and there is **no fallback**: a daemon that is not running is an
-error, not a command that quietly ran somewhere else. See
-[Configuration](configuration.md#service) for why.
+error, not a command that quietly ran somewhere else. Hooks fail the same
+way — with one difference that matters. The commit gate's hook **denies
+the commit** when it cannot reach the daemon, because the host's word for
+"do not run this" is a decision on stdout and not an exit code: a gate
+that merely errored would wave every commit past itself while looking like
+it had failed loudly. Nothing was checked, so nothing is passing. See
+[Configuration](configuration.md#service) for why there is no fallback.
 
 The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
 0700 directory. **The permission bits are the whole authentication** —

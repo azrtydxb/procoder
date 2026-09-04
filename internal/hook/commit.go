@@ -200,6 +200,17 @@ func commitDir(payloadCwd, dirHint string) string {
 	return base
 }
 
+// Deny writes the host's "do not run this" decision.
+//
+// Exported because the daemon client needs it: a commit gate that could
+// not run must stop the commit, and the only vocabulary the host has for
+// that is this JSON. A non-zero exit is not it — the host reads that as
+// the hook erroring and lets the command through, which is the gate
+// silently not running and the commit going ahead anyway.
+func Deny(stdout io.Writer, env host.Env, reason string) int {
+	return deny(stdout, env, reason)
+}
+
 func allow(stdout io.Writer, env host.Env, reason string) int {
 	return decide(stdout, env, "allow", reason)
 }

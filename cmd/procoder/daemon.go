@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"procoder/internal/api"
 	"procoder/internal/config"
 	"procoder/internal/copilot"
+	"procoder/internal/hook"
 	"procoder/internal/initcmd"
 )
 
@@ -78,6 +78,27 @@ func viaDaemon(args []string, s session) (code int, handled bool) {
 		payload = b
 	}
 
+	fail := func(err error) (int, bool) {
+		fmt.Fprintln(s.stderr, err.Error())
+		fmt.Fprintf(s.stderr,
+			"This machine runs commands from the daemon ([service] mode = \"local\").\n"+
+				"Start it with `procoder serve`, or set `mode = \"off\"` to run commands in this process.\n")
+		// The commit gate is the one caller whose failure has to be said
+		// in the host's own words. A non-zero exit reads to the host as
+		// the hook erroring, and it lets the commit through — so a gate
+		// that could not run would wave every commit past itself, which
+		// is the silent green this tool exists to prevent. Denying is how
+		// you say "this did not run, so it is not passing".
+		if isPreToolUse(args) {
+			hook.Deny(s.stdout, s.env,
+				"procoder gate: this machine runs the gate from the daemon and it could not be reached — "+
+					"nothing was checked, so this commit is NOT verified. Start it with `procoder serve`, "+
+					"or set [service] mode = \"off\" in .procoder/config.toml.")
+			return 0, true
+		}
+		return 1, true
+	}
+
 	res, err := api.Client{Path: path, Version: version}.Do(api.Request{
 		Argv:    args,
 		Cwd:     s.cwd,
@@ -86,13 +107,7 @@ func viaDaemon(args []string, s session) (code int, handled bool) {
 		Confirm: s.confirm,
 	})
 	if err != nil {
-		fmt.Fprintln(s.stderr, err.Error())
-		if errors.Is(err, api.ErrNoDaemon) {
-			fmt.Fprintf(s.stderr,
-				"This machine runs commands from the daemon ([service] mode = \"local\").\n"+
-					"Start it with `procoder serve`, or set `mode = \"off\"` to run commands in this process.\n")
-		}
-		return 1, true
+		return fail(err)
 	}
 	if res.Job != nil && res.Exit == nil {
 		return followJob(res.Job.ID, path, s)
@@ -190,4 +205,10 @@ func (s session) askServerMode() *string {
 	}
 	line = strings.TrimSpace(line)
 	return &line
+}
+
+// isPreToolUse spots the commit gate's hook, whose failure has to be a
+// deny rather than an error.
+func isPreToolUse(args []string) bool {
+	return len(args) > 1 && args[0] == "hook" && args[1] == "pre-tool-use"
 }

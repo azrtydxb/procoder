@@ -72,7 +72,10 @@ Where the mode is `local` the daemon is the path and there is no fallback:
 a daemon that is not running, is from another build, or goes away
 mid-request is an error naming the fix, never a command that quietly ran
 somewhere else. Two silent paths to one verdict would make "where did this
-come from" unanswerable from the outside.
+come from" unanswerable from the outside. Hooks fail the same way, except
+the commit gate's, which **denies** the commit it could not check — the
+host reads a non-zero exit as the hook erroring and lets the command
+through, so a gate that merely failed would wave every commit past itself.
 
 `TestParityAcrossEveryCommand` reads the command list out of the usage
 text and runs all 48 twice, comparing stdout, stderr and the exit code
