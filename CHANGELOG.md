@@ -57,7 +57,8 @@ _A repository that uses one agent is asked about one agent._
 
 **Fixed — a repository worked on with a single agent is no longer blocked
 for the eleven hosts it does not use.**
-([#279](https://github.com/azrtydxb/procoder/issues/279)) A root
+([#280](https://github.com/azrtydxb/procoder/pull/280),
+[#279](https://github.com/azrtydxb/procoder/issues/279)) A root
 `AGENTS.md` with no host copies beside it made the gate demand all twelve,
 blocking every commit, with no way to say "this repository uses one agent"
 short of deleting `AGENTS.md` — which switches off the drift check for the

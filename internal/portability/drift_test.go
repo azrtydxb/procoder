@@ -210,3 +210,43 @@ func TestDriftAndCheckAgreeOnMissingCopies(t *testing.T) {
 		t.Errorf("adopted: AgentsDrift reports %d missing copies, Check reports %d", d, c)
 	}
 }
+
+// A copy that exists and cannot be read still means the layer was
+// adopted.
+//
+// It is a file this repository chose to have, and it blocks on its own
+// account. Letting a stat error mean "not adopted" would suppress every
+// missing-copy finding on the strength of one unreadable file — the check
+// going quietest exactly where something is wrong.
+//
+// proved by: treating only `err == nil` as adopted again — the eleven
+// missing copies below go unreported.
+func TestAnUnreadableCopyStillCountsAsAdopted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 000 does not make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything, so this cannot be exercised")
+	}
+	root := t.TempDir()
+	master := "# Rules\n\nAlways do the thing.\n"
+	if err := os.WriteFile(filepath.Join(root, Master), []byte(master), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := Copies[0]
+	writeRules(t, root, c.Path, c.Frontmatter+master)
+	path := filepath.Join(root, c.Path)
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Skip("cannot make a file unreadable here: ", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+
+	if !adoptedLayer(root) {
+		t.Fatal("an unreadable copy was read as a repository that never adopted the layer")
+	}
+	got := AgentsDrift(root)
+	if len(got) != len(Copies) {
+		t.Fatalf("want the unreadable copy plus the %d missing ones, got %d: %+v",
+			len(Copies)-1, len(got), got)
+	}
+}

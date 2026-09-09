@@ -78,15 +78,9 @@ func AgentsDrift(root string) []gitx.Finding {
 	// Drifted and unreadable still block whatever the repository has
 	// adopted. A stale rule file is another agent being told something
 	// this repository stopped believing; a file that does not exist tells
-	// no agent anything. Missing and drifted are different failures and
-	// this is where that stopped being true.
-	adopted := false
-	for _, c := range Copies {
-		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil {
-			adopted = true
-			break
-		}
-	}
+	// no agent anything. Missing and drifted are different failures, and
+	// until now this function treated them as one.
+	adopted := adoptedLayer(root)
 
 	var out []gitx.Finding
 	for _, c := range Copies {
@@ -107,4 +101,23 @@ func AgentsDrift(root string) []gitx.Finding {
 		}
 	}
 	return out
+}
+
+// adoptedLayer reports whether any host copy is present.
+//
+// Present, not readable. A copy that exists and cannot be read — a
+// permission, a broken mount — is still a copy this repository chose to
+// have, and it already blocks on its own account; letting a stat error
+// mean "not adopted" would suppress every missing-copy finding on the
+// strength of one unreadable file.
+//
+// Check() applies the same rule through the same function, so the two
+// cannot drift apart again.
+func adoptedLayer(root string) bool {
+	for _, c := range Copies {
+		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil || !os.IsNotExist(err) {
+			return true
+		}
+	}
+	return false
 }
