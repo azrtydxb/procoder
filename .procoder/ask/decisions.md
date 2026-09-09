@@ -247,34 +247,6 @@ badges.
 - listing PR plus the pinned-SHA scanner action in procoder's CI: takes the
   full trust score, at the cost of a third-party action in the pipeline.
 
-## Issue #117 (procoder as a service): the perf case is inverted — what now?
-
-Measured, 3.4.0 binary, 25 runs after warmup: bare spawn floor 2.9ms;
-`procoder hook pre-tool-use` direct 9.2ms; `curl` to a local HTTP service —
-the proposal's own hook command — 11.1ms; via `launcher.sh` 25.8ms;
-`principles --hook` 194ms direct, 235ms via launcher.
-
-A hook command is spawned either way, so the service pays a spawn PLUS a TCP
-round trip and comes out slower than the binary it replaces. The proposal's
-"~10-50ms to ~2-5ms" is wrong at both ends.
-
-"Stateless" conflates process state with system state: `.procoder/` already
-persists adr, ask, backlog, plans, specs, state, todo, index, security, bench.
-The real gap is that nothing is user-global — no `~/.procoder`, no
-`UserConfigDir` anywhere in `internal/`. That is a question of where the store
-lives, not whether a daemon fronts it.
-
-Three items survive: cross-repo memory (small, no daemon), a shared code-index
-cache (a cache-location problem), and inter-repo coordination (the only one
-that genuinely wants a long-lived process, and the least specified).
-
-- close #117 and open one narrow issue for the user-global store: take the
-  gap that is real, drop the architecture that was proposed to reach it.
-- comment the measurements on #117 and rescope it in place to "cross-repo
-  state without a daemon", keeping the discussion in one thread.
-- comment the measurements and leave #117 open as written: the inter-repo
-  coordination case is unproven either way and may still want a service.
-
 ## How do the 34 command files reach pi?
 
 `package.json` declares `pi.skills: ["./commands"]`. Measured, that yields one

@@ -215,10 +215,28 @@ func Run(paths []string, root string, stdout io.Writer) int {
 	return RunWith(paths, root, "", stdout)
 }
 
+// Collector is handed every finding the gate reports, alongside the domain
+// that raised it, for a caller that wants the verdict as data rather than
+// as the lines a person reads.
+//
+// Optional, and nil for every CLI caller: the gate's answer is its printed
+// output and its exit code, and neither moves because somebody is also
+// collecting. A collector that changed the verdict would be a second gate.
+type Collector func(domain string, findings []gitx.Finding)
+
 // RunWith is Run plus the commit message being prepared, so the
 // documentation acknowledgment can clear its obligation at the moment of
 // the commit. Everything else is identical.
 func RunWith(paths []string, root string, commitMessage string, stdout io.Writer) (exit int) {
+	return RunCollecting(paths, root, commitMessage, stdout, nil)
+}
+
+// RunCollecting is RunWith plus a Collector. Everything else is identical,
+// and the collector cannot change what the gate decides.
+func RunCollecting(paths []string, root string, commitMessage string, stdout io.Writer, collect Collector) (exit int) {
+	if collect == nil {
+		collect = func(string, []gitx.Finding) {}
+	}
 	if len(paths) == 0 {
 		var err error
 		paths, err = changedFiles(root)
@@ -300,6 +318,7 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 		}
 	}
 
+	var formatting []gitx.Finding
 	for _, r := range unformatted {
 		// "for the result" invited the wrong thing. It reads as "this
 		// prints a report you extract the content from", and the obvious
@@ -307,18 +326,25 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 		// file's first line, because the banner is on stderr and stdout
 		// is already nothing but the file's bytes (#278). Say what stdout
 		// IS, and name a redirect that cannot land on the input.
+		//
 		// Both paths are quoted. An unquoted redirect target breaks on a
 		// path with a space: the redirection lands on the first word and
 		// the rest become extra arguments to procoder format — which is
 		// the shape of footgun this hint exists to close.
 		fmt.Fprintf(stdout, "unformatted  %s  (`procoder format %q` writes the formatted bytes to stdout — no header; capture with `> %q`, never over the file itself)\n",
 			r.File, r.File, r.File+".formatted")
+		formatting = append(formatting, gitx.Finding{File: r.File, Message: "is not formatted", Blocking: true})
 	}
 	for _, r := range unchecked {
 		fmt.Fprintf(stdout, "UNCHECKED    %s — %s\n", r.File, r.Reason)
+		// Unchecked blocks exactly as unformatted does: a file the gate
+		// could not look at is not a passing file.
+		formatting = append(formatting, gitx.Finding{File: r.File, Message: "could not be checked — " + r.Reason, Blocking: true})
 	}
+	collect("format", formatting)
 
 	hygiene := <-hygieneDone
+	collect("hygiene", hygiene)
 
 	fmt.Fprintf(stdout, "gate scope: %s (%s)\n", scope, why)
 	if scope == Universal {

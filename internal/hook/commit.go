@@ -46,15 +46,15 @@ type decisionOutput struct {
 //
 // The exit code is always 0: the decision lives in the payload, and a hook that
 // failed the host would break the session rather than gate it.
-func PreToolUse(stdin io.Reader, stdout io.Writer) int {
+func PreToolUse(stdin io.Reader, stdout io.Writer, env host.Env) int {
 	raw, ok := readAll(stdin)
 	if !ok {
 		// could not even read the payload — cannot judge, must not wedge
-		return allow(stdout, "procoder gate: could not read the hook payload, so the gate did not judge this command — run `procoder check` before you commit.")
+		return allow(stdout, env, "procoder gate: could not read the hook payload, so the gate did not judge this command — run `procoder check` before you commit.")
 	}
 	var p preToolPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return allow(stdout, "procoder gate: the hook payload could not be parsed, so the gate did not judge this command — run `procoder check` before you commit.")
+		return allow(stdout, env, "procoder gate: the hook payload could not be parsed, so the gate did not judge this command — run `procoder check` before you commit.")
 	}
 	if p.ToolName != "Bash" || p.ToolInput.Command == "" {
 		return 0
@@ -70,7 +70,7 @@ func PreToolUse(stdin io.Reader, stdout io.Writer) int {
 		return 0 // the repository turned the interception off; nothing to say
 	}
 	if c.noVerify {
-		return allow(stdout, "procoder gate: --no-verify — the commit gate was bypassed deliberately. Nothing was checked; this commit is unverified.")
+		return allow(stdout, env, "procoder gate: --no-verify — the commit gate was bypassed deliberately. Nothing was checked; this commit is unverified.")
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
 		return 0 // no repository to gate; git will have its own opinion
@@ -94,9 +94,9 @@ func PreToolUse(stdin io.Reader, stdout io.Writer) int {
 		// report the commit proceeds anyway, so say it there too.
 		reason := fmt.Sprintf("procoder gate: the gate did not finish within %s, so this commit was NOT checked — run `procoder check` directly.", gateDeadline)
 		if cfg.CommitGate == "report" {
-			return allow(stdout, reason)
+			return allow(stdout, env, reason)
 		}
-		return deny(stdout, reason)
+		return deny(stdout, env, reason)
 	case code == 0:
 		return 0 // clean — the commit goes through untouched
 	}
@@ -109,9 +109,9 @@ func PreToolUse(stdin io.Reader, stdout io.Writer) int {
 		reason = "procoder gate: the gate could not judge this commit — run `procoder check` directly and read its output.\n" + strings.TrimSpace(findings)
 	}
 	if cfg.CommitGate == "report" {
-		return allow(stdout, reason+"\n\n(commit_gate = \"report\": the commit proceeds.)")
+		return allow(stdout, env, reason+"\n\n(commit_gate = \"report\": the commit proceeds.)")
 	}
-	return deny(stdout, reason)
+	return deny(stdout, env, reason)
 }
 
 // runGate runs the gate over the repository's changed files with its own
@@ -200,16 +200,32 @@ func commitDir(payloadCwd, dirHint string) string {
 	return base
 }
 
-func allow(stdout io.Writer, reason string) int { return decide(stdout, "allow", reason) }
-func deny(stdout io.Writer, reason string) int  { return decide(stdout, "deny", reason) }
+// Deny writes the host's "do not run this" decision.
+//
+// Exported because the daemon client needs it: a commit gate that could
+// not run must stop the commit, and the only vocabulary the host has for
+// that is this JSON. A non-zero exit is not it — the host reads that as
+// the hook erroring and lets the command through, which is the gate
+// silently not running and the commit going ahead anyway.
+func Deny(stdout io.Writer, env host.Env, reason string) int {
+	return deny(stdout, env, reason)
+}
+
+func allow(stdout io.Writer, env host.Env, reason string) int {
+	return decide(stdout, env, "allow", reason)
+}
+
+func deny(stdout io.Writer, env host.Env, reason string) int {
+	return decide(stdout, env, "deny", reason)
+}
 
 // decide writes the verdict in the shape the running host reads. Claude Code
 // and the hookSpecificOutput hosts share the envelope; Copilot takes the flat
 // object, exactly as principles' SessionStart hook already splits them.
-func decide(stdout io.Writer, verdict, reason string) int {
+func decide(stdout io.Writer, env host.Env, verdict, reason string) int {
 	var enc []byte
 	var err error
-	if host.Detect() == host.Copilot {
+	if host.DetectIn(env) == host.Copilot {
 		enc, err = json.Marshal(map[string]string{
 			"permissionDecision":       verdict,
 			"permissionDecisionReason": reason,

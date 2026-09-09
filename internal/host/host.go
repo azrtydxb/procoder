@@ -31,23 +31,61 @@ const (
 	Pi Host = "pi"
 )
 
-// Detect sniffs the environment. Unknown environments answer Claude —
-// raw-stdout context is the least surprising default.
-func Detect() Host {
-	if os.Getenv("COPILOT_PLUGIN_DATA") != "" || isVSCodeCopilotRoot(os.Getenv("CLAUDE_PLUGIN_ROOT")) {
+// Env is the environment a command was called with. A map rather than the
+// process's own, because one daemon serves several sessions: what the
+// caller sent is what the command sees, and its own environment is
+// whichever session happened to start it.
+type Env map[string]string
+
+// Read is os.Getenv over a request's environment, and the zero Env answers
+// empty for every key rather than panicking.
+func (e Env) Read(key string) string { return e[key] }
+
+// envKeys is every variable procoder reads. A request carries these and a
+// caller that sends more is not an error — the set will grow.
+var envKeys = []string{
+	"COPILOT_PLUGIN_DATA",
+	"PLUGIN_DATA",
+	"QODER_SESSION_ID",
+	"PI_CODING_AGENT",
+	"CLAUDE_PLUGIN_ROOT",
+	"VIRTUAL_ENV",
+	"PROCODER_PUPPETEER_CONFIG",
+	"PATH",
+}
+
+// ProcessEnv is this process's answer to envKeys — what the CLI sends when
+// it is its own caller.
+func ProcessEnv() Env {
+	e := make(Env, len(envKeys))
+	for _, k := range envKeys {
+		if v := os.Getenv(k); v != "" {
+			e[k] = v
+		}
+	}
+	return e
+}
+
+// Detect sniffs this process's environment. Unknown environments answer
+// Claude — raw-stdout context is the least surprising default.
+func Detect() Host { return DetectIn(ProcessEnv()) }
+
+// DetectIn sniffs the environment it is given and nothing else.
+func DetectIn(env Env) Host {
+	if env.Read("COPILOT_PLUGIN_DATA") != "" || isVSCodeCopilotRoot(env.Read("CLAUDE_PLUGIN_ROOT")) {
 		return Copilot
 	}
-	if os.Getenv("PLUGIN_DATA") != "" {
+	if env.Read("PLUGIN_DATA") != "" {
 		return Codex
 	}
-	if os.Getenv("QODER_SESSION_ID") != "" {
+	if env.Read("QODER_SESSION_ID") != "" {
 		return Qoder
 	}
 	// Last among the known hosts. pi exports PI_CODING_AGENT into its own
 	// process, and therefore into every launcher its adapter spawns; a host
 	// that sets both its own variable and pi's is being run inside pi, and the
 	// outer host is the one whose envelope matters.
-	if os.Getenv("PI_CODING_AGENT") != "" {
+	if env.Read("PI_CODING_AGENT") != "" {
 		return Pi
 	}
 	return Claude

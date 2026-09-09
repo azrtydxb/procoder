@@ -134,6 +134,17 @@ type Config struct {
 	// knows its own name must be able to say so rather than live with a
 	// path.
 	ServiceRepo string
+	// ServiceMode is "off" or "local". Off by default, so no repository
+	// changes behaviour because it upgraded: a daemon is something a
+	// machine opts into, never something a release turns on.
+	ServiceMode string
+	// ServiceExec opens the second socket, the one serving the four
+	// commands that run what a repository declared. Its own key rather
+	// than a mode value, because it is a different decision: running the
+	// daemon says "be faster", and this says "and let a caller run
+	// things". A tracked file is where that belongs, so turning it on is
+	// a diff in a commit rather than a silent state change.
+	ServiceExec bool
 
 	// Problems are settings the file names that could not be used. They
 	// block: a config that silently falls back lets a team believe a
@@ -173,7 +184,10 @@ func Load(root string) Config {
 		"security.sast_blocks_at": defaultSastBlocksAt,
 		"learn.record":            "false",
 		"learn.min_samples":       strconv.Itoa(defaultLearnMinSamples),
+		"service.mode":            "off",
+		"service.exec":            "false",
 	}
+	cfg.ServiceMode = "off"
 	raw, err := store.LoadDoc(root, ".procoder/config.toml")
 	if err != nil {
 		cfg.Settings = defaultSettings(defaults)
@@ -272,6 +286,14 @@ func Load(root string) Config {
 			}
 		case "service.repo":
 			cfg.ServiceRepo = value
+		case "service.mode":
+			// Only the two documented values mean anything. A typo must
+			// not leave the machine in a state nobody chose.
+			if value == "off" || value == "local" {
+				cfg.ServiceMode = value
+			}
+		case "service.exec":
+			cfg.ServiceExec = value == "true"
 		case "ask.policy":
 			cfg.AskBlock = value == "block"
 		case "version.check":

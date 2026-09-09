@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"procoder/internal/docs"
 	"procoder/internal/gitx"
+	"procoder/internal/host"
 )
 
 // The usage text and the docs-coverage command list are pinned to each
@@ -44,7 +47,7 @@ func TestUsageAndCoverageListAgree(t *testing.T) {
 func TestPrintFindingsRendersLocationMarkAndCount(t *testing.T) {
 	root := "/repo"
 	var lines []string
-	code := printFindings(root, "demo", []gitx.Finding{
+	code := session{}.printFindings(root, "demo", []gitx.Finding{
 		{File: "/repo/a.go", Line: 12, Message: "a thing"},
 		{File: "/repo/b.go", Message: "a whole-file thing", Blocking: true},
 		{Message: "no file at all"},
@@ -73,7 +76,7 @@ func TestPrintFindingsRendersLocationMarkAndCount(t *testing.T) {
 // fail the caller's build over findings that are explicitly judgment.
 func TestPrintFindingsWithoutBlockingExitsZero(t *testing.T) {
 	var lines []string
-	code := printFindings("/repo", "demo", []gitx.Finding{{File: "/repo/a.go", Message: "just so you know"}},
+	code := session{}.printFindings("/repo", "demo", []gitx.Finding{{File: "/repo/a.go", Message: "just so you know"}},
 		func(s string) { lines = append(lines, s) })
 	if code != 0 {
 		t.Fatalf("information is not failure, got exit %d\n%s", code, strings.Join(lines, "\n"))
@@ -86,7 +89,7 @@ func TestPrintFindingsWithoutBlockingExitsZero(t *testing.T) {
 // as a long climb out of the repository.
 func TestPrintFindingsLeavesOutsidePathsAlone(t *testing.T) {
 	var lines []string
-	printFindings("/repo", "demo", []gitx.Finding{{File: "/elsewhere/x.go", Line: 3, Message: "m"}},
+	session{}.printFindings("/repo", "demo", []gitx.Finding{{File: "/elsewhere/x.go", Line: 3, Message: "m"}},
 		func(s string) { lines = append(lines, s) })
 	// exact, not Contains: "../elsewhere/x.go:3" contains the absolute form
 	// as a substring, so a Contains assertion here proves nothing
@@ -130,7 +133,7 @@ func TestCopilotLeakAcceptsEveryFlagTheUsageTextPromises(t *testing.T) {
 		if flag == "--since" {
 			args = append(args, "1h")
 		}
-		if out := capture(t, func() { copilotLeakCmd(args) }); strings.Contains(out, "unknown argument") {
+		if out := capture(t, func() { processSession().copilotLeakCmd(args) }); strings.Contains(out, "unknown argument") {
 			t.Errorf("usage promises %s but the parser refuses it: %s", flag, strings.TrimSpace(out))
 		}
 	}
@@ -160,4 +163,76 @@ func capture(t *testing.T, f func()) string {
 	out := <-done
 	_ = r.Close()
 	return out
+}
+
+// run writes to the session it was given, and reads its repository from
+// the session's working directory — never from the process.
+//
+// One daemon serves several sessions in several checkouts. A run that
+// reached for os.Getwd or os.Stdout would answer for whichever session
+// started the daemon, and would answer every later one wrongly.
+//
+// proved by: pointing session.root back at doctor.Root — the command then
+// reports the repository this test runs in rather than the temp one.
+func TestRunUsesTheSessionNotTheProcess(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatalf("could not make the fixture repository: %v", err)
+	}
+
+	// os.Stdout is swapped for a pipe so a write to it is observable
+	// rather than merely invisible in the test output.
+	real := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("could not open a pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = real }()
+
+	var out, errs bytes.Buffer
+	s := session{stdin: strings.NewReader(""), stdout: &out, stderr: &errs, cwd: dir, env: host.Env{}}
+	if code := run([]string{"config"}, s); code != 0 {
+		t.Fatalf("config exited %d: %s", code, errs.String())
+	}
+	if out.Len() == 0 {
+		t.Fatal("config wrote nothing to the session's stdout")
+	}
+
+	w.Close()
+	os.Stdout = real
+	leaked, _ := io.ReadAll(r)
+	if len(leaked) != 0 {
+		t.Fatalf("run wrote to the process stdout: %q", leaked)
+	}
+}
+
+// Every command runs with no collector, because that is what the CLI is.
+//
+// The collector is nil at a terminal and non-nil over the socket, and a
+// command must not have to know which caller it has. The first version of
+// the setters guarded the nil inside set() and assigned outside it: it
+// compiled, passed every test that went through apiRunner, and segfaulted
+// on `procoder version` at a terminal.
+//
+// proved by: assigning to a collector field outside the nil guard in
+// collect.go — this test panics on the command that does it.
+func TestCommandsSurviveANilCollector(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, argv := range [][]string{
+		{"version"}, {"config"}, {"todo", "list"}, {"principles"}, {"status"},
+	} {
+		argv := argv
+		t.Run(argv[0], func(t *testing.T) {
+			s := session{
+				stdin: strings.NewReader(""), stdout: io.Discard, stderr: io.Discard,
+				cwd: dir, env: host.Env{}, col: nil,
+			}
+			// A panic here is the failure; the exit code is not the point.
+			run(argv, s)
+		})
+	}
 }

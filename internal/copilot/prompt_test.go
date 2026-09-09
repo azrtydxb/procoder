@@ -35,3 +35,31 @@ func TestDevNullIsNotATerminal(t *testing.T) {
 		t.Error("no file, no terminal")
 	}
 }
+
+// An answer the caller already has counts as somebody being there, and a
+// terminal is not the only way to be there.
+//
+// Over a socket there is no character device and never will be, so the
+// terminal test is the right answer to the wrong question: what matters is
+// whether there is an answer, not whether there is a tty.
+//
+// proved by: having CanAskWith ignore supplied — every asking command then
+// takes the non-interactive path for a caller who had an answer, silently.
+func TestSuppliedAnswerCountsAsAsking(t *testing.T) {
+	yes, no := "yes", "no"
+	if !CanAskWith(nil, &yes) {
+		t.Error("a supplied yes is not being counted as an answer")
+	}
+	if !CanAskWith(nil, &no) {
+		t.Error("a supplied no is a person declining, which is still an answer")
+	}
+	if CanAskWith(nil, nil) {
+		t.Error("no terminal and no supplied answer is nobody there")
+	}
+	if !ReadYesFrom(nil, &yes) || ReadYesFrom(nil, &no) {
+		t.Error("the supplied answer is not read through the one definition of consent")
+	}
+	if ReadYesFrom(nil, nil) {
+		t.Error("no answer is not a yes")
+	}
+}

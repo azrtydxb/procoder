@@ -306,7 +306,7 @@ const receiptNotice = "RECEIPT CHECK — read this first. This message ends with
 // RunHook prints the principles in the shape the running host's
 // SessionStart hook expects: Claude Code reads raw stdout; Codex, Copilot,
 // and Qoder each want a JSON envelope. One hooks file serves them all.
-func RunHook(root string, stdin io.Reader, out func(string)) int {
+func RunHook(root string, env host.Env, stdin io.Reader, out func(string)) int {
 	// The version check runs alongside the payload, never in front of it:
 	// the hook's stdout is parsed as JSON by three of the four hosts, so the
 	// warning goes to stderr (R-07), and a slow or absent GitHub cannot hold
@@ -326,7 +326,7 @@ func RunHook(root string, stdin io.Reader, out func(string)) int {
 	if host.Resumed(host.SessionSource(stdin)) {
 		text = resumeReminder
 	}
-	switch h := host.Detect(); h {
+	switch h := host.DetectIn(env); h {
 	case host.Claude:
 		out(strings.TrimRight(text, "\n"))
 	case host.Copilot:

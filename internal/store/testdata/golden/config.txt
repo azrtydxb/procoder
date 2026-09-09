@@ -6,6 +6,8 @@ git.max_file_mb             5            default
 learn.min_samples           20           default
 learn.record                false        default
 security.sast_blocks_at     ERROR        default
+service.exec                false        default
+service.mode                off          default
 sprint.retro                on           default
 version.check               warn         default
 

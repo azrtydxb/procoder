@@ -13,7 +13,23 @@ import (
 // exported because the caller must say WHICH silence it hit — a command that
 // exits non-zero with no output at all reads as a crash — and duplicating the
 // character-device test there would let the two drift apart.
-func CanAsk(in *os.File) bool {
+func CanAsk(in *os.File) bool { return CanAskWith(in, nil) }
+
+// CanAskWith is CanAsk plus an answer the caller already has.
+//
+// A request over the socket carries no terminal and never will, so the
+// character-device test below is the right answer to the wrong question
+// there: what a caller needs to say is not "is there a terminal" but "is
+// there an answer". A supplied answer is one, whatever it says — a
+// supplied "no" is a person declining, which is a different thing from
+// nobody being there, and both are different from a terminal.
+//
+// nil supplied means no person, which is exactly the non-interactive path
+// a command takes today when nothing is attached to its stdin.
+func CanAskWith(in *os.File, supplied *string) bool {
+	if supplied != nil {
+		return true
+	}
 	if in == nil {
 		return false
 	}
@@ -48,6 +64,17 @@ func CanAsk(in *os.File) bool {
 // out receives the prompt text so the caller decides where it lands; the
 // answer is always read from in.
 func Prompt(in *os.File, out func(string), count int, since time.Duration) bool {
+	return PromptWith(in, nil, out, count, since)
+}
+
+// PromptWith is Prompt with an answer the caller already has. A supplied
+// answer is used verbatim and nothing is printed: the question was already
+// put, wherever the answer came from, and asking it again into a socket
+// would be writing a prompt nobody will read.
+func PromptWith(in *os.File, supplied *string, out func(string), count int, since time.Duration) bool {
+	if supplied != nil {
+		return isYes(*supplied)
+	}
 	if !CanAsk(in) {
 		return false // no terminal, no consent — and no question asked
 	}
@@ -65,7 +92,17 @@ func Prompt(in *os.File, out func(string), count int, since time.Duration) bool 
 // exported for the other places that must ask before acting — the upgrade
 // among them — so the definition of a yes lives in one place: anything but a
 // bare y or yes is a no.
-func ReadYes(in *os.File) bool {
+func ReadYes(in *os.File) bool { return ReadYesFrom(in, nil) }
+
+// ReadYesFrom is ReadYes with an answer the caller already has. The
+// definition of a yes stays in one place either way.
+func ReadYesFrom(in *os.File, supplied *string) bool {
+	if supplied != nil {
+		return isYes(*supplied)
+	}
+	if in == nil {
+		return false
+	}
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	return isYes(line)
 }

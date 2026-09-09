@@ -467,3 +467,48 @@ func TestServiceRepoKey(t *testing.T) {
 		t.Fatalf("[service] repo was reported as a problem: %v", cfg.Problems)
 	}
 }
+
+// The daemon is off until a machine says otherwise. No repository changes
+// behaviour because it upgraded.
+//
+// proved by: defaulting ServiceMode to "local" — every repository that
+// ever installs a newer procoder starts talking to a daemon it never
+// asked for.
+func TestServiceModeDefaultsOff(t *testing.T) {
+	dir := t.TempDir()
+	if cfg := Load(dir); cfg.ServiceMode != "off" || cfg.ServiceExec {
+		t.Fatalf("a repository with no config: mode %q exec %v, want off/false", cfg.ServiceMode, cfg.ServiceExec)
+	}
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[service]\nmode = \"local\"\nexec = true\n"
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(root)
+	if cfg.ServiceMode != "local" {
+		t.Errorf("mode reads %q, want local", cfg.ServiceMode)
+	}
+	if !cfg.ServiceExec {
+		t.Error("exec = true did not read back")
+	}
+}
+
+// A value nobody documented leaves the machine where it was, rather than
+// in a state its writer did not choose.
+func TestServiceModeIgnoresATypo(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"),
+		[]byte("[service]\nmode = \"locl\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg := Load(root); cfg.ServiceMode != "off" {
+		t.Fatalf("a typo left mode at %q, want off", cfg.ServiceMode)
+	}
+}

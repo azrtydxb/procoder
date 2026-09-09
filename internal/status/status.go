@@ -44,7 +44,41 @@ const Header = "== state of play"
 // Report returns the state-of-play lines, in reading order: git first
 // (branch, head, dirty), then the project layer (sprint, stories, tasks),
 // then the ledgers (lessons, index).
-func Report(root string) []string { return report(root, Budget) }
+// Data is what the report found, as values.
+//
+// Filled by the same pass that renders the lines, never by parsing them
+// back: a second computation is a second thing to keep in step, and one
+// that reads its own output is wrong the first time either side is
+// reworded.
+//
+// Every field has an empty value that means "not known", because every one
+// of them can genuinely fail to be known — a git that did not answer, a
+// repository with no sprint. Nothing here invents a value to avoid being
+// empty.
+type Data struct {
+	// Branch is the current branch, empty for a detached HEAD or a git
+	// that did not answer.
+	Branch string
+	// Default is the branch Branch is measured against, empty when there
+	// is no origin/HEAD and neither main nor master.
+	Default string
+	// Dirty counts modified, added, renamed and untracked files; -1 when
+	// git did not answer, which is not the same as a clean tree.
+	Dirty int
+}
+
+// Report is the state of play as the lines a person reads.
+func Report(root string) []string {
+	lines, _ := reportData(root, Budget)
+	return lines
+}
+
+// ReportData is Report plus the values behind it, for a caller that wants
+// the state as data.
+func ReportData(root string) (Data, []string) {
+	lines, data := reportData(root, Budget)
+	return data, lines
+}
 
 // report is Report with the wall named, so a test can assert what a
 // repository says without also asserting how fast the machine is. The
@@ -54,17 +88,23 @@ func Report(root string) []string { return report(root, Budget) }
 // assert git's speed on a loaded CI runner as well, which is not what any
 // of them was written to check.
 func report(root string, budget time.Duration) []string {
+	lines, _ := reportData(root, budget)
+	return lines
+}
+
+func reportData(root string, budget time.Duration) ([]string, Data) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget-reserve)
 	defer cancel()
 
 	type gitResult struct {
 		lines []string
 		head  string
+		data  Data
 	}
 	ch := make(chan gitResult, 1)
 	go func() {
-		lines, head := gitLines(ctx, root)
-		ch <- gitResult{lines, head}
+		lines, head, data := gitLines(ctx, root)
+		ch <- gitResult{lines, head, data}
 	}()
 
 	// the file-backed lines are computed while git runs: they read small
@@ -82,11 +122,15 @@ func report(root string, budget time.Duration) []string {
 	}
 
 	var lines []string
+	// Dirty is -1 until git answers: a report that timed out has not seen
+	// a clean tree, and zero would say it had.
+	data := Data{Dirty: -1}
 	head, timedOut := "", false
 	select {
 	case r := <-ch:
 		lines = append(lines, r.lines...)
 		head = r.head
+		data = r.data
 	case <-ctx.Done():
 		timedOut = true
 	}
@@ -95,7 +139,7 @@ func report(root string, budget time.Duration) []string {
 	if timedOut {
 		lines = append(lines, "some state omitted for speed")
 	}
-	return lines
+	return lines, data
 }
 
 // Run prints the report. Exit 0 always — a report cannot fail; the lines say
@@ -121,7 +165,7 @@ func git(ctx context.Context, root string, args ...string) (string, error) {
 // gitLines computes the branch, head, and dirty-count lines plus the short
 // HEAD the index line needs. Without a repository (or without git) all three
 // report unknown with the reason git itself gave.
-func gitLines(ctx context.Context, root string) ([]string, string) {
+func gitLines(ctx context.Context, root string) ([]string, string, Data) {
 	gitDir, err := git(ctx, root, "rev-parse", "--git-dir")
 	if err != nil {
 		reason := gitReason(err)
@@ -129,12 +173,16 @@ func gitLines(ctx context.Context, root string) ([]string, string) {
 			"branch: unknown — " + reason,
 			"head: unknown — " + reason,
 			"dirty files: unknown — " + reason,
-		}, ""
+		}, "", Data{Dirty: -1}
 	}
 	if !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(root, gitDir)
 	}
-	return []string{branchLine(ctx, root, gitDir), headLine(ctx, root), dirtyLine(ctx, root)}, shortHead(ctx, root)
+	branch, current, def := branchLine(ctx, root, gitDir)
+	dirty, n := dirtyLine(ctx, root)
+	return []string{branch, headLine(ctx, root), dirty},
+		shortHead(ctx, root),
+		Data{Branch: current, Default: def, Dirty: n}
 }
 
 // branchLine names where the work is happening and how it stands against the
@@ -146,35 +194,35 @@ func gitLines(ctx context.Context, root string) ([]string, string) {
 // context, so a hung or slow git made this one line in the report run past
 // the wall the rest of it honours, with no note explaining why — the
 // deadline expired and the call was simply still running.
-func branchLine(ctx context.Context, root, gitDir string) string {
+func branchLine(ctx context.Context, root, gitDir string) (line, current, def string) {
 	current, err := currentBranch(ctx, root)
 	if err != nil {
-		return "branch: unknown — " + gitReason(err)
+		return "branch: unknown — " + gitReason(err), "", ""
 	}
 	state := rebaseState(gitDir)
 	if current == "" {
 		at := shortHead(ctx, root)
 		if at == "" {
-			return "branch: detached HEAD" + state + " — no commits yet"
+			return "branch: detached HEAD" + state + " — no commits yet", "", ""
 		}
-		return "branch: detached HEAD at " + at + state
+		return "branch: detached HEAD at " + at + state, "", ""
 	}
-	def, err := defaultBranch(ctx, root)
+	def, err = defaultBranch(ctx, root)
 	if err != nil {
-		return "branch: " + current + state + " — default branch unknown — " + gitReason(err)
+		return "branch: " + current + state + " — default branch unknown — " + gitReason(err), current, ""
 	}
 	if def == "" {
-		return "branch: " + current + state + " — default branch unknown (no origin/HEAD, no main or master)"
+		return "branch: " + current + state + " — default branch unknown (no origin/HEAD, no main or master)", current, ""
 	}
 	if def == current {
-		return "branch: " + current + state + " — this is the default branch"
+		return "branch: " + current + state + " — this is the default branch", current, def
 	}
 	counts, cerr := git(ctx, root, "rev-list", "--left-right", "--count", def+"...HEAD")
 	fields := strings.Fields(counts)
 	if cerr != nil || len(fields) != 2 {
-		return "branch: " + current + state + " — distance from " + def + " unknown (" + gitReason(cerr) + ")"
+		return "branch: " + current + state + " — distance from " + def + " unknown (" + gitReason(cerr) + ")", current, def
 	}
-	return fmt.Sprintf("branch: %s%s — %s ahead, %s behind %s", current, state, fields[1], fields[0], def)
+	return fmt.Sprintf("branch: %s%s — %s ahead, %s behind %s", current, state, fields[1], fields[0], def), current, def
 }
 
 // currentBranch is gitx.CurrentBranch under the report's deadline: the same
@@ -250,21 +298,22 @@ func shortHead(ctx context.Context, root string) string {
 
 // dirtyLine counts what a commit would have to deal with, from git's own
 // porcelain output — deletions included, because a deleted file is a change.
-func dirtyLine(ctx context.Context, root string) string {
+func dirtyLine(ctx context.Context, root string) (line string, count int) {
 	out, err := git(ctx, root, "status", "--porcelain")
 	if err != nil {
-		return "dirty files: unknown — " + gitReason(err)
+		// -1, not 0: a count nobody could take is not a clean tree.
+		return "dirty files: unknown — " + gitReason(err), -1
 	}
 	n := 0
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) != "" {
+	for _, l := range strings.Split(out, "\n") {
+		if strings.TrimSpace(l) != "" {
 			n++
 		}
 	}
 	if n == 0 {
-		return "dirty files: none (clean tree)"
+		return "dirty files: none (clean tree)", 0
 	}
-	return fmt.Sprintf("dirty files: %d", n)
+	return fmt.Sprintf("dirty files: %d", n), n
 }
 
 // gitReason turns a failed git call into the one line the unknown value

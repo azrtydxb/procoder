@@ -80,6 +80,15 @@ func goFiles(t *testing.T) []string {
 			if strings.Contains(filepath.ToSlash(p), "/internal/store/") {
 				return nil
 			}
+			// internal/api/paths.go owns ~/.procoder/run — the user's
+			// home, not any repository. This guard is about repository
+			// state, and internal/store cannot own the run directory
+			// because every one of its operations is scoped to a repo
+			// root. A daemon serving ten checkouts has one run directory
+			// and no root to file it under.
+			if strings.HasSuffix(filepath.ToSlash(p), "/internal/api/paths.go") {
+				return nil
+			}
 			out = append(out, p)
 			return nil
 		})

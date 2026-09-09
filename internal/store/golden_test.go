@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/host"
 	"strings"
 	"testing"
 
@@ -124,7 +125,7 @@ var captures = map[string]func(root string) string{
 	"principles-hook": func(root string) string {
 		return underClaudeHost(func() string {
 			var b strings.Builder
-			principles.RunHook(root, strings.NewReader("{}"), func(s string) { b.WriteString(s + "\n") })
+			principles.RunHook(root, host.ProcessEnv(), strings.NewReader("{}"), func(s string) { b.WriteString(s + "\n") })
 			return b.String()
 		})
 	},

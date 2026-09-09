@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/host"
 	"strings"
 	"testing"
 )
@@ -192,7 +193,7 @@ func commitPayload(t *testing.T, root, command string) *bytes.Buffer {
 func decisionOf(t *testing.T, stdin *bytes.Buffer) (verdict, reason string) {
 	t.Helper()
 	var out bytes.Buffer
-	if code := PreToolUse(stdin, &out); code != 0 {
+	if code := PreToolUse(stdin, &out, host.ProcessEnv()); code != 0 {
 		t.Fatalf("PreToolUse exit %d — the decision lives in the payload, never the exit code", code)
 	}
 	if strings.TrimSpace(out.String()) == "" {

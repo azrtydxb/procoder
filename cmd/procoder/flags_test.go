@@ -142,7 +142,7 @@ func TestTheDispatchItselfRefusesTheFlag(t *testing.T) {
 	os.Stderr = devnull
 	defer func() { os.Stderr = stderr; devnull.Close() }()
 
-	if code := run([]string{"config", "--get"}); code != 2 {
+	if code := run([]string{"config", "--get"}, processSession()); code != 2 {
 		t.Errorf("run(config --get) = %d, want 2 (a flag config does not implement is a usage error)", code)
 	}
 }

@@ -127,7 +127,7 @@ func TestEveryShippedCommandIsDiscoverable(t *testing.T) {
 
 	// the top-level switch only: from run()'s switch to the next
 	// function, so the subcommand dispatchers below are not counted
-	start := strings.Index(src, "func run(args []string) int {")
+	start := strings.Index(src, "func run(args []string, s session) int {")
 	if start < 0 {
 		t.Fatal("run() not found in main.go")
 	}
