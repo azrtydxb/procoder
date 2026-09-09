@@ -51,6 +51,23 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## Unreleased
+
+_The write-back that the gate invites is the one that is safe._
+
+**Fixed — the gate's own hint no longer invites a one-liner that deletes
+the file's first line.**
+([#278](https://github.com/azrtydxb/procoder/issues/278)) `procoder format
+<file>` has printed the file's bytes on stdout and its verdict on stderr
+since 3.5.0, which made `> file.formatted` safe. It also made
+`procoder format f | tail -n +2` — stripping "the header" — delete the
+file's first REAL line, quietly, with exit 0. On a terminal the verdict
+and the content interleave and look like one stream, so the header appears
+to be there; in a pipe it never was. The hint now says what stdout is,
+names a capture path, and says not to redirect over the input. The command
+also refuses to print an empty payload for a non-empty file, as a backstop
+against the failure this command has actually had twice.
+
 ## 3.5.0 — 2026-09-01
 
 _Every host now holds the same turn end, and the record-keeping outlives the reflow._

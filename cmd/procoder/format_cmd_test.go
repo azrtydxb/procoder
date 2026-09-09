@@ -157,3 +157,64 @@ func TestFormatRefusesWhenStdoutIsTheFileBeingRead(t *testing.T) {
 		t.Errorf("the first argument won over the real collision: %q", got)
 	}
 }
+
+// stdout carries the file's bytes and nothing else, in every verdict.
+//
+// This is what makes `procoder format f > f.formatted` safe and
+// `procoder format f | tail -n +2 > f` destructive — and the second is
+// what the gate's own hint used to invite. The banner is on stderr, so
+// stripping "the header line" strips the file's first REAL line: a
+// 25-byte file came back 17 bytes with its title gone, silently, exit 0
+// (#278).
+//
+// proved by: printing the verdict banner to out instead of notes — the
+// byte counts below stop matching the file and every caller redirecting
+// stdout writes a banner into their file.
+func TestStdoutIsTheFileAndNothingElse(t *testing.T) {
+	dir := t.TempDir()
+	clean := filepath.Join(dir, "clean.md")
+	body := "# Title\n\nBody text here.\n"
+	if err := os.WriteFile(clean, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, notes bytes.Buffer
+	if code := formatFiles([]string{clean}, &out, &notes); code != 0 {
+		t.Fatalf("a clean file exited %d: %s", code, notes.String())
+	}
+	if out.String() != body {
+		t.Fatalf("stdout is not the file:\n got  %q\n want %q", out.String(), body)
+	}
+	if notes.Len() == 0 {
+		t.Error("nothing on stderr — the verdict has to reach a person somehow")
+	}
+	// The first line of stdout is content, never a banner. A caller who
+	// drops it loses the file's first line.
+	if strings.HasPrefix(out.String(), "==") {
+		t.Errorf("stdout starts with a banner: %q", strings.SplitN(out.String(), "\n", 2)[0])
+	}
+}
+
+// A non-empty file never produces an empty payload.
+//
+// The failure this command has actually had is printing nothing over a
+// file somebody was redirecting into, while exiting 0. The backstop costs
+// one comparison.
+//
+// proved by: removing the length check in formatFiles — a verdict that
+// somehow yields no content goes back to being written out as success.
+func TestNonEmptyFileNeverPrintsNothing(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.md", "b.go", "c.unknownext"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("some real content\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out, notes bytes.Buffer
+		formatFiles([]string{path}, &out, &notes)
+		if out.Len() == 0 {
+			t.Errorf("%s: a non-empty file produced an empty payload — a caller redirecting stdout has just lost it (%s)",
+				name, strings.TrimSpace(notes.String()))
+		}
+	}
+}

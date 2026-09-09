@@ -1633,6 +1633,22 @@ func formatFiles(files []string, out, notes io.Writer) int {
 			// it unsafe to redirect onto any one of these files. Say which.
 			fmt.Fprintf(out, "== %s — these bytes belong in this file; do not redirect a multi-file run over one of them\n", f)
 		}
+		// A non-empty file must never produce an empty payload. Every
+		// verdict above puts the file's own bytes on stdout, so this
+		// cannot happen by design — which is exactly why it is worth
+		// asserting: the failure mode this command has actually had is
+		// printing nothing over a file somebody was redirecting into
+		// (#120, #278), and it exits 0 while doing it. A backstop that
+		// costs one comparison is cheaper than finding out again.
+		if len(content) == 0 {
+			if info, serr := os.Stat(f); serr == nil && info.Size() > 0 {
+				fmt.Fprintf(notes,
+					"== %s — REFUSING to print nothing for a %d-byte file. This is a bug in procoder;\n"+
+						"   the file is untouched. Please report it with this line.\n", f, info.Size())
+				code = 1
+				continue
+			}
+		}
 		if _, err := out.Write(content); err != nil {
 			// A closed stdout (`| head`) is the ordinary case. Say which file did
 			// not make it out and leave a non-zero exit behind, because a format
