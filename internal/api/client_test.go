@@ -16,6 +16,7 @@ import (
 // proved by: having Do return the response anyway — the caller then gets
 // another release's behaviour with nothing saying so.
 func TestVersionSkewIsRefused(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	l, err := net.Listen("unix", path)
 	if err != nil {
@@ -47,6 +48,7 @@ func TestVersionSkewIsRefused(t *testing.T) {
 // waited on: the command is not going to run, and the caller should hear
 // that in milliseconds.
 func TestDeadSocketCostsNothing(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)

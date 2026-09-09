@@ -126,6 +126,7 @@ func TestHalfWrittenStartLockIsJudgedByAge(t *testing.T) {
 // listening tells a socket with a daemon behind it from the file a dead
 // one left.
 func TestListeningIgnoresADeadSocket(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)

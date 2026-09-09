@@ -30,9 +30,25 @@ func shortDir(t *testing.T) string {
 	return dir
 }
 
+// requireDaemon skips a test that needs a running daemon.
+//
+// The daemon does not run on Windows — Listen refuses, because the
+// socket's permission bits are its only authentication and Windows cannot
+// set them. Every test that opens one is therefore about a thing that
+// platform does not have. What Windows DOES have is asserted:
+// TestWindowsRefusesToServe checks the refusal, and every test in this
+// package that does not need a socket keeps running there.
+func requireDaemon(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the daemon does not run on Windows — see TestWindowsRefusesToServe")
+	}
+}
+
 // testServer starts a server on a socket inside dir and returns its path.
 func testServer(t *testing.T, run Runner) (string, *Server) {
 	t.Helper()
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	srv := &Server{Run: run, Version: "test", Notice: io.Discard}
 	l, err := srv.Listen(path)
@@ -76,6 +92,7 @@ func TestServeSocketPermissions(t *testing.T) {
 
 // A socket left behind by a daemon that died is replaced, not refused.
 func TestListenClearsAStaleSocket(t *testing.T) {
+	requireDaemon(t)
 	dir := shortDir(t)
 	path := filepath.Join(dir, "s.sock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
@@ -194,6 +211,7 @@ func TestWindowsRefusesToServe(t *testing.T) {
 // server's connection below stops being answered and the test's second
 // Listen succeeds.
 func TestASecondDaemonDoesNotStealTheSocket(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	first := &Server{Run: func(Request, io.Writer, io.Writer) (int, *Result) { return 7, nil }, Notice: io.Discard}
 	l, err := first.Listen(path)
@@ -231,6 +249,7 @@ func TestASecondDaemonDoesNotStealTheSocket(t *testing.T) {
 // proved by: dropping the version comparison in Client.Do — this test's
 // mismatched daemon serves the request.
 func TestADifferentBuildIsRefusedOnTheSameProtocol(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	srv := &Server{
 		Run:     func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil },

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -186,7 +187,13 @@ func TestNamingASocketCreatesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDir did not create the directory: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Fatalf("run directory is %04o, want 0700", perm)
+	// Windows has no POSIX mode to set: os.Chmod there sets the read-only
+	// bit and nothing else, so the directory comes back 0777. That is the
+	// same limitation the daemon refuses to run under, and asserting the
+	// mode there would be asserting a thing the platform cannot do.
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o700 {
+			t.Fatalf("run directory is %04o, want 0700", perm)
+		}
 	}
 }

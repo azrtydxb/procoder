@@ -71,6 +71,7 @@ func TestEvictReportsNothingHeld(t *testing.T) {
 // never returns, and the daemon outlives every session that used it as a
 // process somebody has to know to kill.
 func TestDaemonExitsHoldingNothing(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	srv := &Server{
 		Run:    func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil },
@@ -95,6 +96,7 @@ func TestDaemonExitsHoldingNothing(t *testing.T) {
 
 // A daemon with work in front of it does not exit out from under it.
 func TestBusyDaemonStaysUp(t *testing.T) {
+	requireDaemon(t)
 	path := filepath.Join(shortDir(t), "s.sock")
 	srv := &Server{
 		Run:      func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil },
