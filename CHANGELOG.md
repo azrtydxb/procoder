@@ -51,7 +51,7 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
-## Unreleased
+## 3.6.0 — 2026-09-09
 
 _Every command can be called instead of spawned, and two ways procoder
 could cost you something are closed._
