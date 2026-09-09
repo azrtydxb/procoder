@@ -1634,12 +1634,13 @@ func formatFiles(files []string, out, notes io.Writer) int {
 			fmt.Fprintf(out, "== %s — these bytes belong in this file; do not redirect a multi-file run over one of them\n", f)
 		}
 		// A non-empty file must never produce an empty payload. Every
-		// verdict above puts the file's own bytes on stdout, so this
-		// cannot happen by design — which is exactly why it is worth
-		// asserting: the failure mode this command has actually had is
-		// printing nothing over a file somebody was redirecting into
-		// (#120, #278), and it exits 0 while doing it. A backstop that
-		// costs one comparison is cheaper than finding out again.
+		// verdict puts SOMETHING that belongs in the file on stdout — the
+		// formatter's output when it is unformatted, the file's own bytes
+		// otherwise — so this cannot happen by design, which is exactly
+		// why it is worth asserting: the failure this command has
+		// actually had is printing nothing over a file somebody was
+		// redirecting into (#120, #278), while exiting 0. A backstop that
+		// costs one comparison is cheaper than finding out a third time.
 		if len(content) == 0 {
 			if info, serr := os.Stat(f); serr == nil && info.Size() > 0 {
 				fmt.Fprintf(notes,

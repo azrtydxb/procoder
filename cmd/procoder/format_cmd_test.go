@@ -172,7 +172,12 @@ func TestFormatRefusesWhenStdoutIsTheFileBeingRead(t *testing.T) {
 // stdout writes a banner into their file.
 func TestStdoutIsTheFileAndNothingElse(t *testing.T) {
 	dir := t.TempDir()
-	clean := filepath.Join(dir, "clean.md")
+	// An extension no formatter claims. A .md file goes through prettier,
+	// so on a machine without it the verdict is Unchecked and this test
+	// would fail for a reason that has nothing to do with the contract it
+	// is named for. Out of scope exercises the same path — stdout is
+	// still the file's bytes — and needs nothing installed.
+	clean := filepath.Join(dir, "notes.unknownext")
 	body := "# Title\n\nBody text here.\n"
 	if err := os.WriteFile(clean, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -180,7 +185,7 @@ func TestStdoutIsTheFileAndNothingElse(t *testing.T) {
 
 	var out, notes bytes.Buffer
 	if code := formatFiles([]string{clean}, &out, &notes); code != 0 {
-		t.Fatalf("a clean file exited %d: %s", code, notes.String())
+		t.Fatalf("an out-of-scope file exited %d: %s", code, notes.String())
 	}
 	if out.String() != body {
 		t.Fatalf("stdout is not the file:\n got  %q\n want %q", out.String(), body)

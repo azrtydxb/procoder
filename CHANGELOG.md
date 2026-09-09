@@ -57,7 +57,8 @@ _The write-back that the gate invites is the one that is safe._
 
 **Fixed — the gate's own hint no longer invites a one-liner that deletes
 the file's first line.**
-([#278](https://github.com/azrtydxb/procoder/issues/278)) `procoder format
+([#281](https://github.com/azrtydxb/procoder/pull/281),
+[#278](https://github.com/azrtydxb/procoder/issues/278)) `procoder format
 <file>` has printed the file's bytes on stdout and its verdict on stderr
 since 3.5.0, which made `> file.formatted` safe. It also made
 `procoder format f | tail -n +2` — stripping "the header" — delete the

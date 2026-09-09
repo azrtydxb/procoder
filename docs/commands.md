@@ -209,10 +209,17 @@ Prints each file's formatted result (gofmt, ruff, prettier, rustfmt,
 clang-format, shfmt — the project's config always wins) so it can be
 reviewed and written. Never touches the file.
 
-**stdout is the file's bytes and nothing else, in every verdict.** Already
-formatted, out of scope, could not be checked — stdout is still exactly
-what belongs in that file. The verdict line goes to **stderr**, so it can
-be read on a terminal and cannot land in a redirect.
+**For a single file, stdout is that file's content and nothing else, in
+every verdict.** Already formatted, out of scope, could not be checked —
+stdout is still exactly what belongs in that file (the formatter's output
+when it needed changes, the file's own bytes otherwise). The verdict line
+goes to **stderr**, so it can be read on a terminal and cannot land in a
+redirect.
+
+A run naming several files is the exception, and a deliberate one: it puts
+a header per file **on stdout**, because five files cannot share one
+stream without them — and because that makes a multi-file run visibly
+unsafe to redirect over any single file. Redirect one file at a time.
 
 That makes the write-back safe, and it has one shape:
 
