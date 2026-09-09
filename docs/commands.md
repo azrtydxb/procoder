@@ -1281,6 +1281,13 @@ that merely errored would wave every commit past itself while looking like
 it had failed loudly. Nothing was checked, so nothing is passing. See
 [Configuration](configuration.md#service) for why there is no fallback.
 
+**macOS and Linux only.** The socket's permission bits are the entire
+authentication, and Windows cannot set them — `os.Chmod` there sets the
+read-only bit and nothing else, so a socket comes back 0666 and every
+account on the machine can open it. `procoder serve` refuses on Windows
+rather than running a daemon anyone can drive. Nothing is lost: every
+command runs in-process there, which is the whole of procoder.
+
 The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
 0700 directory. **The permission bits are the whole authentication** —
 there is no port and no token, because a unix socket is a filesystem

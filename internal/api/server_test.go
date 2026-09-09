@@ -5,6 +5,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +52,9 @@ func testServer(t *testing.T, run Runner) (string, *Server) {
 // proved by: removing the chmod — the socket comes back 0755 under a
 // default umask and every user on the machine can drive procoder.
 func TestServeSocketPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the daemon refuses to run on Windows — see TestWindowsRefusesToServe")
+	}
 	dir := shortDir(t)
 	path := filepath.Join(dir, "s.sock")
 	srv := &Server{Run: func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil }}
@@ -144,5 +149,36 @@ func TestProtocolSkewIsRefusedWithAReason(t *testing.T) {
 	}
 	if res.Stderr == "" {
 		t.Fatal("the refusal said nothing — a client cannot tell it from a command that printed nothing")
+	}
+}
+
+// Windows does not get a daemon, because it cannot secure the socket.
+//
+// The permission bits are this design's only authentication, and os.Chmod
+// on Windows sets one thing: the read-only bit. A socket created there
+// comes back 0666 — openable by every account on the machine — which is
+// the one thing this design must never be. Refusing costs Windows nothing
+// it has today: every command runs in-process, which is the whole of
+// procoder.
+//
+// proved by: dropping the GOOS check in Listen — the Windows CI job goes
+// back to reporting "socket mode is 0666, want 0600", which is a daemon
+// anyone on the box can drive.
+func TestWindowsRefusesToServe(t *testing.T) {
+	srv := &Server{Run: func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil }, Notice: io.Discard}
+	l, err := srv.Listen(filepath.Join(shortDir(t), "s.sock"))
+	if runtime.GOOS != "windows" {
+		if err != nil {
+			t.Fatalf("Listen failed where it should work: %v", err)
+		}
+		l.Close()
+		return
+	}
+	if err == nil {
+		l.Close()
+		t.Fatal("Windows served on a socket it cannot secure")
+	}
+	if !strings.Contains(err.Error(), "Windows") || !strings.Contains(err.Error(), "in-process") {
+		t.Errorf("the refusal must say why and what still works: %v", err)
 	}
 }

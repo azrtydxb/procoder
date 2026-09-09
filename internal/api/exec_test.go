@@ -161,6 +161,12 @@ func TestReadsStdinNamesOnlyTheCommandsThatDo(t *testing.T) {
 func TestNamingASocketCreatesNothing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// os.UserHomeDir reads USERPROFILE on Windows and HOME everywhere
+	// else. Setting only HOME left the Windows run resolving the real
+	// profile, so the test asserted against a directory nothing had been
+	// asked to create — and passed or failed for reasons unrelated to
+	// what it is named for.
+	t.Setenv("USERPROFILE", home)
 
 	for _, get := range []func() (string, error){WorkSocket, ExecSocket, StartLock} {
 		if _, err := get(); err != nil {

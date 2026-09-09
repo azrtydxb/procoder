@@ -69,9 +69,11 @@ what a repository declared.
 ## In scope
 
 - [S-1] `procoder serve`: a daemon listening on a unix socket at
-  `~/.procoder/run/procoder.sock`, mode 0600, a named pipe of the same name
-  on Windows. One daemon per machine, serving every repository. File
-  permissions are the authentication — no port, no token.
+  `~/.procoder/run/procoder.sock`, mode 0600. One daemon per machine,
+  serving every repository. File permissions are the authentication — no
+  port, no token. macOS and Linux only: Windows cannot set those bits, so
+  the daemon refuses to start there and every command runs in-process, as
+  it always has.
 - [S-2] One request envelope and one response envelope, for every command.
   The request carries argv, the working directory, the environment the
   caller wants applied, stdin bytes and a protocol version. The response
@@ -351,8 +353,9 @@ and format, so a repository that opts in and back out sees no diff.
   the command runs, with the path named.
 - **An oversized stdin.** Bounded, and a request over the bound is refused
   with the limit named rather than buffered until the daemon dies.
-- **Windows.** The named pipe replaces the socket; the lock file, the
-  envelope and the job table are unchanged.
+- **Windows.** `procoder serve` refuses, saying why and saying that every
+  command still runs in-process. Nothing else changes: the CLI is the
+  whole of procoder there, exactly as it is today.
 
 ## Failure modes
 

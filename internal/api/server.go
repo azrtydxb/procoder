@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -59,6 +60,29 @@ type Server struct {
 // being 0700, which is why RunDir insists on that mode rather than
 // assuming it.
 func (s *Server) Listen(path string) (net.Listener, error) {
+	// Windows cannot hold this design's only authentication.
+	//
+	// The socket has no port and no token: the permission bits ARE the
+	// answer to "who may drive this daemon". os.Chmod on Windows sets one
+	// thing, the read-only bit, so 0600 is unreachable there — a socket
+	// created this way comes back 0666 and every account on the machine
+	// can open it. CI said so in exactly those words: "socket mode is
+	// 0666, want 0600".
+	//
+	// Serving anyway would mean the daemon is least safe on the platform
+	// where the guarantee is weakest, and silently. Refusing costs Windows
+	// nothing it has today: every command runs in this process, which is
+	// the whole of procoder.
+	//
+	// The fix is a named pipe with a real ACL. That needs
+	// golang.org/x/sys, which is a dependency this module does not have
+	// and will not spend here — so it is a piece of work with a decision
+	// in front of it, not a TODO.
+	if runtime.GOOS == "windows" {
+		return nil, fmt.Errorf("procoder: the daemon does not run on Windows — " +
+			"its socket is secured by file permissions, and Windows cannot set them (a socket comes back 0666, " +
+			"openable by every account on the machine). Every command runs in-process there, as it always has")
+	}
 	// The directory has to exist and has to be 0700 before anything is
 	// bound in it: the socket's own mode is set after net.Listen, and the
 	// directory is what closes that window.

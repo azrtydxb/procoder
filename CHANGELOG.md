@@ -65,6 +65,12 @@ block, and named shapes for `config`, `todo list`, `version`, `status`,
 `spec check` and the index lookups. Both, so that no caller has to parse
 prose and none has to render it.
 
+The daemon is macOS and Linux only. The socket's permission bits are its
+only authentication and Windows cannot set them, so `procoder serve`
+refuses there rather than running a daemon every account on the machine
+could drive; every command runs in-process on Windows, which is the whole
+of procoder there.
+
 A machine is one or the other, and `[service] mode` is `off` until it says
 otherwise — every command runs in-process, with no daemon and no setup, in
 CI and on a fresh clone, and `procoder init` asks rather than choosing.
