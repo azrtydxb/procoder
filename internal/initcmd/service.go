@@ -22,7 +22,7 @@ import (
 // nothing is written: a repository must never acquire a daemon because a
 // script ran init.
 func AskAboutTheServer(root string, answer *string, stdout io.Writer) error {
-	if config.Load(root).ServiceMode != "off" {
+	if alreadyChosen(root) {
 		// Already chosen. Asking again would be a second chance to change
 		// a decision that lives in a tracked file, which is where it can
 		// be changed properly.
@@ -57,6 +57,35 @@ func AskAboutTheServer(root string, answer *string, stdout io.Writer) error {
 	}
 	fmt.Fprintln(stdout, "procoder init: [service] mode = \"local\" — commands answer over the local socket where one is running")
 	return nil
+}
+
+// alreadyChosen reports whether this repository has said which it is.
+//
+// The written key, not the effective value. "off" is both the default and
+// a decision somebody may have made deliberately, and reading only the
+// value cannot tell them apart — so re-running init would keep asking a
+// repository that had already answered, and could flip a recorded "off"
+// to "local" on a stray yes.
+func alreadyChosen(root string) bool {
+	if config.Load(root).ServiceMode == "local" {
+		return true
+	}
+	raw, err := store.LoadDoc(root, ".procoder/config.toml")
+	if err != nil {
+		return false
+	}
+	inService := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "[") {
+			inService = t == "[service]"
+			continue
+		}
+		if inService && strings.HasPrefix(t, "mode") {
+			return true
+		}
+	}
+	return false
 }
 
 // wantsServer is the whole definition of the answer: "server" or "local",

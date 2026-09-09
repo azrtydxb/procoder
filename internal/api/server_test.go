@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -180,5 +181,103 @@ func TestWindowsRefusesToServe(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Windows") || !strings.Contains(err.Error(), "in-process") {
 		t.Errorf("the refusal must say why and what still works: %v", err)
+	}
+}
+
+// A second daemon does not steal the first one's socket.
+//
+// Listen removed any file at the path before binding. If a daemon was
+// already listening, that orphaned it: still running, holding a socket
+// nothing can reach, while every client silently talked to the second.
+//
+// proved by: removing the listening() check in Listen — the first
+// server's connection below stops being answered and the test's second
+// Listen succeeds.
+func TestASecondDaemonDoesNotStealTheSocket(t *testing.T) {
+	path := filepath.Join(shortDir(t), "s.sock")
+	first := &Server{Run: func(Request, io.Writer, io.Writer) (int, *Result) { return 7, nil }, Notice: io.Discard}
+	l, err := first.Listen(path)
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer l.Close()
+	go first.Accept(l)
+
+	second := &Server{Run: func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil }, Notice: io.Discard}
+	if l2, err := second.Listen(path); err == nil {
+		l2.Close()
+		t.Fatal("a second daemon took the socket out from under a live one")
+	} else if !strings.Contains(err.Error(), "already listening") {
+		t.Errorf("the refusal does not say what is in the way: %v", err)
+	}
+
+	// The first daemon is still reachable, which is the point.
+	res, err := Client{Path: path}.Do(Request{Argv: []string{"check"}})
+	if err != nil {
+		t.Fatalf("the original daemon was orphaned: %v", err)
+	}
+	if res.Exit == nil || *res.Exit != 7 {
+		t.Fatalf("a different daemon answered: %v", res.Exit)
+	}
+}
+
+// A daemon from another build is refused even when the protocol matches.
+//
+// The protocol can be identical between two releases whose behaviour is
+// not, and that is the skew worth catching. The first version compared
+// only the protocol and left Client.Version unused and Server.Version
+// never sent, so two different builds were treated as compatible.
+//
+// proved by: dropping the version comparison in Client.Do — this test's
+// mismatched daemon serves the request.
+func TestADifferentBuildIsRefusedOnTheSameProtocol(t *testing.T) {
+	path := filepath.Join(shortDir(t), "s.sock")
+	srv := &Server{
+		Run:     func(Request, io.Writer, io.Writer) (int, *Result) { return 0, nil },
+		Version: "3.5.0",
+		Notice:  io.Discard,
+	}
+	l, err := srv.Listen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go srv.Accept(l)
+
+	_, err = Client{Path: path, Version: "3.6.0"}.Do(Request{Argv: []string{"check"}})
+	if !errors.Is(err, ErrVersionSkew) {
+		t.Fatalf("want ErrVersionSkew across builds, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "3.5.0") || !strings.Contains(err.Error(), "3.6.0") {
+		t.Errorf("the refusal names neither build: %v", err)
+	}
+
+	// Same build: served.
+	if _, err := (Client{Path: path, Version: "3.5.0"}).Do(Request{Argv: []string{"check"}}); err != nil {
+		t.Fatalf("a matching build was refused: %v", err)
+	}
+}
+
+// A response may be far larger than a request. They are not the same
+// risk: a request is what an unknown caller sends, a response is this
+// daemon's own output, and `procoder audit` legitimately produces
+// megabytes of it.
+//
+// proved by: capping the response read at MaxRequestBytes again — a big
+// command's real answer is refused, with an error calling it a request.
+func TestALargeResponseIsNotRefusedAsARequest(t *testing.T) {
+	big := strings.Repeat("finding\n", (MaxRequestBytes/8)+1024)
+	path, _ := testServer(t, func(_ Request, stdout, _ io.Writer) (int, *Result) {
+		io.WriteString(stdout, big)
+		return 0, nil
+	})
+	// `check`, not `audit`: audit answers with a job id rather than
+	// output, so it would prove nothing about response size.
+	res, err := Client{Path: path}.Do(Request{Argv: []string{"check"}})
+	if err != nil {
+		t.Fatalf("a large answer was refused: %v", err)
+	}
+	if len(res.Stdout) != len(big) {
+		t.Fatalf("the answer was truncated: got %d bytes, want %d", len(res.Stdout), len(big))
 	}
 }

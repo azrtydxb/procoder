@@ -90,8 +90,17 @@ func (s *Server) Listen(path string) (net.Listener, error) {
 		return nil, fmt.Errorf("procoder: could not create %s (%v)", filepath.Dir(path), err)
 	}
 	// A socket file with nobody behind it is what a daemon that died
-	// leaves. Connecting to it fails, so removing it is safe; removing a
-	// LIVE one would not be, which is why the caller dials first.
+	// leaves, and removing it is safe. Removing a LIVE one is not: the
+	// first daemon keeps running, holding a socket nothing can reach any
+	// more, and every client silently talks to the second one instead.
+	//
+	// The comment here used to say "which is why the caller dials first".
+	// No caller did. Dialling is this function's job, because this is
+	// where the removal happens.
+	if listening(path) {
+		return nil, fmt.Errorf("procoder: a daemon is already listening on %s — "+
+			"stop it before starting another, or pass --socket to serve somewhere else", path)
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("procoder: could not clear the stale socket at %s (%v)", path, err)
 	}
@@ -203,13 +212,24 @@ func (s *Server) serveConn(conn net.Conn) {
 	// A poll is not a command: it reads a job's accumulated answer and
 	// must not queue behind the very command it is asking about.
 	if req.Job != "" {
-		_ = WriteResponse(conn, s.jobs.poll(req.Job, req.Since, req.SinceErr))
+		polled := s.jobs.poll(req.Job, req.Since, req.SinceErr)
+		polled.Version = s.Version
+		_ = WriteResponse(conn, polled)
 		return
 	}
 
 	identity := ""
 	if s.Identity != nil {
 		identity = s.Identity(req.Cwd)
+	}
+	if identity == "" {
+		// serialise.go promises an unidentifiable request its own queue —
+		// an unknown repository is not the same repository as another
+		// unknown one. The empty string broke that promise for every
+		// caller at once: they shared a queue and a warm cache. The
+		// working directory is the weakest honest key, which is the same
+		// rung store.IdentityFor falls back to.
+		identity = "cwd:" + req.Cwd
 	}
 	// Touching the repository is what keeps it warm, and what keeps the
 	// daemon alive: a daemon serving work is never one holding nothing.
@@ -221,7 +241,7 @@ func (s *Server) serveConn(conn net.Conn) {
 		// holds, and answered immediately: the caller gets an id in
 		// milliseconds and the command keeps running behind it.
 		job := s.jobs.start(req, s.runQueued(identity))
-		_ = WriteResponse(conn, Response{Protocol: Protocol, Job: &job})
+		_ = WriteResponse(conn, Response{Protocol: Protocol, Version: s.Version, Job: &job})
 		return
 	}
 	// Held across the whole command, not just its writes: the store's lock
@@ -229,6 +249,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	// write of the same ledger is exactly what it cannot see.
 	s.queues.do(identity, func() {
 		res := Serve(req, s.Run)
+		res.Version = s.Version
 		exit := -1
 		if res.Exit != nil {
 			exit = *res.Exit
@@ -261,5 +282,5 @@ func (s *Server) runQueued(identity string) Runner {
 // with no explanation reads to a client exactly like a command that
 // printed nothing, and one of those is a bug and the other is Tuesday.
 func (s *Server) refuse(conn io.Writer, code int, reason string) {
-	_ = WriteResponse(conn, Response{Protocol: Protocol, Exit: &code, Stderr: reason + "\n"})
+	_ = WriteResponse(conn, Response{Protocol: Protocol, Version: s.Version, Exit: &code, Stderr: reason + "\n"})
 }

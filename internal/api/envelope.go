@@ -25,10 +25,23 @@ const Protocol = 1
 // its memory.
 const MaxRequestBytes = 8 << 20
 
+// MaxResponseBytes bounds one response, and is much larger than the
+// request cap because the two are not the same risk. A request is what an
+// unknown caller sends; a response is this daemon's own output, and
+// `procoder audit` over a large tree legitimately produces megabytes of
+// it. Capping a response at the request's size would refuse a command's
+// real answer and say "request over the limit" while doing it.
+const MaxResponseBytes = 256 << 20
+
 // Request is one command, asked.
 type Request struct {
-	Protocol int      `json:"protocol"`
-	Argv     []string `json:"argv"`
+	Protocol int `json:"protocol"`
+	// Version is the client's build. The protocol can be identical
+	// between two releases whose behaviour is not, which is the skew
+	// worth catching: a daemon left running from an older build serves
+	// that build's answers to a newer client, and nothing says so.
+	Version string   `json:"version"`
+	Argv    []string `json:"argv"`
 	// Cwd is where the caller was, not where the daemon is. Every root
 	// resolution starts here.
 	Cwd string `json:"cwd"`
@@ -70,6 +83,8 @@ type Job struct {
 // Response is what came back.
 type Response struct {
 	Protocol int `json:"protocol"`
+	// Version is the daemon's build, for the same reason.
+	Version string `json:"version"`
 	// Exit is nil while a job runs. A caller that read a nil as a zero
 	// would call a running suite green.
 	Exit   *int    `json:"exit"`
@@ -99,25 +114,25 @@ func write(w io.Writer, v any) error {
 // ReadRequest reads one request, refusing anything over the cap.
 func ReadRequest(r io.Reader) (Request, error) {
 	var req Request
-	err := read(r, &req)
+	err := read(r, &req, MaxRequestBytes, "request")
 	return req, err
 }
 
 // ReadResponse reads one response.
 func ReadResponse(r io.Reader) (Response, error) {
 	var res Response
-	err := read(r, &res)
+	err := read(r, &res, MaxResponseBytes, "response")
 	return res, err
 }
 
-func read(r io.Reader, v any) error {
+func read(r io.Reader, v any, cap int, what string) error {
 	sc := bufio.NewScanner(r)
 	// The cap is on the scanner rather than checked after the fact,
 	// because checking after the fact means having already read it.
-	sc.Buffer(make([]byte, 0, 64<<10), MaxRequestBytes)
+	sc.Buffer(make([]byte, 0, 64<<10), cap)
 	if !sc.Scan() {
 		if err := sc.Err(); err != nil {
-			return fmt.Errorf("procoder: request over the %d-byte limit (%v)", MaxRequestBytes, err)
+			return fmt.Errorf("procoder: %s over the %d-byte limit (%v)", what, cap, err)
 		}
 		return fmt.Errorf("procoder: the connection carried no envelope")
 	}

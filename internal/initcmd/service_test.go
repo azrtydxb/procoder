@@ -113,3 +113,44 @@ func TestAlreadyChosenIsNotAskedAgain(t *testing.T) {
 		t.Fatal("a repository that had already chosen was changed")
 	}
 }
+
+// An explicit `mode = "off"` is a decision, and init does not ask again.
+//
+// "off" is both the default and something somebody may have chosen, and
+// the effective value cannot tell them apart. Reading only the value meant
+// a repository that had already answered was asked on every init, and one
+// stray yes flipped a recorded "off" to "local".
+//
+// proved by: testing config.Load(root).ServiceMode != "off" again — this
+// test's config is rewritten to local by an answer it already declined.
+func TestAnExplicitOffIsNotAskedAgain(t *testing.T) {
+	root := fixture(t)
+	written := "[service]\nmode = \"off\"\n"
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"), []byte(written), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yes := "server"
+	if err := AskAboutTheServer(root, &yes, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := configBody(t, root); got != written {
+		t.Fatalf("a recorded decision was overwritten:\n got  %q\n want %q", got, written)
+	}
+}
+
+// A [service] section with no mode key has not chosen, so the question
+// still gets asked.
+func TestAServiceSectionWithoutModeStillAsks(t *testing.T) {
+	root := fixture(t)
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"),
+		[]byte("[service]\nrepo = \"acme/widgets\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yes := "server"
+	if err := AskAboutTheServer(root, &yes, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(configBody(t, root), `mode = "local"`) {
+		t.Fatalf("a repository that never chose was not asked:\n%s", configBody(t, root))
+	}
+}

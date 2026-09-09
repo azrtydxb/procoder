@@ -57,6 +57,7 @@ func (c Client) Do(req Request) (Response, error) {
 	}
 
 	req.Protocol = Protocol
+	req.Version = c.Version
 	if err := WriteRequest(conn, req); err != nil {
 		return Response{}, fmt.Errorf("%w (%v)", ErrNoDaemon, err)
 	}
@@ -67,6 +68,15 @@ func (c Client) Do(req Request) (Response, error) {
 	if res.Protocol != Protocol {
 		return Response{}, fmt.Errorf("%w: it speaks protocol %d, this build speaks %d",
 			ErrVersionSkew, res.Protocol, Protocol)
+	}
+	// The protocol can be identical between two releases whose behaviour
+	// is not, and that is the skew worth catching: a daemon left running
+	// from an older build answers with that build's behaviour, and nothing
+	// says so. Only compared when both sides state a version — a build
+	// with none stamped has nothing to disagree about.
+	if c.Version != "" && res.Version != "" && res.Version != c.Version {
+		return Response{}, fmt.Errorf("%w: it is %s, this build is %s",
+			ErrVersionSkew, res.Version, c.Version)
 	}
 	return res, nil
 }

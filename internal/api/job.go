@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"sync"
+	"sync/atomic"
 )
 
 // Job states. Lost is deliberately not failed: a daemon that restarted
@@ -153,15 +155,20 @@ func after(s string, n int) string {
 	return s[n:]
 }
 
-// newJobID is short enough to type and random enough not to collide
-// within one daemon's lifetime, which is the only scope it has.
+// jobSeq is the fallback id source, and the reason it exists is that the
+// first fallback was a constant: every job after a failed rand.Read got
+// the same id, so each one replaced the last in the table and every
+// caller polled somebody else's command. A counter cannot collide within
+// the one lifetime these ids have.
+var jobSeq atomic.Uint64
+
+// newJobID is short enough to type and unique within one daemon's
+// lifetime, which is the only scope it has.
 func newJobID() string {
-	var b [4]byte
+	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// A daemon that cannot read randomness still has to answer. The
-		// address of the slice is unique among live jobs, which is the
-		// only property an id needs here.
-		return "j" + hex.EncodeToString([]byte{byte(len(b))})
+		binary.BigEndian.PutUint64(b[:], jobSeq.Add(1))
+		return "j" + hex.EncodeToString(b[:])
 	}
 	return "j" + hex.EncodeToString(b[:])
 }
