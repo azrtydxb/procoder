@@ -34,11 +34,27 @@ func TestStartLockIsHeldByOne(t *testing.T) {
 	release2()
 }
 
-// Exactly one caller wins when they all arrive at once.
+// Exactly one caller holds the lock at a time when they all arrive at
+// once.
+//
+// Every winner holds until all ten have tried. The first version of this
+// released after 5ms inside the goroutine, which measured something else
+// entirely: a caller scheduled after that release acquires the lock
+// legitimately, so "two callers won" was two callers winning in
+// SEQUENCE — correct behaviour, counted as a failure. Windows found it,
+// because its scheduling spreads ten goroutines over more than the five
+// milliseconds the winner was holding.
+//
+// What the lock promises is mutual exclusion, not that only one caller
+// ever succeeds across time. This asserts the promise.
+//
+// proved by: dropping the O_EXCL in takeStartLock — several callers hold
+// at once and the count goes above one.
 func TestStartLockUnderRace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "start.lock")
 	var mu sync.Mutex
-	won := 0
+	held := 0
+	var releases []func()
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -46,17 +62,29 @@ func TestStartLockUnderRace(t *testing.T) {
 			defer wg.Done()
 			if release, taken := takeStartLock(path); taken {
 				mu.Lock()
-				won++
+				held++
+				releases = append(releases, release)
 				mu.Unlock()
-				time.Sleep(5 * time.Millisecond)
-				release()
 			}
 		}()
 	}
 	wg.Wait()
-	if won != 1 {
-		t.Fatalf("%d callers won the start race, want exactly 1", won)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if held != 1 {
+		t.Fatalf("%d callers held the start lock at once, want exactly 1", held)
 	}
+	for _, release := range releases {
+		release()
+	}
+
+	// And the lock is reusable once released: the next caller gets it.
+	release, taken := takeStartLock(path)
+	if !taken {
+		t.Fatal("the lock was not released")
+	}
+	release()
 }
 
 // A lock left behind by a process that died mid-start does not block
