@@ -53,7 +53,22 @@ Rules that earn their place:
 
 ## Unreleased
 
-_The write-back that the gate invites is the one that is safe._
+_Two ways procoder could cost you something: a gate that blocked work it
+had no reason to, and a hint that invited a one-liner which ate a line._
+
+**Fixed — a repository worked on with a single agent is no longer blocked
+for the eleven hosts it does not use.**
+([#280](https://github.com/azrtydxb/procoder/pull/280),
+[#279](https://github.com/azrtydxb/procoder/issues/279)) A root
+`AGENTS.md` with no host copies beside it made the gate demand all twelve,
+blocking every commit, with no way to say "this repository uses one agent"
+short of deleting `AGENTS.md` — which switches off the drift check for the
+copies it does keep. A missing copy now counts only once the repository
+has adopted the layer, which is the rule the reporting half of this check
+already applied and explained in its own comment. Drifted and unreadable
+copies still block whatever was adopted: a stale rule file is another
+agent being told something this repository stopped believing, and a file
+that does not exist tells no agent anything.
 
 **Fixed — the gate's own hint no longer invites a one-liner that deletes
 the file's first line.**

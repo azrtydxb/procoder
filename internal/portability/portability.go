@@ -127,13 +127,7 @@ func Check(root string) []gitx.Finding {
 	// the layer (at least one copy present) — an AGENTS.md alone is a file
 	// many repos carry for unrelated reasons, and ten nag lines per gate
 	// run would be noise; drifted or unreadable copies always report
-	adopted := false
-	for _, c := range Copies {
-		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil {
-			adopted = true
-			break
-		}
-	}
+	adopted := adoptedLayer(root)
 	var out []gitx.Finding
 	for _, c := range Copies {
 		raw, err := os.ReadFile(filepath.Join(root, c.Path))
