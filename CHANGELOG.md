@@ -53,7 +53,22 @@ Rules that earn their place:
 
 ## Unreleased
 
-_Every command can be called instead of spawned._
+_Every command can be called instead of spawned — and a repository that
+uses one agent is asked about one agent._
+
+**Fixed — a repository worked on with a single agent is no longer blocked
+for the eleven hosts it does not use.**
+([#280](https://github.com/azrtydxb/procoder/pull/280),
+[#279](https://github.com/azrtydxb/procoder/issues/279)) A root
+`AGENTS.md` with no host copies beside it made the gate demand all twelve,
+blocking every commit, with no way to say "this repository uses one agent"
+short of deleting `AGENTS.md` — which switches off the drift check for the
+copies it does keep. A missing copy now counts only once the repository
+has adopted the layer, which is the rule the reporting half of this check
+already applied and explained in its own comment. Drifted and unreadable
+copies still block whatever was adopted: a stale rule file is another
+agent being told something this repository stopped believing, and a file
+that does not exist tells no agent anything.
 
 **Added — a second door: every command answers over a local socket.**
 ([#272](https://github.com/azrtydxb/procoder/pull/272)) `procoder serve`
