@@ -209,6 +209,37 @@ Prints each file's formatted result (gofmt, ruff, prettier, rustfmt,
 clang-format, shfmt — the project's config always wins) so it can be
 reviewed and written. Never touches the file.
 
+**For a single file, stdout is that file's content and nothing else, in
+every verdict.** Already formatted, out of scope, could not be checked —
+stdout is still exactly what belongs in that file (the formatter's output
+when it needed changes, the file's own bytes otherwise). The verdict line
+goes to **stderr**, so it can be read on a terminal and cannot land in a
+redirect.
+
+A run naming several files is the exception, and a deliberate one: it puts
+a header per file **on stdout**, because five files cannot share one
+stream without them — and because that makes a multi-file run visibly
+unsafe to redirect over any single file. Redirect one file at a time.
+
+That makes the write-back safe, and it has one shape:
+
+```sh
+procoder format notes.md > notes.md.formatted   # review it, then move it into place
+```
+
+**Do not strip a header line.** There is no header on stdout, so
+`procoder format f | tail -n +2` deletes the file's _first real line_ —
+quietly, with exit 0. It looks like a header on a terminal only because
+stderr and stdout interleave there. This cost two files in a real
+repository before the banner moved to stderr, and the same one-liner
+kept costing first lines afterwards.
+
+**Never redirect over the file being formatted.** `procoder format f > f`
+is refused, because the shell truncates `f` before procoder is even
+started — there is nothing left to read and nothing to print. A multi-file
+run prints a header per file _on stdout_ precisely so it cannot be
+mistaken for one file's content.
+
 #### `procoder lint [--types] [paths...]`
 
 The canonical linter per ecosystem: golangci-lint (Go), ruff check

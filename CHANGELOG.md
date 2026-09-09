@@ -53,7 +53,8 @@ Rules that earn their place:
 
 ## Unreleased
 
-_A repository that uses one agent is asked about one agent._
+_Two ways procoder could cost you something: a gate that blocked work it
+had no reason to, and a hint that invited a one-liner which ate a line._
 
 **Fixed — a repository worked on with a single agent is no longer blocked
 for the eleven hosts it does not use.**
@@ -68,6 +69,20 @@ already applied and explained in its own comment. Drifted and unreadable
 copies still block whatever was adopted: a stale rule file is another
 agent being told something this repository stopped believing, and a file
 that does not exist tells no agent anything.
+
+**Fixed — the gate's own hint no longer invites a one-liner that deletes
+the file's first line.**
+([#281](https://github.com/azrtydxb/procoder/pull/281),
+[#278](https://github.com/azrtydxb/procoder/issues/278)) `procoder format
+<file>` has printed the file's bytes on stdout and its verdict on stderr
+since 3.5.0, which made `> file.formatted` safe. It also made
+`procoder format f | tail -n +2` — stripping "the header" — delete the
+file's first REAL line, quietly, with exit 0. On a terminal the verdict
+and the content interleave and look like one stream, so the header appears
+to be there; in a pipe it never was. The hint now says what stdout is,
+names a capture path, and says not to redirect over the input. The command
+also refuses to print an empty payload for a non-empty file, as a backstop
+against the failure this command has actually had twice.
 
 ## 3.5.0 — 2026-09-01
 

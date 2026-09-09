@@ -301,7 +301,18 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 	}
 
 	for _, r := range unformatted {
-		fmt.Fprintf(stdout, "unformatted  %s  (run `procoder format %q` for the result)\n", r.File, r.File)
+		// "for the result" invited the wrong thing. It reads as "this
+		// prints a report you extract the content from", and the obvious
+		// extraction — strip the banner line — silently deletes the
+		// file's first line, because the banner is on stderr and stdout
+		// is already nothing but the file's bytes (#278). Say what stdout
+		// IS, and name a redirect that cannot land on the input.
+		// Both paths are quoted. An unquoted redirect target breaks on a
+		// path with a space: the redirection lands on the first word and
+		// the rest become extra arguments to procoder format — which is
+		// the shape of footgun this hint exists to close.
+		fmt.Fprintf(stdout, "unformatted  %s  (`procoder format %q` writes the formatted bytes to stdout — no header; capture with `> %q`, never over the file itself)\n",
+			r.File, r.File, r.File+".formatted")
 	}
 	for _, r := range unchecked {
 		fmt.Fprintf(stdout, "UNCHECKED    %s — %s\n", r.File, r.Reason)
