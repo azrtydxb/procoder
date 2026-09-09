@@ -62,6 +62,32 @@ func AgentsDrift(root string) []gitx.Finding {
 			Message: fmt.Sprintf("%s is unreadable (%v) — no rule file could be checked against it (agents)", Master, err)}}
 	}
 	want := normalize(stripFrontmatter(string(master)))
+
+	// A missing copy only means something once this repository has opted
+	// into the layer — which is exactly the rule Check() already applies,
+	// and says why in its own comment: an AGENTS.md alone is a file many
+	// repositories carry for unrelated reasons, and twelve nag lines per
+	// gate run would be noise.
+	//
+	// The two functions disagreed, and the blocking one was the one wired
+	// into the commit hook: a repository worked on with a single agent had
+	// every commit blocked by eleven demands for rule files no agent here
+	// will ever read, with no way to say so short of deleting AGENTS.md
+	// and losing the drift check with it (#279).
+	//
+	// Drifted and unreadable still block whatever the repository has
+	// adopted. A stale rule file is another agent being told something
+	// this repository stopped believing; a file that does not exist tells
+	// no agent anything. Missing and drifted are different failures and
+	// this is where that stopped being true.
+	adopted := false
+	for _, c := range Copies {
+		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil {
+			adopted = true
+			break
+		}
+	}
+
 	var out []gitx.Finding
 	for _, c := range Copies {
 		v, rerr := check(root, c, want)
@@ -70,6 +96,9 @@ func AgentsDrift(root string) []gitx.Finding {
 			out = append(out, gitx.Finding{Blocking: true, File: c.Path,
 				Message: fmt.Sprintf("%s rule file is unreadable (%v) — NOT checked against %s (agents)", c.Host, rerr, Master)})
 		case missing:
+			if !adopted {
+				continue
+			}
 			out = append(out, gitx.Finding{Blocking: true, File: c.Path,
 				Message: fmt.Sprintf("%s has no rule file — run `procoder agents` for the content to write (agents)", c.Host)})
 		case drifted:

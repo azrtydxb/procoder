@@ -3,6 +3,7 @@ package portability
 import (
 	"os"
 	"path/filepath"
+	"procoder/internal/gitx"
 	"runtime"
 	"strings"
 	"testing"
@@ -33,20 +34,17 @@ func TestDriftedRuleFilesBlock(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, Master), []byte(master), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Every host missing: each is reported, and each blocks.
-	got := AgentsDrift(root)
-	if len(got) != len(Copies) {
-		t.Fatalf("every host without a rule file must be reported: %d of %d", len(got), len(Copies))
-	}
-	for _, f := range got {
-		if !f.Blocking {
-			t.Errorf("a host reading nothing must block: %q", f.Message)
-		}
+	// An AGENTS.md with no copies beside it is a repository that never
+	// opted into the layer, and it is asked nothing. See
+	// TestMissingCopiesOnlyMatterOnceTheLayerIsAdopted.
+	if got := AgentsDrift(root); len(got) != 0 {
+		t.Fatalf("a repository that never adopted the layer was asked for %d rule file(s): %+v", len(got), got)
 	}
 
 	// One host given content that differs is DRIFTED, and the message says
 	// so rather than calling it missing — the reader has a file to fix,
-	// not one to create.
+	// not one to create. Writing it also adopts the layer, which is what
+	// makes the other eleven worth mentioning at all.
 	c := Copies[0]
 	writeRules(t, root, c.Path, c.Frontmatter+"# Rules\n\nSomething else entirely.\n")
 	var found bool
@@ -128,5 +126,87 @@ func TestMatchingFilesAndNoAgentLayerAreSilent(t *testing.T) {
 	}
 	if got := AgentsDrift(root); len(got) != 0 {
 		t.Errorf("rule files that match must be silent: %+v", got)
+	}
+}
+
+// A missing rule file only means something once this repository has
+// opted into the agent layer.
+//
+// Check() has always applied that rule and says why in its own comment;
+// AgentsDrift did not, and AgentsDrift is the one wired into the commit
+// hook. So a repository worked on with a single agent had every commit
+// blocked by eleven demands for rule files no agent there will ever read,
+// and the only escape was deleting AGENTS.md — which switches off the
+// drift check for the copies it does keep (#279).
+//
+// Drifted and unreadable still block whatever the repository adopted. A
+// stale rule file is another agent being told something this repository
+// stopped believing; a file that does not exist tells no agent anything.
+//
+// proved by: reporting missing copies unconditionally again — the first
+// case below goes back to twelve blocking findings on a repository that
+// carries an AGENTS.md for its own reasons.
+func TestMissingCopiesOnlyMatterOnceTheLayerIsAdopted(t *testing.T) {
+	root := t.TempDir()
+	master := "# Rules\n\nAlways do the thing.\n"
+	if err := os.WriteFile(filepath.Join(root, Master), []byte(master), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := AgentsDrift(root); len(got) != 0 {
+		t.Fatalf("an AGENTS.md alone asked for %d rule file(s): %+v", len(got), got)
+	}
+
+	// Adopt the layer by writing one copy correctly. Every OTHER host is
+	// now a gap the repository chose to have, and is reported.
+	adopt := Copies[0]
+	writeRules(t, root, adopt.Path, adopt.Frontmatter+master)
+
+	got := AgentsDrift(root)
+	if len(got) != len(Copies)-1 {
+		t.Fatalf("with the layer adopted, the other %d hosts must be reported, got %d: %+v",
+			len(Copies)-1, len(got), got)
+	}
+	for _, f := range got {
+		if f.File == adopt.Path {
+			t.Errorf("the copy that is present and correct was reported: %q", f.Message)
+		}
+		if !f.Blocking {
+			t.Errorf("a host reading nothing in an adopted repository must block: %q", f.Message)
+		}
+	}
+}
+
+// The two functions that judge the agent layer agree about what a missing
+// copy means. They disagreed once, and the blocking one was the one the
+// commit hook ran.
+//
+// proved by: dropping the adopted guard from either — this test finds one
+// reporting a gap the other does not.
+func TestDriftAndCheckAgreeOnMissingCopies(t *testing.T) {
+	root := t.TempDir()
+	master := "# Rules\n\nAlways do the thing.\n"
+	if err := os.WriteFile(filepath.Join(root, Master), []byte(master), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	missingIn := func(findings []gitx.Finding) int {
+		n := 0
+		for _, f := range findings {
+			if strings.Contains(f.Message, "missing") || strings.Contains(f.Message, "no rule file") {
+				n++
+			}
+		}
+		return n
+	}
+
+	if d, c := missingIn(AgentsDrift(root)), missingIn(Check(root)); d != c {
+		t.Errorf("unadopted: AgentsDrift reports %d missing copies, Check reports %d", d, c)
+	}
+
+	adopt := Copies[0]
+	writeRules(t, root, adopt.Path, adopt.Frontmatter+master)
+	if d, c := missingIn(AgentsDrift(root)), missingIn(Check(root)); d != c {
+		t.Errorf("adopted: AgentsDrift reports %d missing copies, Check reports %d", d, c)
 	}
 }
