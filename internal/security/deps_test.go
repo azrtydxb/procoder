@@ -2,6 +2,7 @@ package security
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -167,4 +168,46 @@ func TestEveryPackageWithoutALockfileIsNamed(t *testing.T) {
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("packages with no lockfile:\n got %v\nwant %v", got, want)
 	}
+}
+
+// Agent tooling installs into the working tree — .kilocode/ and friends
+// each drop a package-lock.json — and the walk scanned them, so an
+// advisory against a package nobody here chose blocked every commit in
+// the repository until someone else shipped a fix.
+// proved by: restored the plain filepath.Walk — .kilocode/package-lock.json
+// comes back in the scan set and the gate blocks on a dependency the
+// repository does not have.
+func TestGitignoredManifestsAreNotThisRepositorysDependencies(t *testing.T) {
+	root := gitRepoForManifests(t)
+	write := func(p, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".gitignore", ".kilocode/\n")
+	write("go.mod", "module x\n")
+	write(filepath.FromSlash("web/app/package-lock.json"), "{}")
+	write(filepath.FromSlash(".kilocode/package-lock.json"), "{}")
+
+	got := manifestsIn(root)
+	want := []string{"go.mod", "web/app/package-lock.json"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("manifests found:\n got %v\nwant %v", got, want)
+	}
+}
+
+func gitRepoForManifests(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed — there is no gate file set to read")
+	}
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return root
 }

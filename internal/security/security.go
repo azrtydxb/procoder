@@ -965,6 +965,21 @@ var manifestDirs = map[string]bool{
 	"target": true, "__pycache__": true, ".venv": true,
 }
 
+// inManifestDir reports whether p sits under any manifestDirs segment
+// below root — the path-shaped form of the SkipDir the walk does.
+func inManifestDir(root, p string) bool {
+	rel, ok := gitx.RepoRel(root, p)
+	if !ok {
+		return false
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		if manifestDirs[seg] {
+			return true
+		}
+	}
+	return false
+}
+
 // manifestsIn finds every dependency manifest in the repository, not only
 // the ones at its root.
 //
@@ -980,6 +995,27 @@ func manifestsIn(root string) []string {
 	names := map[string]bool{}
 	for _, m := range DepManifests {
 		names[m] = true
+	}
+	// Gitignored manifests are not this repository's dependencies. Agent
+	// tooling installs into the working tree (.kilocode/, .claude/ and
+	// friends each ship a package-lock.json), and scanning those reports
+	// vulnerabilities in packages nobody here chose, pinned, or can
+	// upgrade — while blocking every commit until they do. The gate's own
+	// file set is the right scope, and it is the scope `procoder audit`
+	// already claims out loud. Falls through to the walk when git cannot
+	// answer, so a non-repo directory still gets scanned.
+	if tracked := gitx.FilesUnder(root, "."); len(tracked) > 0 {
+		var out []string
+		for _, p := range tracked {
+			if !names[filepath.Base(p)] || inManifestDir(root, p) {
+				continue
+			}
+			if rel, ok := gitx.RepoRel(root, p); ok {
+				out = append(out, rel)
+			}
+		}
+		sort.Strings(out)
+		return out
 	}
 	var out []string
 	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
