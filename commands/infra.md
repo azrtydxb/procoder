@@ -10,9 +10,9 @@ The launcher is: "${CLAUDE_PLUGIN_ROOT}/hooks/launcher.sh"
    exist:
    - **Dockerfiles** (hadolint) — pin base-image tags, pin package
      versions; judge each warning honestly.
-   - **Terraform** — `fmt` findings you apply like any formatter output;
-     a FAILED `terraform validate` BLOCKS (objectively broken code);
-     "NOT validated — not initialised" means run `terraform init` first
+   - **Terraform / OpenTofu** — `fmt` findings you apply like any formatter output;
+     a FAILED selected-tool `validate` BLOCKS (objectively broken code);
+     "NOT validated — not initialised" means initialise with the selected tool first
      when the user wants validation.
    - **Kubernetes manifests** (kubeconform) — schema violations with the
      exact field named; fix them.

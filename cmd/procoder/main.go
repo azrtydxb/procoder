@@ -180,7 +180,21 @@ func init() {
 			out = append(out, infra.Hadolint)
 		}
 		if len(inv.TfDirs) > 0 {
-			out = append(out, infra.Terraform, infra.Tflint)
+			for _, dir := range inv.TfDirs {
+				if tool, err := infra.TerraformTool(root, dir); err == nil {
+					out = append(out, tool)
+				} else {
+					// No install command can repair unreadable project metadata.
+					// Keep the unresolved requirement visible instead of saying
+					// every required tool is installed.
+					out = append(out, &tools.Tool{
+						Name:     "infra toolchain: " + dir,
+						Install:  "repair toolchain evidence: " + err.Error(),
+						Resolved: func(string) string { return "" },
+					})
+				}
+			}
+			out = append(out, infra.Tflint)
 		}
 		if len(inv.K8sFiles) > 0 {
 			out = append(out, infra.Kubeconform)
@@ -306,7 +320,7 @@ const usage = `usage: procoder <command> [args]
                        rename <symbol> <new> [--at path:line] — the rename
                        as a reviewable diff (Go via gopls); nothing is written
   infra                DevOps hygiene where the files exist: Dockerfiles
-                       (hadolint), Terraform (fmt/validate/tflint),
+                       (hadolint), Terraform/OpenTofu (fmt/validate/tflint),
                        Kubernetes manifests (kubeconform), Helm charts
   init [--host <name> ... | --all] [--yes]
                        print tool installs and selected host integration;

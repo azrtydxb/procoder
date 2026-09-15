@@ -44,6 +44,40 @@ var Terraform = &tools.Tool{
 	},
 }
 
+// OpenTofu validates and formats OpenTofu infrastructure code.
+var OpenTofu = &tools.Tool{
+	Name:        "tofu",
+	Install:     "brew install opentofu",
+	VersionArgs: []string{"version"},
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "brew", Args: []string{"install", "opentofu"}},
+	},
+}
+
+// TerraformTool chooses the formatter/validator for one infrastructure directory.
+// Registry evidence wins over availability: running Terraform when an OpenTofu
+// project lacks tofu reports missing Terraform providers instead of the problem.
+func TerraformTool(root, dir string) (*tools.Tool, error) {
+	lock, err := os.ReadFile(filepath.Join(dir, ".terraform.lock.hcl"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read infrastructure lock file: %w", err)
+	}
+	if strings.Contains(string(lock), "registry.opentofu.org/") {
+		return OpenTofu, nil
+	}
+	info, err := os.Stat(filepath.Join(dir, ".terraform", "providers", "registry.opentofu.org"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect OpenTofu providers: %w", err)
+	}
+	if err == nil && info.IsDir() {
+		return OpenTofu, nil
+	}
+	if tools.Resolve(OpenTofu, root) != "" {
+		return OpenTofu, nil
+	}
+	return Terraform, nil
+}
+
 // Tflint lints Terraform beyond validation.
 var Tflint = &tools.Tool{
 	Name:        "tflint",
@@ -198,41 +232,46 @@ func dockerfiles(root string, files []string) []gitx.Finding {
 }
 
 func terraformDir(root, dir string) []gitx.Finding {
-	bin := tools.Resolve(Terraform, root)
+	tool, err := TerraformTool(root, dir)
+	if err != nil {
+		return []gitx.Finding{{File: dir, Blocking: true, Message: "infrastructure NOT checked — " + err.Error() + " (infra)"}}
+	}
+	name := tool.Name
+	bin := tools.Resolve(tool, root)
 	if bin == "" {
-		return notChecked(dir, "terraform")
+		return notChecked(dir, name)
 	}
 	var out []gitx.Finding
 
 	// fmt -check lists unformatted files; exit 3 is its findings-exist code
 	raw, code, timedOut := run(dir, bin, []string{"fmt", "-check"})
 	if timedOut {
-		return timeout(dir, "terraform")
+		return timeout(dir, name)
 	}
 	fmtCount := 0
 	for _, f := range strings.Split(strings.TrimSpace(raw), "\n") {
 		if f != "" && code != 0 {
 			out = append(out, gitx.Finding{File: filepath.Join(dir, f),
-				Message: "not terraform-formatted — run `terraform fmt` and review (infra)"})
+				Message: "not " + name + "-formatted — run `" + name + " fmt` and review (infra)"})
 			fmtCount++
 		}
 	}
-	out = append(out, failedClean(fmtCount, code, []int{3}, raw, dir, "terraform fmt")...)
+	out = append(out, failedClean(fmtCount, code, []int{3}, raw, dir, name+" fmt")...)
 
 	// validate needs an initialised working dir; validating uninitialised
 	// code would fail on providers, not on the code — say so instead
 	if _, err := os.Stat(filepath.Join(dir, ".terraform")); err != nil {
 		out = append(out, gitx.Finding{File: dir,
-			Message: "terraform NOT validated — the directory is not initialised (`terraform init`) (infra)"})
+			Message: name + " NOT validated — the directory is not initialised (`" + name + " init`) (infra)"})
 	} else {
 		raw, code, timedOut := runExit(dir, bin, []string{"validate", "-no-color"})
 		if timedOut {
-			return append(out, timeout(dir, "terraform validate")...)
+			return append(out, timeout(dir, name+" validate")...)
 		}
 		if code != 0 {
 			// objectively broken infrastructure code — the one blocking line
 			out = append(out, gitx.Finding{File: dir, Blocking: true,
-				Message: "terraform validate FAILED: " + textutil.FirstLine(raw) + " (infra)"})
+				Message: name + " validate FAILED: " + textutil.FirstLine(raw) + " (infra)"})
 		}
 	}
 
