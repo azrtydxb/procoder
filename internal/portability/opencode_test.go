@@ -112,3 +112,30 @@ func TestOpenCodeTurnEndRunsHookStop(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeAndKiloSupplyExplicitSetupContext(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("no node on PATH")
+	}
+	for _, name := range []string{"opencode", "kilo"} {
+		t.Run(name, func(t *testing.T) {
+			code := `import { pathToFileURL } from 'node:url';
+const plugin = (await import(pathToFileURL(process.env.TEST_PLUGIN).href)).default;
+const hooks = await plugin();
+const output = {env: {KEEP: 'yes', PROCODER_HOST: 'outer'}};
+await hooks['shell.env']({}, output);
+if (output.env.KEEP !== 'yes' || output.env.PROCODER_HOST !== process.env.TEST_HOST) throw new Error(JSON.stringify(output));`
+			cmd := exec.Command(node, "--input-type=module", "--eval", code)
+			t.Setenv("KILO", "")
+			t.Setenv("KILOCODE_VERSION", "")
+			if name == "kilo" {
+				t.Setenv("KILO", "1")
+			}
+			cmd.Env = append(os.Environ(), "TEST_HOST="+name, "TEST_PLUGIN="+filepath.Join(repoRoot(t), ".opencode/plugins/procoder.mjs"))
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("adapter context: %v\n%s", err, out)
+			}
+		})
+	}
+}

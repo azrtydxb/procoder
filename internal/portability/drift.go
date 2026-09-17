@@ -47,9 +47,16 @@ func check(root string, c Copy, want string) (verdict, error) {
 // another agent being told something this repository stopped believing.
 // A repository with no AGENTS.md ships no agent layer and gets nothing.
 func AgentsDrift(root string) []gitx.Finding {
+	names, err := declaredHosts(root)
+	if err != nil {
+		return []gitx.Finding{{File: HostsFile, Blocking: true, Message: "cannot check host selection: " + err.Error()}}
+	}
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	switch {
 	case err != nil && os.IsNotExist(err):
+		if len(names) > 0 {
+			return []gitx.Finding{{File: Master, Blocking: true, Message: "declared host setup is missing its shared AGENTS.md contract"}}
+		}
 		// No agent layer at all: this repository never opted in, and it is
 		// asked nothing.
 		return nil
@@ -63,36 +70,17 @@ func AgentsDrift(root string) []gitx.Finding {
 	}
 	want := normalize(stripFrontmatter(string(master)))
 
-	// A missing copy only means something once this repository has opted
-	// into the layer — which is exactly the rule Check() already applies,
-	// and says why in its own comment: an AGENTS.md alone is a file many
-	// repositories carry for unrelated reasons, and twelve nag lines per
-	// gate run would be noise.
-	//
-	// The two functions disagreed, and the blocking one was the one wired
-	// into the commit hook: a repository worked on with a single agent had
-	// every commit blocked by eleven demands for rule files no agent here
-	// will ever read, with no way to say so short of deleting AGENTS.md
-	// and losing the drift check with it (#279).
-	//
-	// Drifted and unreadable still block whatever the repository has
-	// adopted. A stale rule file is another agent being told something
-	// this repository stopped believing; a file that does not exist tells
-	// no agent anything. Missing and drifted are different failures, and
-	// until now this function treated them as one.
-	adopted := adoptedLayer(root)
+	// Missing files matter only for declared hosts; an existing copy is
+	// always checked, even when it predates the declaration format.
 
 	var out []gitx.Finding
-	for _, c := range Copies {
+	for _, c := range selectedCopies(root, names) {
 		v, rerr := check(root, c, want)
 		switch v {
 		case unreadable:
 			out = append(out, gitx.Finding{Blocking: true, File: c.Path,
 				Message: fmt.Sprintf("%s rule file is unreadable (%v) — NOT checked against %s (agents)", c.Host, rerr, Master)})
 		case missing:
-			if !adopted {
-				continue
-			}
 			out = append(out, gitx.Finding{Blocking: true, File: c.Path,
 				Message: fmt.Sprintf("%s has no rule file — run `procoder agents` for the content to write (agents)", c.Host)})
 		case drifted:
@@ -101,23 +89,4 @@ func AgentsDrift(root string) []gitx.Finding {
 		}
 	}
 	return out
-}
-
-// adoptedLayer reports whether any host copy is present.
-//
-// Present, not readable. A copy that exists and cannot be read — a
-// permission, a broken mount — is still a copy this repository chose to
-// have, and it already blocks on its own account; letting a stat error
-// mean "not adopted" would suppress every missing-copy finding on the
-// strength of one unreadable file.
-//
-// Check() applies the same rule through the same function, so the two
-// cannot drift apart again.
-func adoptedLayer(root string) bool {
-	for _, c := range Copies {
-		if _, err := os.Stat(filepath.Join(root, c.Path)); err == nil || !os.IsNotExist(err) {
-			return true
-		}
-	}
-	return false
 }

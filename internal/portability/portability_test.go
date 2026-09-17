@@ -49,8 +49,7 @@ func TestEveryDeclaredCopyShips(t *testing.T) {
 }
 
 // A repo with AGENTS.md but no copies has not adopted the layer — silence.
-// Once one copy exists (adoption), drift blocks and the other copies are
-// reported missing as information.
+// Once one copy exists, drift blocks without demanding unrelated hosts.
 func TestDriftBlocksAndMissingInformsOnceAdopted(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, Master), []byte("# rules\n\nbody\n"), 0o644); err != nil {
@@ -79,8 +78,8 @@ func TestDriftBlocksAndMissingInformsOnceAdopted(t *testing.T) {
 	if blocking != 1 {
 		t.Fatalf("a drifted copy must block exactly once, got %d", blocking)
 	}
-	if info != len(Copies)-1 {
-		t.Fatalf("adopted layer must report the %d other copies missing, got %d", len(Copies)-1, info)
+	if info != 0 {
+		t.Fatalf("single-host project must not be asked for other copies, got %d", info)
 	}
 }
 
@@ -353,7 +352,7 @@ func TestFrontmatterDriftIsReported(t *testing.T) {
 		}
 	}
 	var lines []string
-	code := Agents(root, func(s string) { lines = append(lines, s) })
+	code := Agents(root, func(s string) { lines = append(lines, s) }, "all")
 	joined := strings.Join(lines, "\n")
 	if code == 0 {
 		t.Fatalf("a stale envelope reported clean:\n%s", joined)

@@ -4,6 +4,12 @@ description: "Keep the universal agent layer in sync: per-host rule files derive
 
 The user invoked /procoder:agents.
 
+Pass any user-selected `--host <name>` flags or exclusive `--all` to the
+command. Without flags it uses reliable plugin context; if unknown, ask the
+user which host and re-run with that explicit choice. Never choose all by
+default. Review and write the printed `.procoder/hosts.json` declaration along
+with the named copies. Additional hosts are additive; keep existing files.
+
 The command below is the `procoder` binary on PATH.
 
 procoder serves every AI coding agent from one canonical `AGENTS.md`:

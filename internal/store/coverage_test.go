@@ -39,6 +39,7 @@ var knownPaths = map[string]string{
 	".procoder/backlog/sprints":                 "ListDir",
 	".procoder/bench":                           "LoadIn, SaveIn",
 	".procoder/config.toml":                     "LoadDoc",
+	".procoder/hosts.json":                      "LoadDoc",
 	".procoder/config.toml:%d":                  "a message format, not a path",
 	".procoder/config.toml:%d — %s (%s)":        "a message format, not a path",
 	".procoder/context.md":                      "LoadDoc",
