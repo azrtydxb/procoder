@@ -451,3 +451,23 @@ competes under the reserved limit, and what cannot fit is named in the
 omission notice rather than silently lost), while the SessionStart
 payload is left whole and made checkable, with the receipt check pinned
 inside the inlined window.
+
+## The 3.6.0 changelog is dated a day before the tag — correct it?
+
+The entry reads `## 3.6.0 — 2026-09-09`. The release commit merged on the
+9th; the tag went out on the 10th because the first tag run failed on
+Windows and had to be re-cut after the fix.
+
+CI extracts that entry verbatim as the release notes, so the published
+notes will say the 9th while the GitHub release itself is dated the 10th.
+Nobody is misled about what shipped — only about which day.
+
+- leave it: the content was finalised on the 9th, and a one-day
+  discrepancy in a date is not worth another PR, another full CI cycle,
+  and a third tag re-cut.
+- correct it to 2026-09-10 before the release job is allowed to stand:
+  the changelog is the release notes, and a date in them should be the
+  date. Costs a PR, a CI cycle, and deleting and re-cutting the tag
+  again — which is only safe while nothing has been published.
+- correct it in the next release instead, so 3.6.0 ships as-is and 3.7.0
+  carries a fixed date for its own entry.

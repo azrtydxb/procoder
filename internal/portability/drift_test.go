@@ -157,15 +157,18 @@ func TestMissingCopiesOnlyMatterOnceTheLayerIsAdopted(t *testing.T) {
 		t.Fatalf("an AGENTS.md alone asked for %d rule file(s): %+v", len(got), got)
 	}
 
-	// Adopt the layer by writing one copy correctly. Every OTHER host is
-	// now a gap the repository chose to have, and is reported.
+	// One host does not opt the project into every other integration.
 	adopt := Copies[0]
 	writeRules(t, root, adopt.Path, adopt.Frontmatter+master)
 
 	got := AgentsDrift(root)
+	if len(got) != 0 {
+		t.Fatalf("single-host project asked for unrelated copies: %+v", got)
+	}
+	writeRules(t, root, HostsFile, `["all"]`)
+	got = AgentsDrift(root)
 	if len(got) != len(Copies)-1 {
-		t.Fatalf("with the layer adopted, the other %d hosts must be reported, got %d: %+v",
-			len(Copies)-1, len(got), got)
+		t.Fatalf("explicit all must require missing copies: %+v", got)
 	}
 	for _, f := range got {
 		if f.File == adopt.Path {
@@ -215,12 +218,10 @@ func TestDriftAndCheckAgreeOnMissingCopies(t *testing.T) {
 // adopted.
 //
 // It is a file this repository chose to have, and it blocks on its own
-// account. Letting a stat error mean "not adopted" would suppress every
-// missing-copy finding on the strength of one unreadable file — the check
-// going quietest exactly where something is wrong.
+// account without requiring any unrelated host copies.
 //
-// proved by: treating only `err == nil` as adopted again — the eleven
-// missing copies below go unreported.
+// proved by: forced selectedCopies to all; the unreadable copy was joined by
+// eleven unrelated missing-copy findings and this test failed.
 func TestAnUnreadableCopyStillCountsAsAdopted(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod 000 does not make a file unreadable on Windows")
@@ -241,12 +242,8 @@ func TestAnUnreadableCopyStillCountsAsAdopted(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 
-	if !adoptedLayer(root) {
-		t.Fatal("an unreadable copy was read as a repository that never adopted the layer")
-	}
 	got := AgentsDrift(root)
-	if len(got) != len(Copies) {
-		t.Fatalf("want the unreadable copy plus the %d missing ones, got %d: %+v",
-			len(Copies)-1, len(got), got)
+	if len(got) != 1 || !got[0].Blocking {
+		t.Fatalf("want only the unreadable installed copy: %+v", got)
 	}
 }
