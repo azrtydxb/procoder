@@ -192,11 +192,127 @@ func TestGitignoredManifestsAreNotThisRepositorysDependencies(t *testing.T) {
 	write("go.mod", "module x\n")
 	write(filepath.FromSlash("web/app/package-lock.json"), "{}")
 	write(filepath.FromSlash(".kilocode/package-lock.json"), "{}")
+	write(filepath.FromSlash("vendor/x/go.mod"), "module vendor\n")
+	if out, err := exec.Command("git", "-C", root, "add", "go.mod", "vendor/x/go.mod").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
 
 	got := manifestsIn(root)
 	want := []string{"go.mod", "web/app/package-lock.json"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("manifests found:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestEmptyGitInventoryDoesNotFallBackToIgnoredManifests(t *testing.T) {
+	root := gitRepoForManifests(t)
+	// Ignore the ignore file too: ls-files must successfully return no paths.
+	for name, body := range map[string]string{
+		".gitignore": "*\n", "package-lock.json": "{}",
+		"package.json":   `{"dependencies":{"example":"1"}}`,
+		"pyproject.toml": "[project]\ndependencies = [\"example\"]\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, got := range map[string][]string{"scan": manifestsIn(root), "npm": npmGaps(root), "python": pythonGaps(root)} {
+		if len(got) != 0 {
+			t.Errorf("%s included ignored files: %v", name, got)
+		}
+	}
+}
+
+func TestDeletedTrackedManifestsAreNotScanned(t *testing.T) {
+	root := gitRepoForManifests(t)
+	path := filepath.Join(root, "package-lock.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", root, "add", "package-lock.json").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := manifestsIn(root); len(got) != 0 {
+		t.Fatalf("deleted manifest passed to scanner: %v", got)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := manifestsIn(root); len(got) != 0 {
+		t.Fatalf("directory replacing manifest passed to scanner: %v", got)
+	}
+}
+
+func TestGitGapChecksShareManifestOwnership(t *testing.T) {
+	root := gitRepoForManifests(t)
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".kilocode/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"tracked", "untracked", ".kilocode", "vendor/x"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range map[string]string{
+			"package.json":   `{"dependencies":{"example":"1"}}`,
+			"pyproject.toml": "[project]\ndependencies = [\"example\"]\n",
+		} {
+			if err := os.WriteFile(filepath.Join(root, dir, name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if out, err := exec.Command("git", "-C", root, "add", "tracked", "vendor").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	for name, got := range map[string][]string{"package.json": npmGaps(root), "pyproject.toml": pythonGaps(root)} {
+		want := "tracked/" + name + ",untracked/" + name
+		if strings.Join(got, ",") != want {
+			t.Errorf("%s gaps: got %v, want %s", name, got, want)
+		}
+	}
+}
+
+func TestIgnoredLockfilesCannotCoverVisibleDependencies(t *testing.T) {
+	root := gitRepoForManifests(t)
+	for name, body := range map[string]string{
+		".gitignore":        "package-lock.json\npoetry.lock\n",
+		"package.json":      `{"workspaces":["web"],"dependencies":{"example":"1"}}`,
+		"pyproject.toml":    "[project]\ndependencies = [\"example\"]\n",
+		"package-lock.json": "{}",
+		"poetry.lock":       "# ignored\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "web/package.json"), []byte(`{"dependencies":{"example":"1"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := npmGaps(root); strings.Join(got, ",") != "package.json,web/package.json" {
+		t.Fatalf("ignored sibling/workspace lockfile hid npm gaps: %v", got)
+	}
+	if got := pythonGaps(root); strings.Join(got, ",") != "pyproject.toml" {
+		t.Fatalf("ignored sibling lockfile hid Python gap: %v", got)
+	}
+}
+
+func TestGitManifestPathsAreNotQuoted(t *testing.T) {
+	root := gitRepoForManifests(t)
+	const dir = "space and caf\u00e9"
+	if err := os.Mkdir(filepath.Join(root, dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, dir, "go.mod"), []byte("module example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := manifestsIn(root); len(got) != 1 || got[0] != dir+"/go.mod" {
+		t.Fatalf("Git-quoted path lost: %v", got)
 	}
 }
 
