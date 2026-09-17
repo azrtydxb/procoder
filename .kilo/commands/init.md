@@ -11,7 +11,7 @@ choice; never assume all hosts or infer one from repository directories.
 
 1. Run:
 
-       procoder init
+       procoder init $ARGUMENTS
 
    It surveys the repository and prints one install command per missing
    formatter, chosen for this machine's package managers. It updates only the
@@ -36,5 +36,6 @@ choice; never assume all hosts or infer one from repository directories.
        procoder doctor
 
    and confirm every gap is closed. A tool is installed when doctor says ok —
-   an installer exiting 0 is not the proof; doctor is. Re-run init with the
-   same selection to verify the integration content is also current.
+   an installer exiting 0 is not the proof; doctor is. Re-run
+   `procoder init $ARGUMENTS` with the same selection to verify the
+   integration content is also current.

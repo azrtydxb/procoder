@@ -17,11 +17,11 @@ rule-file hosts (Cursor, Windsurf, Cline, Kilo Code, Roo Code, Kiro,
 Antigravity, Qoder, Copilot editors, Codex) each get a byte-identical
 copy under their own path, and the gate blocks when any copy drifts.
 
-1. Run `launcher.sh agents`. For each file it reports missing or
+1. Run `launcher.sh agents $ARGUMENTS`. For each file it reports missing or
    DRIFTED, write the printed content to the printed path — the content
    is the master plus that host's frontmatter; do not edit it by hand.
 2. To change the rules themselves, edit `AGENTS.md` (the master), then
-   run `launcher.sh agents` again and rewrite every copy it lists.
+   run `launcher.sh agents $ARGUMENTS` again and rewrite every copy it lists.
    Never edit a copy directly — the next check flags it as drift.
 3. Finish with `launcher.sh check` — the same drift rules ride the gate,
    so CI agrees with what you just verified.

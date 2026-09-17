@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+// proved by: returned all unconditionally from Setup; unknown context and
+// malformed flags were accepted and explicit selections returned the wrong host.
 func TestSetupSelection(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -51,6 +53,7 @@ func TestSetupSelection(t *testing.T) {
 	}
 }
 
+// proved by: removed PROCODER_HOST from envKeys; ProcessEnv lost the caller.
 func TestSetupContextTravelsInProcessEnvironment(t *testing.T) {
 	t.Setenv("PROCODER_HOST", "kilo")
 	if ProcessEnv().Read("PROCODER_HOST") != "kilo" {

@@ -218,12 +218,10 @@ func TestDriftAndCheckAgreeOnMissingCopies(t *testing.T) {
 // adopted.
 //
 // It is a file this repository chose to have, and it blocks on its own
-// account. Letting a stat error mean "not adopted" would suppress every
-// missing-copy finding on the strength of one unreadable file — the check
-// going quietest exactly where something is wrong.
+// account without requiring any unrelated host copies.
 //
-// proved by: treating only `err == nil` as adopted again — the eleven
-// missing copies below go unreported.
+// proved by: forced selectedCopies to all; the unreadable copy was joined by
+// eleven unrelated missing-copy findings and this test failed.
 func TestAnUnreadableCopyStillCountsAsAdopted(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod 000 does not make a file unreadable on Windows")

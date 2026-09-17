@@ -50,6 +50,8 @@ func TestEveryDeclaredCopyShips(t *testing.T) {
 
 // A repo with AGENTS.md but no copies has not adopted the layer — silence.
 // Once one copy exists, drift blocks without demanding unrelated hosts.
+// proved by: made selectedCopies select all hosts; an undeclared layer was
+// incorrectly asked for every missing integration and this test failed.
 func TestDriftBlocksAndMissingInformsOnceAdopted(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, Master), []byte("# rules\n\nbody\n"), 0o644); err != nil {

@@ -113,6 +113,8 @@ func TestOpenCodeTurnEndRunsHookStop(t *testing.T) {
 	}
 }
 
+// proved by: shell.env assigned outer instead of the caller host; the Node
+// driver rejected the environment for both OpenCode and Kilo.
 func TestOpenCodeAndKiloSupplyExplicitSetupContext(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

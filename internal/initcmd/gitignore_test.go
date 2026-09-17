@@ -9,6 +9,8 @@ import (
 	"testing"
 )
 
+// proved by: returned success without writing in IgnoreHosts; the empty-file
+// case failed because no .gitignore was created.
 func TestIgnoreHostsPreservesExistingRulesAndIsIdempotent(t *testing.T) {
 	for _, original := range []string{"", "node_modules/", "# existing\r\n/.cursor/\r\n"} {
 		t.Run(original, func(t *testing.T) {
@@ -40,6 +42,8 @@ func TestIgnoreHostsPreservesExistingRulesAndIsIdempotent(t *testing.T) {
 	}
 }
 
+// proved by: made IgnoreHosts a successful no-op; git check-ignore rejected
+// every selected host path rather than confirming it was ignored.
 func TestIgnoreHostsGitSemantics(t *testing.T) {
 	root := t.TempDir()
 	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
@@ -65,6 +69,8 @@ func TestIgnoreHostsGitSemantics(t *testing.T) {
 	}
 }
 
+// proved by: returned success before IgnoreHosts validation; a directory at
+// .gitignore was accepted and this test failed.
 func TestInitRefusesNonRegularGitignore(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".gitignore"), 0o755); err != nil {
@@ -75,6 +81,8 @@ func TestInitRefusesNonRegularGitignore(t *testing.T) {
 	}
 }
 
+// proved by: returned success before IgnoreHosts validation; the symlink was
+// accepted instead of refused and this test failed.
 func TestIgnoreHostsRefusesSymlink(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(t.TempDir(), "ignore")
@@ -93,6 +101,8 @@ func TestIgnoreHostsRefusesSymlink(t *testing.T) {
 	}
 }
 
+// proved by: made IgnoreHosts a successful no-op; the selected Kilo entry was
+// absent and the first selection assertion failed.
 func TestIgnoreOnlySelectedHostsAndAddWithoutRemoving(t *testing.T) {
 	root := t.TempDir()
 	if err := IgnoreHosts(root, io.Discard, []string{"kilo"}); err != nil {

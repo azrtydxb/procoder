@@ -11,6 +11,8 @@ import (
 	"procoder/internal/host"
 )
 
+// proved by: made host.Setup unconditionally return all without validation;
+// the no-context init case was accepted instead of exiting 2.
 func TestSetupCLIAPIAndCallerIsolation(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
@@ -41,6 +43,8 @@ func TestSetupCLIAPIAndCallerIsolation(t *testing.T) {
 	}
 }
 
+// proved by: short-circuited IgnoreHosts with success; the selected .gitignore
+// entry was absent and this test failed on the missing file.
 func TestInitUsesHostSelectionWithoutWritingRules(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# Rules\n"), 0o644); err != nil {
@@ -63,6 +67,8 @@ func TestInitUsesHostSelectionWithoutWritingRules(t *testing.T) {
 	}
 }
 
+// proved by: before the master-precondition fix, init exited 1 and printed a
+// declaration and ignore-write confirmation for a missing AGENTS.md.
 func TestSetupRequiresReadableMasterBeforeOutputOrWrites(t *testing.T) {
 	for _, unreadable := range []bool{false, true} {
 		for _, command := range []string{"init", "agents"} {
