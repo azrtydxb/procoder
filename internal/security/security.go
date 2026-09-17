@@ -531,27 +531,11 @@ func Deps(root string) []gitx.Finding {
 // stays silent about the rest.
 func npmGaps(root string) []string {
 	var out []string
-	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // an unreadable directory hides its own packages, not the others
+	for _, p := range dependencyFiles(root, []string{"package.json"}) {
+		if hasNpmDepsWithoutLockfile(root, filepath.Dir(filepath.Join(root, p))) {
+			out = append(out, p)
 		}
-		if info.IsDir() {
-			if p != root && manifestDirs[info.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info.Name() != "package.json" {
-			return nil
-		}
-		if hasNpmDepsWithoutLockfile(root, filepath.Dir(p)) {
-			if rel, ok := gitx.RepoRel(root, p); ok {
-				out = append(out, rel)
-			}
-		}
-		return nil
-	})
-	sort.Strings(out)
+	}
 	return out
 }
 
@@ -596,8 +580,8 @@ func hasNpmDepsWithoutLockfile(repoRoot, dir string) bool {
 // npmLockfileIn: one of the three npm-family lockfiles sits in this
 // directory. osv-scanner reads all three.
 func npmLockfileIn(dir string) bool {
-	for _, lock := range []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"} {
-		if _, err := os.Stat(filepath.Join(dir, lock)); err == nil {
+	for _, lock := range dependencyFiles(dir, []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"}) {
+		if filepath.Dir(lock) == "." {
 			return true
 		}
 	}
@@ -782,35 +766,19 @@ func matchGlobSegments(pattern, segments []string) bool {
 // looked at them.
 func pythonGaps(root string) []string {
 	var out []string
-	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // an unreadable directory hides its own packages, not the others
+	for _, p := range dependencyFiles(root, []string{"pyproject.toml"}) {
+		if hasPythonDepsWithoutLockfile(filepath.Dir(filepath.Join(root, p))) {
+			out = append(out, p)
 		}
-		if info.IsDir() {
-			if p != root && manifestDirs[info.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info.Name() != "pyproject.toml" {
-			return nil
-		}
-		if hasPythonDepsWithoutLockfile(filepath.Dir(p)) {
-			if rel, ok := gitx.RepoRel(root, p); ok {
-				out = append(out, rel)
-			}
-		}
-		return nil
-	})
-	sort.Strings(out)
+	}
 	return out
 }
 
 // hasPythonDepsWithoutLockfile answers for ONE directory: a pyproject.toml
 // there declaring dependencies with nothing pinned beside it.
 func hasPythonDepsWithoutLockfile(root string) bool {
-	for _, lock := range []string{"poetry.lock", "Pipfile.lock", "requirements.txt", "uv.lock", "pdm.lock"} {
-		if _, err := os.Stat(filepath.Join(root, lock)); err == nil {
+	for _, lock := range dependencyFiles(root, []string{"poetry.lock", "Pipfile.lock", "requirements.txt", "uv.lock", "pdm.lock"}) {
+		if filepath.Dir(lock) == "." {
 			return false
 		}
 	}
@@ -992,8 +960,13 @@ func inManifestDir(root, p string) bool {
 // Paths are returned repo-relative because that is what osv-scanner's -L
 // wants alongside cmd.Dir = root.
 func manifestsIn(root string) []string {
+	return dependencyFiles(root, DepManifests)
+}
+
+// dependencyFiles shares repository ownership between scanning and gap checks.
+func dependencyFiles(root string, basenames []string) []string {
 	names := map[string]bool{}
-	for _, m := range DepManifests {
+	for _, m := range basenames {
 		names[m] = true
 	}
 	// Gitignored manifests are not this repository's dependencies. Agent
@@ -1004,10 +977,19 @@ func manifestsIn(root string) []string {
 	// file set is the right scope, and it is the scope `procoder audit`
 	// already claims out loud. Falls through to the walk when git cannot
 	// answer, so a non-repo directory still gets scanned.
-	if tracked := gitx.FilesUnder(root, "."); len(tracked) > 0 {
+	// Keep success separate from count, and NUL-delimit paths so Git does not
+	// quote whitespace or non-ASCII filenames into paths that do not exist.
+	listed, err := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".").Output()
+	if err == nil {
 		var out []string
-		for _, p := range tracked {
+		for _, p := range strings.Split(string(listed), "\x00") {
 			if !names[filepath.Base(p)] || inManifestDir(root, p) {
+				continue
+			}
+			// The index includes worktree deletions. Other stat errors must
+			// still reach the scanner rather than silently reporting clean.
+			info, statErr := os.Stat(filepath.Join(root, p))
+			if os.IsNotExist(statErr) || (statErr == nil && info.IsDir()) {
 				continue
 			}
 			if rel, ok := gitx.RepoRel(root, p); ok {
