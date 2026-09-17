@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"procoder/internal/gitx"
 )
 
 func TestHostSetupPrintsOnlyNeededFilesWithoutWriting(t *testing.T) {
@@ -101,5 +103,15 @@ func TestDanglingHostDeclarationCannotDisableChecks(t *testing.T) {
 	}
 	if code := Agents(root, func(string) {}, "kilo"); code != 2 {
 		t.Fatalf("dangling declaration accepted: %d", code)
+	}
+}
+
+func TestExistingHostWithoutDeclarationStillRequiresMaster(t *testing.T) {
+	root := t.TempDir()
+	writeRules(t, root, ".kilo/rules/procoder.md", "# Existing contract\n")
+	for name, findings := range map[string][]gitx.Finding{"check": Check(root), "drift": AgentsDrift(root)} {
+		if len(findings) != 1 || !findings[0].Blocking || findings[0].File != Master {
+			t.Fatalf("%s silently skipped existing integration without master: %+v", name, findings)
+		}
 	}
 }

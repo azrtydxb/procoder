@@ -54,8 +54,8 @@ func AgentsDrift(root string) []gitx.Finding {
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	switch {
 	case err != nil && os.IsNotExist(err):
-		if len(names) > 0 {
-			return []gitx.Finding{{File: Master, Blocking: true, Message: "declared host setup is missing its shared AGENTS.md contract"}}
+		if len(names) > 0 || len(selectedCopies(root, nil)) > 0 {
+			return []gitx.Finding{{File: Master, Blocking: true, Message: "host setup is missing its shared AGENTS.md contract"}}
 		}
 		// No agent layer at all: this repository never opted in, and it is
 		// asked nothing.

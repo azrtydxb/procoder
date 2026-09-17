@@ -62,3 +62,31 @@ func TestInitUsesHostSelectionWithoutWritingRules(t *testing.T) {
 		t.Fatal("init wrote host declaration")
 	}
 }
+
+func TestSetupRequiresReadableMasterBeforeOutputOrWrites(t *testing.T) {
+	for _, unreadable := range []bool{false, true} {
+		for _, command := range []string{"init", "agents"} {
+			root := t.TempDir()
+			if unreadable {
+				if err := os.Mkdir(filepath.Join(root, "AGENTS.md"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			argv := []string{command, "--host=kilo"}
+			var out, stderr, apiOut, apiErr bytes.Buffer
+			code := run(argv, session{cwd: root, stdout: &out, stderr: &stderr, stdin: strings.NewReader("")})
+			apiCode, _ := apiRunner(api.Request{Argv: argv, Cwd: root}, &apiOut, &apiErr)
+			if code != 2 || apiCode != code || apiOut.String() != out.String() || apiErr.String() != stderr.String() {
+				t.Fatalf("%s unreadable=%v: CLI=%d API=%d: %s", command, unreadable, code, apiCode, out.String())
+			}
+			if !strings.Contains(out.String(), "cannot read AGENTS.md") || strings.Contains(out.String(), "== write this") {
+				t.Fatalf("generated output before validating master: %s", out.String())
+			}
+			for _, path := range []string{".gitignore", ".procoder", ".kilo"} {
+				if _, err := os.Lstat(filepath.Join(root, path)); !os.IsNotExist(err) {
+					t.Fatalf("%s mutated %s before validating master: %v", command, path, err)
+				}
+			}
+		}
+	}
+}

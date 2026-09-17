@@ -119,8 +119,8 @@ func Check(root string) []gitx.Finding {
 	}
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	if os.IsNotExist(err) {
-		if len(names) > 0 {
-			return []gitx.Finding{{File: Master, Blocking: true, Message: "declared host setup is missing its shared AGENTS.md contract"}}
+		if len(names) > 0 || len(selectedCopies(root, nil)) > 0 {
+			return []gitx.Finding{{File: Master, Blocking: true, Message: "host setup is missing its shared AGENTS.md contract"}}
 		}
 		return nil // repos procoder governs need not ship an agent layer
 	}
@@ -179,15 +179,15 @@ func Agents(root string, out func(string), names ...string) int {
 		out("choose --host <name> or --all before generating integrations")
 		return 2
 	}
+	master, err := os.ReadFile(filepath.Join(root, Master))
+	if err != nil {
+		out("cannot read " + Master + ": " + err.Error() + "; create the shared contract before generating host copies")
+		return 2
+	}
 	copies, changed, err := setupCopies(root, names, out)
 	if err != nil {
 		out("cannot select hosts: " + err.Error())
 		return 2
-	}
-	master, err := os.ReadFile(filepath.Join(root, Master))
-	if err != nil {
-		out("cannot read " + Master + ": " + err.Error() + "; create the shared contract before generating host copies")
-		return 1
 	}
 	body := stripFrontmatter(string(master))
 	want := normalize(body)

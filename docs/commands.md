@@ -1018,6 +1018,8 @@ missing or drifted for the selected and already-present hosts so the agent can
 review and write it. Also prints an additive `.procoder/hosts.json` declaration.
 It writes neither the declaration nor the rule files. An existing `AGENTS.md`
 is required; this command does not invent a project's shared contract.
+Missing or unreadable `AGENTS.md` exits 2 before printing generated content;
+`init` also stops before changing ignores or running tool installations.
 
 Use `--host kilo` in a terminal, repeat `--host` to deliberately add hosts, or
 choose `--all` for a distribution like procoder itself. Kilo selects `.kilo/`,
@@ -1038,7 +1040,7 @@ the failure the agent layer exists to prevent, so it is blocking rather
 than advisory. Missing copies block only for hosts explicitly declared in
 `.procoder/hosts.json`. Repositories without a declaration still have existing
 copies checked but are not asked to create unrelated copies. Invalid declarations
-or a declared setup missing `AGENTS.md` block rather than silently passing.
+or a declared or existing setup missing `AGENTS.md` block rather than silently passing.
 
 See [Every agent](portability.md) for the full host matrix.
 
