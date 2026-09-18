@@ -39,6 +39,7 @@ var knownPaths = map[string]string{
 	".procoder/backlog/sprints":                 "ListDir",
 	".procoder/bench":                           "LoadIn, SaveIn",
 	".procoder/config.toml":                     "LoadDoc",
+	".procoder/hosts.json":                      "LoadDoc",
 	".procoder/config.toml:%d":                  "a message format, not a path",
 	".procoder/config.toml:%d — %s (%s)":        "a message format, not a path",
 	".procoder/context.md":                      "LoadDoc",
@@ -78,6 +79,15 @@ func goFiles(t *testing.T) []string {
 				return nil
 			}
 			if strings.Contains(filepath.ToSlash(p), "/internal/store/") {
+				return nil
+			}
+			// internal/api/paths.go owns ~/.procoder/run — the user's
+			// home, not any repository. This guard is about repository
+			// state, and internal/store cannot own the run directory
+			// because every one of its operations is scoped to a repo
+			// root. A daemon serving ten checkouts has one run directory
+			// and no root to file it under.
+			if strings.HasSuffix(filepath.ToSlash(p), "/internal/api/paths.go") {
 				return nil
 			}
 			out = append(out, p)

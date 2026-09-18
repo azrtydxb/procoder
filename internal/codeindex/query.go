@@ -80,18 +80,34 @@ func printTag(out func(string), t Tag) {
 
 // Find prints where symbol is defined. Exact match first; if nothing, it
 // says so rather than guessing.
-func Find(root, symbol string, out func(string)) int {
+// FindTags is Find as values: every definition of symbol in the index.
+//
+// The same lookup the printed form uses, so a caller acting on the hits
+// and a person reading the lines are never told different things.
+func FindTags(root, symbol string) ([]Tag, error) {
 	tags, err := loadTags(root)
+	if err != nil {
+		return nil, err
+	}
+	var hits []Tag
+	for _, t := range tags {
+		if t.Name == symbol {
+			hits = append(hits, t)
+		}
+	}
+	return hits, nil
+}
+
+func Find(root, symbol string, out func(string)) int {
+	found, err := FindTags(root, symbol)
 	if err != nil {
 		out(err.Error())
 		return 1
 	}
 	hits := 0
-	for _, t := range tags {
-		if t.Name == symbol {
-			printTag(out, t)
-			hits++
-		}
+	for _, t := range found {
+		printTag(out, t)
+		hits++
 	}
 	if hits == 0 {
 		out(fmt.Sprintf("no definition of %q in the index — try `procoder index search %s`", symbol, symbol))
@@ -107,11 +123,13 @@ const searchCap = 50
 
 // Search is the fuzzy lookup: case-insensitive substring, exact and prefix
 // matches ranked first, capped and saying so when capped.
-func Search(root, query string, out func(string)) int {
+// SearchTags is Search as values, ranked the same way: exact matches
+// first, then prefix, then substring. Uncapped — the cap is a thing done
+// to a person reading a terminal, not to a caller reading a list.
+func SearchTags(root, query string) ([]Tag, error) {
 	tags, err := loadTags(root)
 	if err != nil {
-		out(err.Error())
-		return 1
+		return nil, err
 	}
 	q := strings.ToLower(query)
 	var exact, prefix, rest []Tag
@@ -126,7 +144,15 @@ func Search(root, query string, out func(string)) int {
 			rest = append(rest, t)
 		}
 	}
-	hits := append(exact, append(prefix, rest...)...)
+	return append(exact, append(prefix, rest...)...), nil
+}
+
+func Search(root, query string, out func(string)) int {
+	hits, err := SearchTags(root, query)
+	if err != nil {
+		out(err.Error())
+		return 1
+	}
 	if len(hits) == 0 {
 		out(fmt.Sprintf("nothing matching %q in the index", query))
 		return 1

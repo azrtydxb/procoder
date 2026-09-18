@@ -40,15 +40,18 @@ somewhere already on `PATH`.
 
 ## 2. Write the agent contract
 
-In the repository you want governed:
+In the repository you want governed, first establish `AGENTS.md` with the
+shared project contract. Then choose your host, for example Kilo:
 
 ```
-procoder agents
+procoder agents --host kilo
 ```
 
-This prints `AGENTS.md` — the always-on contract — plus the per-host
-rule file your agent reads, and it tells you the path for each. **It
-writes nothing**; you review the content and write the files.
+This derives the selected per-host rule file from your existing `AGENTS.md`
+and prints an additive `.procoder/hosts.json` declaration with the path for
+each file. **It writes nothing**; review the content and write the files.
+Repeat `--host` for additional hosts; use `--host agents` for a native
+AGENTS.md reader. `--all` is a deliberate distribution choice, not a default.
 
 Most hosts need only `AGENTS.md`. Cursor, Windsurf, Cline, Kilo Code,
 Roo, Kiro, Antigravity, Qoder, Copilot and Codex each take one extra
@@ -58,7 +61,7 @@ table.
 ## 3. Close the tool gaps
 
 ```
-procoder init
+procoder init --host kilo
 ```
 
 Prints one install command per missing formatter, linter, scanner, and
