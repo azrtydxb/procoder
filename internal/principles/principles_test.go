@@ -3,6 +3,7 @@ package principles
 import (
 	"encoding/json"
 	"io"
+	"procoder/internal/host"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,7 @@ func hookOutput(t *testing.T, want, root string) string {
 	t.Helper()
 	hostEnv(t, want)
 	var got []string
-	if code := RunHook(root, nil, func(s string) { got = append(got, s) }); code != 0 {
+	if code := RunHook(root, host.ProcessEnv(), nil, func(s string) { got = append(got, s) }); code != 0 {
 		t.Fatalf("hook exit %d — a SessionStart hook must never fail the session", code)
 	}
 	return strings.Join(got, "\n")
@@ -124,7 +125,7 @@ func TestSessionStartStaysInsideTheBudget(t *testing.T) {
 	defer func() { releases.APIHost, Version, Stderr = prevHost, prevVer, prevErr }()
 
 	start := time.Now()
-	RunHook("../..", nil, func(string) {})
+	RunHook("../..", host.ProcessEnv(), nil, func(string) {})
 	elapsed := time.Since(start)
 	if elapsed > status.Budget {
 		t.Fatalf("SessionStart took %s — the budget is %s", elapsed, status.Budget)
@@ -159,7 +160,7 @@ func TestTheVersionCheckNeverHoldsTheSessionOpen(t *testing.T) {
 	var lines []string
 	var firstOut time.Duration
 	start := time.Now()
-	if code := RunHook(root, nil, func(s string) {
+	if code := RunHook(root, host.ProcessEnv(), nil, func(s string) {
 		if len(lines) == 0 {
 			firstOut = time.Since(start)
 		}
@@ -202,7 +203,7 @@ func TestTheVersionWarningStaysOutOfTheHookPayload(t *testing.T) {
 	defer func() { Stderr = prevErr }()
 
 	var lines []string
-	RunHook(t.TempDir(), nil, func(s string) { lines = append(lines, s) })
+	RunHook(t.TempDir(), host.ProcessEnv(), nil, func(s string) { lines = append(lines, s) })
 	if !strings.Contains(buf.String(), "9.9.9") {
 		t.Errorf("the warning must reach stderr: %q", buf.String())
 	}
@@ -234,7 +235,7 @@ func TestTheConfigKnobSilencesTheCheckEntirely(t *testing.T) {
 	prevErr := Stderr
 	Stderr = &buf
 	defer func() { Stderr = prevErr }()
-	RunHook(root, nil, func(string) {})
+	RunHook(root, host.ProcessEnv(), nil, func(string) {})
 	if buf.Len() != 0 {
 		t.Errorf("check = off says nothing: %q", buf.String())
 	}
@@ -310,7 +311,7 @@ func TestAResumedSessionGetsAPointerNotTheWholeText(t *testing.T) {
 	root := t.TempDir()
 	full := func(payload string) string {
 		var b strings.Builder
-		RunHook(root, strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
+		RunHook(root, host.ProcessEnv(), strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
 		return b.String()
 	}
 
@@ -351,7 +352,7 @@ func TestAnythingOtherThanAResumeGetsTheWholeText(t *testing.T) {
 		``,
 	} {
 		var b strings.Builder
-		RunHook(root, strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
+		RunHook(root, host.ProcessEnv(), strings.NewReader(payload), func(s string) { b.WriteString(s + "\n") })
 		if len(b.String()) < 1000 {
 			t.Errorf("payload %q got %d bytes — the rules must arrive in full when the start is not known to be resumed",
 				payload, b.Len())

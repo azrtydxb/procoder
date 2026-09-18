@@ -10,6 +10,36 @@ missing or drifted, and drift blocks the gate like any other mirror.
 The adapter rule: adapters stay thin. Logic lives in the binary; content
 lives in `AGENTS.md` and `commands/`; an adapter only points or copies.
 
+## Selecting hosts during setup
+
+`procoder init --host kilo` prints the tool plan and selected integration
+content; `procoder agents --host kilo` prints the integration content alone.
+Both accept repeated `--host` flags or exclusive `--all`. Review and write the
+printed `.procoder/hosts.json` array and rule copies. The shared `AGENTS.md`
+must already contain the project's contract. Neither command writes those
+generated files; init's established writes are selected gitignore entries and,
+after an interactive choice, server configuration. `.procoder/` stays shared.
+
+Explicit flags win over `PROCODER_HOST`, the adapter's explicit caller marker.
+Without either, the host-specific `COPILOT_PLUGIN_DATA`, `PLUGIN_DATA`,
+`QODER_SESSION_ID`, or `PI_CODING_AGENT` signal selects Copilot, Codex, Qoder,
+or pi respectively. Competing signals refuse to guess. A plugin-root path,
+an installed editor, and the legacy hook envelope's Claude fallback do not
+identify the setup host. When context is unavailable, including bare terminal
+calls, the command asks for a host choice and exits 2; the setup skill asks the
+user and re-runs with `--host`. `--host agents` serves native AGENTS.md readers;
+`--host skills` selects the distributable skill envelope.
+
+The OpenCode/Kilo plugin supplies `PROCODER_HOST` through `shell.env`; pi sets it
+on its own child invocations. Hosts without that context use `--host` rather
+than pretending detection succeeded. No launcher guesses from its install path.
+
+Selections are additive. Existing copies, including legacy Kilo copies, are
+always checked, never deleted. New Kilo setup only requests `.kilo/`. Missing
+copies are required only by the declaration, not by the presence of another
+host. This repository intentionally declares `["all"]` to keep its complete
+distribution validated; maintain it with `procoder agents --all`.
+
 ## Instruction tier — a rules file, nothing else
 
 | Host                                     | File                              | Install                 |

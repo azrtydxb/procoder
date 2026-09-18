@@ -86,7 +86,11 @@ Check every hunk for:
   wrote.
 - Prose and markdown: code spans unbroken, lists formatted, wording that
   says what the code actually does — names and paths in docs match the
-  code exactly (every variant, full paths).
+  code exactly (every variant, full paths). Command examples include every
+  required positional argument; check them against dispatch usage. A new
+  deferral path must not waive existing checks or reflection obligations.
+  Distinguish a source playbook's filenames from this repository's artifacts;
+  verify claimed files exist and label optional overrides as optional.
 - The product's story: does this diff change what the README or docs
   site must tell a reader? Pages updated in this diff, or the absence
   concretely justified — a feature that ships with only a reference

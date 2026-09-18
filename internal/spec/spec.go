@@ -141,7 +141,32 @@ func PrintTemplate(name string, out func(string)) int {
 
 // Check is the quality controller: it verifies one spec (or all) and blocks
 // while gaps remain, naming each one.
+// Verdict is one spec's answer as a value: what it is called, whether the
+// controller accepted it, and every gap it named.
+//
+// Filled by the same pass that prints the lines, never by parsing them
+// back — a second computation is a second thing to keep in step.
+type Verdict struct {
+	Name    string
+	Verdict string // COMPLETE or NOT ready
+	Gaps    []string
+}
+
+// CheckVerdict is Check plus the values behind it: ONE pass that both
+// prints and collects, so the lines and the verdicts cannot disagree and
+// the controller does not run twice.
+func CheckVerdict(root, name string, out func(string)) (int, []Verdict) {
+	var got []Verdict
+	code := check(root, name, out, &got)
+	return code, got
+}
+
+// Check prints the controller's verdict for one spec, or every spec.
 func Check(root, name string, out func(string)) int {
+	return check(root, name, out, nil)
+}
+
+func check(root, name string, out func(string), collect *[]Verdict) int {
 	var files []string
 	if name == "" || name == "all" {
 		files = specFiles(root)
@@ -163,7 +188,11 @@ func Check(root, name string, out func(string)) int {
 	}
 	worst := 0
 	for _, f := range files {
-		if code := checkOne(root, f, out); code > worst {
+		code, v := checkOne(root, f, out)
+		if collect != nil {
+			*collect = append(*collect, v)
+		}
+		if code > worst {
 			worst = code
 		}
 	}
@@ -268,14 +297,14 @@ func statusOf(text string) string {
 	return strings.ToLower(strings.TrimSpace(m[1]))
 }
 
-func checkOne(root, path string, out func(string)) int {
+func checkOne(root, path string, out func(string)) (int, Verdict) {
+	name := strings.TrimSuffix(filepath.Base(path), ".md")
 	raw, err := store.LoadUnder(root, path)
 	if err != nil {
 		out(filepath.Base(path) + ": unreadable — " + err.Error())
-		return 2
+		return 2, Verdict{Name: name, Verdict: "NOT ready", Gaps: []string{"unreadable — " + err.Error()}}
 	}
 	text := string(raw)
-	name := strings.TrimSuffix(filepath.Base(path), ".md")
 	var gaps, notes []string
 	for _, s := range Sections {
 		body := textutil.Section(text, s)
@@ -397,7 +426,7 @@ func checkOne(root, path string, out func(string)) int {
 			out("  note: the Status line still says draft — advance it to `Status: complete`")
 		}
 		out("  next: seed todos from the acceptance criteria (`procoder todo add`), one task per criterion group")
-		return 0
+		return 0, Verdict{Name: name, Verdict: "COMPLETE"}
 	}
 	out("spec " + name + ": NOT ready — the quality controller found:")
 	for _, g := range gaps {
@@ -407,9 +436,10 @@ func checkOne(root, path string, out func(string)) int {
 	// the checker is refusing sends a reader to build from an unfinished
 	// design, where a stale `draft` only understates a finished one.
 	if statusOf(text) == "complete" {
+		gaps = append(gaps, "the Status line says complete, and the gaps above say otherwise")
 		out("  - the Status line says complete, and the gaps above say otherwise")
 	}
-	return 1
+	return 1, Verdict{Name: name, Verdict: "NOT ready", Gaps: gaps}
 }
 
 // Files is every spec in the repository, by path. Exported so the ask
