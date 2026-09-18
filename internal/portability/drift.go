@@ -47,9 +47,16 @@ func check(root string, c Copy, want string) (verdict, error) {
 // another agent being told something this repository stopped believing.
 // A repository with no AGENTS.md ships no agent layer and gets nothing.
 func AgentsDrift(root string) []gitx.Finding {
+	names, err := declaredHosts(root)
+	if err != nil {
+		return []gitx.Finding{{File: HostsFile, Blocking: true, Message: "cannot check host selection: " + err.Error()}}
+	}
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	switch {
 	case err != nil && os.IsNotExist(err):
+		if len(names) > 0 || len(selectedCopies(root, nil)) > 0 {
+			return []gitx.Finding{{File: Master, Blocking: true, Message: "host setup is missing its shared AGENTS.md contract"}}
+		}
 		// No agent layer at all: this repository never opted in, and it is
 		// asked nothing.
 		return nil
@@ -62,8 +69,12 @@ func AgentsDrift(root string) []gitx.Finding {
 			Message: fmt.Sprintf("%s is unreadable (%v) — no rule file could be checked against it (agents)", Master, err)}}
 	}
 	want := normalize(stripFrontmatter(string(master)))
+
+	// Missing files matter only for declared hosts; an existing copy is
+	// always checked, even when it predates the declaration format.
+
 	var out []gitx.Finding
-	for _, c := range Copies {
+	for _, c := range selectedCopies(root, names) {
 		v, rerr := check(root, c, want)
 		switch v {
 		case unreadable:

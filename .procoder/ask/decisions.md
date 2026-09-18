@@ -247,34 +247,6 @@ badges.
 - listing PR plus the pinned-SHA scanner action in procoder's CI: takes the
   full trust score, at the cost of a third-party action in the pipeline.
 
-## Issue #117 (procoder as a service): the perf case is inverted — what now?
-
-Measured, 3.4.0 binary, 25 runs after warmup: bare spawn floor 2.9ms;
-`procoder hook pre-tool-use` direct 9.2ms; `curl` to a local HTTP service —
-the proposal's own hook command — 11.1ms; via `launcher.sh` 25.8ms;
-`principles --hook` 194ms direct, 235ms via launcher.
-
-A hook command is spawned either way, so the service pays a spawn PLUS a TCP
-round trip and comes out slower than the binary it replaces. The proposal's
-"~10-50ms to ~2-5ms" is wrong at both ends.
-
-"Stateless" conflates process state with system state: `.procoder/` already
-persists adr, ask, backlog, plans, specs, state, todo, index, security, bench.
-The real gap is that nothing is user-global — no `~/.procoder`, no
-`UserConfigDir` anywhere in `internal/`. That is a question of where the store
-lives, not whether a daemon fronts it.
-
-Three items survive: cross-repo memory (small, no daemon), a shared code-index
-cache (a cache-location problem), and inter-repo coordination (the only one
-that genuinely wants a long-lived process, and the least specified).
-
-- close #117 and open one narrow issue for the user-global store: take the
-  gap that is real, drop the architecture that was proposed to reach it.
-- comment the measurements on #117 and rescope it in place to "cross-repo
-  state without a daemon", keeping the discussion in one thread.
-- comment the measurements and leave #117 open as written: the inter-repo
-  coordination case is unproven either way and may still want a service.
-
 ## How do the 34 command files reach pi?
 
 `package.json` declares `pi.skills: ["./commands"]`. Measured, that yields one
@@ -479,3 +451,65 @@ competes under the reserved limit, and what cannot fit is named in the
 omission notice rather than silently lost), while the SessionStart
 payload is left whole and made checkable, with the receipt check pinned
 inside the inlined window.
+
+## The 3.6.0 changelog is dated a day before the tag — correct it?
+
+The entry reads `## 3.6.0 — 2026-09-09`. The release commit merged on the
+9th; the tag went out on the 10th because the first tag run failed on
+Windows and had to be re-cut after the fix.
+
+CI extracts that entry verbatim as the release notes, so the published
+notes will say the 9th while the GitHub release itself is dated the 10th.
+Nobody is misled about what shipped — only about which day.
+
+- leave it: the content was finalised on the 9th, and a one-day
+  discrepancy in a date is not worth another PR, another full CI cycle,
+  and a third tag re-cut.
+- correct it to 2026-09-10 before the release job is allowed to stand:
+  the changelog is the release notes, and a date in them should be the
+  date. Costs a PR, a CI cycle, and deleting and re-cutting the tag
+  again — which is only safe while nothing has been published.
+- correct it in the next release instead, so 3.6.0 ships as-is and 3.7.0
+  carries a fixed date for its own entry.
+
+## The intent domain was approved before the map existed — build it or not?
+
+**Decided: do not build it.** The fields are covered by the spec, whose
+controller refuses to call it complete while any of them is empty; the
+distinguishing feature is the product-owner approval, which is `approve`
+rights on `spec` in #248. The map's other recommendation — take the eval
+gap — stands open in #271 and is not settled by this.
+
+Asked because the answer changed. When the question was "add an intent
+stage as its own domain", the answer was yes. That was given before the
+stage-by-stage map against the AI-native SDLC playbook
+(`.procoder/analysis/ai-native-sdlc-map.md`, #271), which is the evidence
+that argues the other way.
+
+What the map found. `intent.md`'s fields — problem statement, proposed
+outcome, affected users and systems, constraints, open questions — are
+already sections of a procoder spec, and the spec controller refuses to
+call a spec complete while any of them is empty. Its one distinguishing
+feature over what exists is the product-owner approval before the intent is
+committed, and that is `approve` rights on `spec`, already designed and
+parked in #248. `analyze` already occupies the slot before the spec, though
+it answers a different question: options and a recommendation rather than
+the raw ask.
+
+The cost of building it is a fifth document in front of code — intent,
+analyze, spec, plan, todo — each with a template, a controller, docs and a
+place in the chain every piece of work walks past.
+
+Recorded rather than assumed settled, because a yes was given and the
+grounds for it have since moved.
+
+- Do not build it. The fields are covered by the spec, the approval is
+  #248's, and the map's recommendation is to take the eval gap instead.
+- Build it as its own domain anyway, as originally approved: a raw-ask
+  artifact in the originator's words is worth having even where a later
+  document repeats its fields, and the chain reads more like the playbook.
+- Reshape `analyze` instead: widen its template to open with the raw ask
+  before Question / What we know / Options. No new domain, at the cost of
+  changing a shipped template every existing analysis was written against.
+- Defer until #248 ships. The distinguishing feature is the approval, so
+  build the artifact when there is a role that can approve it. (ask)

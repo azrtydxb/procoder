@@ -209,6 +209,37 @@ Prints each file's formatted result (gofmt, ruff, prettier, rustfmt,
 clang-format, shfmt — the project's config always wins) so it can be
 reviewed and written. Never touches the file.
 
+**For a single file, stdout is that file's content and nothing else, in
+every verdict.** Already formatted, out of scope, could not be checked —
+stdout is still exactly what belongs in that file (the formatter's output
+when it needed changes, the file's own bytes otherwise). The verdict line
+goes to **stderr**, so it can be read on a terminal and cannot land in a
+redirect.
+
+A run naming several files is the exception, and a deliberate one: it puts
+a header per file **on stdout**, because five files cannot share one
+stream without them — and because that makes a multi-file run visibly
+unsafe to redirect over any single file. Redirect one file at a time.
+
+That makes the write-back safe, and it has one shape:
+
+```sh
+procoder format notes.md > notes.md.formatted   # review it, then move it into place
+```
+
+**Do not strip a header line.** There is no header on stdout, so
+`procoder format f | tail -n +2` deletes the file's _first real line_ —
+quietly, with exit 0. It looks like a header on a terminal only because
+stderr and stdout interleave there. This cost two files in a real
+repository before the banner moved to stderr, and the same one-liner
+kept costing first lines afterwards.
+
+**Never redirect over the file being formatted.** `procoder format f > f`
+is refused, because the shell truncates `f` before procoder is even
+started — there is nothing left to read and nothing to print. A multi-file
+run prints a header per file _on stdout_ precisely so it cannot be
+mistaken for one file's content.
+
 #### `procoder lint [--types] [paths...]`
 
 The canonical linter per ecosystem: golangci-lint (Go), ruff check
@@ -978,19 +1009,38 @@ decision, even while the section still lists it, and the verdict says where
 the decisions live so nobody reads that section as finished. An unanswered
 one blocks exactly as before.
 
-#### `procoder agents`
+#### `procoder agents [--host <name> ... | --all]`
 
 The universal agent layer: per-host rule files (Cursor, Windsurf, Cline,
 Kilo Code, Roo Code, Kiro, Antigravity, Qoder, Copilot editors, Codex)
 derived from the canonical `AGENTS.md`. Prints the content for anything
-missing or drifted so the agent can write it.
+missing or drifted for the selected and already-present hosts so the agent can
+review and write it. Also prints an additive `.procoder/hosts.json` declaration.
+It writes neither the declaration nor the rule files. An existing `AGENTS.md`
+is required; this command does not invent a project's shared contract.
+Missing or unreadable `AGENTS.md` exits 2 before printing generated content;
+`init` also stops before changing ignores or running tool installations.
+
+Use `--host kilo` in a terminal, repeat `--host` to deliberately add hosts, or
+choose `--all` for a distribution like procoder itself. Kilo selects `.kilo/`,
+not the legacy `.kilocode/` copy. Existing integrations are never deleted and
+remain checked. Unknown, empty, duplicate and conflicting flags are refused.
+
+Without flags, reliable adapter context selects the caller. Explicit flags
+override `PROCODER_HOST`, which overrides host-specific plugin context. Unknown
+or conflicting context asks which host to set up and exits 2 without writing;
+re-run with the user's explicit choice. Paths and installed editors are not
+detection signals. The same rules use the caller's environment over the API,
+not the daemon's environment. See [Every agent](portability.md) for signals.
 
 Drift blocks the gate — and until now it did not, though this page and
 the command's own output both said so. A rule file that has drifted means
 another host is reading rules this repository no longer holds, which is
 the failure the agent layer exists to prevent, so it is blocking rather
-than advisory. A repository with no `AGENTS.md` ships no agent layer and
-is asked nothing.
+than advisory. Missing copies block only for hosts explicitly declared in
+`.procoder/hosts.json`. Repositories without a declaration still have existing
+copies checked but are not asked to create unrelated copies. Invalid declarations
+or a declared or existing setup missing `AGENTS.md` block rather than silently passing.
 
 See [Every agent](portability.md) for the full host matrix.
 
@@ -1159,11 +1209,24 @@ which overrides it.
 Which tools this repository needs (by its file inventory), which are
 installed, versions, and the install command for each gap.
 
-#### `procoder init [--yes]`
+#### `procoder init [--host <name> ... | --all] [--yes]`
 
 Prints one install command per missing tool for this machine's package
 managers; `--yes` executes them and re-surveys — an installer exiting 0 is
 a claim, the tool resolving is the fact.
+
+Uses the same host selection and prints the same integration content as
+`agents`, alongside the tool install plan. `--yes` runs tool installs only;
+it does not write generated integration files or install editor plugins.
+
+Also creates or extends `.gitignore` with only the selected root-level host
+directories (or the procoder skill when selected). This runs with or without
+`--yes`; existing content is preserved and repeated runs do not duplicate
+entries. `.procoder/` remains trackable, as do GitHub workflows and unrelated
+skills. Existing ignore rules still apply; remove a host's ignore entry after
+initialization if you want to commit its configuration. Already tracked files
+are not untracked. A symlink or unreadable `.gitignore` is refused rather than
+overwritten.
 
 #### `procoder templates`
 
@@ -1262,6 +1325,80 @@ checked, never what they held. A pattern that does not compile reports
 - **Captured values go nowhere.** They are validated while you have them in
   front of you and then discarded; procoder does not store them, print
   them, or put them in your CI. Paste them yourself.
+
+#### `procoder serve [--socket <path>] [--exec] [--idle <duration>]`
+
+The local daemon. Every command answers over a unix socket, so a caller
+that would rather make a call than spawn a process can — and gets the same
+bytes and the same exit code either way.
+
+**A machine is one or the other.** Where `[service] mode` is `off` — the
+default — every command runs in-process, with no daemon, no socket and no
+setup, in CI and on a fresh clone. Where it is `local`, the daemon is the
+path and there is **no fallback**: a daemon that is not running is an
+error, not a command that quietly ran somewhere else. Hooks fail the same
+way — with one difference that matters. The commit gate's hook **denies
+the commit** when it cannot reach the daemon, because the host's word for
+"do not run this" is a decision on stdout and not an exit code: a gate
+that merely errored would wave every commit past itself while looking like
+it had failed loudly. Nothing was checked, so nothing is passing. See
+[Configuration](configuration.md#service) for why there is no fallback.
+
+**macOS and Linux only.** The socket's permission bits are the entire
+authentication, and Windows cannot set them — `os.Chmod` there sets the
+read-only bit and nothing else, so a socket comes back 0666 and every
+account on the machine can open it. `procoder serve` refuses on Windows
+rather than running a daemon anyone can drive. Nothing is lost: every
+command runs in-process there, which is the whole of procoder.
+
+The socket lives at `~/.procoder/run/procoder.sock`, mode 0600 inside a
+0700 directory. **The permission bits are the whole authentication** —
+there is no port and no token, because a unix socket is a filesystem
+object and the filesystem has already answered "who may talk to this".
+A loopback port would not: it is reachable by every process and every
+other user on the box, and gets forwarded out of devcontainers by
+accident.
+
+What that buys is also what it costs, and it is worth saying plainly: the
+socket authenticates the **user**, not the process. Every process running
+as you can reach it, including an agent session's own shell. That is why
+the four commands which run what a repository declared —
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade` — are not
+served there at all. They live behind `--exec` on a second socket
+(`procoder-exec.sock`) with its own opt-in, and the hooks are never told
+its address. A path that runs an agent-written command must not be
+reachable by something running unattended; see the "look but don't run"
+boundary in ARCHITECTURE.
+
+Each repository stays warm for `--idle` (30 minutes by default) after its
+last request, and is released on its own schedule — a morning's work in
+one checkout does not keep nine others' indexes resident. A daemon holding
+nothing exits, because staying resident to serve a request that may never
+come is how a convenience becomes a process somebody has to remember to
+kill. Exiting is safe precisely because starting is free: the next
+session's hook starts another, and a client that finds no daemon runs
+in-process.
+
+It prints a line per request — what it served, the exit code and how long
+it took, and separately what it refused and what it started as a job. That
+is where to look when a command is slower than you expected, or when you
+want to see that the machine is using the daemon it was configured for.
+
+A daemon the session-start hook started has no terminal to print to, so it
+appends the same lines to `~/.procoder/run/serve.log`. That is the usual
+case — a daemon nobody started by hand is exactly the one whose log you
+end up wanting.
+
+`serve` runs in the foreground and stops when its listener closes.
+Whatever started it owns it — a shell, or the session-start hook. It does
+not daemonise itself, for the same reason `procoder run` refuses to own a
+server's lifetime: a process nobody can see is worse than no process.
+
+A response carries the command's exact bytes on stdout and stderr, its
+exit code, and — where the command has one — a typed result beside them.
+The bytes are what a person reads and what the parity test compares; the
+result is what a client acts on. Both, so that no caller has to be a
+parser and none has to be a renderer.
 
 #### `procoder version [--check]` and `procoder self-upgrade [--force]`
 

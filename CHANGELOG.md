@@ -51,6 +51,107 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.6.0 — 2026-09-09
+
+_Every command can be called instead of spawned, and two ways procoder
+could cost you something are closed._
+
+had no reason to, and a hint that invited a one-liner which ate a line._
+
+uses one agent is asked about one agent._
+
+**Fixed — a repository worked on with a single agent is no longer blocked
+for the eleven hosts it does not use.**
+([#280](https://github.com/azrtydxb/procoder/pull/280),
+[#279](https://github.com/azrtydxb/procoder/issues/279)) A root
+`AGENTS.md` with no host copies beside it made the gate demand all twelve,
+blocking every commit, with no way to say "this repository uses one agent"
+short of deleting `AGENTS.md` — which switches off the drift check for the
+copies it does keep. A missing copy now counts only once the repository
+has adopted the layer, which is the rule the reporting half of this check
+already applied and explained in its own comment. Drifted and unreadable
+copies still block whatever was adopted: a stale rule file is another
+agent being told something this repository stopped believing, and a file
+that does not exist tells no agent anything.
+
+**Fixed — the gate's own hint no longer invites a one-liner that deletes
+the file's first line.**
+([#281](https://github.com/azrtydxb/procoder/pull/281),
+[#278](https://github.com/azrtydxb/procoder/issues/278)) `procoder format
+<file>` has printed the file's bytes on stdout and its verdict on stderr
+since 3.5.0, which made `> file.formatted` safe. It also made
+`procoder format f | tail -n +2` — stripping "the header" — delete the
+file's first REAL line, quietly, with exit 0. On a terminal the verdict
+and the content interleave and look like one stream, so the header appears
+to be there; in a pipe it never was. The hint now says what stdout is,
+names a capture path, and says not to redirect over the input. The command
+also refuses to print an empty payload for a non-empty file, as a backstop
+against the failure this command has actually had twice.
+
+**Added — a second door: every command answers over a local socket.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) `procoder serve`
+runs a local daemon, and a caller that would rather make a call than spawn
+a process may. A response carries the command's exact bytes on stdout and
+stderr, its exit code, and — where the command has one — a typed result
+beside them: findings with their file, line, domain and whether they
+block, and named shapes for `config`, `todo list`, `version`, `status`,
+`spec check` and the index lookups. Both, so that no caller has to parse
+prose and none has to render it.
+
+The daemon is macOS and Linux only. The socket's permission bits are its
+only authentication and Windows cannot set them, so `procoder serve`
+refuses there rather than running a daemon every account on the machine
+could drive; every command runs in-process on Windows, which is the whole
+of procoder there.
+
+A machine is one or the other, and `[service] mode` is `off` until it says
+otherwise — every command runs in-process, with no daemon and no setup, in
+CI and on a fresh clone, and `procoder init` asks rather than choosing.
+Where the mode is `local` the daemon is the path and there is no fallback:
+a daemon that is not running, is from another build, or goes away
+mid-request is an error naming the fix, never a command that quietly ran
+somewhere else. Two silent paths to one verdict would make "where did this
+come from" unanswerable from the outside. Hooks fail the same way, except
+the commit gate's, which **denies** the commit it could not check — the
+host reads a non-zero exit as the hook erroring and lets the command
+through, so a gate that merely failed would wave every commit past itself.
+
+`TestParityAcrossEveryCommand` reads the command list out of the usage
+text and runs all 48 twice, comparing stdout, stderr and the exit code
+byte for byte. A command added without a parity case fails it.
+
+The nine commands that run a whole toolchain over a whole tree — `test`,
+`audit`, `release`, `bench`, `deps`, and `security --deep`,
+`docs --external`, `ci --runs`, `index build` — answer with a job in
+milliseconds and keep running behind it, so a suite no longer holds a
+connection open for its duration.
+
+**Added — the commands that run things have their own door, or none.**
+([#272](https://github.com/azrtydxb/procoder/pull/272))
+`run --exec`, `evidence record`, `init --yes` and `self-upgrade` run what
+a repository, or a prior agent session, declared. They are refused on the
+ordinary socket and served only on a second one, opt-in via `[service]
+exec`, whose address the hooks are never told. The socket's 0600 mode
+authenticates the user and not the process — every process running as you
+can open it, an agent session's own shell included — so "look but don't
+run" is held by the shape of the thing rather than by a rule.
+
+**Fixed — one daemon no longer contends with itself over a repository's
+own ledgers.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) The state lock is a lockfile with a heartbeat and no
+in-process registry, so two requests for one repository inside a single
+daemon did not queue: the second waited out the five-second timeout and
+reported that its write was not made. Requests are serialised per
+repository now. Rare while every hook was its own process; ordinary the
+moment one process serves several sessions.
+
+**Fixed — the session-start hook answers in the calling host's shape, not
+the daemon's.**
+([#272](https://github.com/azrtydxb/procoder/pull/272)) Host detection read the process environment, so one daemon
+started by a Claude session and later serving a Copilot or Qoder one
+shaped its answer for the wrong host, with the payload identical and
+nothing to see. The environment travels with the request.
+
 ## 3.5.0 — 2026-09-01
 
 _Every host now holds the same turn end, and the record-keeping outlives the reflow._
