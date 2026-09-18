@@ -33,7 +33,8 @@ var knownFlags = map[string][]string{
 	"claims":       {"--by"},
 	"env":          {"--sync"},
 	"index":        {"--at"},
-	"init":         {"--yes"},
+	"init":         {"--yes", "--host", "--all"},
+	"agents":       {"--host", "--all"},
 	"lint":         {"--types"},
 	"principles":   {"--hook"},
 	"prune":        {"--apply"},
@@ -42,6 +43,7 @@ var knownFlags = map[string][]string{
 	"run":          {"--exec"},
 	"security":     {"--deep"},
 	"self-upgrade": {"--force"},
+	"serve":        {"--socket", "--exec", "--idle"},
 	"test":         {"--coverage", "--name"},
 	"version":      {"--check"},
 }
@@ -63,6 +65,11 @@ var knownFlags = map[string][]string{
 // swallowed-token bug in a different coat.
 func checkFlags(args []string, stderr io.Writer) ([]string, bool) {
 	if len(args) == 0 {
+		return args, true
+	}
+	// Setup owns strict value, duplicate and positional validation, including
+	// --host=name. The generic scanner stops at values and is not sufficient.
+	if args[0] == "init" || args[0] == "agents" {
 		return args, true
 	}
 	allowed := knownFlags[args[0]]

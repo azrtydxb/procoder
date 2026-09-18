@@ -140,6 +140,11 @@ export const ProcoderPlugin = async ({ client, directory } = {}) => {
     }
   };
   return {
+    // Explicit request context reaches CLI calls made by the host's shell
+    // tool, including daemon clients. Never infer setup from a checkout path.
+    "shell.env": async (_input, output) => {
+      output.env.PROCODER_HOST = isKilo ? "kilo" : "opencode";
+    },
     config: async (config) => {
       // Both hosts discover their own command directory; this hook adds it,
       // and the repository's skills/, to what a skill-aware host scans

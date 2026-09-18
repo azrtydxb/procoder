@@ -280,3 +280,21 @@ func (charDevice) Stat() (os.FileInfo, error) { return charDeviceInfo{}, nil }
 type charDeviceInfo struct{ os.FileInfo }
 
 func (charDeviceInfo) Mode() os.FileMode { return os.ModeCharDevice | 0o620 }
+
+// DetectIn answers from the map it is given, never from the process.
+//
+// This is what makes one daemon able to serve two hosts: its own
+// environment is whichever session happened to start it, and every request
+// after the first would otherwise be shaped for the wrong host.
+//
+// proved by: pointing DetectIn back at os.Getenv — the Qoder request then
+// answers Copilot, because the process carries a VS Code plugin root.
+func TestDetectInReadsOnlyItsArgument(t *testing.T) {
+	t.Setenv("CLAUDE_PLUGIN_ROOT", "/x/.vscode/agent-plugins/copilot")
+	if got := DetectIn(Env{"QODER_SESSION_ID": "x"}); got != Qoder {
+		t.Fatalf("DetectIn read the process environment: want %q, got %q", Qoder, got)
+	}
+	if got := DetectIn(Env{}); got != Claude {
+		t.Fatalf("an empty environment is the Claude default: want %q, got %q", Claude, got)
+	}
+}

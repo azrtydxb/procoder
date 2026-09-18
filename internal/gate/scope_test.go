@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"procoder/internal/portability"
 	"runtime"
 	"strings"
 	"testing"
@@ -460,8 +461,18 @@ func houseRuleFixture(t *testing.T, adopting bool) (root string, paths []string)
 	}
 	// Formatting: gofmt has an opinion about this and it is not met.
 	paths = append(paths, writeFile(t, root, "bad.go", "package main\nfunc  main( ){}\n"))
-	// The agent layer: an AGENTS.md that is somebody else's.
+	// The agent layer: an AGENTS.md, and one host copy that has drifted
+	// from it.
+	//
+	// The copy is what makes this repository one that ADOPTED the layer.
+	// Without it the master alone says nothing — a repository carrying an
+	// AGENTS.md for its own reasons is asked nothing, which is the rule
+	// #279 restored — and this fixture would no longer exercise the agent
+	// domain at all. A drifted copy is also the stronger case to pin: it
+	// blocks whether or not the layer was adopted.
 	writeFile(t, root, "AGENTS.md", "# Agents\n\nThis project has its own bot.\n")
+	writeFile(t, root, portability.Copies[0].Path,
+		portability.Copies[0].Frontmatter+"# Agents\n\nSomething this repository stopped believing.\n")
 	// Debt: a marker with no revisit condition.
 	paths = append(paths, writeFile(t, root, "worker.go",
 		"package worker\n\n// debt: one global lock\nvar mu int\n"))
