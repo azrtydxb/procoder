@@ -153,8 +153,12 @@ function run(args, stdin, timeout) {
       process.platform === "win32"
         ? spawn("cmd.exe", ["/d", "/s", "/c", LAUNCHER, ...args], {
             windowsHide: true,
+            env: { ...process.env, PROCODER_HOST: "pi" },
           })
-        : spawn(LAUNCHER, args, { windowsHide: true });
+        : spawn(LAUNCHER, args, {
+            windowsHide: true,
+            env: { ...process.env, PROCODER_HOST: "pi" },
+          });
 
     // A chatty child is bounded in bytes, counted where they are actually
     // spent. The ceiling is the one the OpenCode adapter already uses, and for

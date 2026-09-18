@@ -1009,19 +1009,38 @@ decision, even while the section still lists it, and the verdict says where
 the decisions live so nobody reads that section as finished. An unanswered
 one blocks exactly as before.
 
-#### `procoder agents`
+#### `procoder agents [--host <name> ... | --all]`
 
 The universal agent layer: per-host rule files (Cursor, Windsurf, Cline,
 Kilo Code, Roo Code, Kiro, Antigravity, Qoder, Copilot editors, Codex)
 derived from the canonical `AGENTS.md`. Prints the content for anything
-missing or drifted so the agent can write it.
+missing or drifted for the selected and already-present hosts so the agent can
+review and write it. Also prints an additive `.procoder/hosts.json` declaration.
+It writes neither the declaration nor the rule files. An existing `AGENTS.md`
+is required; this command does not invent a project's shared contract.
+Missing or unreadable `AGENTS.md` exits 2 before printing generated content;
+`init` also stops before changing ignores or running tool installations.
+
+Use `--host kilo` in a terminal, repeat `--host` to deliberately add hosts, or
+choose `--all` for a distribution like procoder itself. Kilo selects `.kilo/`,
+not the legacy `.kilocode/` copy. Existing integrations are never deleted and
+remain checked. Unknown, empty, duplicate and conflicting flags are refused.
+
+Without flags, reliable adapter context selects the caller. Explicit flags
+override `PROCODER_HOST`, which overrides host-specific plugin context. Unknown
+or conflicting context asks which host to set up and exits 2 without writing;
+re-run with the user's explicit choice. Paths and installed editors are not
+detection signals. The same rules use the caller's environment over the API,
+not the daemon's environment. See [Every agent](portability.md) for signals.
 
 Drift blocks the gate — and until now it did not, though this page and
 the command's own output both said so. A rule file that has drifted means
 another host is reading rules this repository no longer holds, which is
 the failure the agent layer exists to prevent, so it is blocking rather
-than advisory. A repository with no `AGENTS.md` ships no agent layer and
-is asked nothing.
+than advisory. Missing copies block only for hosts explicitly declared in
+`.procoder/hosts.json`. Repositories without a declaration still have existing
+copies checked but are not asked to create unrelated copies. Invalid declarations
+or a declared or existing setup missing `AGENTS.md` block rather than silently passing.
 
 See [Every agent](portability.md) for the full host matrix.
 
@@ -1190,11 +1209,24 @@ which overrides it.
 Which tools this repository needs (by its file inventory), which are
 installed, versions, and the install command for each gap.
 
-#### `procoder init [--yes]`
+#### `procoder init [--host <name> ... | --all] [--yes]`
 
 Prints one install command per missing tool for this machine's package
 managers; `--yes` executes them and re-surveys — an installer exiting 0 is
 a claim, the tool resolving is the fact.
+
+Uses the same host selection and prints the same integration content as
+`agents`, alongside the tool install plan. `--yes` runs tool installs only;
+it does not write generated integration files or install editor plugins.
+
+Also creates or extends `.gitignore` with only the selected root-level host
+directories (or the procoder skill when selected). This runs with or without
+`--yes`; existing content is preserved and repeated runs do not duplicate
+entries. `.procoder/` remains trackable, as do GitHub workflows and unrelated
+skills. Existing ignore rules still apply; remove a host's ignore entry after
+initialization if you want to commit its configuration. Already tracked files
+are not untracked. A symlink or unreadable `.gitignore` is refused rather than
+overwritten.
 
 #### `procoder templates`
 

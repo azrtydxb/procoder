@@ -224,7 +224,9 @@ const usage = `usage: procoder <command> [args]
                        Asks a person when there is one, writes them to
                        .procoder/ask/QA.md when there is not. --file
                        records the answers a human wrote back
-  agents               the universal agent layer: per-host rule files
+  agents [--host <name> ... | --all]
+                       print selected and existing host rule files;
+                       unknown caller context asks for an explicit host
                        derived from AGENTS.md (Cursor, Windsurf, Cline,
                        Kilo Code, Roo, Kiro, Antigravity, Qoder, Copilot,
                        Codex) — prints content for anything missing or
@@ -306,8 +308,9 @@ const usage = `usage: procoder <command> [args]
   infra                DevOps hygiene where the files exist: Dockerfiles
                        (hadolint), Terraform (fmt/validate/tflint),
                        Kubernetes manifests (kubeconform), Helm charts
-  init [--yes]         print the install commands for the missing formatters;
-                       --yes runs them and re-checks that every tool answers
+  init [--host <name> ... | --all] [--yes]
+                       print tool installs and selected host integration;
+                       update selected host ignores; --yes runs tool installs
   copilot-leak [--since <dur>] [--quiet] [--from-copilot]
                        what Copilot's auto-review found that our gates did
                        not: sanitised of every trace of your code, then —
@@ -703,9 +706,24 @@ func run(args []string, s session) int {
 	case "doctor":
 		return doctor.Run(s.root(), s.stdout)
 	case "init":
-		execute := len(args) > 1 && args[1] == "--yes"
+		hosts, execute, err := host.Setup(args[1:], s.env, true)
+		if err != nil {
+			s.out(err.Error())
+			return 2
+		}
 		root := s.root()
+		agentCode := portability.Agents(root, s.out, hosts...)
+		if agentCode == 2 {
+			return agentCode
+		}
+		if err := initcmd.IgnoreHosts(root, s.stdout, hosts); err != nil {
+			s.out("cannot update .gitignore: " + err.Error())
+			return 1
+		}
 		code := initcmd.Run(root, execute, s.stdout)
+		if agentCode > code {
+			code = agentCode
+		}
 		// Asked after the formatters, because that is what somebody ran
 		// init for. Nobody to ask writes nothing: a repository must never
 		// acquire a daemon because a script ran init.
@@ -840,7 +858,12 @@ func run(args []string, s session) int {
 	case "ask":
 		return s.askCmd(args[1:])
 	case "agents":
-		return portability.Agents(s.root(), s.out)
+		hosts, _, err := host.Setup(args[1:], s.env, false)
+		if err != nil {
+			s.out(err.Error())
+			return 2
+		}
+		return portability.Agents(s.root(), s.out, hosts...)
 	case "principles":
 		if len(args) > 1 && args[1] == "--hook" {
 			return principles.RunHook(s.root(), s.env, s.stdin, s.out)

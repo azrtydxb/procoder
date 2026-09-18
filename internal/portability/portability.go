@@ -26,6 +26,7 @@ const Master = "AGENTS.md"
 // Copy is one host's rule-file: the AGENTS.md body under the host's path,
 // with host-specific frontmatter where the host requires it.
 type Copy struct {
+	ID          string // stable setup target; legacy copies are all-only
 	Host        string
 	Path        string
 	Frontmatter string // empty when the host reads plain markdown
@@ -33,25 +34,25 @@ type Copy struct {
 
 // Copies is every rule-file host served. Order is the docs order.
 var Copies = []Copy{
-	{Host: "Cursor", Path: ".cursor/rules/procoder.mdc",
+	{ID: "cursor", Host: "Cursor", Path: ".cursor/rules/procoder.mdc",
 		Frontmatter: "---\ndescription: procoder engineering rules\nalwaysApply: true\n---\n\n"},
-	{Host: "Windsurf", Path: ".windsurf/rules/procoder.md"},
-	{Host: "Cline", Path: ".clinerules/procoder.md"},
-	{Host: "Kilo Code", Path: ".kilo/rules/procoder.md"},
-	{Host: "Kilo Code (legacy path)", Path: ".kilocode/rules/procoder.md"},
-	{Host: "Roo Code", Path: ".roo/rules/procoder.md"},
-	{Host: "Kiro", Path: ".kiro/steering/procoder.md",
+	{ID: "windsurf", Host: "Windsurf", Path: ".windsurf/rules/procoder.md"},
+	{ID: "cline", Host: "Cline", Path: ".clinerules/procoder.md"},
+	{ID: "kilo", Host: "Kilo Code", Path: ".kilo/rules/procoder.md"},
+	{ID: "kilo-legacy", Host: "Kilo Code (legacy path)", Path: ".kilocode/rules/procoder.md"},
+	{ID: "roo", Host: "Roo Code", Path: ".roo/rules/procoder.md"},
+	{ID: "kiro", Host: "Kiro", Path: ".kiro/steering/procoder.md",
 		Frontmatter: "---\ninclusion: always\n---\n\n"},
-	{Host: "Antigravity", Path: ".agents/rules/procoder.md"},
-	{Host: "Qoder", Path: ".qoder/rules/procoder.md"},
-	{Host: "Copilot (editors)", Path: ".github/copilot-instructions.md"},
-	{Host: "OpenAI Codex (repo docs)", Path: ".codex/AGENTS.md"},
+	{ID: "antigravity", Host: "Antigravity", Path: ".agents/rules/procoder.md"},
+	{ID: "qoder", Host: "Qoder", Path: ".qoder/rules/procoder.md"},
+	{ID: "copilot", Host: "Copilot (editors)", Path: ".github/copilot-instructions.md"},
+	{ID: "codex", Host: "OpenAI Codex (repo docs)", Path: ".codex/AGENTS.md"},
 	// The Agent Skills copy is a rule file with a different envelope: hosts
 	// that scan a skills directory (Kilo, and any host reading .claude/skills
 	// or .agents/skills) load it on demand, and the Kilo Marketplace indexes
 	// this exact path. Its frontmatter is the skill's activation contract; the
 	// body is the same AGENTS.md every other host gets.
-	{Host: "Agent Skills (skills/, Kilo Marketplace source)", Path: "skills/procoder/SKILL.md",
+	{ID: "skills", Host: "Agent Skills (skills/, Kilo Marketplace source)", Path: "skills/procoder/SKILL.md",
 		Frontmatter: skillFrontmatter},
 }
 
@@ -112,8 +113,15 @@ var forbiddenPaths = []string{"hooks/hooks.json"}
 // Check pins every copy and manifest to the master. Wired into the shared
 // Collect so gate, git, and CI can never disagree.
 func Check(root string) []gitx.Finding {
+	names, selectionErr := declaredHosts(root)
+	if selectionErr != nil {
+		return []gitx.Finding{{File: HostsFile, Blocking: true, Message: "cannot check host selection: " + selectionErr.Error()}}
+	}
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	if os.IsNotExist(err) {
+		if len(names) > 0 || len(selectedCopies(root, nil)) > 0 {
+			return []gitx.Finding{{File: Master, Blocking: true, Message: "host setup is missing its shared AGENTS.md contract"}}
+		}
 		return nil // repos procoder governs need not ship an agent layer
 	}
 	if err != nil {
@@ -123,19 +131,14 @@ func Check(root string) []gitx.Finding {
 	// the same derivation Agents uses — frontmatter stripped — so the gate
 	// and the command can never disagree about what canonical means
 	want := normalize(stripFrontmatter(string(master)))
-	// missing copies are only worth reporting once the repo has adopted
-	// the layer (at least one copy present) — an AGENTS.md alone is a file
-	// many repos carry for unrelated reasons, and ten nag lines per gate
-	// run would be noise; drifted or unreadable copies always report
-	adopted := adoptedLayer(root)
+	// Only declared hosts require missing copies. Existing copies are always
+	// checked, including legacy installations predating explicit selection.
 	var out []gitx.Finding
-	for _, c := range Copies {
+	for _, c := range selectedCopies(root, names) {
 		raw, err := os.ReadFile(filepath.Join(root, c.Path))
 		if os.IsNotExist(err) {
-			if adopted {
-				out = append(out, gitx.Finding{File: filepath.Join(root, c.Path),
-					Message: c.Path + " is missing — " + c.Host + " gets no rules; run `procoder agents` and write it"})
-			}
+			out = append(out, gitx.Finding{File: filepath.Join(root, c.Path), Blocking: true,
+				Message: c.Path + " is missing — " + c.Host + " gets no rules; run `procoder agents` with the declared host selection and write it"})
 			continue
 		}
 		if err != nil {
@@ -171,16 +174,28 @@ func Check(root string) []gitx.Finding {
 
 // Agents prints the per-host status and the content for anything missing
 // or drifted, so the agent can write it.
-func Agents(root string, out func(string)) int {
+func Agents(root string, out func(string), names ...string) int {
+	if len(names) == 0 {
+		out("choose --host <name> or --all before generating integrations")
+		return 2
+	}
 	master, err := os.ReadFile(filepath.Join(root, Master))
 	if err != nil {
-		out("no " + Master + " — this repo ships no agent layer (the procoder plugin repo does; a governed repo may too)")
-		return 0
+		out("cannot read " + Master + ": " + err.Error() + "; create the shared contract before generating host copies")
+		return 2
+	}
+	copies, changed, err := setupCopies(root, names, out)
+	if err != nil {
+		out("cannot select hosts: " + err.Error())
+		return 2
 	}
 	body := stripFrontmatter(string(master))
 	want := normalize(body)
 	bad := 0
-	for _, c := range Copies {
+	if changed {
+		bad++
+	}
+	for _, c := range copies {
 		raw, rerr := os.ReadFile(filepath.Join(root, c.Path))
 		switch {
 		case rerr != nil && !os.IsNotExist(rerr):

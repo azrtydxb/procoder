@@ -44,6 +44,7 @@ func (e Env) Read(key string) string { return e[key] }
 // envKeys is every variable procoder reads. A request carries these and a
 // caller that sends more is not an error — the set will grow.
 var envKeys = []string{
+	"PROCODER_HOST",
 	"COPILOT_PLUGIN_DATA",
 	"PLUGIN_DATA",
 	"QODER_SESSION_ID",
