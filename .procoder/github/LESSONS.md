@@ -5,6 +5,12 @@ production) — the escape is the bug; the finding is its symptom. Every
 entry names which layer should have caught it and the adaptation that now
 does. `procoder lessons` flags entries with no adaptation.
 
+## 2026-09-18 PR#270 (Copilot) — task example omitted its required title
+
+- Class: taste
+- Missed by: rubric
+- Adaptation: REVIEW.md requires command examples to include required positional arguments, checked against dispatch usage, and deferral paths to preserve checks and reflection obligations.
+
 ## 2026-08-19 PR#17 (Copilot) — path traversal via user-supplied task/spec names
 
 - Class: judgment
@@ -471,4 +477,3 @@ closes #209` — and after merging a PR that claimed to close more than
   those hunks last and hardest, or re-run the reviewer over the fix diff.
   REVIEW.md now carries it, alongside the budget-excludes-its-own-overhead
   shape that was the concrete form it took here.
-
