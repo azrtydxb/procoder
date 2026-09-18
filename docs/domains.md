@@ -59,6 +59,13 @@ the versions the others resolve against. Vendored copies and installed
 packages are skipped: their manifests describe code nobody here can
 change.
 
+Dependency discovery uses tracked and untracked-but-not-ignored Git paths,
+excluding deleted files, even when Git returns an empty inventory. Ignored
+agent installs are not this repository's dependencies. npm and Python gap
+checks use the same scope; an ignored lockfile cannot hide a visible package's
+unchecked dependencies. If Git cannot answer (including outside a repository),
+discovery falls back to a filesystem walk with the same vendor-directory filter.
+
 It costs seconds rather than milliseconds: semgrep's time goes on loading
 rules, which is fixed, so a one-line file is barely cheaper than the whole
 tree. It is there because a commit is not a keystroke and a finding caught
@@ -310,8 +317,10 @@ Around the checks, the skills encode the workflow: a worktree per
 feature (a git practice the skills prescribe — Procoder creates and
 removes none of them itself), `/procoder:pr` (defer to an existing PR,
 docs-impact question, pre-PR self-review, scrubbed template), `/procoder:merge` (watch-only
-polling, every review thread answered, the reflection step for anything
-that escaped, then merge and full cleanup).
+polling, every review thread answered — fixed, argued down, or, for
+non-blocking follow-up work only, tracked as its own task before the
+merge — the immediate reflection step for anything that
+escaped, then merge and full cleanup).
 
 Tagging is the last step and has its own controller. `procoder release`
 verifies in one pass that every file in `[release] files` carries the
