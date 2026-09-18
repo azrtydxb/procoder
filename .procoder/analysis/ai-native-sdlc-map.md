@@ -15,8 +15,10 @@ feature. It is not one — `intent.md` appears in no release of the CLI, and
 Anthropic's own course page says in as many words that it is "a
 team-created workflow convention, not a built-in Claude Code feature". What
 it actually describes is a way of working, encoded as skills, `CLAUDE.md`
-and `REVIEW.md`. That is procoder's own shape, which makes the comparison
-worth doing properly rather than adopting one filename from it.
+and `REVIEW.md`. Procoder uses the same pattern, with `AGENTS.md`, the
+built-in principles printed by `procoder principles` (optionally overridden
+by `.procoder/PRINCIPLES.md`), and `.procoder/github/REVIEW.md`. The shared
+pattern makes the comparison worth doing rather than adopting one filename.
 
 ## What we know
 
@@ -36,18 +38,19 @@ parked as `approve` rights on `spec` in #248.
 concerns escalated to policy owners.** procoder has `spec` with a
 controller that blocks until every section is answered and every open
 question resolved — stricter than the playbook, which asks for a review
-rather than a refusal. The "organisation skills" are `.procoder/`'s
-`security/RULES.md`, `docs/RULES.md`, `lint/RULES.md`, read by their
-domains. **Covered**, except that escalation-to-a-policy-owner is a role
+rather than a refusal. The policy artifacts present here are
+`.procoder/security/RULES.md` and `.procoder/docs/RULES.md`, read by their
+domains. Lint uses tool configuration and built-in baselines, not a
+`.procoder/lint/RULES.md` file. **Covered**, except that escalation-to-a-policy-owner is a role
 routing procoder has no roles for (#248 again).
 
 **Stage 3 — Build → `plan.md`, `CLAUDE.md`, skills, hooks, worktrees.**
 procoder has `plan` with its own blocking controller, `todo` and `backlog`
-for execution, `AGENTS.md` and `PRINCIPLES.md` as the standing rules,
+for execution, `AGENTS.md` and the effective `procoder principles` as standing rules,
 PostToolUse hooks for format/lint/secrets, a PreToolUse hook intercepting
-`git commit`, and `WORKFLOW.md` prescribing a worktree per branch.
+`git commit`, and `.procoder/github/WORKFLOW.md` prescribing a worktree per branch.
 **Covered, and stronger.** The playbook says "when Claude makes a mistake
-twice, the correction goes into `CLAUDE.md`"; procoder has `LESSONS.md`
+twice, the correction goes into `CLAUDE.md`"; procoder has `.procoder/github/LESSONS.md`
 with a class, an adaptation and an unlearned check that the gate reads.
 
 **Stage 4 — Test → verify its own work, failing test first, run
@@ -63,9 +66,9 @@ incident becoming one and staying as a regression test.
 **Stage 5 — Deploy → `REVIEW.md` divided into passes, Claude gives and
 receives reviews, findings feed back, hooks as approval gates, CI
 non-interactive, deploy through MCP, autonomy tiered by environment.**
-procoder has `REVIEW.md` in exactly that shape, `/procoder:pr` and
+procoder has `.procoder/github/REVIEW.md` as its pre-PR rubric, `/procoder:pr` and
 `/procoder:merge` (every thread answered, the reflection step for anything
-that escaped), findings routed into `LESSONS.md`, and `ci` for workflow
+that escaped), findings routed into `.procoder/github/LESSONS.md`, and `ci` for workflow
 hygiene. **Covered for the review half.** Deploy through MCP and
 autonomy-by-environment are absent — procoder is a pre-merge governance
 tool and does not deploy anything.
@@ -76,7 +79,7 @@ incident, scheduled security scans.** procoder has `security`
 (secrets/SAST/deps), `deps`, `debt`, `maintain`, `learn`, and
 `copilot-leak` — which is precisely the shape of "an external reviewer's
 finding becomes tracked work", and #270 generalised it to any review
-finding too large for its PR. **Mostly absent**, and most of it by design:
+non-blocking finding too large for its PR. **Mostly absent**, and most of it by design:
 production monitoring, control bands and incident response are not what a
 commit-time governance tool does.
 
