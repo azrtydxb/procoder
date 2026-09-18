@@ -89,6 +89,8 @@ Check every hunk for:
   code exactly (every variant, full paths). Command examples include every
   required positional argument; check them against dispatch usage. A new
   deferral path must not waive existing checks or reflection obligations.
+  Distinguish a source playbook's filenames from this repository's artifacts;
+  verify claimed files exist and label optional overrides as optional.
 - The product's story: does this diff change what the README or docs
   site must tell a reader? Pages updated in this diff, or the absence
   concretely justified — a feature that ships with only a reference
