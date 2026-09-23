@@ -486,6 +486,9 @@ func Deps(root string) []gitx.Finding {
 	}
 	var rep struct {
 		Results []struct {
+			Source struct {
+				Path string `json:"path"`
+			} `json:"source"`
 			Packages []struct {
 				Package struct {
 					Name    string `json:"name"`
@@ -505,6 +508,10 @@ func Deps(root string) []gitx.Finding {
 			Message: "osv-scanner output unreadable — dependencies were NOT checked: " + why(errb.String(), err) + " (security)"})
 	}
 	for _, r := range rep.Results {
+		// Name the lockfile each verdict came from. Without it a version
+		// nobody can find in the tree is unanswerable: #293's reporter had
+		// two candidate sources and no way to tell which one was scanned.
+		src := sourceRel(root, r.Source.Path)
 		for _, p := range r.Packages {
 			if len(p.Vulnerabilities) == 0 {
 				continue
@@ -515,7 +522,7 @@ func Deps(root string) []gitx.Finding {
 					max = v
 				}
 			}
-			out = append(out, gitx.Finding{Blocking: max >= vulnBlockScore,
+			out = append(out, gitx.Finding{File: src, Blocking: max >= vulnBlockScore,
 				Message: fmt.Sprintf("%s %s has %d known vulnerability(s), max severity %.1f — upgrade it (security)",
 					p.Package.Name, p.Package.Version, len(p.Vulnerabilities), max)})
 		}
@@ -999,6 +1006,13 @@ func dependencyFiles(root string, basenames []string) []string {
 		sort.Strings(out)
 		return out
 	}
+	return walkDependencyFiles(root, names)
+}
+
+// walkDependencyFiles is dependencyFiles when Git cannot answer: the same
+// boundaries — vendored and installed copies, and nested checkouts — drawn
+// by hand.
+func walkDependencyFiles(root string, names map[string]bool) []string {
 	var out []string
 	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -1008,7 +1022,7 @@ func dependencyFiles(root string, basenames []string) []string {
 			return nil //nolint:nilerr // a walk that cannot enter one directory still covers the rest
 		}
 		if info.IsDir() {
-			if p != root && manifestDirs[info.Name()] {
+			if p != root && (manifestDirs[info.Name()] || nestedCheckout(p)) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -1023,6 +1037,45 @@ func dependencyFiles(root string, basenames []string) []string {
 	})
 	sort.Strings(out)
 	return out
+}
+
+// sourceRel maps osv-scanner's source path to the repo-relative form the
+// -L arguments were given in. osv reports it absolute, and resolved
+// through symlinks where the root may not be (macOS's /var is
+// /private/var), so both forms of the root are tried. A path that maps to
+// neither is left out rather than printed as something it is not.
+func sourceRel(root, p string) string {
+	if p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(root, p)
+	}
+	if rel, ok := gitx.RepoRel(root, p); ok {
+		return rel
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return ""
+	}
+	if realP, err := filepath.EvalSymlinks(p); err == nil {
+		p = realP
+	}
+	if rel, ok := gitx.RepoRel(realRoot, p); ok {
+		return rel
+	}
+	return ""
+}
+
+// nestedCheckout reports whether dir is the top of another checkout — a
+// nested repository (.git directory) or a linked worktree (.git file).
+// Its manifests belong to that checkout: a worktree an agent left detached
+// at an older commit carries the lockfile this commit just fixed, and
+// scanning it blocks the fix on the versions it removes (#293). Git's
+// inventory never descends into one; the walk has to be told.
+func nestedCheckout(dir string) bool {
+	_, err := os.Lstat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 // SecretsInDiff is SecretsChangedFiles narrowed to the lines this commit

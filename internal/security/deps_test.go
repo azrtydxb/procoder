@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"procoder/internal/gitx"
 )
 
 // stubOsv puts an osv-scanner on PATH that reports nothing, so these
@@ -326,4 +328,146 @@ func gitRepoForManifests(t *testing.T) string {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	return root
+}
+
+// gitIn runs git in root with an identity, so a fixture can commit on a
+// machine that has none configured.
+func gitIn(t *testing.T, root string, args ...string) {
+	t.Helper()
+	full := append([]string{"-C", root, "-c", "user.email=t@example.com", "-c", "user.name=t",
+		"-c", "commit.gpgsign=false"}, args...)
+	if out, err := exec.Command("git", full...).CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// writeIn writes a repo-relative, slash-separated path under root.
+func writeIn(t *testing.T, root, p, body string) {
+	t.Helper()
+	full := filepath.Join(root, filepath.FromSlash(p))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// osvFlagging stubs osv-scanner with one that reports a vulnerable sharp
+// 0.35.2 for every -L file containing "vulnerable", and nothing for the
+// rest, naming each file by an absolute, symlink-resolved source path as
+// osv-scanner does — so a test can tell exactly which files were scanned.
+// It uses shell builtins only, so it still runs when PATH holds nothing
+// else. Returns the directory holding the stub.
+func osvFlagging(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub is a POSIX shell script")
+	}
+	bin := t.TempDir()
+	const script = `#!/bin/sh
+sep=''
+printf '{"results":['
+while [ $# -gt 0 ]; do
+  if [ "$1" = -L ]; then
+    shift
+    hit=''
+    while IFS= read -r line || [ -n "$line" ]; do
+      case $line in *vulnerable*) hit=1 ;; esac
+    done < "$1"
+    if [ -n "$hit" ]; then
+      printf '%s{"source":{"path":"%s/%s","type":"lockfile"},"packages":[{"package":{"name":"sharp","version":"0.35.2"},"vulnerabilities":[{"id":"GHSA-test"}],"groups":[{"max_severity":"8.9"}]}]}' "$sep" "$(pwd -P)" "$1"
+      sep=','
+    fi
+  fi
+  shift
+done
+printf ']}'
+`
+	if err := os.WriteFile(filepath.Join(bin, "osv-scanner"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return bin
+}
+
+// vulnFindings keeps the osv-scanner verdicts, dropping gap and
+// nothing-found notes.
+func vulnFindings(fs []gitx.Finding) []gitx.Finding {
+	var out []gitx.Finding
+	for _, f := range fs {
+		if strings.Contains(f.Message, "known vulnerability") {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// #293: the commit that fixed a lockfile was refused by the gate, naming
+// the versions the fix removed. Those versions lived in two places: HEAD's
+// lockfile, and a second worktree nested in the checkout
+// (.kilo/worktrees/<name>/, detached at the previous commit, not ignored).
+// The scan reads the lockfile on disk (see the test below), so HEAD was
+// never the source; 3.6.0's filepath.Walk descended into the nested
+// worktree. A nested worktree or repository is another checkout: its
+// lockfile is not what this commit carries, and nothing on this branch can
+// change it. `procoder security` looked innocent only because it runs the
+// dependency scan under --deep alone.
+// proved by: dropped the nested-checkout skip from the fallback walk — the
+// walk hands .kilo/worktrees/old/package-lock.json and
+// tools/other/package-lock.json to the scanner, and the gate blocks the fix
+// on sharp 0.35.2; on the pre-#285 code the git-inventory leg fails the
+// same way.
+func TestNestedCheckoutsAreNotThisCommitsDependencies(t *testing.T) {
+	root := gitRepoForManifests(t)
+	stubDir := osvFlagging(t)
+	const lock = "package-lock.json"
+	writeIn(t, root, lock, `{"sharp":"0.35.2 vulnerable"}`)
+	gitIn(t, root, "add", lock)
+	gitIn(t, root, "commit", "-q", "-m", "vulnerable")
+	// The stale second checkout, pinned to the vulnerable commit.
+	gitIn(t, root, "worktree", "add", "-q", "--detach", filepath.FromSlash(".kilo/worktrees/old"), "HEAD")
+	// A nested repository of its own.
+	gitIn(t, root, "init", "-q", "tools/other")
+	writeIn(t, root, "tools/other/package-lock.json", `{"x":"vulnerable"}`)
+	// The fix, in the working tree and the index alike.
+	writeIn(t, root, lock, `{"sharp":"0.35.4"}`)
+	gitIn(t, root, "add", lock)
+
+	check := func(how string) {
+		t.Helper()
+		if got := manifestsIn(root); strings.Join(got, ",") != lock {
+			t.Errorf("%s: the scan set reaches past this checkout: %v", how, got)
+		}
+		if got := vulnFindings(DepsChanged(root, []string{filepath.Join(root, lock)})); len(got) > 0 {
+			t.Errorf("%s: the commit fixing the lockfile is blocked on a version it removes: %+v", how, got)
+		}
+	}
+	check("git inventory")
+	// Git unavailable: the filesystem walk must stop at the same boundary.
+	t.Setenv("PATH", stubDir)
+	check("filesystem walk")
+}
+
+// The scan judges the lockfile the commit carries, not HEAD's: a vulnerable
+// version over a clean commit is reported, and reported against the file
+// it came from, so a finding can be traced to its lockfile.
+// proved by: dropped the source-path mapping — the finding carries no File
+// and the reader of #293 is left guessing which lockfile it meant.
+func TestTheScanReadsTheWorkingTreeNotHead(t *testing.T) {
+	root := gitRepoForManifests(t)
+	osvFlagging(t)
+	const lock = "web/package-lock.json"
+	writeIn(t, root, lock, `{"sharp":"0.35.4"}`)
+	gitIn(t, root, "add", ".")
+	gitIn(t, root, "commit", "-q", "-m", "clean")
+	writeIn(t, root, lock, `{"sharp":"0.35.2 vulnerable"}`)
+
+	got := vulnFindings(DepsChanged(root, []string{filepath.Join(root, filepath.FromSlash(lock))}))
+	if len(got) != 1 {
+		t.Fatalf("a vulnerable lockfile in the working tree must be reported once: %+v", got)
+	}
+	if got[0].File != lock || !got[0].Blocking {
+		t.Errorf("finding must block and name the lockfile it came from: %+v", got[0])
+	}
 }
