@@ -526,3 +526,18 @@ instead of falling back to terraform. #294 only reads the lockfile. #295
 - merge #288 (after review and rebase), close #294, and build #295 on #288
 - merge #294, close #288 with thanks and an explanation
 - merge #294 and port #288's extra detection into it, crediting the contributor
+
+## Close #283 when #297 merges, or keep it open?
+
+#297 does what #283 suggested (`procoder test` and the gate carry each
+failure's own output) and fixes two real ways the old parser misattributed
+failures: a printed `--- FAIL:` line counted as a failure, and a package
+that failed outside any test disappeared from the report. It also makes the
+guard tolerate a file that vanishes mid-walk. None of this proves which
+cause produced the single red CI run (34395461728).
+
+- close it: the suggested next step is done, both plausible causes are
+  fixed, and a recurrence would now carry its own diagnosis — file a new
+  issue then.
+- keep it open until it recurs or a quiet period passes, as the record of
+  an unexplained red run.

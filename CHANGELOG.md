@@ -51,7 +51,85 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
-## 3.6.0 — 2026-09-09
+## 3.7.0 — 2026-09-23
+
+_OpenTofu projects are validated with `tofu`, a lockfile fix is no longer
+blocked by an old checkout lying around, and a failing test arrives with
+what it asserted._
+
+**Fixed — OpenTofu directories are checked with `tofu`, so valid code no
+longer blocks unrelated commits.**
+([#288](https://github.com/azrtydxb/procoder/pull/288),
+[#286](https://github.com/azrtydxb/procoder/issues/286),
+[#295](https://github.com/azrtydxb/procoder/issues/295)) The infra check
+ran `terraform validate` on every Terraform directory. A directory
+initialised by OpenTofu pins its providers from `registry.opentofu.org`,
+which `terraform` cannot resolve. On a machine with both tools, a
+two-line change to a Kubernetes manifest was blocked by "Missing required
+provider" on an OpenTofu stack that `tofu validate` passes. Now each
+directory picks its own tool. A lockfile or installed providers from
+OpenTofu's registry mean `tofu`, and Terraform's registry means
+`terraform`, in both directions: a Terraform project is not handed to an
+installed `tofu`. With no evidence either way, an installed `tofu` is
+preferred. If the chosen tool is missing, the finding says so; it never
+falls back to the other one. Findings name the tool that ran, and
+`doctor` / `init` require the tool each directory needs. A new
+`[infra] terraform_binary = "auto" | "terraform" | "tofu"` pins one tool
+for the whole repository when the guess is wrong, for example a
+directory with no lockfile yet. Fixed by
+[@qinghuanandejiangshi](https://github.com/qinghuanandejiangshi).
+
+**Fixed — the dependency scan no longer reads an old checkout nested
+inside the repository.**
+([#296](https://github.com/azrtydxb/procoder/pull/296),
+[#285](https://github.com/azrtydxb/procoder/pull/285),
+[#293](https://github.com/azrtydxb/procoder/issues/293)) A commit that fixed
+a dependency advisory with `npm audit fix` was blocked on the very
+versions it removed. The scan had walked into a linked worktree an agent
+had left under `.kilo/worktrees/`, still at the previous commit, and
+reported that checkout's lockfile as this one's. Nothing said which
+lockfile a finding came from, so the versions it cited could not be found
+anywhere in the working tree. The only way out was `--no-verify`, which
+skips every other check too. The scan now uses Git's own file list, which
+never enters a nested repository or worktree. When Git cannot answer, the
+filesystem walk stops at any directory that has its own `.git`. Every
+vulnerability finding names its lockfile. The scan always reads the
+working tree, never HEAD.
+
+**Fixed — a failing Go test is reported with its assertion, under the
+name of the test that actually failed.**
+([#297](https://github.com/azrtydxb/procoder/pull/297),
+[#283](https://github.com/azrtydxb/procoder/issues/283)) `procoder test`
+got failing test names by matching `--- FAIL:` in `go test`'s text output.
+A test that printed such a line was reported as failing. A package that
+failed outside any test (a build failure, a panic in a goroutine, a
+timeout) was not reported at all when another test also failed. The
+runner now reads `go test -json`: failures come from the test framework's
+own events, a failed subtest is named once, and a package that failed
+outside any test is named with go's reason. Each failure also carries a
+bounded excerpt of its own output, both in `procoder test` and in the
+gate's finding. A red CI run that cannot be reproduced now shows what the
+test asserted, not just its name.
+
+**Added — `init` and `agents` set up the host you are using, not every
+host procoder supports.**
+([#289](https://github.com/azrtydxb/procoder/pull/289)) `--host <name>`
+(repeatable) or `--all` selects hosts explicitly. Without flags, the
+calling adapter's context selects the host. If the caller is unknown, the
+command asks and exits without writing anything. The choice is recorded
+in `.procoder/hosts.json`, and missing rule-file copies block only for
+declared hosts. `init` adds the selected host directories to
+`.gitignore` and keeps what is already there. Neither command runs
+without an `AGENTS.md`.
+
+**Changed — a review finding too large for the current PR is tracked,
+not waved through.**
+([#270](https://github.com/azrtydxb/procoder/pull/270)) The merge workflow
+used to let a non-blocking follow-up finding be deferred with a comment.
+Deferring one now requires a saved follow-up task that names the finding
+and the PR it came from.
+
+## 3.6.0 — 2026-09-10
 
 _Every command can be called instead of spawned, and two ways procoder
 could cost you something are closed._
