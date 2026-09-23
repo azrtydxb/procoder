@@ -512,3 +512,22 @@ func TestServiceModeIgnoresATypo(t *testing.T) {
 		t.Fatalf("a typo left mode at %q, want off", cfg.ServiceMode)
 	}
 }
+
+// proved by: dropping the infra.terraform_binary case (the key becomes an
+// unknown-key Problem and the pin is lost), or accepting any value — a
+// mistyped "tofoo" would then silently detect instead of pinning.
+func TestTerraformBinaryPinsOrReportsATypo(t *testing.T) {
+	if got := Load(t.TempDir()).TerraformBinary; got != "auto" {
+		t.Fatalf("no config: TerraformBinary = %q, want auto", got)
+	}
+	for _, v := range []string{"auto", "terraform", "tofu"} {
+		cfg := Load(write(t, t.TempDir(), "[infra]\nterraform_binary = \""+v+"\"\n"))
+		if cfg.TerraformBinary != v || len(cfg.Problems) != 0 {
+			t.Errorf("%s: got %q, problems %+v", v, cfg.TerraformBinary, cfg.Problems)
+		}
+	}
+	cfg := Load(write(t, t.TempDir(), "[infra]\nterraform_binary = \"tofoo\"\n"))
+	if cfg.TerraformBinary != "auto" || len(cfg.Problems) != 1 || cfg.Problems[0].Line != 2 {
+		t.Fatalf("a typo must be one Problem on its line and leave auto: %q %+v", cfg.TerraformBinary, cfg.Problems)
+	}
+}

@@ -513,3 +513,16 @@ grounds for it have since moved.
   changing a shipped template every existing analysis was written against.
 - Defer until #248 ships. The distinguishing feature is the approval, so
   build the artifact when there is a role that can approve it. (ask)
+
+## Which OpenTofu fix lands for #286: contributor PR #288 or our PR #294?
+
+qinghuanandejiangshi opened #288 on 2026-09-15 ("Fixes #286"). #294 (branch
+fix/infra-opentofu, ours, opened 2026-09-23) fixes the same thing. Neither
+is merged. #288 is broader: it also detects `.terraform/providers/registry.opentofu.org/`,
+prefers tofu when nothing points either way, and reports a missing tofu
+instead of falling back to terraform. #294 only reads the lockfile. #295
+(configurable binary) goes on top of whichever one lands.
+
+- merge #288 (after review and rebase), close #294, and build #295 on #288
+- merge #294, close #288 with thanks and an explanation
+- merge #294 and port #288's extra detection into it, crediting the contributor

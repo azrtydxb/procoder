@@ -765,9 +765,23 @@ answer "green" by staying quiet.
 
 #### `procoder infra`
 
-Where the files exist: hadolint over Dockerfiles, `terraform fmt` /
-`validate` / tflint over Terraform (a failing validate blocks),
+Where the files exist: hadolint over Dockerfiles, `terraform fmt` or `tofu fmt` /
+`validate` / tflint over Terraform or OpenTofu (a failing validate blocks),
 kubeconform over Kubernetes manifests, `helm lint` over charts.
+
+Each infrastructure directory chooses its own validator, because the two
+tools pin providers from different registries and the wrong one fails
+`validate` on providers rather than on the code. `[infra] terraform_binary`
+in `.procoder/config.toml` pins one tool for the whole repository. Left at
+`auto`, the directory decides: a lockfile or installed providers from
+`registry.opentofu.org` (or a `"tofu init"` lockfile header) select `tofu`,
+and from `registry.terraform.io` select `terraform` — even when the chosen
+binary is missing, which is reported as NOT checked rather than handed to
+the other tool. With no evidence either way, an installed `tofu` is
+preferred, with `terraform` as the fallback. The selected binary runs both
+`fmt -check` and `validate -no-color`; findings name it, and `doctor` /
+`init` use the same selection. Procoder does not run `init` or change
+provider installations.
 
 ### Specs, plans, and tasks
 
