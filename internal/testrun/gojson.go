@@ -220,7 +220,15 @@ func (r *goRun) excerpt() string {
 	for _, k := range r.leafFailures() {
 		entries = append(entries, entry{"--- FAIL: " + k.test + " (" + k.pkg + ")", testLines(r.lines[k], k.test)})
 	}
-	for _, p := range r.packageOnlyFailures() {
+	pkgFails := r.packageOnlyFailures()
+	if len(pkgFails) > 0 && len(r.build) == 0 && len(r.stray) > 0 {
+		// Before Go 1.24 a build error is stderr text, not an event, and
+		// cannot be tied to a package. Shown once and labelled as such:
+		// copied under each failed package it would read as every
+		// package's own error.
+		entries = append(entries, entry{"--- go output not attributed to a package", r.stray})
+	}
+	for _, p := range pkgFails {
 		entries = append(entries, entry{"--- FAIL: " + r.pkgFailLabel(p), r.packageLines(p)})
 	}
 	if len(entries) == 0 && len(r.stray) > 0 {
@@ -234,7 +242,9 @@ func (r *goRun) excerpt() string {
 			fmt.Fprintf(&b, "… %d more failure(s) not shown\n", len(entries)-i)
 			break
 		}
-		b.WriteString(e.title + "\n")
+		// Capped like every other line: a long subtest name or import
+		// path must not spend the budget before the diagnosis prints.
+		b.WriteString(capLine(e.title) + "\n")
 		for _, l := range bound(e.lines) {
 			b.WriteString("    " + capLine(l) + "\n")
 		}
@@ -292,14 +302,7 @@ func (r *goRun) packageLines(pkg string) []string {
 			}
 		}
 	}
-	out = append(out, r.lines[goKey{pkg, ""}]...)
-	if len(r.build) == 0 && len(r.stray) > 0 {
-		// Before Go 1.24 the build error is stderr text, not an event, and
-		// cannot be tied to a package. Showing it unattributed beats
-		// dropping the one line that says what broke.
-		out = append(append([]string{}, r.stray...), out...)
-	}
-	return out
+	return append(out, r.lines[goKey{pkg, ""}]...)
 }
 
 // bound keeps the head and the tail of a long failure: the head is where a

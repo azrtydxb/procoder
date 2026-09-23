@@ -192,3 +192,27 @@ func TestPreJSONBuildErrorsStillReachTheExcerpt(t *testing.T) {
 		t.Fatalf("excerpt:\n%s", run.excerpt())
 	}
 }
+
+// proved by: attaching the stray stream to each package-only failure again
+// (it appears twice), or writing titles uncapped (the long title survives).
+func TestStrayOutputAppearsOnceAndTitlesAreCapped(t *testing.T) {
+	long := "Test" + strings.Repeat("x", 600)
+	raw := "# shapes/broken [shapes/broken.test]\n" +
+		"broken/b_test.go:3:27: undefined: undefined\n" +
+		`{"Action":"fail","Package":"shapes/broken"}` + "\n" +
+		`{"Action":"fail","Package":"shapes/gor"}` + "\n" +
+		`{"Action":"output","Package":"shapes/ok","Test":"` + long + `","Output":"boom\n"}` + "\n" +
+		`{"Action":"fail","Package":"shapes/ok","Test":"` + long + `"}` + "\n"
+	ex := parseGoJSON(raw).excerpt()
+	if n := strings.Count(ex, "undefined: undefined"); n != 1 {
+		t.Fatalf("stray build output shown %d times, want once:\n%s", n, ex)
+	}
+	for _, l := range strings.Split(ex, "\n") {
+		if len(l) > excerptLineMax+len("…")+8 {
+			t.Fatalf("a %d-byte line escaped the cap: %.80s…", len(l), l)
+		}
+	}
+	if !strings.Contains(ex, "boom") {
+		t.Fatalf("the diagnosis behind a long title was lost:\n%s", ex)
+	}
+}
