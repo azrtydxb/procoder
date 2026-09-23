@@ -146,6 +146,13 @@ type Config struct {
 	// a diff in a commit rather than a silent state change.
 	ServiceExec bool
 
+	// TerraformBinary pins the tool that formats and validates Terraform
+	// directories (`[infra] terraform_binary`): "terraform", "tofu", or
+	// "auto" (the default), which reads each directory's lockfile and
+	// providers. The two tools resolve providers from different registries,
+	// so asking the wrong one fails validation on valid code (#286, #295).
+	TerraformBinary string
+
 	// Problems are settings the file names that could not be used. They
 	// block: a config that silently falls back lets a team believe a
 	// setting is in force when it never was.
@@ -186,8 +193,10 @@ func Load(root string) Config {
 		"learn.min_samples":       strconv.Itoa(defaultLearnMinSamples),
 		"service.mode":            "off",
 		"service.exec":            "false",
+		"infra.terraform_binary":  "auto",
 	}
 	cfg.ServiceMode = "off"
+	cfg.TerraformBinary = "auto"
 	raw, err := store.LoadDoc(root, ".procoder/config.toml")
 	if err != nil {
 		cfg.Settings = defaultSettings(defaults)
@@ -294,6 +303,16 @@ func Load(root string) Config {
 			}
 		case "service.exec":
 			cfg.ServiceExec = value == "true"
+		case "infra.terraform_binary":
+			// A typo must not quietly fall back to detection: the writer
+			// pinned a tool because detection picked the wrong one.
+			if value == "auto" || value == "terraform" || value == "tofu" {
+				cfg.TerraformBinary = value
+			} else {
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: "infra.terraform_binary wants auto, terraform, or tofu"})
+				continue
+			}
 		case "ask.policy":
 			cfg.AskBlock = value == "block"
 		case "version.check":

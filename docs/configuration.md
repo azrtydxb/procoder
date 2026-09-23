@@ -341,6 +341,20 @@ Lowering the bar to `WARNING` makes more findings block — a strengthening,
 and silent. Raising it makes fewer block, which is a relaxation and prints
 on every gate run.
 
+## `[infra]`
+
+| key                | values                      | default | meaning                                                   |
+| ------------------ | --------------------------- | ------- | --------------------------------------------------------- |
+| `terraform_binary` | `auto`, `terraform`, `tofu` | `auto`  | the tool that formats and validates Terraform directories |
+
+`auto` reads each directory: a lockfile or installed providers from
+OpenTofu's registry select `tofu`, from Terraform's select `terraform`, and
+with neither an installed `tofu` is preferred. Pin a tool when that guess
+is wrong for you — a directory with no lockfile yet, or an estate that uses
+one tool everywhere. The two tools resolve providers from different
+registries, so validating with the wrong one fails on providers, not on
+the code.
+
 ## Seeing the effective configuration
 
 `procoder config` prints every setting, its value, and where that value
