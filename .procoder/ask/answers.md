@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-09-01 22:15 UTC. procoder reads this
+Written 2026-09-23 12:06 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -226,6 +226,24 @@ Key: 87246294ecbe
 Question: `procoder format` prints content in one of four verdicts — fix the command, or the habit?
 
 Answer: Fix the command, the first option. Given as an instruction rather than a
+
+## [decision] decisions.md
+
+Key: 958528a7c9e7
+Question: Which OpenTofu fix lands for #286: contributor PR #288 or our PR #294?
+
+qinghuanandejiangshi opened #288 on 2026-09-15 ("Fixes #286"). #294 (branch
+fix/infra-opentofu, ours, opened 2026-09-23) fixes the same thing. Neither
+is merged. #288 is broader: it also detects `.terraform/providers/registry.opentofu.org/`,
+prefers tofu when nothing points either way, and reports a missing tofu
+instead of falling back to terraform. #294 only reads the lockfile. #295
+(configurable binary) goes on top of whichever one lands.
+
+- merge #288 (after review and rebase), close #294, and build #295 on #288
+- merge #294, close #288 with thanks and an explanation
+- merge #294 and port #288's extra detection into it, crediting the contributor
+
+Answer: Merge #288 (after review and rebase), close #294, and build #295 on top of #288. Chosen by Pascal on 2026-09-23.
 
 ## [spec] auto-copilot-leak
 
