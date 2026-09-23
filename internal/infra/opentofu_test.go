@@ -17,13 +17,21 @@ func resolveInfraTool(t *testing.T, tool *tools.Tool, bin string) {
 	t.Cleanup(func() { tool.Resolved = old })
 }
 
-// proved by: TerraformTool always returns Terraform — the OpenTofu cases fail.
+// proved by: TerraformTool always returns Terraform — the OpenTofu cases fail;
+// dropping the registry.terraform.io checks hands a Terraform project to an
+// installed tofu (#286 reversed); ignoring the config pin fails the pin cases.
 func TestTerraformToolSelection(t *testing.T) {
 	for _, tc := range []struct {
-		name, lock                 string
-		providers, tofu, terraform bool
-		want                       *tools.Tool
+		name, lock, config                      string
+		providers, tfProviders, tofu, terraform bool
+		want                                    *tools.Tool
 	}{
+		{name: "terraform lock beats installed tofu", lock: `provider "registry.terraform.io/hashicorp/aws" {}`, tofu: true, terraform: true, want: Terraform},
+		{name: "terraform providers beat installed tofu", tfProviders: true, tofu: true, terraform: true, want: Terraform},
+		{name: "tofu init header", lock: "# This file is maintained automatically by \"tofu init\".\n", terraform: true, want: OpenTofu},
+		{name: "config pins tofu over terraform evidence", config: "tofu", lock: `provider "registry.terraform.io/hashicorp/aws" {}`, terraform: true, want: OpenTofu},
+		{name: "config pins terraform over opentofu evidence", config: "terraform", lock: `provider "registry.opentofu.org/hashicorp/aws" {}`, tofu: true, want: Terraform},
+		{name: "config auto detects", config: "auto", lock: `provider "registry.opentofu.org/hashicorp/aws" {}`, terraform: true, want: OpenTofu},
 		{name: "lock wins without binary", lock: `provider "registry.opentofu.org/hashicorp/aws" {}`, terraform: true, want: OpenTofu},
 		{name: "mixed registries", lock: `provider "registry.terraform.io/hashicorp/aws" {}\nprovider "registry.opentofu.org/hashicorp/random" {}`, terraform: true, want: OpenTofu},
 		{name: "installed providers", providers: true, terraform: true, want: OpenTofu},
@@ -43,6 +51,14 @@ func TestTerraformToolSelection(t *testing.T) {
 				if err := os.MkdirAll(filepath.Join(dir, ".terraform/providers/registry.opentofu.org"), 0755); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if tc.tfProviders {
+				if err := os.MkdirAll(filepath.Join(dir, ".terraform/providers/registry.terraform.io"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.config != "" {
+				write(t, root, ".procoder/config.toml", "[infra]\nterraform_binary = \""+tc.config+"\"\n")
 			}
 			tofuBin, terraformBin := "", ""
 			if tc.tofu {
