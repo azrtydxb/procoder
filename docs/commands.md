@@ -642,7 +642,12 @@ canonical runner: `go test ./...`, `cargo test`, the package.json test
 script (via the lockfile's package manager), pytest, and gradle/maven.
 Verdicts are PASS with counts where the output allows, FAIL
 with the failing tests named, and NOT run when a runner or test script
-is absent, which is never reported as green. `--coverage` adds the
+is absent, which is never reported as green. Go runs as `go test -json`,
+so a failure is attributed to the test the framework failed rather than
+to a line that merely looks like one; a package that failed outside any
+test (a build error, a crash) is named by package, and each Go failure
+carries a bounded excerpt of its own output — the assertion, panic or
+build error — under the FAIL line, in the gate's finding as well. `--coverage` adds the
 percentage where the runner measures it natively (Go; pytest with
 pytest-cov); a number is reported, never enforced. With
 `--name <pattern>` narrows the run to matching tests — `-run` for Go,

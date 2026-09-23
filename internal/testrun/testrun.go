@@ -49,6 +49,12 @@ type Result struct {
 	// suite: the Detail says "NOT filtered" and never wears a filtered
 	// label over an unfiltered run.
 	Filtered bool
+	// Output is a bounded excerpt of what the runner printed for the
+	// failures Detail names — the assertion, the panic, the build error.
+	// Detail says WHICH failed; this says WHAT, so a failure that does not
+	// reproduce is still diagnosable from the one report of it. Empty
+	// unless the runner can attribute output to a failure (Go today).
+	Output string
 }
 
 // Run executes every detected runner. paths narrow the Go package list and
@@ -106,6 +112,9 @@ func Report(results []Result, out func(string)) int {
 			line += fmt.Sprintf("  coverage %.1f%%", r.Coverage)
 		}
 		out(line)
+		if r.Verdict == Fail && r.Output != "" {
+			out(indent(r.Output))
+		}
 	}
 	switch {
 	case failed:
@@ -142,9 +151,7 @@ func Suite(root string) func() (bool, string) {
 }
 
 var (
-	goFailRe   = regexp.MustCompile(`(?m)^--- FAIL: (\S+)`)
 	goOkPkgRe  = regexp.MustCompile(`(?m)^ok\s`)
-	goCoverRe  = regexp.MustCompile(`coverage:\s+([0-9.]+)% of statements`)
 	cargoSumRe = regexp.MustCompile(`test result: (\w+)\. (\d+) passed; (\d+) failed`)
 	pytestRe   = regexp.MustCompile(`(?:(\d+) failed)?(?:, )?(\d+) passed`)
 	pytestCov  = regexp.MustCompile(`(?m)^TOTAL\s+\d+\s+\d+\s+(\d+)%`)
@@ -175,7 +182,9 @@ func filterNote(detail, name string, ok bool, why string) string {
 // pattern starting with a dash must never be read as a flag, so Go can
 // always express the filter.
 func goArgs(root string, paths []string, coverage bool, name string) []string {
-	args := []string{"test"}
+	// -json so every line arrives attributed to its package and test; see
+	// gojson.go for what the text stream got wrong.
+	args := []string{"test", "-json"}
 	if coverage {
 		args = append(args, "-cover")
 	}
@@ -196,48 +205,43 @@ func runGo(root string, paths []string, coverage bool, name string) Result {
 	if timedOut {
 		return notRun(r, "go test gave no answer in "+runTimeout.String())
 	}
+	run := parseGoJSON(raw)
 	if err != nil {
-		fails := goFailRe.FindAllStringSubmatch(raw, -1)
-		names := make([]string, 0, len(fails))
-		for _, f := range fails {
-			names = append(names, f[1])
+		detail, failed := run.failDetail()
+		if detail == "" {
+			// Nothing in the stream says what failed — go itself refused
+			// (no module, a bad flag) before any package ran.
+			detail = "FAILED — " + textutil.FirstLine(strings.Join(run.stray, "\n")+run.summary.String()+errStr(err))
 		}
-		detail := "FAILED"
-		if len(names) > 0 {
-			detail = fmt.Sprintf("%d test(s) failing: %s", len(names), strings.Join(cap3(names), ", "))
-		} else {
-			detail = "FAILED — " + textutil.FirstLine(raw+errStr(err))
-		}
-		r.Verdict, r.Detail, r.Failed = Fail, filterNote(detail, name, true, ""), len(names)
+		r.Verdict, r.Detail, r.Failed = Fail, filterNote(detail, name, true, ""), failed
+		r.Output = run.excerpt()
 		return r
 	}
-	pkgs := len(goOkPkgRe.FindAllString(raw, -1))
+	summary := run.summary.String()
+	pkgs := len(goOkPkgRe.FindAllString(summary, -1))
 	r.Verdict = Pass
 	r.Detail = fmt.Sprintf("pass (%d package(s))", pkgs)
-	if strings.Contains(raw, "[no test files]") && pkgs == 0 {
+	if strings.Contains(summary, "[no test files]") && pkgs == 0 {
 		r.Detail = "pass — but no test files exist yet"
 	}
 	if name != "" {
 		// go test exits 0 when -run matches nothing, marking each package
 		// "[no tests to run]". A bare green there would imply the suite ran,
 		// so say how many packages the pattern actually reached.
-		matched := pkgs - strings.Count(raw, "[no tests to run]")
+		matched := pkgs - strings.Count(summary, "[no tests to run]")
 		if matched <= 0 {
 			r.Detail = fmt.Sprintf("pass — 0 test(s) matched %q", name)
 			return r
 		}
 		r.Detail = fmt.Sprintf("pass (%d package(s) matched %q)", matched, name)
 	}
-	if coverage {
-		if covs := goCoverRe.FindAllStringSubmatch(raw, -1); len(covs) > 0 {
-			sum := 0.0
-			for _, c := range covs {
-				v, _ := strconv.ParseFloat(c[1], 64)
-				sum += v
-			}
-			r.Coverage = sum / float64(len(covs))
-			r.Detail += fmt.Sprintf(" — mean of %d covered package(s)", len(covs))
+	if coverage && len(run.coverOrder) > 0 {
+		sum := 0.0
+		for _, p := range run.coverOrder {
+			sum += run.coverage[p]
 		}
+		r.Coverage = sum / float64(len(run.coverOrder))
+		r.Detail += fmt.Sprintf(" — mean of %d covered package(s)", len(run.coverOrder))
 	}
 	return r
 }
