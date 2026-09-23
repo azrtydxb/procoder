@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/config"
 	"procoder/internal/gitx"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
@@ -55,22 +56,46 @@ var OpenTofu = &tools.Tool{
 }
 
 // TerraformTool chooses the formatter/validator for one infrastructure directory.
-// Registry evidence wins over availability: running Terraform when an OpenTofu
-// project lacks tofu reports missing Terraform providers instead of the problem.
+// The two tools pin providers from different registries, so asking the wrong
+// one fails validation on providers rather than on the code (#286). In order:
+//
+//  1. `[infra] terraform_binary` in .procoder/config.toml, when it names a tool;
+//  2. the directory's own evidence — the lockfile, then the installed
+//     providers — where either registry is enough, and OpenTofu's wins a tie;
+//  3. only then availability: tofu when installed, else terraform.
+//
+// Evidence wins over availability in both directions: an OpenTofu project on
+// a machine without tofu reports tofu missing, and a Terraform project is not
+// handed to tofu just because tofu is installed.
 func TerraformTool(root, dir string) (*tools.Tool, error) {
+	switch config.Load(root).TerraformBinary {
+	case "tofu":
+		return OpenTofu, nil
+	case "terraform":
+		return Terraform, nil
+	}
 	lock, err := os.ReadFile(filepath.Join(dir, ".terraform.lock.hcl"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read infrastructure lock file: %w", err)
 	}
-	if strings.Contains(string(lock), "registry.opentofu.org/") {
+	switch {
+	case bytes.Contains(lock, []byte("registry.opentofu.org/")), bytes.Contains(lock, []byte(`"tofu init"`)):
 		return OpenTofu, nil
+	case bytes.Contains(lock, []byte("registry.terraform.io/")):
+		return Terraform, nil
 	}
-	info, err := os.Stat(filepath.Join(dir, ".terraform", "providers", "registry.opentofu.org"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("inspect OpenTofu providers: %w", err)
-	}
-	if err == nil && info.IsDir() {
-		return OpenTofu, nil
+	providers := filepath.Join(dir, ".terraform", "providers")
+	for _, pick := range []struct {
+		registry string
+		tool     *tools.Tool
+	}{{"registry.opentofu.org", OpenTofu}, {"registry.terraform.io", Terraform}} {
+		info, err := os.Stat(filepath.Join(providers, pick.registry))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect installed providers: %w", err)
+		}
+		if err == nil && info.IsDir() {
+			return pick.tool, nil
+		}
 	}
 	if tools.Resolve(OpenTofu, root) != "" {
 		return OpenTofu, nil
