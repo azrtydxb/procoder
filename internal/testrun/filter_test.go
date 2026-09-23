@@ -23,16 +23,16 @@ func TestGoArgsCarryFilterPathsAndCoverage(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "pkg/a/a.go", "package a\n")
 	got := strings.Join(goArgs(root, []string{"pkg/a"}, true, "TestAdd"), " ")
-	if got != "test -cover -run=TestAdd ./pkg/a" {
+	if got != "test -json -cover -run=TestAdd ./pkg/a" {
 		t.Fatalf("--name must compose with --coverage and paths: %q", got)
 	}
 	// the joined -run= form is the point: a dash-leading pattern must stay a
 	// pattern, never become a flag
 	got = strings.Join(goArgs(root, nil, false, "-weird"), " ")
-	if got != "test -run=-weird ./..." {
+	if got != "test -json -run=-weird ./..." {
 		t.Fatalf("go must express any pattern: %q", got)
 	}
-	if got := strings.Join(goArgs(root, nil, false, ""), " "); got != "test ./..." {
+	if got := strings.Join(goArgs(root, nil, false, ""), " "); got != "test -json ./..." {
 		t.Fatalf("no name means today's argv: %q", got)
 	}
 }

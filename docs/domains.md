@@ -237,7 +237,7 @@ runs and reports separately:
 
 | Ecosystem | Runner                                                             | Coverage               |
 | --------- | ------------------------------------------------------------------ | ---------------------- |
-| Go        | `go test ./...`                                                    | native (`-cover`)      |
+| Go        | `go test -json ./...`                                              | native (`-cover`)      |
 | Rust      | `cargo test`                                                       | not measured           |
 | JS/TS     | the package.json `test` script, via the lockfile's package manager | not measured           |
 | Python    | pytest (where a pytest config or a tests directory exists)         | native with pytest-cov |
@@ -247,6 +247,12 @@ Three verdicts, and the third is the point: **PASS** with counts where
 the output allows, **FAIL** with the failing tests named, and **NOT run**
 when no runner or test script is present. NOT run is never green — a
 repository with no suite is told it has no suite, not congratulated.
+Go reads the JSON stream, not the text: a test that prints a line
+shaped like `--- FAIL: TestOther` is not reported as TestOther failing,
+and a package that failed outside any test is named by package. A Go
+failure carries a bounded excerpt of its own output — the assertion,
+the panic, the build error — so a failure that does not reproduce is
+still diagnosable from the one report of it.
 Exit 0 when everything passed, 1 when anything failed, 2 when nothing
 could run at all.
 

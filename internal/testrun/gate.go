@@ -74,8 +74,14 @@ func GateCheck(root string, files []string, block bool) []gitx.Finding {
 func findingFor(r Result, block bool) *gitx.Finding {
 	switch r.Verdict {
 	case Fail:
-		return &gitx.Finding{Blocking: block,
-			Message: fmt.Sprintf("%s tests: %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))}
+		msg := fmt.Sprintf("%s tests: %s (test)", r.Ecosystem, TrimmedDetail(r.Detail))
+		if r.Output != "" {
+			// The name alone is how #283 arrived: one red CI run, a test
+			// name, and nothing to say what it had asserted. The excerpt is
+			// bounded where it is built, so it cannot flood the gate.
+			msg += "\n" + indent(r.Output)
+		}
+		return &gitx.Finding{Blocking: block, Message: msg}
 	case NotRun:
 		if r.NoSuite {
 			// Nothing to run is not a check that failed to answer. A
@@ -165,6 +171,12 @@ func TrimmedDetail(s string) string {
 		s = s[:200]
 	}
 	return s
+}
+
+// indent sets a multi-line excerpt under the line that introduced it, so
+// it reads as belonging to that finding rather than as findings of its own.
+func indent(s string) string {
+	return "        " + strings.ReplaceAll(s, "\n", "\n        ")
 }
 
 // ecosystemsOf reports which runners a commit implicates, by the

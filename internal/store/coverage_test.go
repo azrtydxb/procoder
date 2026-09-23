@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
@@ -101,14 +103,36 @@ func goFiles(t *testing.T) []string {
 	return out
 }
 
+// parseListed parses a file goFiles listed. A file that is gone by the
+// time it is read answers (nil, nil): the walk and the parse are two
+// moments, the walk already tolerates a file vanishing, and a file that
+// no longer exists carries no call to guard.
+//
+// Only absence is forgiven. A file that exists and does not parse — a
+// partial write included — is still an error: that is a file the guard
+// could not read, and a guard that skipped it would fail open.
+func parseListed(fset *token.FileSet, p string) (*ast.File, error) {
+	f, err := parser.ParseFile(fset, p, nil, 0)
+	if err == nil {
+		return f, nil
+	}
+	if _, statErr := os.Stat(p); errors.Is(statErr, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("%s: %w", p, err)
+}
+
 // proved by: adding a new .procoder/ path anywhere in the tree without
 // deciding which store operation serves it fails this.
 func TestStoreCoversEveryPathConstant(t *testing.T) {
 	fset := token.NewFileSet()
 	for _, p := range goFiles(t) {
-		f, err := parser.ParseFile(fset, p, nil, 0)
+		f, err := parseListed(fset, p)
 		if err != nil {
-			t.Fatalf("%s: %v", p, err)
+			t.Fatal(err)
+		}
+		if f == nil {
+			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			bl, ok := n.(*ast.BasicLit)
@@ -222,9 +246,12 @@ func TestNoDirectProcoderFileIO(t *testing.T) {
 	for _, dir := range dirs {
 		consts := packageProcoderConsts(t, dir)
 		for _, p := range byDir[dir] {
-			f, err := parser.ParseFile(fset, p, nil, 0)
+			f, err := parseListed(fset, p)
 			if err != nil {
-				t.Fatalf("%s: %v", p, err)
+				t.Fatal(err)
+			}
+			if f == nil {
+				continue
 			}
 			checkFile(t, fset, p, f, consts)
 		}
@@ -380,3 +407,33 @@ func identRe(name string) *regexp.Regexp {
 }
 
 var identCache = map[string]*regexp.Regexp{}
+
+// proved by: making parseListed forgive every parse error, or none — a
+// file that vanished between the walk and the parse must not fail the
+// guard (#283, hypothesis 2), and a file that is present but unparseable
+// must, or the guard fails open on exactly the file it could not read.
+func TestParseListedForgivesOnlyAVanishedFile(t *testing.T) {
+	dir := t.TempDir()
+	fset := token.NewFileSet()
+
+	f, err := parseListed(fset, filepath.Join(dir, "gone.go"))
+	if f != nil || err != nil {
+		t.Fatalf("a vanished file is nothing to check, not an error: %v %v", f, err)
+	}
+
+	partial := filepath.Join(dir, "partial.go")
+	if err := os.WriteFile(partial, []byte("package x\n\nfunc F() {\n\tos.ReadFile("), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseListed(fset, partial); err == nil {
+		t.Fatal("a present file that does not parse must fail the guard")
+	}
+
+	whole := filepath.Join(dir, "whole.go")
+	if err := os.WriteFile(whole, []byte("package x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := parseListed(fset, whole); f == nil || err != nil {
+		t.Fatalf("a whole file parses: %v %v", f, err)
+	}
+}
