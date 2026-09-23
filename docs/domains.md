@@ -280,12 +280,12 @@ actionlint runs on every workflow file the agent writes, in-turn.
 `procoder infra` — inventory-driven: each tool runs only where its files
 exist, so a repo without infrastructure pays nothing.
 
-| Files                | Tool                                                                                                                                                                           | Verdict |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| Dockerfiles          | hadolint                                                                                                                                                                       | reports |
-| Terraform            | terraform fmt (reports) · terraform validate (**blocks** when initialised; says NOT-validated when `.terraform` is absent rather than failing on providers) · tflint (reports) |
-| Kubernetes manifests | kubeconform                                                                                                                                                                    | reports |
-| Helm charts          | helm lint                                                                                                                                                                      | reports |
+| Files                | Tool                                                                                                                                                                                                                                                                                                                                     | Verdict |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Dockerfiles          | hadolint                                                                                                                                                                                                                                                                                                                                 | reports |
+| Terraform / OpenTofu | terraform fmt (reports) · terraform validate (**blocks** when initialised; says NOT-validated when `.terraform` is absent rather than failing on providers) · tflint (reports). A directory whose `.terraform.lock.hcl` was written by `tofu init` (or pins `registry.opentofu.org` providers) runs `tofu fmt` / `tofu validate` instead |
+| Kubernetes manifests | kubeconform                                                                                                                                                                                                                                                                                                                              | reports |
+| Helm charts          | helm lint                                                                                                                                                                                                                                                                                                                                | reports |
 
 ## 10. GitOps / GitHub
 

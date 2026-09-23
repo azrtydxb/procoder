@@ -180,7 +180,15 @@ func init() {
 			out = append(out, infra.Hadolint)
 		}
 		if len(inv.TfDirs) > 0 {
-			out = append(out, infra.Terraform, infra.Tflint)
+			// terraform or tofu per directory, as the check will run it
+			seen := map[string]bool{}
+			for _, dir := range inv.TfDirs {
+				if t := infra.IaCTool(dir); !seen[t.Name] {
+					seen[t.Name] = true
+					out = append(out, t)
+				}
+			}
+			out = append(out, infra.Tflint)
 		}
 		if len(inv.K8sFiles) > 0 {
 			out = append(out, infra.Kubeconform)

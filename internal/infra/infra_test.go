@@ -234,3 +234,41 @@ func TestUnwalkableTreeIsNotSurveyedRatherThanEmpty(t *testing.T) {
 		t.Fatalf("an unwalkable root must say it was not surveyed, got %v", got)
 	}
 }
+
+// Breaks if a directory OpenTofu initialised is handed to terraform, whose
+// validate then fails on the opentofu-registry providers and blocks the gate.
+func TestOpenTofuLockfileSelectsTofu(t *testing.T) {
+	dir := t.TempDir()
+	if IaCTool(dir) != Terraform {
+		t.Fatal("no lockfile must mean terraform")
+	}
+	write(t, dir, ".terraform.lock.hcl", `provider "registry.terraform.io/hashicorp/aws" {}`+"\n")
+	if IaCTool(dir) != Terraform {
+		t.Fatal("a terraform-registry lockfile must mean terraform")
+	}
+	write(t, dir, ".terraform.lock.hcl", `provider "registry.opentofu.org/hashicorp/aws" {}`+"\n")
+	if IaCTool(dir) != Tofu {
+		t.Fatal("an opentofu-registry lockfile must mean tofu")
+	}
+	write(t, dir, ".terraform.lock.hcl", "# This file is maintained automatically by \"tofu init\".\n")
+	if IaCTool(dir) != Tofu {
+		t.Fatal("a tofu-init lockfile header must mean tofu")
+	}
+}
+
+func TestInitialisedOpenTofuDirValidatesWithTofu(t *testing.T) {
+	if tools.Resolve(Tofu, "") == "" {
+		t.Skip("tofu not installed")
+	}
+	root := t.TempDir()
+	write(t, root, "infra/main.tf", "locals { a = 1 }\n")
+	write(t, root, "infra/.terraform.lock.hcl", "# This file is maintained automatically by \"tofu init\".\n")
+	if err := os.MkdirAll(filepath.Join(root, "infra", ".terraform"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range Check(root) {
+		if strings.Contains(f.Message, "validate FAILED") {
+			t.Fatalf("a valid OpenTofu dir must validate clean: %+v", f)
+		}
+	}
+}
