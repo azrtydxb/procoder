@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-09-23 12:06 UTC. procoder reads this
+Written 2026-09-23 12:37 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -133,6 +133,31 @@ Key: 5517b4921f0f
 Question: Does the decisions queue and its principles change ship in v3.1.1, or wait?
 
 Answer: in v3.1.1 — ADR 0003 governs major, and 2.0.1 already shipped new enforcement in a patch
+
+## [decision] decisions.md
+
+Key: 5a473620fb86
+Question: The 3.6.0 changelog is dated a day before the tag — correct it?
+
+The entry reads `## 3.6.0 — 2026-09-09`. The release commit merged on the
+9th; the tag went out on the 10th because the first tag run failed on
+Windows and had to be re-cut after the fix.
+
+CI extracts that entry verbatim as the release notes, so the published
+notes will say the 9th while the GitHub release itself is dated the 10th.
+Nobody is misled about what shipped — only about which day.
+
+- leave it: the content was finalised on the 9th, and a one-day
+  discrepancy in a date is not worth another PR, another full CI cycle,
+  and a third tag re-cut.
+- correct it to 2026-09-10 before the release job is allowed to stand:
+  the changelog is the release notes, and a date in them should be the
+  date. Costs a PR, a CI cycle, and deleting and re-cutting the tag
+  again — which is only safe while nothing has been published.
+- correct it in the next release instead, so 3.6.0 ships as-is and 3.7.0
+  carries a fixed date for its own entry.
+
+Answer: Correct it in the 3.7.0 release PR: the CHANGELOG.md heading becomes 2026-09-10. The published 3.6.0 release notes are left as they are. Chosen by Pascal on 2026-09-23.
 
 ## [decision] decisions.md
 
@@ -279,6 +304,26 @@ Key: b2c54f852d82
 Question: Remove the cached 3.1.0 plugin too, or keep it as the rollback?
 
 Answer: Keep 3.1.0. prune's active-plus-one-previous policy stands; the rollback is worth ~45 MB.
+
+## [decision] decisions.md
+
+Key: b4f4c20ee5f7
+Question: Close #283 when #297 merges, or keep it open?
+
+#297 does what #283 suggested (`procoder test` and the gate carry each
+failure's own output) and fixes two real ways the old parser misattributed
+failures: a printed `--- FAIL:` line counted as a failure, and a package
+that failed outside any test disappeared from the report. It also makes the
+guard tolerate a file that vanishes mid-walk. None of this proves which
+cause produced the single red CI run (34395461728).
+
+- close it: the suggested next step is done, both plausible causes are
+  fixed, and a recurrence would now carry its own diagnosis — file a new
+  issue then.
+- keep it open until it recurs or a quiet period passes, as the record of
+  an unexplained red run.
+
+Answer: Close it when #297 merges: the suggested next step is done and both plausible causes are fixed; a recurrence gets a new issue. Chosen by Pascal on 2026-09-23.
 
 ## (no longer asked)
 
