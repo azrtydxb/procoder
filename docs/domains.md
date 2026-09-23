@@ -66,6 +66,15 @@ checks use the same scope; an ignored lockfile cannot hide a visible package's
 unchecked dependencies. If Git cannot answer (including outside a repository),
 discovery falls back to a filesystem walk with the same vendor-directory filter.
 
+The scan reads the manifests on disk — the working tree, never HEAD's
+committed copies. A nested checkout is not part of it: a directory holding
+its own `.git` (a nested repository, or a linked worktree such as the ones
+agent tools leave under `.kilo/worktrees/`) belongs to that checkout, and a
+worktree left at an older commit would otherwise block the lockfile fix on
+the very versions it removes. Git's inventory never descends into one, and
+the fallback walk stops at it too. Each vulnerability finding names the
+lockfile it came from.
+
 It costs seconds rather than milliseconds: semgrep's time goes on loading
 rules, which is fixed, so a one-line file is barely cheaper than the whole
 tree. It is there because a commit is not a keystroke and a finding caught
