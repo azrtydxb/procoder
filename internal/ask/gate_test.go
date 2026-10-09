@@ -82,3 +82,33 @@ func TestAnUnreadableRecordIsNotAnEmptyGateVerdict(t *testing.T) {
 		t.Errorf("and names what it could not read: %v", *lines)
 	}
 }
+
+// #306: a decision's body is free text, and the gate output it lands in is
+// read line by line. Every finding must be exactly one line.
+// proved by: returning q.Text + " (ask)" unflattened in GateFindings — the
+// decision's message then carries newlines and this fails.
+func TestADecisionFindingIsOneLine(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".procoder", "ask"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "## Every commit fails?\n\n    BLOCKING toml 4.1.1 has 2 known vulnerability(s) (security)\n\n- a: yes\n"
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "ask", DecisionsFile), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, f := range GateFindings(root) {
+		if strings.ContainsAny(f.Message, "\r\n") {
+			t.Errorf("finding spans lines: %q", f.Message)
+		}
+		if strings.Contains(f.Message, "Every commit fails?") {
+			saw = true
+			if !strings.Contains(f.Message, "toml 4.1.1") || !strings.Contains(f.Message, "a: yes") {
+				t.Errorf("the decision's content must survive flattening: %q", f.Message)
+			}
+		}
+	}
+	if !saw {
+		t.Fatal("the decision must reach the gate")
+	}
+}
