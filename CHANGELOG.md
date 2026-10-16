@@ -51,6 +51,78 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.8.0 — 2026-10-16
+
+_The SAST gate no longer saturates a machine running several agents,
+`self-upgrade` works again, and `uv.lock` projects get their dependencies
+scanned._
+
+**Fixed — the SAST gate costs what the change costs, and can no longer
+saturate the machine.**
+([#313](https://github.com/azrtydxb/procoder/pull/313),
+[#310](https://github.com/azrtydxb/procoder/issues/310)) Every gate and
+every `procoder check` ran semgrep over the whole tree, however few files
+had changed. Each scan took as many cores as semgrep wanted, nothing
+limited how many ran at once, and a scan whose gate was killed kept
+running. With a few agents at work on a large repository, a 10-core
+machine sat at load 51 under minutes-long scans of near-identical
+worktrees. Now the gate scans only the files the commit carries (semgrep
+still picks its targets the way `security --deep` does, so a file it
+skips in the tree it skips here). Each scan is held to two cores. One
+scan runs per repository, and a quarter of the cores' worth per machine.
+The rest wait for a slot. A cancelled or timed-out scan takes semgrep's
+whole process group down with it. Under the commit hook the SAST leg
+answers within 90 seconds, inside the hook's own 120, so a scan that
+cannot finish says "SAST was NOT run" and blocks instead of being killed
+with no verdict. A direct `procoder check` and CI keep ten minutes.
+
+**Fixed — `procoder self-upgrade` downloads again.**
+([#311](https://github.com/azrtydxb/procoder/pull/311),
+[#300](https://github.com/azrtydxb/procoder/issues/300)) GitHub now
+redirects release downloads to `release-assets.githubusercontent.com`,
+which the upgrade's host allowlist did not know. The upgrade refused
+every download, so no install could move past the version it had. That
+host is now accepted, still matched exactly and over HTTPS only. Reported
+by [@davidfstein](https://github.com/davidfstein).
+
+**Security — `uv.lock` is scanned for vulnerable dependencies.**
+([#304](https://github.com/azrtydxb/procoder/pull/304),
+[#301](https://github.com/azrtydxb/procoder/issues/301)) A Python project
+locked with uv had its dependencies reported as not checked, because
+osv-scanner was never handed the lockfile. `uv.lock` is now passed to
+osv-scanner. A commit that touches only `uv.lock` runs the Python
+security and test legs, and a `pyproject.toml` with a `uv.lock` beside it
+is no longer reported as a gap. Reported by
+[@XenaRathon](https://github.com/XenaRathon), fixed by
+[@AdamMagued](https://github.com/AdamMagued).
+
+**Fixed — a decision that quotes gate output no longer blocks commits
+with a finding no check produced.**
+([#307](https://github.com/azrtydxb/procoder/pull/307),
+[#306](https://github.com/azrtydxb/procoder/issues/306)) A decision in
+`.procoder/ask/decisions.md` whose body quoted a `BLOCKING …` line was
+read back by the commit hook as a live finding. Every commit that staged
+the file was blocked by something `procoder security` could not
+reproduce. Every finding now prints on one line, so no text inside a
+decision can pass for one.
+
+**Fixed — a file phpstan's config excludes is skipped, not a failure.**
+([#308](https://github.com/azrtydxb/procoder/pull/308),
+[#305](https://github.com/azrtydxb/procoder/issues/305)) Staging only a
+file listed under phpstan's `excludePaths` made phpstan answer "No files
+found to analyse". The gate reported that as a blocking "NOT checked", so
+every commit that regenerated an excluded file was refused. Now the
+exclusion is honoured the way a `.prettierignore` is for formatting.
+
+**Fixed — links to paths with spaces resolve.**
+([#312](https://github.com/azrtydxb/procoder/pull/312),
+[#299](https://github.com/azrtydxb/procoder/issues/299)) The reference
+check reported a link to a path with spaces as broken, whether the
+spaces were written as `%20` or the path was wrapped in CommonMark's
+angle brackets, though both resolve on GitHub. Destinations are now
+percent-decoded before the lookup, and CommonMark's `<…>` form is read
+whole.
+
 ## 3.7.0 — 2026-09-23
 
 _OpenTofu projects are validated with `tofu`, a lockfile fix is no longer
