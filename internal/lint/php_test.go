@@ -3,6 +3,7 @@ package lint
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -253,5 +254,55 @@ func TestACheckListReplacesTheBaseline(t *testing.T) {
 	}
 	if strings.Contains(got, "cert-") {
 		t.Error("replace means replace — a family the repository left out must not survive")
+	}
+}
+
+// azrtydxb/procoder#305: a staged file the project's phpstan config excludes
+// makes phpstan answer "[ERROR] No files found to analyse." and exit 1. That
+// is the project's decision, not a tool that failed — the gate must not
+// block on it, and must not hide it either. The fake phpstan prints what the
+// real one printed (recorded from phpstan 2.x) for an excluded file.
+// proved by: deleting the phpstanNothingToAnalyse branch in runPhpstan — the
+// excluded file is then reported "NOT checked — phpstan failed" and blocks.
+func TestAFileThePhpstanConfigExcludesIsNotAFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake phpstan is a shell script")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "vendor", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\n" +
+		"echo ' [ERROR] No files found to analyse.'\n" +
+		"exit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "phpstan"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "phpstan.neon"),
+		[]byte("parameters:\n    paths: [src]\n    excludePaths:\n        analyse: [src/Types.php]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "src", "Types.php")
+
+	got := lintPHP(root, []string{file}, true)
+	if len(got) != 1 {
+		t.Fatalf("want one visible note, got %+v", got)
+	}
+	if got[0].Blocking {
+		t.Errorf("an excluded file must not block: %+v", got[0])
+	}
+	if strings.Contains(got[0].Message, "NOT checked") || !strings.Contains(got[0].Message, "skipped") {
+		t.Errorf("the skip must be named as a skip: %q", got[0].Message)
+	}
+
+	// A real failure must still block: only the exclusion answer is benign.
+	crash := "#!/bin/sh\necho 'Fatal error: out of memory'\nexit 255\n"
+	if err := os.WriteFile(filepath.Join(bin, "phpstan"), []byte(crash), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = lintPHP(root, []string{file}, true)
+	if len(got) != 1 || !got[0].Blocking || !strings.Contains(got[0].Message, "NOT checked") {
+		t.Errorf("a crashed phpstan must still block as NOT checked: %+v", got)
 	}
 }

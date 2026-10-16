@@ -408,3 +408,34 @@ func TestHeredocIntoReadsOnlyTheHeredocThatWritesTheNamedFile(t *testing.T) {
 		t.Error("an append must not be read as the whole message")
 	}
 }
+
+// #306: a decision whose body quotes gate output is text, not a finding. The
+// gate prints the decision on one line, so the quoted line cannot be read
+// back by blockingLines as a finding of its own.
+// proved by: reverting textutil.OneLine in ask.GateFindings and in the gate's
+// print loop — the quoted `BLOCKING toml ...` line comes back as a third
+// blocking finding and this fails.
+func TestAQuotedFindingInADecisionBodyIsNotAFinding(t *testing.T) {
+	requireGit(t)
+	root := gitRepo(t)
+	writeAt(t, root, ".procoder/config.toml", "[ask]\npolicy = \"block\"\n")
+	writeAt(t, root, ".procoder/ask/decisions.md", "## Every commit fails?\n\n"+
+		"Every commit in this repo currently fails:\n\n"+
+		"    BLOCKING toml 4.1.1 has 2 known vulnerability(s), max severity 8.2 — upgrade it (security)\n\n"+
+		"UNCHECKED phantom.go — no tool\n\n- a: yes\n")
+	v, r := decisionOf(t, commitPayload(t, root, "git commit -m x"))
+	if v != "deny" {
+		t.Fatalf("a pending decision under ask policy block must stop the commit, got %q (%s)", v, r)
+	}
+	if !strings.Contains(r, "Every commit fails?") {
+		t.Fatalf("the real finding must still be named:\n%s", r)
+	}
+	for _, phantom := range []string{"toml 4.1.1", "phantom.go"} {
+		for _, line := range strings.Split(r, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "BLOCKING "+phantom) ||
+				strings.HasPrefix(strings.TrimSpace(line), "UNCHECKED "+phantom) {
+				t.Fatalf("quoted decision text became a finding line %q:\n%s", line, r)
+			}
+		}
+	}
+}

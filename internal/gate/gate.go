@@ -25,6 +25,7 @@ import (
 	"procoder/internal/parallel"
 	"procoder/internal/security"
 	"procoder/internal/testrun"
+	"procoder/internal/textutil"
 )
 
 // houseRules are the domains that encode procoder's own conventions:
@@ -378,7 +379,9 @@ func run(paths []string, root string, commitMessage string, stdout io.Writer, co
 			}
 			loc = loc + "  "
 		}
-		fmt.Fprintf(stdout, "%s %s%s\n", mark, loc, f.Message)
+		// One line per finding: the hook reads this output line by line, so
+		// a message with embedded newlines would mint findings of its own.
+		fmt.Fprintf(stdout, "%s %s%s\n", mark, loc, textutil.OneLine(f.Message))
 	}
 	if scope == Adopted {
 		fmt.Fprintf(stdout, "procoder gate: %d clean, %d unformatted, %d unchecked, %d out of scope, %d hygiene finding(s) (%d blocking)\n",

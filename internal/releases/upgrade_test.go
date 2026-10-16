@@ -572,13 +572,15 @@ func TestChecksumForReadsSha256sumFormat(t *testing.T) {
 	}
 }
 
-// The host is matched whole, over TLS only.
+// The host is matched whole, over TLS only, and every host GitHub actually
+// redirects a release download to is accepted (#300: release-assets).
 // proved by: matched the host with strings.Contains or HasSuffix —
 // github.com.example.invalid and evil-github.com then pass as GitHub.
 func TestOnlyGitHubOverHTTPSIsFetched(t *testing.T) {
 	for _, ok := range []string{
 		"https://github.com/azrtydxb/procoder/releases/download/v1/procoder-linux-amd64",
 		"https://objects.githubusercontent.com/x",
+		"https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r",
 		"https://GitHub.com/x",
 	} {
 		if err := gitHubAssetURL(ok); err != nil {
@@ -590,6 +592,9 @@ func TestOnlyGitHubOverHTTPSIsFetched(t *testing.T) {
 		"https://github.com.example.invalid/x",
 		"https://evil-github.com/x",
 		"https://raw.githubusercontent.com/x",
+		"https://release-assets.githubusercontent.com.evil.com/x",
+		"https://evil-release-assets.githubusercontent.com/x",
+		"http://release-assets.githubusercontent.com/x",
 		"file:///etc/passwd",
 		"://",
 	} {
