@@ -1426,7 +1426,7 @@ The bytes are what a person reads and what the parity test compares; the
 result is what a client acts on. Both, so that no caller has to be a
 parser and none has to be a renderer.
 
-#### `procoder version [--check]` and `procoder self-upgrade [--force]`
+#### `procoder version [--check]` and `procoder self-upgrade [--force] [--confirm <sha256>]`
 
 Bare `version` prints one line and asks nobody anything.
 
@@ -1446,6 +1446,44 @@ answered, not a yes. It refuses to move backwards, so a maintainer on an
 unreleased branch is never told to install an older tag. The download lands
 beside the binary and the rename is the last step, so a failed download
 leaves the working binary exactly where it was.
+
+An agent session has no terminal, so it cannot type that yes — and a
+`--yes` flag it could pass whenever it liked would be no consent at all.
+There are two ways for a person to say yes from there, and both run only on
+an explicit `procoder self-upgrade`: no hook and no `version --check` ever
+installs anything, and `version --check` with no terminal only points at
+`self-upgrade`.
+
+- **The checksum handshake.** With no terminal, `self-upgrade` installs
+  nothing and prints what it would install:
+
+  ```text
+  no terminal to ask on — an upgrade needs an explicit yes, so nothing is installed without one
+  pending upgrade: procoder 3.8.0 → 3.9.0
+    asset:  https://github.com/azrtydxb/procoder/releases/download/v3.9.0/procoder-darwin-arm64
+    sha256: <64 hex digits> (from the release's SHA256SUMS)
+  to install exactly that file, a person who has read the sha256 above runs:
+    procoder self-upgrade --confirm <64 hex digits>
+  only SHA256SUMS was read — the binary was not downloaded and nothing was replaced
+  ```
+
+  `self-upgrade --confirm <sha256>` installs only when the downloaded file's
+  sha256 equals both the release's `SHA256SUMS` entry and the confirmed
+  digest. A confirmed digest that is not the latest release's — a typo, or
+  the handshake of an earlier release — is refused before the binary is
+  downloaded, and the refusal says which of the two did not match.
+  `--confirm` is a pin, not a switch: it passes no other check, and a
+  `--force` run prints a `--force --confirm` command.
+
+- **The decision file.** In a repository procoder governs (one with a
+  `.procoder/`), the same run also raises the upgrade in
+  `.procoder/ask/decisions.md` — one heading naming both versions and the
+  sha256, with `install` and `skip` beneath it — so `procoder ask` puts it
+  to the person like any other decision. It is
+  raised once per pair of versions however often the command re-runs. When
+  a later `self-upgrade` with no terminal finds the answer recorded for that
+  decision is `install`, it installs, pinned to the digest in the heading;
+  `skip`, any other answer, or no answer installs nothing and says so.
 
 Every download is verified before it is installed. The asset is fetched
 from GitHub over https and from nowhere else — the URL comes out of the
