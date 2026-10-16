@@ -345,7 +345,17 @@ func Sast(root string) []gitx.Finding { return sast(root, nil, deepTimeout) }
 // The findings are still filtered by path afterwards. It costs nothing,
 // and a commit is never blocked by a file it does not carry whatever
 // semgrep decides to report.
+//
+// The scan gets the same ten minutes `security --deep` does: a person or CI
+// running `procoder check` is waiting for a verdict, not racing a host's
+// hook timeout. The hook's gate uses SastChangedWithin and HookSastBudget.
 func SastChanged(root string, files []string) []gitx.Finding {
+	return SastChangedWithin(root, files, CheckSastBudget)
+}
+
+// SastChangedWithin is SastChanged with the whole allowance — the wait for
+// a slot and the scan together — set by the caller.
+func SastChangedWithin(root string, files []string, budget time.Duration) []gitx.Finding {
 	changed := map[string]bool{}
 	for _, f := range files {
 		// gitx.RepoRel takes the path however it arrived — absolute from
@@ -359,7 +369,7 @@ func SastChanged(root string, files []string) []gitx.Finding {
 		return nil
 	}
 	var out []gitx.Finding
-	for _, f := range sast(root, includesFor(changed), gateSastBudget) {
+	for _, f := range sast(root, includesFor(changed), budget) {
 		// A finding that could not be placed — a scan that did not run,
 		// unreadable output — has no path and belongs to the commit
 		// whatever it touched.
@@ -371,12 +381,15 @@ func SastChanged(root string, files []string) []gitx.Finding {
 }
 
 const (
-	// gateSastBudget is the gate's whole SAST allowance — the wait for a
-	// slot and the scan together. It sits under the 120s the PreToolUse
-	// hook is given (hooks/claude-hooks.json), so the gate is the one that
-	// says "NOT run" rather than the host killing it with no verdict and
-	// the scan left running.
-	gateSastBudget = 90 * time.Second
+	// HookSastBudget is the SAST allowance when the PreToolUse hook runs
+	// the gate — the wait for a slot and the scan together. It sits under
+	// the 120s the hook is given (hooks/claude-hooks.json), so the gate is
+	// the one that says "NOT run" rather than the host killing it with no
+	// verdict and the scan left running. Only the hook: a direct
+	// `procoder check` or CI keeps the ten minutes (#310).
+	HookSastBudget = 90 * time.Second
+	// CheckSastBudget is the gate's SAST allowance everywhere else.
+	CheckSastBudget = deepTimeout
 	// sastJobs bounds one scan's CPU. semgrep's default is 85% of the
 	// cores, and five of those at once put a 10-core machine at load 51.
 	sastJobs = 2

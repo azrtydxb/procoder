@@ -93,12 +93,23 @@ func TestIncludePatternNamesExactlyOneFile(t *testing.T) {
 		"sub/a.py":         "/sub/a.py",
 		"sub/we ird[1].py": `/sub/we ird\[1\].py`,
 		"star*?.go":        `/star\*\?.go`,
-		`back\slash.go`:    `/back\\slash.go`,
 		"trailing  ":       `/trailing\ \ `,
 	} {
 		if got := includePattern(in); got != want {
 			t.Errorf("includePattern(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A backslash is a name character on unix and must be escaped; on Windows
+// it is the separator, and ToSlash turns it into one, so the case does not
+// exist there.
+func TestIncludePatternEscapesABackslashInAName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash is the path separator on Windows")
+	}
+	if got, want := includePattern(`back\slash.go`), `/back\\slash.go`; got != want {
+		t.Errorf("includePattern = %q, want %q", got, want)
 	}
 }
 

@@ -127,7 +127,7 @@ func runGate(root, commitMessage string) (code int, output string, timedOut bool
 				done <- 2
 			}
 		}()
-		done <- gate.RunWith(nil, root, commitMessage, &buf)
+		done <- gate.RunHook(root, commitMessage, &buf)
 	}()
 	select {
 	case c := <-done:

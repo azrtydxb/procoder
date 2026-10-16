@@ -52,8 +52,9 @@ tree and filters the findings instead.
 Every scan is bounded so a machine running several agents is not
 saturated: semgrep runs with `--jobs=2`; one scan per repository and a
 quarter of the cores' worth of scans per machine run at once, the rest
-wait for a slot; and the gate's whole SAST allowance — waiting and
-scanning — is 90 seconds, under the commit hook's 120. A scan that could
+wait for a slot. The gate's whole SAST allowance — waiting and
+scanning — is 90 seconds when the commit hook runs it, under the hook's
+120, and 10 minutes for a direct `procoder check` or CI. A scan that could
 not get a slot, or ran out of time, reports SAST as NOT run and blocks;
 it never reports clean. A cancelled or timed-out scan kills semgrep's
 whole process group, so `semgrep-core` does not keep running after the

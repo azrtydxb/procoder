@@ -162,7 +162,7 @@ func TestAFindingIsMatchedHoweverThePathArrived(t *testing.T) {
 // and the fast machine and the slow one would disagree about whether a
 // commit is safe.
 //
-// The ceiling that does exist (gateSastBudget, under the hook's own 120s)
+// The ceiling that does exist (HookSastBudget, under the hook's own 120s)
 // is all or nothing: when it fires the finding says SAST was NOT run, and
 // blocks. Silence is never the answer, and neither is a partial one.
 // proved by: wrapped the scan in a 1-second context and returned the

@@ -266,7 +266,7 @@ func TestTheGateStillCarriesTheWholeTreeSecurityLegs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, call := range []string{"security.SastChanged(", "security.DepsChanged("} {
+	for _, call := range []string{"security.SastChangedWithin(", "security.DepsChanged("} {
 		if !strings.Contains(string(src), call) {
 			t.Errorf("gate.go no longer calls %s — CI dropped `security --deep` because the gate covered it, so this is CI losing a check silently", call)
 		}

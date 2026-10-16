@@ -36,7 +36,7 @@ import (
 //
 // They are grouped so the gate has one place to ask "did this repository
 // ask for procoder's opinions", rather than nine.
-func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
+func houseRules(root string, cfg config.Config, paths []string, sastBudget time.Duration) []gitx.Finding {
 	// Each leg shells out to a different tool and none reads another's
 	// answer, so they wait on each other for no reason. Measured over this
 	// repository's 787 tracked files: gitleaks 41.2s, the suite 35.0s,
@@ -78,7 +78,7 @@ func houseRules(root string, cfg config.Config, paths []string) []gitx.Finding {
 		// is a fixed cost that scoping cannot remove — and it is here because
 		// a commit is not a keystroke, and a finding caught now is caught
 		// before it leaves the machine.
-		func() []gitx.Finding { return security.SastChanged(root, paths) },
+		func() []gitx.Finding { return security.SastChangedWithin(root, paths, sastBudget) },
 		// Known vulnerabilities, when the commit touches a dependency
 		// manifest. Only then: the scan answers about the manifests, so a
 		// commit that edits a comment would pay nearly a second to be told the
@@ -160,7 +160,7 @@ func checkAll(paths []string) []format.Result {
 	return results
 }
 
-func hygieneFor(root string, cfg config.Config, paths []string, commitMessage string, scope Scope) []gitx.Finding {
+func hygieneFor(root string, cfg config.Config, paths []string, commitMessage string, scope Scope, sastBudget time.Duration) []gitx.Finding {
 	// Three independent blocks, run at once. Measured over 787 tracked
 	// files: the secret scan is ~41s and the house rules ~46s, and neither
 	// reads the other's answer, so waiting was costing the sum of them.
@@ -204,7 +204,7 @@ func hygieneFor(root string, cfg config.Config, paths []string, commitMessage st
 			if scope != Adopted {
 				return nil
 			}
-			return houseRules(root, cfg, paths)
+			return houseRules(root, cfg, paths, sastBudget)
 		},
 	})
 }
@@ -234,6 +234,17 @@ func RunWith(paths []string, root string, commitMessage string, stdout io.Writer
 // RunCollecting is RunWith plus a Collector. Everything else is identical,
 // and the collector cannot change what the gate decides.
 func RunCollecting(paths []string, root string, commitMessage string, stdout io.Writer, collect Collector) (exit int) {
+	return run(paths, root, commitMessage, stdout, collect, security.CheckSastBudget)
+}
+
+// RunHook is RunWith as the PreToolUse hook runs it: the SAST leg gets
+// security.HookSastBudget, so it answers "NOT run" inside the hook's own
+// timeout instead of being killed with no verdict (#310).
+func RunHook(root string, commitMessage string, stdout io.Writer) (exit int) {
+	return run(nil, root, commitMessage, stdout, nil, security.HookSastBudget)
+}
+
+func run(paths []string, root string, commitMessage string, stdout io.Writer, collect Collector, sastBudget time.Duration) (exit int) {
 	if collect == nil {
 		collect = func(string, []gitx.Finding) {}
 	}
@@ -295,7 +306,7 @@ func RunCollecting(paths []string, root string, commitMessage string, stdout io.
 	// Started here and collected below, where its findings are first
 	// needed — the formatting results are printed before them.
 	hygieneDone := make(chan []gitx.Finding, 1)
-	go func() { hygieneDone <- hygieneFor(root, cfg, paths, commitMessage, scope) }()
+	go func() { hygieneDone <- hygieneFor(root, cfg, paths, commitMessage, scope, sastBudget) }()
 
 	var unformatted, unchecked []format.Result
 	clean, skipped := 0, 0
