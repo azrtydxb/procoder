@@ -29,6 +29,15 @@ func FirstLine(s string) string {
 	return "no output"
 }
 
+// OneLine collapses every run of whitespace, newlines included, to a single
+// space. A finding is one output line; callers that print text they did not
+// author (a decision body, a quoted tool report) use this so an embedded
+// newline cannot start a second line that a line-oriented reader takes for
+// a finding of its own.
+func OneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // Trim caps a line at the reporting width.
 func Trim(s string) string {
 	if len(s) > maxLine {
