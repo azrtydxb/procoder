@@ -1,0 +1,64 @@
+//go:build unix
+
+package procgroup
+
+import (
+	"errors"
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
+)
+
+func prepare(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	setDeathSignal(cmd.SysProcAttr)
+	cmd.Cancel = func() error { return killGroup(cmd) }
+}
+
+// killGroup kills every process in the group cmd leads. The group's id is
+// the leader's pid, because Setpgid made it so.
+func killGroup(cmd *exec.Cmd) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return os.ErrProcessDone
+	}
+	return err
+}
+
+// watchSignals kills the tool's group when procoder is told to stop, and
+// hands the signal back once the tool is gone, so procoder still stops.
+// The returned func ends the watch; it must be called after Wait.
+func watchSignals(cmd *exec.Cmd) func() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	var got os.Signal
+	go func() {
+		defer close(finished)
+		select {
+		case got = <-ch:
+			_ = killGroup(cmd)
+		case <-done:
+		}
+	}()
+	return func() {
+		close(done)
+		<-finished
+		signal.Stop(ch)
+		if s, ok := got.(syscall.Signal); ok {
+			// Re-raised after Stop: with no watcher left the default
+			// action applies, and procoder ends the way it was asked to.
+			// A watcher still registered elsewhere receives it instead
+			// and does the same once its own tool is down.
+			_ = syscall.Kill(os.Getpid(), s)
+		}
+	}
+}

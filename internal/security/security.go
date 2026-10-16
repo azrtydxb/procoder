@@ -8,13 +8,17 @@ package security
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +27,8 @@ import (
 	"procoder/internal/config"
 	"procoder/internal/gitx"
 	"procoder/internal/parallel"
+	"procoder/internal/procgroup"
+	"procoder/internal/slot"
 	"procoder/internal/tools"
 )
 
@@ -297,8 +303,6 @@ func SecretsChangedFiles(root string, files []string) []gitx.Finding {
 	return Secrets(root, existing)
 }
 
-// Sast runs semgrep with the community rulesets over the repository.
-// ERROR severity blocks; WARNING and INFO report.
 // severityAtLeast reports whether a finding's severity is at or above the
 // bar. An unknown severity from the tool never blocks silently: it is
 // ranked below everything, so it still reports and a human still reads it.
@@ -315,28 +319,32 @@ func severityAtLeast(found, bar string) bool {
 	return f >= b
 }
 
-func Sast(root string) []gitx.Finding { return sast(root) }
+// Sast runs semgrep with the community rulesets over the whole repository
+// — the `--deep` pass. ERROR severity blocks by default ([security]
+// sast_blocks_at moves the bar); the rest report.
+func Sast(root string) []gitx.Finding { return sast(root, nil, deepTimeout) }
 
-// SastChanged is the commit gate's SAST leg: the same scan, given the
-// files the commit contains instead of the whole tree.
+// SastChanged is the commit gate's SAST leg: semgrep over the tree, told
+// to look only at the files the commit contains.
 //
-// The scan itself is the same whole-tree scan `security --deep` runs, and
-// the SCOPING is applied to its findings rather than to its targets.
+// The target is still `.` and the narrowing is one `--include` per file.
+// Handing semgrep the files as targets is the obvious way and it is wrong:
+// a named target bypasses semgrep's own default selection, so the gate
+// reported a finding in a _test.go file that `security --deep` had never
+// once mentioned. --include is applied AFTER that selection (and after
+// .semgrepignore), so a file semgrep skips in the tree it skips here too —
+// verified on semgrep 1.173 against internal/portability/launcher_test.go:
+// two findings as a named target, zero under --include.
 //
-// That is not the obvious way round, and the obvious way is wrong.
-// Handing semgrep an explicit list of files makes it scan files it
-// otherwise skips — its own default selection is bypassed by naming a
-// target — so the gate reported a finding in a _test.go file that
-// `security --deep` had never once mentioned. A developer blocked by a
-// finding CI does not have is worse than a slower gate.
+// It used to scan the whole tree and filter the findings, on the grounds
+// that semgrep's fixed `--config auto` cost (4.7s for one line) dwarfed
+// the scanning. That held on this repository and nowhere big: on a 5.4k
+// file repository, 25 changed files cost an eight-minute whole-tree scan
+// (#310). The cost now follows the change, not the repository.
 //
-// The cost of doing it this way is about three seconds on this
-// repository: measured, the whole tree is 9s against 6.1s for two named
-// files. Little of that is scanning. semgrep's time goes on `--config
-// auto` loading rules, which is fixed — a single one-line file still
-// costs 4.7s — so naming fewer targets was never what made this
-// affordable. What makes it affordable is that a commit is not a
-// keystroke.
+// The findings are still filtered by path afterwards. It costs nothing,
+// and a commit is never blocked by a file it does not carry whatever
+// semgrep decides to report.
 func SastChanged(root string, files []string) []gitx.Finding {
 	changed := map[string]bool{}
 	for _, f := range files {
@@ -351,7 +359,7 @@ func SastChanged(root string, files []string) []gitx.Finding {
 		return nil
 	}
 	var out []gitx.Finding
-	for _, f := range sast(root) {
+	for _, f := range sast(root, includesFor(changed), gateSastBudget) {
 		// A finding that could not be placed — a scan that did not run,
 		// unreadable output — has no path and belongs to the commit
 		// whatever it touched.
@@ -362,28 +370,147 @@ func SastChanged(root string, files []string) []gitx.Finding {
 	return out
 }
 
-func sast(root string) []gitx.Finding {
+const (
+	// gateSastBudget is the gate's whole SAST allowance — the wait for a
+	// slot and the scan together. It sits under the 120s the PreToolUse
+	// hook is given (hooks/claude-hooks.json), so the gate is the one that
+	// says "NOT run" rather than the host killing it with no verdict and
+	// the scan left running.
+	gateSastBudget = 90 * time.Second
+	// sastJobs bounds one scan's CPU. semgrep's default is 85% of the
+	// cores, and five of those at once put a 10-core machine at load 51.
+	sastJobs = 2
+	// maxIncludes is where per-file --include stops being worth it: past
+	// it the argv grows without bound and the scan is close to the whole
+	// tree anyway, so it scans the tree and filters the findings.
+	maxIncludes = 500
+)
+
+// sastSlots is how many scans may run at once on this machine, across
+// every repository and every procoder process: a quarter of the cores,
+// each scan using sastJobs of them.
+var sastSlots = max(1, runtime.NumCPU()/4)
+
+// sastSlotDir is where the slots live; a variable so tests can use their
+// own.
+var sastSlotDir = slot.Dir
+
+// includesFor turns the commit's repository-relative paths into semgrep
+// --include arguments, or nil — scan the whole tree — when there are too
+// many or one of them names the root.
+func includesFor(changed map[string]bool) []string {
+	if len(changed) > maxIncludes {
+		return nil
+	}
+	var out []string
+	for rel := range changed {
+		if rel == "." || rel == "" {
+			return nil
+		}
+		out = append(out, "--include="+includePattern(rel))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// includePattern is a gitignore-syntax pattern matching exactly rel: the
+// leading slash anchors it to the scan root (a bare `a.py` would also
+// match `sub/a.py`), and the glob characters a file name may legally
+// contain are escaped so `x[1].py` names itself, not `x1.py`. Both
+// brackets are escaped: that form is the one checked against semgrep 1.173.
+func includePattern(rel string) string {
+	var b strings.Builder
+	b.WriteByte('/')
+	for _, r := range filepath.ToSlash(rel) {
+		if strings.ContainsRune(`\*?[]`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	p := b.String()
+	// gitignore drops unescaped trailing spaces; escape each one.
+	trimmed := strings.TrimRight(p, " ")
+	return trimmed + strings.Repeat(`\ `, len(p)-len(trimmed))
+}
+
+// sastArgs is the semgrep command line. The target is the tree, always:
+// file names only ever appear inside an --include=VALUE, so none can be
+// read as a flag and there is no separator to remember.
+func sastArgs(includes []string) []string {
+	args := []string{"scan", "--config", "auto", "--json", "--quiet", fmt.Sprintf("--jobs=%d", sastJobs)}
+	args = append(args, includes...)
+	return append(args, ".")
+}
+
+// takeSastSlot waits for this repository's slot and then one of the
+// machine's. One scan per repository: a second one over the same tree
+// only competes with the first. The repository's slot is taken first so
+// nobody holds a machine slot while queueing behind their own tree.
+//
+// A slot that could not be waited for is the caller's NOT-run; lock files
+// that cannot be used at all are not a reason to refuse the scan, so that
+// case scans unbounded, as procoder did before slots existed.
+func takeSastSlot(ctx context.Context, root string) (release func(), busy bool) {
+	abs := root
+	if a, err := filepath.Abs(root); err == nil {
+		abs = a
+	}
+	if r, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = r
+	}
+	sum := sha256.Sum256([]byte(abs))
+	dir := sastSlotDir()
+	repo, err := slot.Acquire(ctx, dir, "sast-repo-"+hex.EncodeToString(sum[:8]), 1)
+	if errors.Is(err, slot.ErrBusy) {
+		return nil, true
+	}
+	if err != nil {
+		return func() {}, false
+	}
+	machine, err := slot.Acquire(ctx, dir, "sast", sastSlots)
+	if errors.Is(err, slot.ErrBusy) {
+		repo()
+		return nil, true
+	}
+	if err != nil {
+		return repo, false
+	}
+	return func() { machine(); repo() }, false
+}
+
+// debt: every scan pays for every file it is given, and two worktrees of
+// one repository are scanned separately. Ceiling: a gate costs one
+// semgrep run over the changed files, at most sastSlots at once per
+// machine. Revisit when that is still too slow or too busy — content-hash
+// result caching (ruleset version + file hash) and queueing scans through
+// the daemon so identical requests share one result are the follow-ups
+// named in #310.
+func sast(root string, includes []string, budget time.Duration) []gitx.Finding {
 	blocksAt := config.Load(root).SastBlocksAt
 	bin := tools.Resolve(Semgrep, root)
 	if bin == "" {
 		return []gitx.Finding{{Blocking: true,
 			Message: "NOT checked — semgrep is not installed; run `procoder init` (security)"}}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), deepTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
-	// The tree, always. Naming targets is what made semgrep scan files its
-	// own default selection skips, and now that nothing does it there is
-	// no argv built from file names — so no filename can be read as a
-	// flag, and there is no separator to remember.
-	cmd := exec.CommandContext(ctx, bin, "scan", "--config", "auto", "--json", "--quiet", ".") // nosemgrep -- resolved from the fixed tool table, never user input
+	release, busy := takeSastSlot(ctx, root)
+	if busy {
+		return []gitx.Finding{{Blocking: true,
+			Message: fmt.Sprintf("SAST was NOT run — other semgrep scans held this machine's SAST slots for the whole %s budget; run `procoder security` once they finish (security)", budget)}}
+	}
+	defer release()
+	cmd := exec.CommandContext(ctx, bin, sastArgs(includes)...) // nosemgrep -- resolved from the fixed tool table, never user input
 	cmd.Dir = root
 	var buf, errb bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &errb
-	err := cmd.Run()
+	// A process group of its own: a cancelled scan takes semgrep-core, the
+	// child doing the work, down with it instead of orphaning it (#310).
+	err := procgroup.Run(cmd)
 	if ctx.Err() == context.DeadlineExceeded {
 		return []gitx.Finding{{Blocking: true,
-			Message: fmt.Sprintf("semgrep gave no answer in %s — SAST was NOT run (security)", deepTimeout)}}
+			Message: fmt.Sprintf("semgrep gave no answer in %s — SAST was NOT run (security)", budget)}}
 	}
 	var rep struct {
 		Results []struct {

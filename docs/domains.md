@@ -42,10 +42,23 @@ gate has to mean the code was checked, not that the machine was empty.
 linter ran at all is not a matter of policy.
 
 The commit gate runs SAST and blocks on findings in the files the commit
-carries. The scan itself is the same whole-tree scan `security --deep`
-runs; the narrowing is applied to its findings, not to its targets —
-naming files explicitly makes semgrep scan ones its own default selection
-skips, which would block a developer on a finding CI never reports.
+carries. semgrep is pointed at the tree and narrowed with one `--include`
+per changed file, never handed the files as targets — naming files
+explicitly makes semgrep scan ones its own default selection skips, which
+would block a developer on a finding CI never reports, while `--include`
+is applied after that selection. Past 500 changed files it scans the whole
+tree and filters the findings instead.
+
+Every scan is bounded so a machine running several agents is not
+saturated: semgrep runs with `--jobs=2`; one scan per repository and a
+quarter of the cores' worth of scans per machine run at once, the rest
+wait for a slot; and the gate's whole SAST allowance — waiting and
+scanning — is 90 seconds, under the commit hook's 120. A scan that could
+not get a slot, or ran out of time, reports SAST as NOT run and blocks;
+it never reports clean. A cancelled or timed-out scan kills semgrep's
+whole process group, so `semgrep-core` does not keep running after the
+verdict was given up on. `security --deep` scans the whole tree with a
+10-minute allowance.
 
 Known dependency vulnerabilities are checked at the gate too, but only
 when the commit touches a manifest — the scan answers about the manifests,
@@ -75,9 +88,9 @@ the very versions it removes. Git's inventory never descends into one, and
 the fallback walk stops at it too. Each vulnerability finding names the
 lockfile it came from.
 
-It costs seconds rather than milliseconds: semgrep's time goes on loading
-rules, which is fixed, so a one-line file is barely cheaper than the whole
-tree. It is there because a commit is not a keystroke and a finding caught
+It costs seconds rather than milliseconds: loading semgrep's rules is a
+fixed cost of several seconds however few files are scanned, and the rest
+grows with the change rather than with the repository. It is there because a commit is not a keystroke and a finding caught
 now never leaves the machine. A finding in a file the commit did not touch
 does not block it; CI still reports everything.
 

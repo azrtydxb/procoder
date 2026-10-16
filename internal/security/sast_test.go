@@ -156,15 +156,15 @@ func TestAFindingIsMatchedHoweverThePathArrived(t *testing.T) {
 	}
 }
 
-// A slow check still completes and still reports what it found. There is
-// no budget on the heavy legs: cutting one off partway and printing the
-// findings it happened to reach would make the verdict a fact about the
-// machine rather than about the code, and the fast machine and the slow
-// one would disagree about whether a commit is safe.
+// A slow check still completes and still reports what it found. Cutting a
+// scan off partway and printing the findings it happened to reach would
+// make the verdict a fact about the machine rather than about the code,
+// and the fast machine and the slow one would disagree about whether a
+// commit is safe.
 //
-// The ceiling that does exist is a hung-process net, not a budget: when
-// it fires the finding says SAST was NOT run, and blocks. Silence is
-// never the answer.
+// The ceiling that does exist (gateSastBudget, under the hook's own 120s)
+// is all or nothing: when it fires the finding says SAST was NOT run, and
+// blocks. Silence is never the answer, and neither is a partial one.
 // proved by: wrapped the scan in a 1-second context and returned the
 // findings gathered so far — the slow run reports clean and the commit
 // lands with the finding still in the file.
