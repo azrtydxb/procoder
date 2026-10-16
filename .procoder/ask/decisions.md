@@ -541,3 +541,25 @@ cause produced the single red CI run (34395461728).
   issue then.
 - keep it open until it recurs or a quiet period passes, as the record of
   an unexplained red run.
+
+## #310: what the gate does when a SAST scan outgrows its 90s budget
+
+PR #313 caps the gate's SAST leg at 90s (under the 120s PreToolUse hook).
+A commit over 500 files, a slow runner, or a repo like NovaCRM (8-min
+scans) now always ends "SAST was NOT run" — blocking.
+
+- Hook-only cap: 90s when the PreToolUse hook runs the gate, the old 10m
+  for a direct `procoder check` / CI.
+- Keep 90s everywhere, blocking (as the PR stands).
+- 90s everywhere, but an over-budget scan is a non-blocking "not checked".
+
+## Merging today's PRs
+
+- Merge #307, #308, #311, #312, #313 once CI is green.
+- Merge #307, #308, #311, #312 now; hold #313 for the budget decision.
+- Hold all for manual review.
+
+## Contributor PR #304 (uv.lock scanning, AdamMagued)
+
+- Approve its CI run and review it.
+- Leave it for later.
