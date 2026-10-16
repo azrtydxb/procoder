@@ -58,11 +58,20 @@ func managerOwners() []managerOwner {
 	}
 	// One POSIX list rather than one per platform: a path that does not
 	// exist on this system cannot match anything, and two lists drift.
+	//
+	// Homebrew's territory is its Cellar and opt trees, never the whole
+	// prefix: what brew installs into bin/ is a symlink into the Cellar,
+	// and ManagerOwned judges the resolved path. A regular file sitting
+	// directly in /opt/homebrew/bin was copied there by hand — usually
+	// because that directory is already on PATH — and no brew upgrade will
+	// ever touch it (#316).
 	return []managerOwner{
-		{"/opt/homebrew/", "brew upgrade procoder"},
+		{"/opt/homebrew/Cellar/", "brew upgrade procoder"},
+		{"/opt/homebrew/opt/", "brew upgrade procoder"},
 		{"/usr/local/Cellar/", "brew upgrade procoder"},
 		{"/usr/local/opt/", "brew upgrade procoder"},
-		{"/home/linuxbrew/", "brew upgrade procoder"},
+		{"/home/linuxbrew/.linuxbrew/Cellar/", "brew upgrade procoder"},
+		{"/home/linuxbrew/.linuxbrew/opt/", "brew upgrade procoder"},
 		{"/snap/", "snap refresh procoder"},
 		{"/nix/store/", "nix profile upgrade procoder"},
 		{"/var/lib/flatpak/", "flatpak update procoder"},
@@ -84,13 +93,18 @@ func ownsPath(path, prefix string) bool {
 	return strings.HasPrefix(path, prefix)
 }
 
+// evalSymlinks resolves a path the way ManagerOwned judges it. It is a
+// variable so a test can stand a link in /opt/homebrew/bin pointing into
+// the Cellar without a Homebrew prefix on the machine running the suite.
+var evalSymlinks = filepath.EvalSymlinks
+
 // ManagerOwned reports whether this path looks like a package manager's to
 // keep, and names the command that would upgrade it. Symlinks are resolved
 // first: a Homebrew install is usually a link from /usr/local/bin into the
 // cellar, and judging the link rather than its target would miss every one.
 func ManagerOwned(path string) (string, bool) {
 	real := path
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+	if resolved, err := evalSymlinks(path); err == nil {
 		real = resolved
 	}
 	for _, owner := range managerOwners() {
