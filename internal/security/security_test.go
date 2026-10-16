@@ -703,6 +703,43 @@ func TestPyprojectTomlIsNeverPassedToOsvAsALockfile(t *testing.T) {
 	}
 }
 
+// A project with pyproject.toml and uv.lock passes uv.lock to osv-scanner
+// rather than being skipped or failing on pyproject.toml.
+//
+// proved by: removing uv.lock from DepManifests — this test then finds no
+// -L uv.lock in the argv and fails.
+func TestUvLockIsPassedToOsvScanner(t *testing.T) {
+	stub(t, "osv-scanner", "echo \"$@\" > args.txt\nprintf '{\"results\":[]}'\nexit 0\n")
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"),
+		[]byte("[project]\nname = \"demo\"\ndependencies = [\"requests==2.0.0\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "uv.lock"),
+		[]byte("version = 1\nrevision = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := Deps(root)
+	for _, f := range findings {
+		if strings.Contains(f.Message, "python dependencies NOT checked") {
+			t.Errorf("uv.lock is present so pyproject.toml must not be reported as a gap: %+v", f)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "args.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := string(raw)
+	if !strings.Contains(args, "-L uv.lock") {
+		t.Errorf("uv.lock must be passed to osv-scanner via -L: %s", args)
+	}
+	if strings.Contains(args, "pyproject.toml") {
+		t.Errorf("pyproject.toml must not be passed to osv-scanner: %s", args)
+	}
+}
+
 // Dropping pyproject.toml from the scan without saying so would trade a
 // loud failure for a silent one: a Python repository reported clean by a
 // scanner that never looked. It gets the same honest gap a bare

@@ -21,6 +21,7 @@ func TestOnlyTheEcosystemsTheCommitIsWrittenInAreAsked(t *testing.T) {
 		"a.rs":      "rust",
 		"a.php":     "php",
 		"Main.java": "java",
+		"uv.lock":   "python",
 	} {
 		got := ecosystemsOf([]string{files})
 		if !got[want] {

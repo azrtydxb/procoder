@@ -88,6 +88,55 @@ func TestEveryManifestNameTriggersTheScan(t *testing.T) {
 	}
 }
 
+// Touching only uv.lock must trigger the dependency scan at the gate.
+//
+// proved by: removing uv.lock from DepManifests — this test then finds
+// osv-scanner is never invoked when only uv.lock is modified.
+func TestTouchingOnlyUvLockTriggersTheScan(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub is a POSIX shell script")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "osv-scanner"),
+		[]byte("#!/bin/sh\necho \"$@\" > args.txt\necho '{\"results\":[]}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pyproject.toml"),
+		[]byte("[project]\nname = \"demo\"\ndependencies = [\"requests==2.0.0\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "uv.lock"),
+		[]byte("version = 1\nrevision = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !touchesManifest(root, []string{filepath.Join(root, "uv.lock")}) {
+		t.Error("uv.lock must be recognized as a touched manifest")
+	}
+	if !touchesManifest(root, []string{"uv.lock"}) {
+		t.Error("relative uv.lock must be recognized as a touched manifest")
+	}
+
+	// An unrelated commit must not scan.
+	DepsChanged(root, []string{filepath.Join(root, "main.py")})
+	if _, err := os.Stat(filepath.Join(root, "args.txt")); err == nil {
+		t.Error("an unrelated file must not invoke osv-scanner")
+	}
+
+	// Touching uv.lock must trigger the scan.
+	DepsChanged(root, []string{filepath.Join(root, "uv.lock")})
+	raw, err := os.ReadFile(filepath.Join(root, "args.txt"))
+	if err != nil {
+		t.Fatalf("touching uv.lock must invoke osv-scanner: %v", err)
+	}
+	if !strings.Contains(string(raw), "-L uv.lock") {
+		t.Errorf("expected osv-scanner to scan uv.lock, got args: %s", string(raw))
+	}
+}
+
 // A path that arrives relative must trigger the scan too — the same file
 // cannot mean two things depending on how it was named.
 // proved by: matched on the raw string instead of gitx.RepoRel — an

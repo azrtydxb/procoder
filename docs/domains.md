@@ -28,9 +28,14 @@ Runs in the write hook (changed file), the gate (changed set), and
 Details worth knowing: manifests are enumerated explicitly (osv's own
 walker trusts git metadata and comes back empty in worktrees); a
 `package.json` that declares dependencies with no lockfile is an explicit
-unscannable gap; false positives are handled by `gitleaks:allow` trailing
-comments or `.gitleaksignore`, each a reviewed decision — the flow is in
-`.procoder/security/RULES.md`, which the repo owns.
+unscannable gap; osv-scanner scans pinned dependencies, so supported Python
+lockfiles and manifests are `requirements.txt`, `poetry.lock`, `Pipfile.lock`,
+and `uv.lock`. `pyproject.toml` declares version ranges rather than pinned
+versions and has no extractor in osv-scanner; a `pyproject.toml` declaring
+dependencies without a companion lockfile is reported as an unscannable gap
+(`python dependencies NOT checked`); false positives are handled by
+`gitleaks:allow` trailing comments or `.gitleaksignore`, each a reviewed
+decision — the flow is in `.procoder/security/RULES.md`, which the repo owns.
 
 ## 2. Best practices (lint)
 

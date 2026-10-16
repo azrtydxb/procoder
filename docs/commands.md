@@ -719,6 +719,13 @@ repository.
   SAST blocks at ERROR severity, dependency vulnerabilities block at
   high/critical. A quiet `security` run is not "no findings" — it is "no
   findings above those lines".
+- **Supported Python lockfiles.** osv-scanner requires pinned dependencies.
+  Procoder passes `requirements.txt`, `poetry.lock`, `Pipfile.lock`, and
+  `uv.lock` to osv-scanner. Because `pyproject.toml` declares version ranges
+  rather than pinned dependencies, osv-scanner has no extractor for it;
+  a project declaring dependencies in `pyproject.toml` without a lockfile
+  beside it is reported as an unscannable gap (`python dependencies NOT checked`)
+  instead of silently skipping or failing the scan.
 
 #### `procoder maintain`
 

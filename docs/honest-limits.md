@@ -60,6 +60,8 @@ comparison at all, and the absence is not reported per-language.
 **Coverage is reported, never enforced.** `procoder test --coverage` prints
 a number. No policy consumes it.
 
+**`pyproject.toml` without a lockfile is an honest gap, not a scan.** osv-scanner has no extractor for PEP 621 version ranges in `pyproject.toml`. Procoder scans pinned lockfiles (`requirements.txt`, `poetry.lock`, `Pipfile.lock`, `uv.lock`); a `pyproject.toml` declaring dependencies without one beside it blocks as `python dependencies NOT checked` rather than silently passing.
+
 ## Where honesty is the friction
 
 **Secrets block on a missing scanner.** Covered above, and it is the single

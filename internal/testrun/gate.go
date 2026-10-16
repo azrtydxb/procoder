@@ -217,6 +217,7 @@ var manifests = map[string]string{
 	"requirements.txt": "python", "pyproject.toml": "python",
 	"setup.py": "python", "setup.cfg": "python",
 	"pipfile": "python", "pipfile.lock": "python", "poetry.lock": "python",
+	"uv.lock": "python",
 }
 
 // pathScoped are the file types whose runners accept a target list, and

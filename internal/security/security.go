@@ -573,7 +573,7 @@ var DepManifests = []string{"go.mod", "package-lock.json", "yarn.lock", "pnpm-lo
 	// manifest in the same invocation down with it. A repository with a
 	// pyproject.toml and no lock file is reported as a gap below, the
 	// same way a bare package.json is, rather than scanned and lost.
-	"requirements.txt", "poetry.lock", "Pipfile.lock",
+	"requirements.txt", "poetry.lock", "Pipfile.lock", "uv.lock",
 	"Cargo.lock", "composer.lock", "Gemfile.lock",
 	"pom.xml", "gradle.lockfile", "buildscript-gradle.lockfile",
 	"packages.lock.json", "Package.resolved",
@@ -604,7 +604,7 @@ func Deps(root string) []gitx.Finding {
 	}
 	for _, gap := range pythonGaps(root) {
 		out = append(out, gitx.Finding{Blocking: true, File: gap,
-			Message: "python dependencies NOT checked — this pyproject.toml declares dependencies but no lock file exists beside it for osv-scanner; generate poetry.lock, Pipfile.lock or requirements.txt (security)"})
+			Message: "python dependencies NOT checked — this pyproject.toml declares dependencies but no lock file exists beside it for osv-scanner; generate poetry.lock, Pipfile.lock, requirements.txt or uv.lock (security)"})
 	}
 	if len(margs) == 0 {
 		if len(out) > 0 {
