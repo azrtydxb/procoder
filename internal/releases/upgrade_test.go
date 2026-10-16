@@ -516,6 +516,55 @@ func TestAPackageManagerBinaryIsRefusedWithItsOwnCommand(t *testing.T) {
 	}
 }
 
+// #316: Homebrew owns its Cellar and opt trees, not its whole prefix. What
+// brew puts in bin/ is a link into the Cellar; a regular file in bin/ was
+// copied there by hand and no brew upgrade will ever revert it.
+// proved by: put "/opt/homebrew/" and "/home/linuxbrew/" back as whole
+// territories — the hand-copied binaries are then refused as Homebrew's,
+// naming a `brew upgrade procoder` that has no formula to act on. And
+// judged the link instead of its target — every real brew install in bin/
+// then walks past the guard.
+func TestHomebrewOwnsItsCellarNotItsBin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the prefixes under test are POSIX paths")
+	}
+	links := map[string]string{
+		"/opt/homebrew/bin/procoder":              "/opt/homebrew/Cellar/procoder/3.8.0/bin/procoder",
+		"/home/linuxbrew/.linuxbrew/bin/procoder": "/home/linuxbrew/.linuxbrew/Cellar/procoder/3.8.0/bin/procoder",
+	}
+	orig := evalSymlinks
+	t.Cleanup(func() { evalSymlinks = orig })
+	// Every path not in links is a regular file: it resolves to itself.
+	evalSymlinks = func(path string) (string, error) {
+		if target, ok := links[path]; ok {
+			return target, nil
+		}
+		return path, nil
+	}
+	for _, path := range []string{
+		// A link brew made in bin/, judged by where it points.
+		"/opt/homebrew/bin/procoder",
+		"/home/linuxbrew/.linuxbrew/bin/procoder",
+		// A path straight into the Cellar or opt tree.
+		"/opt/homebrew/Cellar/procoder/3.8.0/bin/procoder",
+		"/opt/homebrew/opt/procoder/bin/procoder",
+		"/usr/local/Cellar/procoder/3.8.0/bin/procoder",
+	} {
+		hint, owned := ManagerOwned(path)
+		if !owned || !strings.Contains(hint, "brew upgrade") {
+			t.Errorf("%s is Homebrew's, got owned=%v hint=%q", path, owned, hint)
+		}
+	}
+	for _, mine := range []string{
+		"/opt/homebrew/bin/procoder-copied",
+		"/home/linuxbrew/.linuxbrew/bin/procoder-copied",
+	} {
+		if hint, owned := ManagerOwned(mine); owned {
+			t.Errorf("%s is a regular file copied by hand and the user's to replace, got hint %q", mine, hint)
+		}
+	}
+}
+
 // NTFS is case-insensitive and a manager's directory sits under a drive
 // letter, so the Windows entries are matched anywhere and case-blind.
 // proved by: matched the Windows list case-sensitively —
