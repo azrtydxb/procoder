@@ -72,8 +72,10 @@ func isSHA256(s string) bool {
 
 // assetHosts are the only hosts a release binary is fetched from. GitHub
 // serves release assets from github.com and redirects them to its object
-// store; nothing else is a place procoder comes from.
-var assetHosts = []string{"github.com", "objects.githubusercontent.com"}
+// store — objects.githubusercontent.com historically, and
+// release-assets.githubusercontent.com since GitHub moved release downloads
+// there (#300); nothing else is a place procoder comes from.
+var assetHosts = []string{"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"}
 
 // checkAssetURL vets a download URL before anything is fetched from it. It
 // is a variable so the tests can point the download at their local stub —
@@ -99,5 +101,5 @@ func gitHubAssetURL(raw string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("refusing to download procoder from %s — a release asset comes from %s, and nowhere else", u.Hostname(), strings.Join(assetHosts, " or "))
+	return fmt.Errorf("refusing to download procoder from %s — a release asset comes from %s, and nowhere else", u.Hostname(), strings.Join(assetHosts[:len(assetHosts)-1], ", ")+" or "+assetHosts[len(assetHosts)-1])
 }

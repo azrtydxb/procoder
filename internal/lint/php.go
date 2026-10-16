@@ -162,12 +162,29 @@ func runPhpstan(root, config string, files []string, block bool) []gitx.Finding 
 	args := append([]string{"analyse", "--no-progress", "--error-format=raw", "-c", config}, files...)
 	raw, err := execute(root, bin, args)
 	out := parsePhpstan(raw, block)
+	if len(out) == 0 && err != nil && strings.Contains(raw, phpstanNothingToAnalyse) {
+		// Every file handed over is excluded by the project's own config
+		// (`parameters.excludePaths.analyse`) — generated code is the usual
+		// reason. phpstan answers that with an [ERROR] and a non-zero exit,
+		// but it is the project's decision, not a failure to check, in the
+		// way a .prettierignore'd file is not an unformatted one. phpstan's
+		// own verdict is asked rather than the neon parsed: includes,
+		// %rootDir% parameters and globs make the config a poor thing to
+		// re-implement, and a wrong guess would skip files that should be
+		// analysed. Reported as info, not dropped, so the skip is visible.
+		return []gitx.Finding{{File: files[0],
+			Message: "phpstan skipped — no file here is analysed under the project's config (excluded by parameters.excludePaths.analyse or not a PHP file type) (lint)"}}
+	}
 	if len(out) == 0 && err != nil && !strings.Contains(raw, "No errors") {
 		return []gitx.Finding{{Blocking: true, File: files[0],
 			Message: fmt.Sprintf("NOT checked — phpstan failed: %s (lint)", textutil.FirstLine(raw+err.Error()))}}
 	}
 	return out
 }
+
+// phpstanNothingToAnalyse is what phpstan says, as an [ERROR] with exit 1,
+// when none of the files it was given survive its config's exclusions.
+const phpstanNothingToAnalyse = "No files found to analyse"
 
 // phpstanLine matches phpstan's raw format: `path:line:message`, with NO
 // space after the line number. The shared finding parser requires that
