@@ -37,7 +37,19 @@ func killGroup(cmd *exec.Cmd) error {
 // The returned func ends the watch; it must be called after Wait.
 func watchSignals(cmd *exec.Cmd) func() {
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	// A signal procoder inherited as ignored (nohup, a background job) stays
+	// ignored: Notify would otherwise un-ignore it, and a hangup the user
+	// asked to survive would kill the scan.
+	var sigs []os.Signal
+	for _, s := range []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
+		if !signal.Ignored(s) {
+			sigs = append(sigs, s)
+		}
+	}
+	if len(sigs) == 0 {
+		return func() {}
+	}
+	signal.Notify(ch, sigs...)
 	done := make(chan struct{})
 	finished := make(chan struct{})
 	var got os.Signal
@@ -53,6 +65,14 @@ func watchSignals(cmd *exec.Cmd) func() {
 		close(done)
 		<-finished
 		signal.Stop(ch)
+		if got == nil {
+			// A signal that raced the tool's exit, or arrived after the
+			// watcher returned, is still in ch: it is honoured, not lost.
+			select {
+			case got = <-ch:
+			default:
+			}
+		}
 		if s, ok := got.(syscall.Signal); ok {
 			// Re-raised after Stop: with no watcher left the default
 			// action applies, and procoder ends the way it was asked to.

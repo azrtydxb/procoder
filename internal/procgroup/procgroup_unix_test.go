@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -74,5 +75,20 @@ func TestRunReturnsTheToolsAnswer(t *testing.T) {
 	}
 	if out.String() != "hi\n" {
 		t.Errorf("output lost: %q", out.String())
+	}
+}
+
+// A hangup procoder was started to ignore (nohup) must not kill the tool.
+// proved by: notified SIGHUP unconditionally — Notify un-ignores it, the
+// watcher kills the group on the hangup the tool sends, and Run fails.
+func TestAnIgnoredSignalStaysIgnored(t *testing.T) {
+	signal.Ignore(syscall.SIGHUP)
+	defer signal.Reset(syscall.SIGHUP)
+	cmd := exec.CommandContext(context.Background(), "/bin/sh", "-c", `kill -HUP "$1"; sleep 0.3; exit 0`, "sh", strconv.Itoa(os.Getpid()))
+	if err := Run(cmd); err != nil {
+		t.Fatalf("the tool was killed by a hangup procoder ignores: %v", err)
+	}
+	if !signal.Ignored(syscall.SIGHUP) {
+		t.Fatal("SIGHUP is no longer ignored after the run")
 	}
 }
