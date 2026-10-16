@@ -7,6 +7,7 @@ import (
 	"procoder/internal/answers"
 	"procoder/internal/config"
 	"procoder/internal/gitx"
+	"procoder/internal/textutil"
 )
 
 // GateFindings is the gate's half of this loop: what a human still has to
@@ -48,7 +49,10 @@ func GateFindings(root string) []gitx.Finding {
 		out = append(out, gitx.Finding{
 			File:     q.Origin,
 			Blocking: block,
-			Message:  q.Text + " (ask)",
+			// One line, always. A decision's text is its heading plus its
+			// whole body, and the gate output is read line by line: a body
+			// that quotes `BLOCKING ...` would otherwise become a finding.
+			Message: textutil.OneLine(q.Text) + " (ask)",
 		})
 	}
 	return out
