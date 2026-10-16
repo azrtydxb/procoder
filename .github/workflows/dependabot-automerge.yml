@@ -1,0 +1,18 @@
+name: dependabot-automerge
+
+# Managed by the azrtydxb CI standard (azrtydxb/.github/docs/ci-standard.md).
+# Enables auto-merge for patch/minor Dependabot bumps; branch protection is
+# the real gate. Uses a GitHub-hosted runner so it never consumes a LAN runner.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    uses: azrtydxb/.github/.github/workflows/reusable-dependabot-automerge.yml@main
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
