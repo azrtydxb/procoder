@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-10-16 10:25 UTC. procoder reads this
+Written 2026-10-16 10:49 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -112,6 +112,23 @@ things" are both off the list.
   message gap) are the sharper things in the tree.
 
 Answer: Fix the queue — its defects shipped as `answers.KeyStable` +
+
+## [decision] decisions.md
+
+Key: 32c593577d60
+Question: #317: how a person consents to self-upgrade from an agent session
+
+`self-upgrade` needs a typed yes on a terminal; an agent's shell has none.
+An agent must never be able to consent for itself.
+
+- Checksum handshake: `self-upgrade` prints version, URL and SHA256;
+  `self-upgrade --confirm <sha256>` installs only that verified artifact.
+- Host consent: allow `--yes` only when the host signals a human approved
+  the tool call (varies per host; Claude Code's permission prompt).
+- Ask-file: write the pending upgrade to `.procoder/ask/`, install on the
+  recorded answer.
+
+Answer: Both the checksum handshake (--confirm <sha256>) and the ask-file path. (Pascal, 2026-10-16)
 
 ## (no longer asked)
 

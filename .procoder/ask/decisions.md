@@ -563,3 +563,15 @@ scans) now always ends "SAST was NOT run" — blocking.
 
 - Approve its CI run and review it.
 - Leave it for later.
+
+## #317: how a person consents to self-upgrade from an agent session
+
+`self-upgrade` needs a typed yes on a terminal; an agent's shell has none.
+An agent must never be able to consent for itself.
+
+- Checksum handshake: `self-upgrade` prints version, URL and SHA256;
+  `self-upgrade --confirm <sha256>` installs only that verified artifact.
+- Host consent: allow `--yes` only when the host signals a human approved
+  the tool call (varies per host; Claude Code's permission prompt).
+- Ask-file: write the pending upgrade to `.procoder/ask/`, install on the
+  recorded answer.
