@@ -92,6 +92,38 @@ func TestAnchorAndQueryAreStrippedFromFileTargets(t *testing.T) {
 	}
 }
 
+// A path with spaces is written two valid ways: percent-encoded, or inside
+// CommonMark's <...> destination. Both resolve on GitHub, so neither may be
+// reported broken (#299) — and a spaced path that truly does not exist still
+// must be, in either form. Catches: the destination taken up to the first
+// space, or %20 looked up literally on disk.
+func TestSpacedLinkDestinationsResolve(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "app/Azrty Design System/readme.md", "## Tokens\n\nx\n")
+	md := write(t, root, "README.md", strings.Join([]string{
+		"[enc](./app/Azrty%20Design%20System/readme.md)",
+		"[angle](<./app/Azrty Design System/readme.md>)",
+		`[titled](<./app/Azrty Design System/readme.md> "the design system")`,
+		"[anchored](./app/Azrty%20Design%20System/readme.md#tokens)",
+		"[bad-escape](./app/100%zz.md)",
+		"[gone-enc](./app/No%20Such%20Dir/readme.md)",
+		"[gone-angle](<./app/No Such Dir/readme.md>)",
+		"",
+	}, "\n"))
+
+	got := RelativeRefs(root, md)
+	var lines []int
+	for _, f := range got {
+		lines = append(lines, f.Line)
+	}
+	if len(got) != 3 || got[0].Line != 5 || got[1].Line != 6 || got[2].Line != 7 {
+		t.Fatalf("want only lines 5-7 flagged, got lines %v: %+v", lines, got)
+	}
+	if !strings.Contains(got[2].Message, `"./app/No Such Dir/readme.md"`) {
+		t.Fatalf("the angle form is named by its path, not a fragment of it: %s", got[2].Message)
+	}
+}
+
 // A file with diagrams and no compiler must read as NOT checked, never clean.
 func TestMermaidWithoutCompilerIsBlockingNotSilent(t *testing.T) {
 	root := t.TempDir()

@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -164,8 +165,31 @@ func LoadRules(root string) Rules {
 	return r
 }
 
-// mdLink matches [text](target) and ![alt](target); group 1 is the target.
-var mdLink = regexp.MustCompile(`!?\[[^\]]*\]\(([^)\s]+)[^)]*\)`)
+// mdLink matches [text](target) and ![alt](target). The destination is
+// either CommonMark's angle-bracket form, <path with spaces> (group 1), or a
+// bare run of non-space characters (group 2); an optional title may follow
+// either. linkDest picks whichever matched.
+var mdLink = regexp.MustCompile(`!?\[[^\]]*\]\((?:<([^<>\n]*)>|([^)\s]+))[^)]*\)`)
+
+// linkDest returns the destination of an mdLink match as written, without
+// the angle brackets of the <...> form.
+func linkDest(m []string) string {
+	if m[1] != "" {
+		return m[1]
+	}
+	return m[2]
+}
+
+// unescapeLink decodes the percent-encoding a link destination may carry
+// (%20 for a space is how most editors write one). An escape that does not
+// decode leaves the text as written: the lookup then reports it as broken
+// rather than the check failing.
+func unescapeLink(s string) string {
+	if d, err := url.PathUnescape(s); err == nil {
+		return d
+	}
+	return s
+}
 
 // CheckFile runs the offline per-file checks on one Markdown file: relative
 // references and Mermaid compilation. This is what the write hook uses — it
@@ -199,7 +223,8 @@ func RelativeRefs(root, file string) []gitx.Finding {
 			continue
 		}
 		for _, m := range mdLink.FindAllStringSubmatch(line, -1) {
-			target := m[1]
+			written := linkDest(m)
+			target := written
 			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") ||
 				strings.HasPrefix(target, "#") || strings.HasPrefix(target, "data:") {
 				continue
@@ -214,6 +239,8 @@ func RelativeRefs(root, file string) []gitx.Finding {
 			if target == "" {
 				continue
 			}
+			target = unescapeLink(target)
+			anchor = unescapeLink(anchor)
 			resolved := filepath.Join(filepath.Dir(file), filepath.FromSlash(target))
 			if strings.HasPrefix(target, "/") {
 				base := root
@@ -224,7 +251,7 @@ func RelativeRefs(root, file string) []gitx.Finding {
 			}
 			if _, err := os.Stat(resolved); err != nil {
 				out = append(out, gitx.Finding{File: file, Line: i + 1, Blocking: true,
-					Message: fmt.Sprintf("broken reference: %q does not resolve", m[1])})
+					Message: fmt.Sprintf("broken reference: %q does not resolve", written)})
 				continue
 			}
 			// A link may name a heading, and a heading that no longer
