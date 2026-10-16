@@ -24,7 +24,7 @@ func sumsFor(body []byte) string {
 // and a server answering the release query, the asset download and the
 // checksums file. sums is the SHA256SUMS body the release publishes; a nil
 // sums is a release that publishes no checksums asset at all.
-func runSums(t *testing.T, current string, force bool, consent func(string) bool, body []byte, tag string, sums *string) (string, []string, int) {
+func runSums(t *testing.T, current string, force bool, consent func(Pending) Consent, body []byte, tag string, sums *string) (string, []string, int) {
 	t.Helper()
 	dir := t.TempDir()
 	self := filepath.Join(dir, "procoder")
@@ -49,7 +49,7 @@ func runSums(t *testing.T, current string, force bool, consent func(string) bool
 
 // run is runSums with the checksums file the release honestly should have
 // published for these bytes.
-func run(t *testing.T, current string, force bool, consent func(string) bool, body []byte, tag string) (string, []string, int) {
+func run(t *testing.T, current string, force bool, consent func(Pending) Consent, body []byte, tag string) (string, []string, int) {
 	t.Helper()
 	sums := sumsFor(body)
 	return runSums(t, current, force, consent, body, tag, &sums)
@@ -57,15 +57,15 @@ func run(t *testing.T, current string, force bool, consent func(string) bool, bo
 
 // upgradeAt is Upgrade with the binary path injected, so a test never
 // depends on where the test binary itself lives.
-func upgradeAt(self, current string, force bool, consent func(string) bool, out func(string)) int {
+func upgradeAt(self, current string, force bool, consent func(Pending) Consent, out func(string)) int {
 	prev := selfPath
 	selfPath = func() (string, error) { return self, nil }
 	defer func() { selfPath = prev }()
 	return Upgrade(current, force, consent, out)
 }
 
-func yes(string) bool { return true }
-func no(string) bool  { return false }
+func yes(Pending) Consent { return Consent{Install: true} }
+func no(Pending) Consent  { return Consent{} }
 
 // left names what is in the directory holding the binary, so a test can say
 // "and nothing else was left behind".
@@ -163,12 +163,18 @@ func stubRelease(t *testing.T, tag string, body []byte, sums *string) *httptest.
 				_, _ = io.WriteString(w, *sums)
 			}
 		default:
+			assetFetches++
 			_, _ = w.Write(body)
 		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
+
+// assetFetches counts binary downloads the stub served, so a test can say
+// "the binary never crossed the wire" rather than only "it was not
+// installed". No test here runs in parallel — APIHost is already global.
+var assetFetches int
 
 // N-08: no consent, no download and no replacement.
 // proved by: called install() before consent — the old binary is then
@@ -267,7 +273,7 @@ func TestATamperedDownloadIsRefusedAndTheBinarySurvives(t *testing.T) {
 // from a release is then the entire attack.
 func TestAReleaseWithoutChecksumsIsRefused(t *testing.T) {
 	consulted := false
-	consent := func(string) bool { consulted = true; return true }
+	consent := func(Pending) Consent { consulted = true; return Consent{Install: true} }
 	self, lines, code := runSums(t, "1.0.0", false, consent, []byte("new binary"), "v1.1.0", nil)
 	if code != 2 {
 		t.Fatalf("an unverifiable release exits 2, got %d: %v", code, lines)

@@ -42,7 +42,7 @@ var knownFlags = map[string][]string{
 	"review":       {"--lens", "--perspectives"},
 	"run":          {"--exec"},
 	"security":     {"--deep"},
-	"self-upgrade": {"--force"},
+	"self-upgrade": {"--force", "--confirm"},
 	"serve":        {"--socket", "--exec", "--idle"},
 	"test":         {"--coverage", "--name"},
 	"version":      {"--check"},

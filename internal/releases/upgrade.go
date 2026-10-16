@@ -116,15 +116,75 @@ var selfPath = func() (string, error) {
 	return exe, nil
 }
 
+// Pending is the upgrade a consent function is asked about: what would be
+// installed, from where, and — on request — the digest the release vouches
+// for. It is what lets a session with no terminal show a person exactly what
+// they would be agreeing to, so the agreement can come back as that digest.
+type Pending struct {
+	Current, Latest string
+	Asset           string // the file this platform installs
+	URL             string // where it is downloaded from
+	sum             *publishedSum
+}
+
+// publishedSum is the release's SHA256SUMS entry for the asset, read at most
+// once. Lazy, because the terminal path asks BEFORE anything crosses the wire
+// (N-08) and has no use for the digest until the person has said yes; the
+// handshake path needs it to say anything at all.
+type publishedSum struct {
+	read   func() (string, error)
+	done   bool
+	digest string
+	err    error
+}
+
+// PublishedSum is the sha256 the release's SHA256SUMS records for the asset.
+// An error is a digest nobody knows, and must never be shown as one.
+func (p Pending) PublishedSum() (string, error) {
+	if p.sum == nil {
+		return "", fmt.Errorf("no %s was read for this upgrade", ChecksumsName)
+	}
+	if !p.sum.done {
+		p.sum.digest, p.sum.err = p.sum.read()
+		p.sum.done = true
+	}
+	return p.sum.digest, p.sum.err
+}
+
+// NewPending is a Pending whose published digest is already known. Upgrade
+// builds its own from the release it fetched; this exists so a consent
+// function can be exercised without a release behind it. It grants nothing:
+// whatever a consent function answers, Upgrade still checks the pin against
+// the SHA256SUMS it reads itself.
+func NewPending(current, latest, asset, url, sum string) Pending {
+	return Pending{
+		Current: current, Latest: latest, Asset: asset, URL: url,
+		sum: &publishedSum{done: true, digest: sum},
+	}
+}
+
+// Consent is a consent function's answer. Pinned, when set, is a digest the
+// person confirmed: the install then also refuses unless the release's
+// SHA256SUMS entry AND the downloaded bytes both equal it — a confirmed hash
+// names one file, and anything else is a file nobody agreed to.
+type Consent struct {
+	Install bool
+	Pinned  string
+}
+
+// IsSHA256 reports whether s is a 64-character hex digest, either case — the
+// shape a confirmed hash must have before it is compared against anything.
+func IsSHA256(s string) bool { return isSHA256(strings.ToLower(s)) }
+
 // Upgrade installs a release over the running binary. It is the whole
 // controller: every refusal is a printed reason and a non-zero exit, and
 // the rename is the last thing that happens, so a failure anywhere leaves
 // the working binary exactly where it was (N-04).
 //
-// consent is asked BEFORE anything is downloaded or executed (N-08). force
+// consent is asked BEFORE the binary is downloaded or executed (N-08). force
 // skips only the package-manager refusal — never the consent, and never
 // the checksum.
-func Upgrade(current string, force bool, consent func(latest string) bool, out func(string)) int {
+func Upgrade(current string, force bool, consent func(Pending) Consent, out func(string)) int {
 	self, err := selfPath()
 	if err != nil {
 		out("cannot tell which binary is running, so there is nothing safe to replace: " + err.Error())
@@ -172,19 +232,52 @@ func Upgrade(current string, force bool, consent func(latest string) bool, out f
 		out("unverified is not the same as verified — nothing was downloaded and nothing was replaced")
 		return 2
 	}
-	// The question comes before the download AND before anything runs: a
-	// binary already on disk is a decision half made.
-	if consent == nil || !consent(latest) {
-		out("nothing was downloaded and nothing was replaced")
+	client := assetClient()
+	pending := Pending{
+		Current: current, Latest: latest, Asset: asset.Name, URL: asset.URL,
+		sum: &publishedSum{read: func() (string, error) { return expectedSum(client, sums, asset.Name) }},
+	}
+	// The question comes before the binary is downloaded AND before anything
+	// runs: a binary already on disk is a decision half made.
+	var answer Consent
+	if consent != nil {
+		answer = consent(pending)
+	}
+	if !answer.Install {
+		out(declined(pending))
 		return 2
 	}
-	if err := install(self, asset, sums, out); err != nil {
+	// The checksum is read FIRST. A release whose checksums file cannot be
+	// read can never verify the binary, and discovering that after
+	// megabytes have crossed the wire is discovering it too late.
+	want, err := pending.PublishedSum()
+	if err == nil && answer.Pinned != "" && !strings.EqualFold(answer.Pinned, want) {
+		// A confirmed hash that is not this release's is a confirmation of
+		// some other file — a stale handshake from an earlier release, or
+		// a digest somebody typed. Either way it is not consent to this one.
+		err = fmt.Errorf("the confirmed sha256 %s is NOT the one %s publishes for %s in %s (%s) — it names a different file or an earlier release; the binary was not downloaded",
+			strings.ToLower(answer.Pinned), ChecksumsName, asset.Name, latest, want)
+	}
+	if err == nil {
+		err = install(self, client, asset, want, answer.Pinned, out)
+	}
+	if err != nil {
 		out("the upgrade did NOT happen — " + err.Error())
 		out("procoder " + current + " is still the binary at " + filepath.ToSlash(self))
 		return 2
 	}
 	out("procoder upgraded to " + latest + " at " + filepath.ToSlash(self))
 	return 0
+}
+
+// declined is what a refusal says was left untouched. The handshake reads
+// SHA256SUMS to show the digest, and "nothing was downloaded" after that
+// would be a claim this command did not keep.
+func declined(p Pending) string {
+	if p.sum != nil && p.sum.done {
+		return "only " + ChecksumsName + " was read — the binary was not downloaded and nothing was replaced"
+	}
+	return "nothing was downloaded and nothing was replaced"
 }
 
 // assetClient fetches release assets and nothing else. Every URL is vetted
@@ -242,16 +335,10 @@ func expectedSum(client *http.Client, sums Asset, name string) (string, error) {
 // release published, and only then puts it in place. Beside, not in the
 // system temp directory: a rename across filesystems fails, and the
 // fallback copy would be exactly the non-atomic write this avoids.
-func install(self string, asset, sums Asset, out func(string)) error {
-	client := assetClient()
-	// The checksum is fetched FIRST. A release whose checksums file cannot
-	// be read can never verify the binary, and discovering that after
-	// megabytes have crossed the wire is discovering it too late.
-	want, err := expectedSum(client, sums, asset.Name)
-	if err != nil {
-		return err
-	}
-
+//
+// want is the release's SHA256SUMS entry, already read; pinned, when set, is
+// the digest a person confirmed, and the bytes must equal it as well.
+func install(self string, client *http.Client, asset Asset, want, pinned string, out func(string)) error {
 	resp, err := fetch(client, asset.URL, asset.Name)
 	if err != nil {
 		return err
@@ -300,6 +387,13 @@ func install(self string, asset, sums Asset, out func(string)) error {
 	if !strings.EqualFold(got, want) {
 		return fmt.Errorf("%s does NOT match the digest %s publishes for it (expected %s, downloaded %s) — refusing to install bytes the release did not vouch for",
 			asset.Name, ChecksumsName, want, got)
+	}
+	// Checked separately rather than folded into the comparison above: the
+	// two refusals mean different things, and the person reading one needs
+	// to know which promise the bytes broke.
+	if pinned != "" && !strings.EqualFold(got, pinned) {
+		return fmt.Errorf("%s does NOT match the sha256 that was confirmed (confirmed %s, downloaded %s) — refusing to install a file nobody agreed to",
+			asset.Name, strings.ToLower(pinned), got)
 	}
 	if err := os.Chmod(tmpName, installMode(self)); err != nil {
 		return err

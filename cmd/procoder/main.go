@@ -445,11 +445,16 @@ const usage = `usage: procoder <command> [args]
   version [--check]    print the version; --check asks GitHub what the
                        newest release is and offers to install it when this
                        build is behind. Silenced by [version] check = "off"
-  self-upgrade [--force]
+  self-upgrade [--force] [--confirm <sha256>]
                        install the newest release over this binary, after
                        an explicit yes. Refuses to move backwards, and
                        steps aside from a package manager's install unless
-                       --force says the file is really yours
+                       --force says the file is really yours. With no
+                       terminal it installs nothing: it prints the sha256,
+                       and --confirm <sha256> installs exactly that file.
+                       In a governed repo it also raises the upgrade in
+                       .procoder/ask/decisions.md and installs on a
+                       recorded "install"
   prune [--apply]      the cached plugin versions that can go. Reports and
                        removes nothing; --apply removes them. Keeps the
                        active version and one previous, protects the
@@ -915,15 +920,28 @@ func run(args []string, s session) int {
 		s.out(version)
 		return 0
 	case "self-upgrade":
-		force := false
-		for _, a := range args[1:] {
-			if a != "--force" {
-				s.out("self-upgrade: unknown argument " + a)
+		force, confirmed := false, ""
+		for i := 1; i < len(args); i++ {
+			switch {
+			case args[i] == "--force":
+				force = true
+			case args[i] == "--confirm" && i+1 < len(args):
+				// Shape-checked here, before GitHub is asked anything: a
+				// confirmation that cannot be a digest confirms nothing.
+				if !releases.IsSHA256(args[i+1]) {
+					s.out("self-upgrade: --confirm wants the 64-character sha256 `procoder self-upgrade` printed — got " + args[i+1])
+					return 2
+				}
+				confirmed, i = strings.ToLower(args[i+1]), i+1
+			case args[i] == "--confirm":
+				s.out("self-upgrade: --confirm wants the sha256 `procoder self-upgrade` printed — none was given")
+				return 2
+			default:
+				s.out("self-upgrade: unknown argument " + args[i])
 				return 2
 			}
-			force = true
 		}
-		return releases.Upgrade(version, force, s.upgradeConsent, s.out)
+		return releases.Upgrade(version, force, s.selfUpgradeConsent(force, confirmed), s.out)
 	case "evidence":
 		if len(args) < 3 || args[1] != "record" {
 			s.out("evidence record <command> — runs it and prints a fingerprint, never its output")
@@ -1277,20 +1295,163 @@ func (s session) versionCheckCmd() int {
 // announceThenAsk is the consent function `--check` hands to the upgrade: it
 // says what is newer before asking, because a bare prompt does not tell the
 // reader what they are agreeing to.
-func (s session) announceThenAsk(latest string) bool {
-	s.out(releases.WarningLine(version, latest))
-	return s.upgradeConsent(latest)
-}
-
-// upgradeConsent asks before anything is downloaded or run (N-08). No
-// terminal is not a yes: it is a question nobody was asked.
-func (s session) upgradeConsent(latest string) bool {
+//
+// It never offers the handshake or writes a decision: `version --check` is
+// what a session start runs, unattended, and a check that left a decision
+// behind on every session would be noise nobody asked for. It points at
+// `self-upgrade`, which is a command a person runs on purpose.
+func (s session) announceThenAsk(p releases.Pending) releases.Consent {
+	s.out(releases.WarningLine(version, p.Latest))
 	if !copilot.CanAskWith(s.stdinFile, s.confirm) {
 		s.out("no terminal to ask on — an upgrade needs an explicit yes, so nothing was installed")
-		return false
+		s.out("`procoder self-upgrade` prints the checksum to confirm it with when there is no terminal")
+		return releases.Consent{}
 	}
+	return releases.Consent{Install: s.askUpgrade(p.Latest)}
+}
+
+// askUpgrade is the question on a terminal (N-08).
+func (s session) askUpgrade(latest string) bool {
 	s.out("Upgrade procoder " + version + " → " + latest + "? [y/N]")
 	return copilot.ReadYesFrom(s.stdinFile, s.confirm)
+}
+
+// selfUpgradeConsent is the consent `procoder self-upgrade` hands to the
+// upgrade. There are three ways to a yes, and every one of them is an
+// explicit `self-upgrade` invocation — no hook and no session start reaches
+// this function (#317):
+//
+//   - --confirm <sha256>: the digest a person read from an earlier run. It is
+//     a pin, not a switch: the install refuses unless SHA256SUMS and the
+//     downloaded bytes both equal it.
+//   - a terminal: the [y/N] question.
+//   - no terminal: the handshake is printed, and in a governed repository the
+//     upgrade is raised as a decision; an "install" answer recorded against
+//     it consents, pinned to the digest the decision names.
+//
+// No terminal and no answer is still not a yes: it is a question nobody was
+// asked (N-08), and the handshake is how it gets asked.
+//
+// debt: neither path can prove a PERSON supplied the yes — an agent can read
+// the printed digest and pass it back, or write "install" into answers.md.
+// The ceiling is the host's own permission prompt on the `self-upgrade`
+// call, plus a pin that holds the install to the one file the release
+// vouches for; what this rules out is installing a different binary, not
+// an agent consenting on the person's behalf. Revisit when a host exposes a
+// signal that a human approved the tool call (#317's first option).
+func (s session) selfUpgradeConsent(force bool, confirmed string) func(releases.Pending) releases.Consent {
+	return func(p releases.Pending) releases.Consent {
+		if confirmed != "" {
+			s.out("installing " + p.Asset + " " + p.Latest + " only if its sha256 is " + confirmed)
+			return releases.Consent{Install: true, Pinned: confirmed}
+		}
+		if copilot.CanAskWith(s.stdinFile, s.confirm) {
+			return releases.Consent{Install: s.askUpgrade(p.Latest)}
+		}
+		return s.upgradeWithoutTerminal(p, force)
+	}
+}
+
+// upgradeDecisionPrefix is what identifies the upgrade's decision across
+// runs: the two versions, and not the digest. Keyed on the versions, a
+// re-run finds the decision it already raised instead of raising another;
+// a release re-published under the same tag finds the old decision too, and
+// its digest then refuses the install rather than a second heading asking
+// about the same version.
+func upgradeDecisionPrefix(current, latest string) string {
+	return "Upgrade procoder " + current + " → " + latest + " "
+}
+
+// digestInHeading reads the sha256 back out of an upgrade decision's
+// heading — the digest the person was shown when they answered.
+func digestInHeading(heading string) string {
+	_, rest, ok := strings.Cut(heading, "(sha256 ")
+	if !ok {
+		return ""
+	}
+	digest, _, _ := strings.Cut(rest, ")")
+	return strings.ToLower(strings.TrimSpace(digest))
+}
+
+// upgradeWithoutTerminal is the session-with-no-terminal path: install on a
+// recorded "install", or else show the handshake and raise the decision.
+func (s session) upgradeWithoutTerminal(p releases.Pending, force bool) releases.Consent {
+	s.out("no terminal to ask on — an upgrade needs an explicit yes, so nothing is installed without one")
+	sum, err := p.PublishedSum()
+	if err != nil {
+		s.out("the sha256 " + releases.ChecksumsName + " publishes for " + p.Asset + " is NOT known — " + err.Error())
+		return releases.Consent{}
+	}
+	root := s.root()
+	_, statErr := os.Stat(filepath.Join(root, ".procoder"))
+	governed := statErr == nil
+	prefix := upgradeDecisionPrefix(p.Current, p.Latest)
+	var decision ask.Decision
+	raised := false
+	if governed {
+		decision, raised, err = ask.FindDecision(root, prefix)
+		if err != nil {
+			// Unread is not unanswered: acting as if no decision exists
+			// would raise a second one beside the one that could not be read.
+			s.out("the recorded upgrade decision was NOT read — " + err.Error())
+			governed = false
+		}
+	}
+	if raised && decision.Answered && strings.EqualFold(strings.TrimSpace(decision.Answer), "install") {
+		pinned := digestInHeading(decision.Heading)
+		if !releases.IsSHA256(pinned) {
+			s.out("the decision “" + decision.Heading + "” names no sha256 to verify against — nothing is installed on it")
+			return releases.Consent{}
+		}
+		s.out("installing on the answer recorded for “" + decision.Heading + "” — verified against the sha256 it names")
+		return releases.Consent{Install: true, Pinned: pinned}
+	}
+
+	s.out("pending upgrade: procoder " + p.Current + " → " + p.Latest)
+	s.out("  asset:  " + p.URL)
+	s.out("  sha256: " + sum + " (from the release's " + releases.ChecksumsName + ")")
+	confirm := "procoder self-upgrade --confirm " + sum
+	if force {
+		confirm = "procoder self-upgrade --force --confirm " + sum
+	}
+	s.out("to install exactly that file, a person who has read the sha256 above runs:")
+	s.out("  " + confirm)
+	if !governed {
+		return releases.Consent{}
+	}
+	switch {
+	case !raised:
+		s.raiseUpgradeDecision(root, prefix, p, sum)
+	case !decision.Answered:
+		s.out("already waiting in " + upgradeDecisions + ": “" + decision.Heading + "” — answer it with `procoder ask`")
+	default:
+		s.out("the recorded answer to “" + decision.Heading + "” is \"" + decision.Answer + "\", not install — nothing is installed on it")
+	}
+	return releases.Consent{}
+}
+
+// upgradeDecisions is the file the upgrade's decision is raised in.
+const upgradeDecisions = ask.Dir + "/" + ask.DecisionsFile
+
+// raiseUpgradeDecision writes the pending upgrade into the decisions file,
+// with the digest in its heading: the answer is about that file, and the
+// install it allows is pinned to it.
+func (s session) raiseUpgradeDecision(root, prefix string, p releases.Pending, sum string) {
+	heading := prefix + "(sha256 " + sum + ")?"
+	body := "`procoder self-upgrade` found a newer release and had no terminal to ask on.\n" +
+		"Asset: " + p.URL + "\n\n" +
+		"- install: the next `procoder self-upgrade` installs " + p.Asset + " " + p.Latest + ", only if its sha256 is the one in this heading\n" +
+		"- skip: stay on " + p.Current + "; nothing is installed"
+	added, err := ask.RaiseDecision(root, prefix, heading, body)
+	switch {
+	case err != nil:
+		s.out("the upgrade was NOT recorded as a decision — " + err.Error())
+	case !added:
+		// Another run raised it between the read and the lock.
+		s.out("already waiting in " + upgradeDecisions + " — answer it with `procoder ask`")
+	default:
+		s.out("recorded as a decision in " + upgradeDecisions + " — answer it \"install\" or \"skip\" with `procoder ask`; the next `procoder self-upgrade` acts on the answer")
+	}
 }
 
 // copilotLeakCmd is the capture path: find, sanitise, ask, record. The exit

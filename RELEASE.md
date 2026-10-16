@@ -121,6 +121,13 @@ you, for anything that ships.
 - `procoder self-upgrade` — after an explicit yes; it verifies the
   download against the published `SHA256SUMS` before installing, refuses
   to move backwards, and steps aside from a package manager's install.
+  From an agent session, which has no terminal, it installs nothing and
+  prints the release's sha256 with the command that installs exactly that
+  file — `procoder self-upgrade --confirm <sha256>`, run once the person has
+  read the digest. In a governed repository it also raises the upgrade in
+  `.procoder/ask/decisions.md`; a later `self-upgrade` installs on a
+  recorded `install` answer, verified against the digest in the decision.
+  The agent relays either one and waits — it never confirms for the person.
 - Host installs (pi and the plugin hosts) point at a released tag, not
   at a working tree, once the release exists. A working-tree install is a
   development state; the todo that tracks each one says when it becomes
