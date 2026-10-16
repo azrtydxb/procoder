@@ -1,6 +1,6 @@
 # What a human decided
 
-Written 2026-09-23 12:37 UTC. procoder reads this
+Written 2026-10-16 07:22 UTC. procoder reads this
 file to avoid asking a question twice; edit an answer here to change what
 it believes. Reword the question and it will be asked again.
 
@@ -126,6 +126,16 @@ Key: 3e59374380b3
 Question: Scope of v3.1.1: does it wait for #186 and #188?
 
 Answer: yes — do #186 and #188 too. The maintainer tags, not me.
+
+## [decision] decisions.md
+
+Key: 51e30d05938a
+Question: Contributor PR #304 (uv.lock scanning, AdamMagued)
+
+- Approve its CI run and review it.
+- Leave it for later.
+
+Answer: Approve its CI run and review it. (Pascal, 2026-10-16)
 
 ## (no longer asked)
 
@@ -276,6 +286,17 @@ Key: 96707612e6f5
 Question: Q2: How often should auto-copilot checks run? Manual (`copilot-leak`)
 
 Answer: Follow best practice, which for this command means: no scheduler and no
+
+## [decision] decisions.md
+
+Key: 9ddd8f7e1db9
+Question: Merging today's PRs
+
+- Merge #307, #308, #311, #312, #313 once CI is green.
+- Merge #307, #308, #311, #312 now; hold #313 for the budget decision.
+- Hold all for manual review.
+
+Answer: Merge all five immediately, without waiting for CI; issues surface on the last merge and get fixed then. (Pascal, 2026-10-16)
 
 ## (no longer asked)
 
@@ -489,6 +510,22 @@ Key: e721d4e97e3f
 Question: Do #210 now, before #193?
 
 Answer: no — #193 as planned
+
+## [decision] decisions.md
+
+Key: eef78c51ae22
+Question: #310: what the gate does when a SAST scan outgrows its 90s budget
+
+PR #313 caps the gate's SAST leg at 90s (under the 120s PreToolUse hook).
+A commit over 500 files, a slow runner, or a repo like NovaCRM (8-min
+scans) now always ends "SAST was NOT run" — blocking.
+
+- Hook-only cap: 90s when the PreToolUse hook runs the gate, the old 10m
+  for a direct `procoder check` / CI.
+- Keep 90s everywhere, blocking (as the PR stands).
+- 90s everywhere, but an over-budget scan is a non-blocking "not checked".
+
+Answer: Hook-only cap: 90s when the PreToolUse hook runs the gate, the old 10m for a direct procoder check and CI. (Pascal, 2026-10-16)
 
 ## (no longer asked)
 
