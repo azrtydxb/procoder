@@ -111,7 +111,9 @@ func complexityGo(root string, cfg config.Config, out func(string)) (findings, n
 		out("  complexity  NOT checked — cannot write the isolated config")
 		return 0, 1
 	}
-	return runTool(root, bin, []string{"run", "--config", cfgPath,
+	// --allow-serial-runners waits for golangci-lint's machine-wide lock
+	// rather than failing on it, as lintGo does (#324)
+	return runTool(root, bin, []string{"run", "--allow-serial-runners", "--config", cfgPath,
 		"--output.text.path=stdout", "--show-stats=false", "./..."}, "complexity", out)
 }
 

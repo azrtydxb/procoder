@@ -1,9 +1,11 @@
 package lint
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"procoder/internal/gitx"
@@ -24,12 +26,7 @@ var TypescriptEslint = &tools.Tool{
 	Install: "npm i -D typescript-eslint",
 	// A library, not a binary: presence is the entry module being
 	// resolvable, not a name on PATH.
-	Resolved: func(root string) string {
-		if root == "" {
-			return ""
-		}
-		return tsESLintEntry(root, filepath.Join(root, "x"))
-	},
+	Resolved: resolvedTSESLint,
 	// Project-local, not global: the baseline config imports the entry
 	// module by absolute path, resolved by walking up from the file being
 	// linted. A global install lands somewhere that walk never reaches, so
@@ -39,15 +36,113 @@ var TypescriptEslint = &tools.Tool{
 	},
 }
 
-// tsESLintEntry finds the typescript-eslint entry module by walking up from
-// the file, the same way node resolves a package. The absolute path is what
-// the generated config imports: the config lives in a temp directory, so a
-// bare package name would resolve against that directory and find nothing.
-func tsESLintEntry(root string, file string) string {
+// tsESLintMaxMajor is the newest TypeScript major typescript-eslint
+// installs against. Its peer range ended at <6.1.0 when TypeScript 7
+// shipped, so a TS 7 project cannot install it at all: npm refuses with
+// ERESOLVE, and --legacy-peer-deps is an unsupported install (#324).
+//
+// debt: a hand-kept copy of typescript-eslint's peer range — ceiling: a
+// project past it is parsed by procoder's own TypeScript 6 copy even after
+// typescript-eslint learns its version, so syntax new in that major reads as
+// a parse error; revisit when typescript-eslint publishes a release whose
+// peer range covers TypeScript 7, and raise this.
+const tsESLintMaxMajor = 6
+
+// TypescriptEslintTS7 is typescript-eslint for a project whose TypeScript
+// is past tsESLintMaxMajor. The project cannot install it, so procoder
+// keeps its own copy — typescript-eslint beside a TypeScript 6 — outside
+// the repository, and the baseline parses with that. TypeScript 7 is the
+// compiler ported to Go, not a new language: the syntax a TypeScript 6
+// parser reads is the syntax the project writes, and the recommended set
+// the baseline runs needs no type information from the project's compiler.
+// The type check stays the project's own: `procoder lint --types` runs the
+// project's tsc, TypeScript 7 included.
+var TypescriptEslintTS7 = &tools.Tool{
+	Name:     "typescript-eslint",
+	Install:  "npm install --prefix " + ownedTSESLintDir() + " --no-save --no-package-lock typescript-eslint typescript@~6.0",
+	Resolved: resolvedTSESLint,
+	InstallVia: []tools.InstallCandidate{
+		{Manager: "npm", Args: []string{"install", "--prefix", ownedTSESLintDir(),
+			"--no-save", "--no-package-lock", "typescript-eslint", "typescript@~6.0"}},
+	},
+}
+
+// TypescriptEslintFor is the typescript-eslint the project under root
+// installs: its own, or procoder's copy when its TypeScript is past the
+// range typescript-eslint supports.
+func TypescriptEslintFor(root string) *tools.Tool {
+	if tsMajor(filepath.Join(root, "x")) > tsESLintMaxMajor {
+		return TypescriptEslintTS7
+	}
+	return TypescriptEslint
+}
+
+func resolvedTSESLint(root string) string {
+	if root == "" {
+		return ""
+	}
+	return tsESLintEntry(root, filepath.Join(root, "x"))
+}
+
+// ownedTSESLintDir is where procoder keeps its own typescript-eslint for
+// projects past tsESLintMaxMajor: the user cache, so it survives a reboot
+// and is shared by every such repository on the machine.
+func ownedTSESLintDir() string {
+	base, err := os.UserCacheDir()
+	if err != nil || base == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "procoder", "typescript-eslint-ts6")
+}
+
+// tsMajor is the major version of the installed TypeScript nearest the
+// file — the one node would load for it — or 0 when none is installed or
+// its manifest cannot be read. 0 is "not known to be past the range": the
+// project-local install is then the one worth trying.
+func tsMajor(file string) int {
 	dir := filepath.Dir(file)
 	for {
-		entry := filepath.Join(dir, "node_modules", "typescript-eslint", "dist", "index.js")
-		if info, err := os.Stat(entry); err == nil && !info.IsDir() {
+		raw, err := os.ReadFile(filepath.Join(dir, "node_modules", "typescript", "package.json"))
+		if err == nil {
+			var manifest struct {
+				Version string `json:"version"`
+			}
+			if json.Unmarshal(raw, &manifest) != nil {
+				return 0
+			}
+			major, _, _ := strings.Cut(manifest.Version, ".")
+			n, err := strconv.Atoi(major)
+			if err != nil {
+				return 0
+			}
+			return n
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return 0
+		}
+		dir = parent
+	}
+}
+
+// tsESLintEntry finds the typescript-eslint entry module for the file. The
+// absolute path is what the generated config imports: the config lives in
+// a temp directory, so a bare package name would resolve against that
+// directory and find nothing.
+//
+// A project past tsESLintMaxMajor gets procoder's copy first. A copy the
+// project forced in with --legacy-peer-deps loads the project's TypeScript,
+// which typescript-eslint does not support; procoder's copy loads its own
+// TypeScript 6, which it does.
+func tsESLintEntry(root string, file string) string {
+	if tsMajor(file) > tsESLintMaxMajor {
+		if entry := entryIn(ownedTSESLintDir()); entry != "" {
+			return entry
+		}
+	}
+	dir := filepath.Dir(file)
+	for {
+		if entry := entryIn(dir); entry != "" {
 			return entry
 		}
 		parent := filepath.Dir(dir)
@@ -56,6 +151,15 @@ func tsESLintEntry(root string, file string) string {
 		}
 		dir = parent
 	}
+}
+
+// entryIn is typescript-eslint's entry module under dir/node_modules, or "".
+func entryIn(dir string) string {
+	entry := filepath.Join(dir, "node_modules", "typescript-eslint", "dist", "index.js")
+	if info, err := os.Stat(entry); err == nil && !info.IsDir() {
+		return entry
+	}
+	return ""
 }
 
 // tsBaselineConfig is procoder's default for TypeScript that the project

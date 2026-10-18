@@ -335,3 +335,32 @@ func equal(a, b []string) bool {
 	}
 	return sort.StringsAreSorted(b)
 }
+
+// A tool the repository scoped out in [lint] skip_tools is not a gap: it
+// is said, not counted, and init does not install it.
+// proved by: dropped the NotRequired check from Run — the skipped tool
+// prints GAP and doctor exits 1.
+func TestASkippedLinterIsSaidNotCountedAsAGap(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, ".procoder/config.toml")
+	if err := os.WriteFile(filepath.Join(root, ".procoder", "config.toml"),
+		[]byte("[lint]\nskip_tools = [\"skipped-linter\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := &tools.Tool{Name: "skipped-linter", Install: "nothing"}
+	old := ExtraTools
+	ExtraTools = func(string) []*tools.Tool { return []*tools.Tool{tool} }
+	t.Cleanup(func() { ExtraTools = old })
+	t.Setenv("PATH", t.TempDir())
+
+	if why := NotRequired(tool, root); !strings.Contains(why, "skip_tools") {
+		t.Fatalf("NotRequired = %q, want the skip named", why)
+	}
+	var out bytes.Buffer
+	if code := Run(root, &out); code != 0 {
+		t.Errorf("a skipped tool must not fail doctor (exit %d):\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), " n/a  skipped-linter") || strings.Contains(out.String(), "GAP") {
+		t.Errorf("want the skip said, not a GAP:\n%s", out.String())
+	}
+}

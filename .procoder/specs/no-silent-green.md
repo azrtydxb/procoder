@@ -195,3 +195,17 @@ policy` already exists to separate a judgement from a fact; "no linter
   domain 1 or domain 9 is. D-1 governs whether a required check ran;
   this is a reminder that was never a check, and recording that here is
   what stops the next audit widening from relitigating it as a bug.
+
+- **D-9: a linter the repository names in `[lint] skip_tools` reports
+  NOT linted and never blocks.** Asked for in #324: a TypeScript 7
+  project could not install typescript-eslint, and the gate offered no
+  way to scope one linter out short of `[git] commit_gate = "report"`,
+  the same wall D-7 named. A skip is not a check that failed to run. It
+  is the repository saying, in a file it commits, that this check does
+  not apply, and the cost is visible in three places: `procoder config`
+  prints the key as a relaxation, doctor shows the tool as n/a rather
+  than hiding it, and every file the linter would have read still says
+  NOT linted at the gate. D-1 stands for everything not named there. A
+  linter that is not installed, and not skipped, still blocks regardless
+  of policy. The audit exempts this one message by its text, not
+  lint/lint.go as a whole.

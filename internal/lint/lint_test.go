@@ -328,4 +328,9 @@ func TestGolangciLintIsRunWithoutIssueCaps(t *testing.T) {
 			t.Errorf("golangci-lint ran without %s — its own cap then picks which findings to show, and picks differently each run:\n%s", want, args)
 		}
 	}
+	// #324: without it a second run on the machine exits on the lock and
+	// the gate blocks on a check that never ran
+	if !strings.Contains(args, "--allow-serial-runners") {
+		t.Errorf("golangci-lint ran without --allow-serial-runners — a concurrent run fails instead of waiting:\n%s", args)
+	}
 }

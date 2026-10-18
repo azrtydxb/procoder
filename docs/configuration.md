@@ -38,6 +38,15 @@ scope = "adopted"
 [lint]
 # Lint findings in the gate: "report" (default) or "block".
 policy = "report"
+# Linters this repository deliberately scopes out. Their files are not
+# linted and not blocked on, and the gate still says "NOT linted" on them;
+# `procoder config` prints the setting as a relaxation, doctor shows the
+# tool as n/a instead of a gap, and init does not install it. Names:
+# golangci-lint, ruff, shellcheck, eslint, typescript-eslint (configless
+# TypeScript only), ktlint, swiftlint, rubocop, cargo, checkstyle,
+# phpstan, phpcs, php, clang-tidy. A name procoder does not run is
+# reported, never silently ignored.
+skip_tools = []
 
 [test]
 # The suite verdict: "report" (default) or "block". Under "block",
