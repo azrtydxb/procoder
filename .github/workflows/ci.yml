@@ -4,17 +4,202 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Three-tier model (azrtydxb/.github/docs/ci-standard.md §Test tiers):
+  # PR/push = unit only (linux test leg); nightly = integration (full OS
+  # matrix); v* tags = full. The windows/macos legs and the dogfood `gate`
+  # leave the PR path below.
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch: {}
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   test:
-    strategy:
-      # A red leg must not hide the others.
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # Unit tier: the linux leg runs on every PR and push (fast).
+    # The full mac/win matrix is the nightly/release tier below.
+    name: test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # A shallow checkout, now that nothing here needs history. This job
+      # used to fetch the whole repository so the reproducibility check
+      # could rebuild dist/ at the commit that last touched it; that check
+      # is gone with the committed binaries it existed to verify, and every
+      # test that touches git builds its own repository in t.TempDir().
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      # v6 is the first major that reads go.mod's toolchain directive; v5
+      # matched only the `go` line and installed the newest patch of it, so
+      # the pin in go.mod would have been ignored here. v6+ also exports
+      # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
+      # a different compiler than the one this step installed.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+        with:
+          go-version-file: go.mod
+      - name: gofmt is clean
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./cmd/... ./internal/...
+      - name: the prettier PHP plugin, so the P-CONTROL test runs instead of skipping
+        # TestFormattingPHPNeverTouchesTheFile asserts the one thing PHP's
+        # usual formatters cannot honour — printing without writing the file
+        # — and it needs a real plugin to assert it against a real
+        # formatter. Without this it skipped on every runner, which is a
+        # guard that proves nothing while looking like one that does.
+        #
+        # Linux only: the assertion is about procoder's behaviour, not the
+        # platform's, so running it on three would prove the same thing
+        # three times and pay npm's install on each. node_modules is
+        # gitignored, and doctor skips it.
+        if: runner.os == 'Linux'
+        run: |
+          # Pinned from the same file the gate reads. Unpinned, an upstream
+          # release overnight could change what this asserts or break the
+          # job, which is the exact thing tool-versions.env exists to stop —
+          # and it says so in its own opening paragraph.
+          # eval rather than `. <(...)`: sourcing a process substitution
+          # silently sets nothing under bash 3.2, so the pins would expand
+          # empty and npm would install "prettier@" — a form that fails
+          # loudly, but only after the reason for it has been hidden.
+          eval "$(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)"
+          npm install --no-save --no-fund --no-audit \
+            "prettier@${PRETTIER}" "@prettier/plugin-php@${PRETTIER_PLUGIN_PHP}"
+          # Read by the test: where the plugin is promised, skipping is a
+          # failure. Otherwise a broken install would restore the silent
+          # skip and the suite would stay green over the guard it disabled.
+          echo "PROCODER_PHP_PLUGIN_REQUIRED=1" >> "$GITHUB_ENV"
+      - run: go test ./internal/...
+      - name: the binary builds
+        run: go build ./cmd/procoder
+      - name: the launcher resolves a binary in the shell this OS really uses
+        # The Go test proves the case mapping with POSIX stubs and skips on
+        # Windows, so without this step nothing exercises the path the
+        # Windows fix exists for: GitHub's windows-latest runs `shell: bash`
+        # as Git Bash, where uname reports MINGW64_NT and the launcher must
+        # find procoder.exe.
+        shell: bash
+        run: |
+          # Resolution is the whole question: does THIS shell's uname map to
+          # a path the launcher finds and execs. A stub is planted at that
+          # path first, so the step never reaches the fetch.
+          #
+          # It must never reach it. On a tag build this job runs BEFORE the
+          # release job that publishes the assets, so a launcher left to
+          # fetch would look for a release that does not exist yet and fail
+          # every release — and would pass on pull requests only because the
+          # PREVIOUS version's release happens to be published, which is a
+          # green that depends on history rather than on this commit.
+          case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*) plat="windows-amd64"; ext=".exe" ;;
+            Darwin) plat="darwin-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+            *)      plat="linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+          esac
+          mkdir -p "dist/$plat"
+          printf '#!/bin/sh\nprintf "%%s\\n" stub-resolved\n' > "dist/$plat/procoder$ext"
+          chmod +x "dist/$plat/procoder$ext"
+          got=$(PROCODER_NO_FETCH=1 hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
+          test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
+          echo "launcher resolved procoder $got under $(uname -s)"
+
+  test-macos:
+    # Integration/full tier: the windows/macos legs are off the PR path
+    # (nightly schedule, manual dispatch, and v* release tags only). The
+    # check names `test (macos-latest)` / `test (windows-latest)` are
+    # preserved so the existing required checks still report on PRs
+    # (skipped).
+    name: test (macos-latest)
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      # A shallow checkout, now that nothing here needs history. This job
+      # used to fetch the whole repository so the reproducibility check
+      # could rebuild dist/ at the commit that last touched it; that check
+      # is gone with the committed binaries it existed to verify, and every
+      # test that touches git builds its own repository in t.TempDir().
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      # v6 is the first major that reads go.mod's toolchain directive; v5
+      # matched only the `go` line and installed the newest patch of it, so
+      # the pin in go.mod would have been ignored here. v6+ also exports
+      # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
+      # a different compiler than the one this step installed.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+        with:
+          go-version-file: go.mod
+      - name: gofmt is clean
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./cmd/... ./internal/...
+      - name: the prettier PHP plugin, so the P-CONTROL test runs instead of skipping
+        # TestFormattingPHPNeverTouchesTheFile asserts the one thing PHP's
+        # usual formatters cannot honour — printing without writing the file
+        # — and it needs a real plugin to assert it against a real
+        # formatter. Without this it skipped on every runner, which is a
+        # guard that proves nothing while looking like one that does.
+        #
+        # Linux only: the assertion is about procoder's behaviour, not the
+        # platform's, so running it on three would prove the same thing
+        # three times and pay npm's install on each. node_modules is
+        # gitignored, and doctor skips it.
+        if: runner.os == 'Linux'
+        run: |
+          # Pinned from the same file the gate reads. Unpinned, an upstream
+          # release overnight could change what this asserts or break the
+          # job, which is the exact thing tool-versions.env exists to stop —
+          # and it says so in its own opening paragraph.
+          # eval rather than `. <(...)`: sourcing a process substitution
+          # silently sets nothing under bash 3.2, so the pins would expand
+          # empty and npm would install "prettier@" — a form that fails
+          # loudly, but only after the reason for it has been hidden.
+          eval "$(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)"
+          npm install --no-save --no-fund --no-audit \
+            "prettier@${PRETTIER}" "@prettier/plugin-php@${PRETTIER_PLUGIN_PHP}"
+          # Read by the test: where the plugin is promised, skipping is a
+          # failure. Otherwise a broken install would restore the silent
+          # skip and the suite would stay green over the guard it disabled.
+          echo "PROCODER_PHP_PLUGIN_REQUIRED=1" >> "$GITHUB_ENV"
+      - run: go test ./internal/...
+      - name: the binary builds
+        run: go build ./cmd/procoder
+      - name: the launcher resolves a binary in the shell this OS really uses
+        # The Go test proves the case mapping with POSIX stubs and skips on
+        # Windows, so without this step nothing exercises the path the
+        # Windows fix exists for: GitHub's windows-latest runs `shell: bash`
+        # as Git Bash, where uname reports MINGW64_NT and the launcher must
+        # find procoder.exe.
+        shell: bash
+        run: |
+          # Resolution is the whole question: does THIS shell's uname map to
+          # a path the launcher finds and execs. A stub is planted at that
+          # path first, so the step never reaches the fetch.
+          #
+          # It must never reach it. On a tag build this job runs BEFORE the
+          # release job that publishes the assets, so a launcher left to
+          # fetch would look for a release that does not exist yet and fail
+          # every release — and would pass on pull requests only because the
+          # PREVIOUS version's release happens to be published, which is a
+          # green that depends on history rather than on this commit.
+          case "$(uname -s)" in
+            MINGW*|MSYS*|CYGWIN*) plat="windows-amd64"; ext=".exe" ;;
+            Darwin) plat="darwin-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+            *)      plat="linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"; ext="" ;;
+          esac
+          mkdir -p "dist/$plat"
+          printf '#!/bin/sh\nprintf "%%s\\n" stub-resolved\n' > "dist/$plat/procoder$ext"
+          chmod +x "dist/$plat/procoder$ext"
+          got=$(PROCODER_NO_FETCH=1 hooks/launcher.sh version) || { echo "the launcher failed under $(uname -s)"; exit 1; }
+          test -n "$got" || { echo "the launcher printed nothing under $(uname -s)"; exit 1; }
+          echo "launcher resolved procoder $got under $(uname -s)"
+
+  test-windows:
+    # Integration/full tier: the windows/macos legs are off the PR path
+    # (nightly schedule, manual dispatch, and v* release tags only). The
+    # check names `test (macos-latest)` / `test (windows-latest)` are
+    # preserved so the existing required checks still report on PRs
+    # (skipped).
+    name: test (windows-latest)
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: windows-latest
     timeout-minutes: 15
     steps:
       # A shallow checkout, now that nothing here needs history. This job
@@ -98,6 +283,12 @@ jobs:
   gate:
     # procoder's own gate over its own tree: the dogfood job. Formatting
     # gaps, git hygiene, and workflow lint all fail this leg.
+    #
+    # Heavy: the whole-tree `procoder check` pass dominates and the job runs
+    # ~5.5 min, over the 5-minute PR budget. It is therefore off the PR
+    # critical path and runs on pushes to main, the nightly schedule, manual
+    # dispatch and v* release tags (docs/ci-standard.md §Test tiers).
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     # Measured, not guessed: this job ran 8m53s and 9m10s on the two most
     # recent merges — 89% and 92% of a ten-minute budget — and timed out at
@@ -303,7 +494,7 @@ jobs:
     # Release is what people download, so it is published on the same
     # evidence everything else is.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, gate]
+    needs: [test, test-macos, test-windows, gate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
