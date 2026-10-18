@@ -51,6 +51,55 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.9.0 — 2026-10-18
+
+_TypeScript 7 projects are linted instead of blocked, ESLint 10 is
+handled properly, a linter can be scoped out on purpose, and parallel
+golangci-lint runs wait instead of failing the gate._
+
+**Fixed — TypeScript 7 projects are linted, not blocked.**
+([#325](https://github.com/azrtydxb/procoder/pull/325),
+[#324](https://github.com/azrtydxb/procoder/issues/324)) typescript-eslint
+supports TypeScript only below 6.1, so npm refuses to install it into a
+TypeScript 7 project. Every `.ts` and `.tsx` file then blocked the
+commit gate as NOT checked, and nothing could be installed to clear it.
+Now, for a project on TypeScript 7, `procoder init` installs procoder's
+own copy outside the repository: typescript-eslint beside a TypeScript
+6, in the user cache. The baseline parses with that copy. TypeScript 7
+is the compiler rewritten in Go, not a new language, and the recommended
+rule set needs no type information. Type checking stays with the
+project: `procoder lint --types` runs its own `tsc`, TypeScript 7
+included.
+
+**Fixed — ESLint 10 projects get their own config, and a stale one is
+named.** ([#325](https://github.com/azrtydxb/procoder/pull/325))
+`eslint.config.mts` and `eslint.config.cts` now count as the project's
+config. Before, procoder's baseline overruled them. ESLint 9 and 10 do
+not read `.eslintrc*` files. A project whose only config is one of those
+now gets a finding that says so and links the migration guide, instead
+of "eslint failed: Oops! Something went wrong! :(".
+
+**Added — `[lint] skip_tools` scopes a linter out deliberately.**
+([#325](https://github.com/azrtydxb/procoder/pull/325),
+[#324](https://github.com/azrtydxb/procoder/issues/324)) Before this, the
+only way past a linter that did not apply was `[git] commit_gate =
+"report"`, which switched off every other check too. Now
+`skip_tools = ["typescript-eslint"]` turns off just that one linter. The
+skip stays visible: `procoder config` prints it as a relaxation, doctor
+shows the tool as n/a, `init` does not install it, and every file the
+linter would have read still says NOT linted at the gate. A name
+procoder does not run is reported, not ignored.
+
+**Fixed — a second golangci-lint on the machine waits instead of
+blocking the gate.** ([#325](https://github.com/azrtydxb/procoder/pull/325),
+[#324](https://github.com/azrtydxb/procoder/issues/324)) golangci-lint
+holds one lock per machine. With several worktrees or agents at work,
+the second run exited with "parallel golangci-lint is running", and the
+gate blocked the commit on a check that never ran. Both procoder's lint
+run and its complexity run now pass `--allow-serial-runners`, so a run
+that finds the lock taken waits for it. The existing lint deadline still
+bounds the wait.
+
 ## 3.8.0 — 2026-10-16
 
 _The SAST gate no longer saturates a machine running several agents,
