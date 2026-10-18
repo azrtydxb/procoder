@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"procoder/internal/config"
 	"procoder/internal/gitx"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
@@ -175,7 +176,7 @@ func Files(root string, files []string, block bool) []gitx.Finding {
 			byExt["c"] = append(byExt["c"], f)
 		}
 	}
-	var out []gitx.Finding
+	out := skipped(root, byExt)
 	if fs := byExt["go"]; len(fs) > 0 {
 		out = append(out, lintGo(root, fs, block)...)
 	}
@@ -293,7 +294,13 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 	// The caps were also hiding work: max-same-issues 3 keeps three of any
 	// near-identical message, and errcheck emits almost nothing else, so
 	// most of them never reached the report at all.
-	args := []string{"run", "--output.text.path=stdout", "--show-stats=false",
+	//
+	// --allow-serial-runners: golangci-lint holds one lock per machine, and
+	// a second run used to exit at once with "parallel golangci-lint is
+	// running" — a NOT checked that blocked the gate whenever another
+	// worktree, agent, or the write hook was mid-run (#324). Waiting for
+	// the lock is the honest answer; the lint deadline still bounds it.
+	args := []string{"run", "--allow-serial-runners", "--output.text.path=stdout", "--show-stats=false",
 		"--max-issues-per-linter=0", "--max-same-issues=0"}
 	// the project's own config always wins; without one, procoder supplies
 	// a curated baseline strong enough to catch the bug classes reviewers
@@ -408,6 +415,12 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 		// run from the config's directory: eslint's own config search starts
 		// there, so the nearest config is the one that gets used
 		raw, err := execute(dir, bin, append([]string{"--format", "json"}, fs...))
+		if err != nil && strings.Contains(raw, noFlatConfig) {
+			out = append(out, gitx.Finding{Blocking: true, File: fs[0], Message: fmt.Sprintf(
+				"NOT checked — eslint %s no longer reads .eslintrc configs; migrate %s to eslint.config.* (https://eslint.org/docs/latest/use/configure/migration-guide) (lint)",
+				eslintVersion(bin), dir)})
+			continue
+		}
 		out = append(out, parseEslintJSON(raw, err, fs[0], "lint", block)...)
 	}
 	if len(uncovered) == 0 {
@@ -428,7 +441,11 @@ func lintJS(root string, files []string, block bool) []gitx.Finding {
 		}
 	}
 	if len(tsFiles) > 0 {
-		out = append(out, lintTSBaseline(root, tsFiles, block)...)
+		if skipTool(root, TypescriptEslint.Name) {
+			out = append(out, skippedFinding(tsFiles[0], TypescriptEslint.Name))
+		} else {
+			out = append(out, lintTSBaseline(root, tsFiles, block)...)
+		}
 	}
 	if len(jsFiles) == 0 {
 		return out
@@ -541,8 +558,31 @@ func errStr(err error) string {
 }
 
 // eslintConfigNames are the config files eslint recognises, flat first.
+// The .mts and .cts flat configs load from eslint 9.18 on; missing them
+// meant a project configured that way was linted against procoder's
+// baseline with its own config switched off by --no-config-lookup.
+//
+// The .eslintrc names stay: eslint 8 still reads them, and a project that
+// carries one has configured eslint, so the baseline must not overrule it.
+// eslint 9 and 10 do not read them, and lintJS says so in those words.
 var eslintConfigNames = []string{"eslint.config.js", "eslint.config.mjs", "eslint.config.cjs",
-	"eslint.config.ts", ".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.yml", ".eslintrc.yaml"}
+	"eslint.config.ts", "eslint.config.mts", "eslint.config.cts",
+	".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs", ".eslintrc.yml", ".eslintrc.yaml"}
+
+// eslintVersion is the version eslint reports for itself, for a finding
+// that turns on which eslint is installed; "9 and later" when it will not say.
+func eslintVersion(bin string) string {
+	raw, err := execute(filepath.Dir(bin), bin, []string{"--version"})
+	if v := strings.TrimSpace(raw); err == nil && v != "" {
+		return v
+	}
+	return "9 and later"
+}
+
+// noFlatConfig is how eslint 9 and later refuse a project whose only
+// config is an .eslintrc. Its own first line is "Oops! Something went
+// wrong! :(", which as a gate finding names nothing anyone can act on.
+const noFlatConfig = "couldn't find an eslint.config"
 
 // HasEslintConfig reports whether the project carries an eslint config at
 // its root — the condition for eslint being in scope at all.
@@ -648,6 +688,67 @@ func CacheDir(root string) string {
 	// tool cache. No security property rests on it.
 	sum := sha1.Sum([]byte(root)) // nosemgrep: use-of-sha1
 	return filepath.Join(os.TempDir(), "procoder-cache-"+hex.EncodeToString(sum[:6]))
+}
+
+// skipGroups maps each name [lint] skip_tools accepts to the file group it
+// scopes out of Files. typescript-eslint is not here: it is one route
+// inside the JavaScript group, not a group of its own, and lintJS asks for
+// it by name. PHP's linter is a chain (phpstan, then phpcs, then php -l),
+// so any of its names scopes PHP out.
+var skipGroups = map[string]string{
+	GolangciLint.Name: "go", Ruff.Name: "py", Shellcheck.Name: "sh",
+	Eslint.Name: "js", Ktlint.Name: "kt", Swiftlint.Name: "swift",
+	RubocopLint.Name: "rb", Cargo.Name: "rs", Checkstyle.Name: "java",
+	"phpstan": "php", "phpcs": "php", "php": "php", ClangTidy.Name: "c",
+}
+
+// skipped removes the groups whose linter the repository scoped out in
+// [lint] skip_tools, and says so once per linter. Never blocking — the
+// repository decided, and `procoder config` prints the decision as a
+// relaxation — and never silent, so a skipped file does not read as clean.
+// A name procoder has no linter for skips nothing and says that too.
+func skipped(root string, byExt map[string][]string) []gitx.Finding {
+	var out []gitx.Finding
+	for _, name := range config.Load(root).LintSkipTools {
+		if name == TypescriptEslint.Name {
+			continue // lintJS reports it, only where it would have run
+		}
+		group, ok := skipGroups[name]
+		if !ok {
+			var file string
+			for _, fs := range byExt {
+				if len(fs) > 0 {
+					file = fs[0]
+					break
+				}
+			}
+			if file != "" {
+				out = append(out, gitx.Finding{File: file, Message: fmt.Sprintf(
+					"[lint] skip_tools names %q, which is not a linter procoder runs — nothing was skipped for it (lint)", name)})
+			}
+			continue
+		}
+		if fs := byExt[group]; len(fs) > 0 {
+			out = append(out, skippedFinding(fs[0], name))
+			delete(byExt, group)
+		}
+	}
+	return out
+}
+
+// skipTool reports whether [lint] skip_tools names the linter.
+func skipTool(root, name string) bool {
+	for _, n := range config.Load(root).LintSkipTools {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+func skippedFinding(file, tool string) gitx.Finding {
+	return gitx.Finding{File: file, Message: fmt.Sprintf(
+		"NOT linted — %s is skipped by [lint] skip_tools in .procoder/config.toml (lint)", tool)}
 }
 
 // notChecked is a check that did NOT happen. It blocks, and the blocking is

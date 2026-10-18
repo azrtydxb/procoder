@@ -44,7 +44,15 @@ Procoder imposes nothing where the repo has spoken — but it never checks
 nothing. A linter that could not run is BLOCKING, in every domain: a green
 gate has to mean the code was checked, not that the machine was empty.
 `[lint] policy` governs whether a linter's findings block; whether the
-linter ran at all is not a matter of policy.
+linter ran at all is not a matter of policy. A repository that decides a
+linter does not apply names it in `[lint] skip_tools`: that is a recorded
+relaxation, and the files it would have read are reported as NOT linted
+rather than counted clean.
+
+golangci-lint runs with `--allow-serial-runners`, in the lint leg and the
+complexity check alike. Its lock is machine-wide, so a run from another
+worktree or agent makes this one wait instead of failing. The lint
+deadline still bounds the wait.
 
 The commit gate runs SAST and blocks on findings in the files the commit
 carries. semgrep is pointed at the tree and narrowed with one `--include`
@@ -107,19 +115,35 @@ no linter at all. A tool procoder ships that is merely not installed
 still blocks regardless of policy; see D-7 in
 `.procoder/specs/no-silent-green.md`.
 
-| Ecosystem | Tool           | Baseline when the repo has no config                                                                                                                          |
-| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                              |
-| Python    | ruff check     | ruff's defaults                                                                                                                                               |
-| Shell     | shellcheck     | shellcheck's defaults                                                                                                                                         |
-| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; TypeScript with no project config gets Procoder's baseline through typescript-eslint (recommended set)            |
-| Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                           |
-| Kotlin    | ktlint         | ktlint's defaults                                                                                                                                             |
-| Swift     | swiftlint      | swiftlint's defaults                                                                                                                                          |
-| Ruby      | rubocop        | rubocop's defaults                                                                                                                                            |
-| Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                                       |
-| PHP       | phpstan, phpcs | Procoder's curated phpstan baseline (level 5) when the repo configures neither; a repo `phpstan.neon` or `phpcs.xml` wins, and both run when both are present |
-| C/C++     | clang-tidy     | Procoder's curated set — the analyser, bugprone and cert families; a repo `.clang-tidy` wins. Style is clang-format's job, not this one                       |
+| Ecosystem | Tool           | Baseline when the repo has no config                                                                                                                           |
+| --------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go        | golangci-lint  | curated set: standard + gosec, gocritic, errorlint, unparam, copyloopvar, nilerr                                                                               |
+| Python    | ruff check     | ruff's defaults                                                                                                                                                |
+| Shell     | shellcheck     | shellcheck's defaults                                                                                                                                          |
+| JS/TS     | eslint         | plain JS gets eslint's built-in core rules; TypeScript with no project config gets Procoder's baseline through typescript-eslint (recommended set) — see below |
+| Rust      | cargo clippy   | clippy's defaults (needs a Cargo workspace; findings filtered to the changed files)                                                                            |
+| Kotlin    | ktlint         | ktlint's defaults                                                                                                                                              |
+| Swift     | swiftlint      | swiftlint's defaults                                                                                                                                           |
+| Ruby      | rubocop        | rubocop's defaults                                                                                                                                             |
+| Java      | checkstyle     | the bundled google_checks; a repo `checkstyle.xml` wins                                                                                                        |
+| PHP       | phpstan, phpcs | Procoder's curated phpstan baseline (level 5) when the repo configures neither; a repo `phpstan.neon` or `phpcs.xml` wins, and both run when both are present  |
+| C/C++     | clang-tidy     | Procoder's curated set — the analyser, bugprone and cert families; a repo `.clang-tidy` wins. Style is clang-format's job, not this one                        |
+
+The project's own eslint config is the nearest `eslint.config.{js,mjs,cjs,ts,mts,cts}`.
+eslint 9 and 10 do not read `.eslintrc*` files. A project whose only
+config is one of those gets a blocking finding that names the migration.
+Procoder does not lint it against the baseline as if the project had
+configured nothing.
+
+typescript-eslint supports TypeScript only up to 6.0, so npm refuses to
+install it into a TypeScript 7 project. For a TypeScript 7 project, `procoder init` installs
+procoder's own copy outside the repository: typescript-eslint plus a
+TypeScript 6, in the user cache under
+`procoder/typescript-eslint-ts6`. The baseline parses with that copy.
+This works because TypeScript 7 is the compiler ported to Go, not a new
+language, and the recommended set needs no type information. The type
+check itself is the project's: `procoder lint --types` runs the
+project's own `tsc`, TypeScript 7 included.
 
 Report by default; `[lint] policy = "block"` in config.toml makes
 findings block. Lint is judgment where formatting was not — the findings

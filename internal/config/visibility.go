@@ -56,6 +56,9 @@ var relaxations = map[string]func(value, def string) (bool, string){
 	"bench.threshold": func(v, def string) (bool, string) {
 		return atoiOr(v, 0) > atoiOr(def, 0), "a bigger performance regression passes"
 	},
+	"lint.skip_tools": func(v, _ string) (bool, string) {
+		return len(parseList(v)) > 0, "the named linters no longer run; their files reach commits unlinted"
+	},
 	"security.sast_blocks_at": func(v, def string) (bool, string) {
 		return severityRank(v) > severityRank(def), "SAST findings below this severity no longer block"
 	},

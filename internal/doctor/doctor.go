@@ -75,6 +75,12 @@ func Run(root string, stdout io.Writer) int {
 	for _, n := range names {
 		r := byTool[n]
 		sort.Strings(r.exts)
+		// Not a gap: the repository scoped it out. Said, not hidden — the
+		// lint run reports the same skip on the files it would have read.
+		if why := NotRequired(r.tool, root); why != "" {
+			fmt.Fprintf(stdout, " n/a  %-14s %-28s %s\n", n, strings.Join(r.exts, " "), why)
+			continue
+		}
 		bin := tools.Resolve(r.tool, root)
 		if bin == "" {
 			missing++
@@ -160,6 +166,19 @@ func RequiredTools(root string) []*tools.Tool {
 		out = append(out, seen[n])
 	}
 	return out
+}
+
+// NotRequired says why a tool the tree calls for is not one doctor counts
+// as missing or init installs, or "" when it is required: the repository
+// scoped it out in [lint] skip_tools, which is a decision `procoder config`
+// prints as a relaxation, so doctor says it rather than calling it a gap.
+func NotRequired(t *tools.Tool, root string) string {
+	for _, name := range config.Load(root).LintSkipTools {
+		if name == t.Name {
+			return "skipped by [lint] skip_tools"
+		}
+	}
+	return ""
 }
 
 // Root returns the repo root for the working directory.

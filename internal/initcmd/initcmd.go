@@ -49,7 +49,7 @@ type Step struct {
 func Plan(root string) []Step {
 	var steps []Step
 	for _, t := range doctor.RequiredTools(root) {
-		if tools.Resolve(t, root) != "" {
+		if tools.Resolve(t, root) != "" || doctor.NotRequired(t, root) != "" {
 			continue
 		}
 		steps = append(steps, choose(t))

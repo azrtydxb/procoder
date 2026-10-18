@@ -6,6 +6,7 @@ git.max_file_mb             5            default
 infra.terraform_binary      auto         default
 learn.min_samples           20           default
 learn.record                false        default
+lint.skip_tools             []           default
 security.sast_blocks_at     ERROR        default
 service.exec                false        default
 service.mode                off          default

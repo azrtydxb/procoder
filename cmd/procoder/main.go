@@ -120,7 +120,9 @@ func init() {
 		// does not carry. Required wherever TypeScript is, so the refusal
 		// this produces when it is absent has a remedy init can run.
 		if exts[".ts"] || exts[".tsx"] || exts[".mts"] || exts[".cts"] {
-			out = append(out, lint.Eslint, lint.TypescriptEslint)
+			// TypeScript past typescript-eslint's peer range gets procoder's
+			// own copy of the parser, installed outside the project (#324).
+			out = append(out, lint.Eslint, lint.TypescriptEslintFor(root))
 		}
 		// C and C++ were formatted and linted by nothing at all.
 		if exts[".c"] || exts[".h"] || exts[".cpp"] || exts[".cc"] || exts[".cxx"] || exts[".hpp"] {

@@ -40,6 +40,11 @@ type Config struct {
 	MaxFileMB int
 	// LintBlock: lint findings block the gate instead of being reported.
 	LintBlock bool
+	// LintSkipTools names linters the repository has deliberately scoped
+	// out ([lint] skip_tools). Their files are said to be unlinted, never
+	// counted as clean, and the setting prints as a relaxation. The names
+	// are checked by the lint package, which owns them (#324).
+	LintSkipTools []string
 
 	// GateScope forces how much of procoder this repository is subject to:
 	// "adopted" for everything, "universal" for only the checks that are
@@ -194,6 +199,8 @@ func Load(root string) Config {
 		"service.mode":            "off",
 		"service.exec":            "false",
 		"infra.terraform_binary":  "auto",
+		// listed so a non-empty list prints as a relaxation of it
+		"lint.skip_tools": "[]",
 	}
 	cfg.ServiceMode = "off"
 	cfg.TerraformBinary = "auto"
@@ -258,6 +265,15 @@ func Load(root string) Config {
 			cfg.BlockDefaultBranch = value == "block"
 		case "lint.policy":
 			cfg.LintBlock = value == "block"
+		case "lint.skip_tools":
+			// A value that is not a list skips nothing, and a writer who
+			// believes it skipped something should hear that it did not.
+			if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+				cfg.Problems = append(cfg.Problems, Problem{Line: lineNo, Text: line,
+					Reason: `lint.skip_tools wants a list of linter names, e.g. ["typescript-eslint"]`})
+				continue
+			}
+			cfg.LintSkipTools = parseList(value)
 		case "gate.scope":
 			cfg.GateScope = value
 		case "planning.method":

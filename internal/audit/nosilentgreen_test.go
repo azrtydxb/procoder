@@ -37,7 +37,7 @@ var blocking = regexp.MustCompile(`Blocking:\s*true\b`)
 // gate MEANS, and one domain quietly exempting itself brings the whole
 // meaning down with it.
 //
-// Two deliberate exceptions, named rather than matched by pattern —
+// Deliberate exceptions, named rather than matched by pattern —
 // widening this audit's own regex (#153) made both visible for the first
 // time, and each is a decision recorded in
 // .procoder/specs/no-silent-green.md rather than a hole to close:
@@ -49,6 +49,9 @@ var blocking = regexp.MustCompile(`Blocking:\s*true\b`)
 //     offline half of the Copilot loop — a reminder that an adaptation
 //     is unwritten, never a check that something is broken — and its own
 //     doc comment already said so before this spec existed.
+//   - lint/lint.go (D-9): a linter the repository scoped out in [lint]
+//     skip_tools — a committed, printed relaxation, not a check that
+//     failed to run (#324).
 //
 // A second, unrelated "NOT checked" appearing in either file is exactly
 // the drift this audit exists to catch, and stays caught: the exemption
@@ -97,6 +100,7 @@ func TestNoDomainReportsAnUnrunCheckAsMerelyInformational(t *testing.T) {
 var exempt = []struct{ path, substr string }{
 	{"lint/unlinted.go", "NOT linted — %s (lint)"},
 	{"lessons/copilot.go", "captured Copilot findings cannot be counted"},
+	{"lint/lint.go", "is skipped by [lint] skip_tools"}, // D-9
 }
 
 // offendersIn is the walk's per-file check, pulled out so it can be proven
