@@ -9,9 +9,9 @@ go 1.23
 // a rebuilt dist/ binary stops matching the committed one for no reason
 // the source can explain. Bumping this is a commit, not a Tuesday.
 //
-// It names 1.26 because that is what built the binaries in dist/, and CI
-// now rebuilds them and compares digests: a pin that disagrees with the
-// artifacts makes that check fail on every commit. The `go` line above
+// It names the compiler CI builds every released binary with
+// (scripts/build-dist.sh, from the tag), so the toolchain stamped into
+// what people download is one commit's decision. The `go` line above
 // stays at 1.23 — this pins the compiler, not the language the code may
 // use, and lowering the bar for who can build procoder costs nothing.
-toolchain go1.26.7
+toolchain go1.27.2

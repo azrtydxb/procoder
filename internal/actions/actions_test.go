@@ -90,3 +90,45 @@ func skipOnWindows(t *testing.T) {
 		t.Skip("sh-stub fixtures cannot run on Windows")
 	}
 }
+
+// actionlint runs in the workflow's repository and its paths come back in
+// the shape they went in: actionlint prints them relative to its cwd, so a
+// hook started in another checkout reported ../wt/.github/... (#326).
+// proved by: removed cmd.Dir — the stub prints the other checkout, and the
+// finding's file is relative to it.
+func TestActionlintRunsInTheWorkflowsRepository(t *testing.T) {
+	skipOnWindows(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wf := filepath.Join(root, ".github", "workflows", "w.yml")
+	if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wf, []byte("on: push\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	seen := filepath.Join(bin, "cwd")
+	fake := "#!/bin/sh\npwd -P > " + seen + "\necho '.github/workflows/w.yml:3:9: bad [syntax-check]'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "actionlint"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	prev, _ := os.Getwd()
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	got := Lint([]string{wf})
+	raw, _ := os.ReadFile(seen)
+	want, _ := filepath.EvalSymlinks(root)
+	if strings.TrimSpace(string(raw)) != want {
+		t.Errorf("actionlint ran in %q, want the workflow's repository %q (findings: %+v)", strings.TrimSpace(string(raw)), want, got)
+	}
+	if len(got) != 1 || got[0].File != filepath.Join(root, ".github", "workflows", "w.yml") {
+		t.Errorf("the finding must name the workflow by the path it was given: %+v", got)
+	}
+}

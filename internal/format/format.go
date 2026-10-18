@@ -103,7 +103,7 @@ func Check(file string) Result {
 			Reason: fmt.Sprintf("%s is not installed — %s", tool.Name, tool.Install)}
 	}
 
-	formatted, err := run(bin, tool, file, src)
+	formatted, err := run(bin, tool, file, src, tools.RepoRoot(mustDir(file)))
 	if err != nil {
 		return Result{File: file, Verdict: Unchecked, Tool: tool.Name,
 			Reason: fmt.Sprintf("%s did not answer: %v", tool.Name, err)}
@@ -119,11 +119,27 @@ func Check(file string) Result {
 // answer; a non-zero exit or an empty answer on non-empty input is "did not
 // answer", because an empty result is byte-for-byte what a clean empty file
 // looks like.
-func run(bin string, tool *tools.Tool, file string, src []byte) ([]byte, error) {
+//
+// The tool runs in the file's repository root, not procoder's working
+// directory. prettier reads .prettierignore from its cwd and biome finds
+// biome.json from its cwd, so a commit hook started in one checkout and
+// gating another — a linked worktree, `git -C <path> commit` — judged the
+// worktree's files by the first checkout's ignore list (#326). The path is
+// made absolute first: relative to where procoder was asked, which is what
+// the person meant, before the directory under it moves.
+func run(bin string, tool *tools.Tool, file string, src []byte, root string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hungToolTimeout)
 	defer cancel()
 
+	if abs, err := filepath.Abs(file); err == nil {
+		file = abs
+	}
 	cmd := exec.CommandContext(ctx, bin, tool.Args(file)...) // nosemgrep -- resolved from the fixed tool table, never user input
+	if root != "" {
+		if abs, err := filepath.Abs(root); err == nil {
+			cmd.Dir = abs
+		}
+	}
 	if tool.Stdin {
 		cmd.Stdin = bytes.NewReader(src)
 	}

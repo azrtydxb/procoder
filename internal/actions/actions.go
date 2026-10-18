@@ -79,7 +79,25 @@ func Lint(files []string) []gitx.Finding {
 	defer cancel()
 	// -no-color keeps the output parseable; actionlint exits 1 on findings,
 	// which is not an error for us.
-	cmd := exec.CommandContext(ctx, bin, append([]string{"-no-color"}, files...)...) // nosemgrep -- resolved from the fixed tool table, never user input
+	//
+	// Run in the files' repository root, not procoder's working directory:
+	// actionlint prints paths relative to its cwd, and the shellcheck it runs
+	// over `run:` blocks reads .shellcheckrc from there. A hook started in
+	// one checkout and gating another got paths like ../wt/.github/... and
+	// the wrong checkout's shellcheck settings (#326).
+	root := ""
+	if abs, err := filepath.Abs(files[0]); err == nil {
+		root = tools.RepoRoot(filepath.Dir(abs))
+	}
+	args := []string{"-no-color"}
+	for _, f := range files {
+		if abs, err := filepath.Abs(f); err == nil {
+			f = abs
+		}
+		args = append(args, f)
+	}
+	cmd := exec.CommandContext(ctx, bin, args...) // nosemgrep -- resolved from the fixed tool table, never user input
+	cmd.Dir = root
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -96,7 +114,11 @@ func Lint(files []string) []gitx.Finding {
 			continue
 		}
 		n, _ := strconv.Atoi(m[2])
-		out = append(out, gitx.Finding{File: m[1], Line: n, Blocking: true, Message: m[3]})
+		file := m[1]
+		if root != "" && !filepath.IsAbs(file) {
+			file = filepath.Join(root, file) // back to the shape it was given in
+		}
+		out = append(out, gitx.Finding{File: file, Line: n, Blocking: true, Message: m[3]})
 	}
 	// A non-zero exit with nothing parseable is a failure, not a clean run.
 	if err != nil && len(out) == 0 {

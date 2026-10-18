@@ -51,6 +51,28 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.9.1 — 2026-10-19
+
+_A commit from a linked worktree is judged by that worktree's own ignore
+lists and configs, and releases are built with Go 1.27.2._
+
+**Fixed — the commit gate judges a worktree by its own ignore lists.**
+([#327](https://github.com/azrtydxb/procoder/pull/327),
+[#326](https://github.com/azrtydxb/procoder/issues/326)) A commit made in
+a linked worktree, from a session whose working directory was another
+checkout, was blocked over files the worktree's `.prettierignore`
+excludes. procoder found the right repository, but it started prettier
+from the session's directory, and prettier reads its ignore file from
+the directory it starts in. biome finds its config the same way, and
+actionlint printed paths relative to the wrong directory. The formatter
+and actionlint now run in the repository being committed, so a stale
+root checkout no longer changes what the gate says about a worktree.
+
+**Changed — releases are built with Go 1.27.2.**
+([#327](https://github.com/azrtydxb/procoder/pull/327)) The pinned
+toolchain moves from 1.26.7 to the current Go release. The minimum Go
+version needed to build procoder from source stays at 1.23.
+
 ## 3.9.0 — 2026-10-18
 
 _TypeScript 7 projects are linted instead of blocked, ESLint 10 is
