@@ -45,7 +45,12 @@ func TestCancelKillsTheGrandchild(t *testing.T) {
 	}
 	cancel()
 	select {
-	case <-done:
+	case err := <-done:
+		// the run was killed by the cancel; a nil here would be a killed
+		// process reporting success
+		if err == nil {
+			t.Error("Run returned nil for a process the cancel killed")
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not return after cancel")
 	}
