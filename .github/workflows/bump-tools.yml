@@ -60,6 +60,7 @@ jobs:
           # Exit 3 means no source is wired up, which is a failure of its own.
           latest_version() {
             case "$1" in
+            GITLEAKS) gh_release_tag gitleaks/gitleaks | sed 's|^v||' ;;
             OSV_SCANNER) gh_release_tag google/osv-scanner ;;
             GOLANGCI_LINT) gh_release_tag golangci/golangci-lint | sed 's|^v||' ;;
             ACTIONLINT) gh_release_tag rhysd/actionlint | sed 's|^v||' ;;
@@ -75,7 +76,9 @@ jobs:
             SEMGREP) pypi_version semgrep ;;
             RUFF) pypi_version ruff ;;
             MKDOCS_MATERIAL) pypi_version mkdocs-material ;;
+            ESLINT) npm_version eslint ;;
             PRETTIER) npm_version prettier ;;
+            PRETTIER_PLUGIN_PHP) npm_version @prettier/plugin-php ;;
             MERMAID_CLI) npm_version @mermaid-js/mermaid-cli ;;
             *) return 3 ;;
             esac
