@@ -51,6 +51,24 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.9.2 — 2026-10-26
+
+_The commit gate lints TypeScript in a repository whose TypeScript 7
+lives in a subdirectory, such as a `web/` app, instead of handing it to
+a parser that refuses it._
+
+**Fixed — a TypeScript 7 under a subdirectory decides the parser.**
+([#333](https://github.com/azrtydxb/procoder/pull/333)) procoder picks
+its own typescript-eslint beside TypeScript 6 when a repository's
+TypeScript is newer than typescript-eslint accepts, but it only looked
+for that TypeScript at the repository root. A repository with its
+frontend in `web/` had TypeScript 7 there, so procoder used the stock
+typescript-eslint, which refuses TypeScript 7, and the `.ts` and `.tsx`
+files went unlinted. procoder now looks for a TypeScript past the
+supported range anywhere in the tree (skipping `node_modules` and dot
+directories), so those files are linted by the parser that accepts them,
+and `procoder doctor` reports the parser it needs.
+
 ## 3.9.1 — 2026-10-19
 
 _A commit from a linked worktree is judged by that worktree's own ignore
