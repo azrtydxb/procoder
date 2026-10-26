@@ -124,3 +124,52 @@ func TestTS7WithoutTheOwnedParserIsNotChecked(t *testing.T) {
 		t.Fatalf("want one blocking refusal naming typescript-eslint, got %+v", got)
 	}
 }
+
+// A repository whose TypeScript lives in a subdirectory (an app under web/,
+// nothing at the root) is past the range exactly like one with it at the
+// root: doctor must check, and init install, procoder's own copy, and the
+// copy must resolve for the repo and for a file under that subdirectory.
+// proved by: TypescriptEslintFor looked only at root/node_modules — doctor
+// reported typescript-eslint missing with the project-local npm install that
+// npm refuses, and the owned copy was never resolved for the repo.
+func TestTypescriptInASubdirectoryDecidesTheParser(t *testing.T) {
+	isolateCache(t)
+	owned := filepath.Join(ownedTSESLintDir(), "node_modules", "typescript-eslint", "dist", "index.js")
+	if err := os.MkdirAll(filepath.Dir(owned), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(owned, []byte("export default {};\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := t.TempDir()
+	web := filepath.Join(root, "web")
+	installTypescript(t, web, "7.0.2")
+	if err := os.MkdirAll(filepath.Join(web, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := TypescriptEslintFor(root); got != TypescriptEslintTS7 {
+		t.Errorf("TypeScript 7 under web/: init would run %v, want procoder's own copy", got.InstallVia)
+	}
+	if got := tools.Resolve(TypescriptEslintFor(root), root); got != owned {
+		t.Errorf("doctor resolved %q for the repo, want %q", got, owned)
+	}
+	if got := tsESLintEntry(root, filepath.Join(web, "src", "a.ts")); got != owned {
+		t.Errorf("a file under web/src resolved %q, want %q", got, owned)
+	}
+
+	// any location past the range decides, even beside one within it
+	mixed := t.TempDir()
+	installTypescript(t, filepath.Join(mixed, "legacy"), "5.9.3")
+	installTypescript(t, filepath.Join(mixed, "apps", "web"), "7.0.2")
+	if got := TypescriptEslintFor(mixed); got != TypescriptEslintTS7 {
+		t.Errorf("one TypeScript 7 location among several: got %v", got.InstallVia)
+	}
+
+	// subdirectories within the range keep the project-local install
+	within := t.TempDir()
+	installTypescript(t, filepath.Join(within, "web"), "6.0.3")
+	if got := TypescriptEslintFor(within); got != TypescriptEslint {
+		t.Errorf("TypeScript 6 under web/ must install typescript-eslint itself, got %v", got.InstallVia)
+	}
+}

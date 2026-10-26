@@ -70,8 +70,13 @@ var TypescriptEslintTS7 = &tools.Tool{
 // TypescriptEslintFor is the typescript-eslint the project under root
 // installs: its own, or procoder's copy when its TypeScript is past the
 // range typescript-eslint supports.
+//
+// The decision is the repository's, not the root's: TypeScript often lives
+// in a subdirectory (an app under web/, nothing at the root), and npm
+// refuses the project-local install there just the same. So any TypeScript
+// location past the range selects procoder's copy.
 func TypescriptEslintFor(root string) *tools.Tool {
-	if tsMajor(filepath.Join(root, "x")) > tsESLintMaxMajor {
+	if anyTSPastRange(root) {
 		return TypescriptEslintTS7
 	}
 	return TypescriptEslint
@@ -81,7 +86,57 @@ func resolvedTSESLint(root string) string {
 	if root == "" {
 		return ""
 	}
+	if anyTSPastRange(root) {
+		if entry := entryIn(ownedTSESLintDir()); entry != "" {
+			return entry
+		}
+	}
 	return tsESLintEntry(root, filepath.Join(root, "x"))
+}
+
+// tsScanDepth bounds how far below the root anyTSPastRange looks for an
+// installed TypeScript; workspaces keep theirs a few levels down.
+const tsScanDepth = 6
+
+// anyTSPastRange reports whether any installed TypeScript in the repository
+// under root — the root's own or one in a subdirectory — is past
+// tsESLintMaxMajor. The walk never enters node_modules (a TypeScript there
+// is a dependency's, not the project's) or dot directories.
+func anyTSPastRange(root string) bool {
+	if root == "" {
+		return false
+	}
+	if tsMajor(filepath.Join(root, "x")) > tsESLintMaxMajor {
+		return true
+	}
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if found {
+			return filepath.SkipAll
+		}
+		if !d.IsDir() || path == root {
+			return nil
+		}
+		name := d.Name()
+		if name == "node_modules" || strings.HasPrefix(name, ".") {
+			return filepath.SkipDir
+		}
+		if rel, rerr := filepath.Rel(root, path); rerr == nil && strings.Count(rel, string(filepath.Separator)) >= tsScanDepth {
+			return filepath.SkipDir
+		}
+		// node_modules/typescript sits directly under this directory
+		if dirTSMajor(path) > tsESLintMaxMajor {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 // ownedTSESLintDir is where procoder keeps its own typescript-eslint for
@@ -102,20 +157,8 @@ func ownedTSESLintDir() string {
 func tsMajor(file string) int {
 	dir := filepath.Dir(file)
 	for {
-		raw, err := os.ReadFile(filepath.Join(dir, "node_modules", "typescript", "package.json"))
-		if err == nil {
-			var manifest struct {
-				Version string `json:"version"`
-			}
-			if json.Unmarshal(raw, &manifest) != nil {
-				return 0
-			}
-			major, _, _ := strings.Cut(manifest.Version, ".")
-			n, err := strconv.Atoi(major)
-			if err != nil {
-				return 0
-			}
-			return n
+		if raw, err := os.ReadFile(filepath.Join(dir, "node_modules", "typescript", "package.json")); err == nil {
+			return manifestMajor(raw)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -123,6 +166,32 @@ func tsMajor(file string) int {
 		}
 		dir = parent
 	}
+}
+
+// dirTSMajor is the major version of the TypeScript installed directly in
+// dir/node_modules, or 0 when there is none.
+func dirTSMajor(dir string) int {
+	raw, err := os.ReadFile(filepath.Join(dir, "node_modules", "typescript", "package.json"))
+	if err != nil {
+		return 0
+	}
+	return manifestMajor(raw)
+}
+
+// manifestMajor is the major of a package.json's version, or 0 if unreadable.
+func manifestMajor(raw []byte) int {
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(raw, &manifest) != nil {
+		return 0
+	}
+	major, _, _ := strings.Cut(manifest.Version, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // tsESLintEntry finds the typescript-eslint entry module for the file. The
@@ -183,7 +252,16 @@ func lintTSBaseline(root string, files []string, block bool) []gitx.Finding {
 	if bin == "" {
 		return notChecked(files[0], "eslint")
 	}
-	entry := tsESLintEntry(root, files[0])
+	// one config serves the whole run, so a file past the range picks the
+	// entry: procoder's own copy parses the files within it as well
+	probe := files[0]
+	for _, f := range files {
+		if tsMajor(f) > tsESLintMaxMajor {
+			probe = f
+			break
+		}
+	}
+	entry := tsESLintEntry(root, probe)
 	if entry == "" {
 		return notChecked(files[0], TypescriptEslint.Name)
 	}
