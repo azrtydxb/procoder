@@ -27,13 +27,13 @@ jobs:
       # could rebuild dist/ at the commit that last touched it; that check
       # is gone with the committed binaries it existed to verify, and every
       # test that touches git builds its own repository in t.TempDir().
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      - uses: actions/checkout@v7
       # v6 is the first major that reads go.mod's toolchain directive; v5
       # matched only the `go` line and installed the newest patch of it, so
       # the pin in go.mod would have been ignored here. v6+ also exports
       # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
       # a different compiler than the one this step installed.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt is clean
@@ -117,13 +117,13 @@ jobs:
       # could rebuild dist/ at the commit that last touched it; that check
       # is gone with the committed binaries it existed to verify, and every
       # test that touches git builds its own repository in t.TempDir().
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      - uses: actions/checkout@v7
       # v6 is the first major that reads go.mod's toolchain directive; v5
       # matched only the `go` line and installed the newest patch of it, so
       # the pin in go.mod would have been ignored here. v6+ also exports
       # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
       # a different compiler than the one this step installed.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt is clean
@@ -207,13 +207,13 @@ jobs:
       # could rebuild dist/ at the commit that last touched it; that check
       # is gone with the committed binaries it existed to verify, and every
       # test that touches git builds its own repository in t.TempDir().
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      - uses: actions/checkout@v7
       # v6 is the first major that reads go.mod's toolchain directive; v5
       # matched only the `go` line and installed the newest patch of it, so
       # the pin in go.mod would have been ignored here. v6+ also exports
       # GOTOOLCHAIN=local, so no `go` command in the job can quietly fetch
       # a different compiler than the one this step installed.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt is clean
@@ -299,8 +299,8 @@ jobs:
     # green tree red.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 gitleaks:allow
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: read the pinned tool versions
@@ -310,7 +310,7 @@ jobs:
         run: grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env >> "$GITHUB_ENV"
       - name: the tools that have to be compiled, from cache when possible
         id: gotools
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 gitleaks:allow
+        uses: actions/cache@v6
         with:
           # gopls and scip-go publish no binaries, so these are the only two
           # the gate still builds. Keyed on the versions file: bumping a line
@@ -318,7 +318,7 @@ jobs:
           path: ~/go/bin
           key: gate-gotools-${{ runner.os }}-${{ hashFiles('.github/tool-versions.env') }}
       - name: python and node package caches
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 gitleaks:allow
+        uses: actions/cache@v6
         with:
           # mermaid-cli pulls puppeteer, which downloads a browser — and that
           # browser lands in ~/.cache/puppeteer, not in the npm cache. Caching
@@ -361,7 +361,7 @@ jobs:
       # gate is waiting on five sequential curls.
       - name: released binaries, from cache when the pins have not moved
         id: relbins
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6 gitleaks:allow
+        uses: actions/cache@v6
         with:
           path: /tmp/procoder-bins
           # The five pins this cache is made of, not the whole versions
@@ -500,7 +500,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
+      - uses: actions/checkout@v7
         with:
           # The notes below name the previous tag to build a compare link,
           # and a depth-1 checkout of a tag ref carries no other tag to
@@ -634,16 +634,16 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 gitleaks:allow
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7 gitleaks:allow
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install mkdocs-material
       - name: the changelog is one file, served twice
         run: cp CHANGELOG.md docs/changelog.md
       - run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5 gitleaks:allow
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
-      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5 gitleaks:allow
+      - uses: actions/deploy-pages@v5
         id: deployment
