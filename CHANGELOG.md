@@ -51,6 +51,22 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.9.3 — 2026-11-07
+
+_procoder no longer floods a CI container with formatter processes when
+the container may use fewer CPUs than its host has._
+
+**Fixed — the process budget follows the container's CPU quota.**
+([#338](https://github.com/azrtydxb/procoder/pull/338)) procoder sized
+how many formatter, secret-scan and SAST processes run at once by the
+number of cores the host has. A CI job container on a 256-core host that
+is allowed 16 CPUs therefore got a budget of 256: the gate started
+hundreds of prettier processes on 16 CPUs, they missed the 30-second
+formatter deadline, and the gate blocked on files it reported as not
+checked. procoder now caps the budget by the cgroup CPU quota (cgroup
+v2's `cpu.max`, or v1's CFS quota), rounding a fractional quota up, so
+that container runs 16 at a time and every file is checked.
+
 ## 3.9.2 — 2026-10-26
 
 _The commit gate lints TypeScript in a repository whose TypeScript 7
