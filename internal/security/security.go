@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -402,7 +401,7 @@ const (
 // sastSlots is how many scans may run at once on this machine, across
 // every repository and every procoder process: a quarter of the cores,
 // each scan using sastJobs of them.
-var sastSlots = max(1, runtime.NumCPU()/4)
+var sastSlots = max(1, parallel.CPUs()/4)
 
 // sastSlotDir is where the slots live; a variable so tests can use their
 // own.
