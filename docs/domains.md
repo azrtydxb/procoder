@@ -64,8 +64,11 @@ tree and filters the findings instead.
 
 Every scan is bounded so a machine running several agents is not
 saturated: semgrep runs with `--jobs=2`; one scan per repository and a
-quarter of the cores' worth of scans per machine run at once, the rest
-wait for a slot. The gate's whole SAST allowance — waiting and
+quarter of the usable CPUs' worth of scans per machine run at once, the
+rest wait for a slot. Usable CPUs are the cores capped by the cgroup CPU
+quota, so a CI container that sees 256 host cores but may use 16 sizes
+this, and every other procoder fan-out (formatters, secret scan, gate
+legs), by the 16. The gate's whole SAST allowance — waiting and
 scanning — is 90 seconds when the commit hook runs it, under the hook's
 120, and 10 minutes for a direct `procoder check` or CI. A scan that could
 not get a slot, or ran out of time, reports SAST as NOT run and blocks;

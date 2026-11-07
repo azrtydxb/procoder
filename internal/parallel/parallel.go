@@ -24,17 +24,16 @@
 // and fixed in number.
 package parallel
 
-import "runtime"
-
 // budget is the number of units of work that may be in flight. Sized to
 // the machine, at least one — a zero-capacity channel would deadlock, and
 // runtime.NumCPU has returned 0 on constrained containers.
 var budget = make(chan struct{}, size())
 
-// size is how many units may run at once. At least one: runtime.NumCPU has
+// size is how many units may run at once: the CPUs this process may use,
+// cgroup quota included (see CPUs). At least one: runtime.NumCPU has
 // returned 0 on constrained containers, and a zero-capacity channel would
 // deadlock the gate rather than slow it.
-func size() int { return maxInt(1, runtime.NumCPU()) }
+func size() int { return maxInt(1, CPUs()) }
 
 func maxInt(a, b int) int {
 	if a > b {
