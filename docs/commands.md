@@ -654,7 +654,7 @@ carries a bounded excerpt of its own output — the assertion, panic or
 build error — under the FAIL line, in the gate's finding as well. When the
 narrowed packages sit in a nested Go module (its own `go.mod`), `go test` runs
 once per module from that module's directory, and the detail is prefixed with
-the module. `--coverage` adds the
+the module; with no narrowed paths it covers the root module only. `--coverage` adds the
 percentage where the runner measures it natively (Go; pytest with
 pytest-cov); a number is reported, never enforced. With
 `--name <pattern>` narrows the run to matching tests — `-run` for Go,
