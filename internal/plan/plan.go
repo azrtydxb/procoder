@@ -143,7 +143,7 @@ func checkOne(root, path string, out func(string)) int {
 
 	for _, s := range sectionRes {
 		body := textutil.Section(text, s)
-		if body == "" && !strings.Contains(text, "## "+s) {
+		if !textutil.HasSection(text, s) {
 			gaps = append(gaps, "section missing: "+s)
 		} else if strings.TrimSpace(textutil.StripComments(body)) == "" {
 			gaps = append(gaps, "section empty: "+s+" — a heading is not an answer")

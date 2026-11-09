@@ -107,3 +107,33 @@ func TestAccentedLettersFoldRatherThanVanish(t *testing.T) {
 		t.Errorf("non-Latin scripts are the known ceiling: %q", got)
 	}
 }
+
+// The heading is a whole line outside a code fence (#336). A quote of it —
+// in backticks, after `> ` or `- `, inside a fence — is not the section, a
+// "## " line inside a fence does not end one, and a CRLF or trailing blank
+// on the real heading still counts.
+// proved by: replaced `line == heading` in SectionSpan with
+// strings.Contains(line, heading) — the quoted and fenced copies are then
+// read as the section; and separately dropped the fence tracking — the
+// fenced copy is then read as the section.
+func TestSectionIgnoresQuotedAndFencedHeadings(t *testing.T) {
+	doc := "# T\n\n## Description\n\n" +
+		"Quoting `## Evidence` in prose.\n" +
+		"> ## Evidence\n" +
+		"- ## Evidence\n" +
+		"```markdown\n## Evidence\n\nforged\n```\n\n" +
+		"## Evidence \r\n\nreal body\n\n~~~\n## Notes\n~~~\n\nstill evidence\n\n## Result\n"
+	got := Section(doc, "Evidence")
+	if strings.Contains(got, "forged") || !strings.Contains(got, "real body") {
+		t.Fatalf("want the real section, not a quoted one; got %q", got)
+	}
+	if !strings.Contains(got, "still evidence") || strings.Contains(got, "## Result") {
+		t.Fatalf("a fenced \"## \" line must not end the section, the next real heading must; got %q", got)
+	}
+	if HasSection("Quoting `## Plan` in prose.\n```\n## Plan\n```\n", "Plan") {
+		t.Fatal("a quoted or fenced heading is not a section")
+	}
+	if HasSection(doc, "Evidence extra") || !HasSection(doc, "Result") {
+		t.Fatal("presence must follow the same whole-line rule as Section")
+	}
+}

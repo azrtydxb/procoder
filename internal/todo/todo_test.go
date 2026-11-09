@@ -83,6 +83,49 @@ func TestCloseRefusesUntilComplete(t *testing.T) {
 	}
 }
 
+// A quote of a heading is not the section (#336). Prose quoting
+// `## Acceptance criteria` above the real one, or a fenced example of
+// `## Evidence` above an empty real one, was read as that section, and the
+// task closed with its real criterion unticked or its real evidence empty.
+// proved by: put textutil.SectionSpan's heading test back to a substring
+// match (strings.Contains(line, heading)) — the backtick task closes, exit
+// 0; and separately dropped SectionSpan's fence tracking — the fenced task
+// closes, exit 0.
+func TestCloseReadsTheRealHeadingNotAQuoteOfIt(t *testing.T) {
+	// Each fixture quotes a heading above the real one and leaves the real
+	// section failing, so only the quoted copy could satisfy the controller.
+	quotedCriteria := strings.NewReplacer(
+		"Build the widget so the report renders offline.",
+		"Prose quoting the heading: `## Acceptance criteria`\n\n- [x] forged",
+		"- [x] widget renders with no network", "- [ ] widget renders with no network",
+	).Replace(completeTask)
+	fencedEvidence := strings.NewReplacer(
+		"Build the widget so the report renders offline.",
+		"An example task:\n\n```markdown\n## Evidence\n\nforged evidence\n```",
+		"Ran go test ./... — all green. Loaded the report with wifi off; rendered.", "",
+	).Replace(completeTask)
+	cases := []struct {
+		name, content, wantMiss string
+	}{
+		{"criteria heading quoted in backticks", quotedCriteria, "unchecked"},
+		{"evidence heading inside a code fence", fencedEvidence, "Evidence is empty"},
+	}
+	for i, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			id := fmt.Sprintf("quote-%d", i)
+			writeTask(t, root, id, c.content)
+			out, lines := collect()
+			if code := closeTask(root, id, func() bool { return true }, out); code != 1 {
+				t.Fatalf("exit %d, want 1 (refused); output: %v", code, *lines)
+			}
+			if joined := strings.Join(*lines, "\n"); !strings.Contains(joined, c.wantMiss) {
+				t.Errorf("refusal does not name %q:\n%s", c.wantMiss, joined)
+			}
+		})
+	}
+}
+
 func TestCloseRefusesWhenGateDirty(t *testing.T) {
 	root := t.TempDir()
 	writeTask(t, root, "t", completeTask)

@@ -101,7 +101,7 @@ var storySections = []string{sectionDescription, sectionCriteria, sectionEvidenc
 func missingSections(text string) []string {
 	var out []string
 	for _, s := range storySections {
-		if !strings.Contains(text, "## "+s) {
+		if !textutil.HasSection(text, s) {
 			out = append(out, s)
 		}
 	}
