@@ -9,6 +9,7 @@ package gomod
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func exists(p string) bool {
@@ -22,14 +23,24 @@ func Workspace(root string) bool {
 	return exists(filepath.Join(root, "go.work"))
 }
 
-// ModuleDir is the directory of the go.mod nearest to file, ascending from
-// the file's directory and stopping at root. A file under no go.mod belongs
-// to root: the repository is then taken to be one module, as it was before
-// nested modules were understood.
-func ModuleDir(root, file string) string {
-	dir := filepath.Dir(file)
+// ModuleDir is the directory of the go.mod nearest to p, ascending from p
+// when it is a directory (the gate passes package directories) or from its
+// parent when it is a file, and stopping at root. A path under no go.mod, or
+// outside root, belongs to root: the repository is then taken to be one
+// module, as it was before nested modules were understood. A go.mod under a
+// testdata or vendor directory is ignored, as the go command ignores it, so
+// a file there belongs to the enclosing real module.
+func ModuleDir(root, p string) string {
+	rel, err := filepath.Rel(root, p)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return root
+	}
+	dir := p
+	if info, err := os.Stat(p); err != nil || !info.IsDir() {
+		dir = filepath.Dir(p)
+	}
 	for {
-		if exists(filepath.Join(dir, "go.mod")) {
+		if exists(filepath.Join(dir, "go.mod")) && !ignoredDir(root, dir) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -38,6 +49,21 @@ func ModuleDir(root, file string) string {
 		}
 		dir = parent
 	}
+}
+
+// ignoredDir reports whether dir sits at or under a testdata or vendor
+// directory below root.
+func ignoredDir(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return false
+	}
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if part == "testdata" || part == "vendor" {
+			return true
+		}
+	}
+	return false
 }
 
 // Group splits absolute paths by owning module directory. Under a go.work

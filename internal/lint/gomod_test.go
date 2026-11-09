@@ -3,6 +3,7 @@ package lint
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -22,6 +23,9 @@ type goCall struct {
 // — which is what the real binary prints. It returns a reader for the calls.
 func stubGolangci(t *testing.T) func() []goCall {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub is a /bin/sh script; the logic it checks is not platform-specific")
+	}
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls.txt")
 	script := `#!/bin/sh
@@ -116,7 +120,8 @@ func argAfter(c goCall, flag string) string {
 // not contain package ...", and the gate reports the file NOT checked — so
 // every commit touching a nested module was blocked while correct.
 //
-// proved by: leave cmd.Dir at the repo root in lintGo — the call's dir is
+// proved by: leave cmd.Dir at the repo root in lintGo, or drop
+// --path-mode=abs — the call's dir is
 // the root and the pattern is ./sub/x, so this fails on both.
 func TestLintGoRunsANestedModuleFromItsOwnDirectory(t *testing.T) {
 	calls := stubGolangci(t)
@@ -131,6 +136,12 @@ func TestLintGoRunsANestedModuleFromItsOwnDirectory(t *testing.T) {
 	}
 	if want := filepath.Join(root, "sub"); cs[0].dir != want {
 		t.Errorf("ran in %s, want the nested module directory %s", cs[0].dir, want)
+	}
+	// golangci-lint v2 prints paths relative to the CONFIG file's directory
+	// by default; with the baseline in the temp dir every path came back
+	// as ../../tmp/... and was dropped by the wanted filter.
+	if !hasArg(cs[0], "--path-mode=abs") {
+		t.Errorf("paths must be absolute, independent of the config file's directory: %v", cs[0].args)
 	}
 	if !hasArg(cs[0], "./x") || hasArg(cs[0], "./sub/x") {
 		t.Errorf("patterns must be relative to the module dir (./x, not ./sub/x): %v", cs[0].args)
@@ -351,5 +362,27 @@ func TestRepoRelPathMapsModuleRelativeFindingsToTheRoot(t *testing.T) {
 		if got := repoRelPath(root, c.modDir, c.in); got != c.want {
 			t.Errorf("repoRelPath(%s, %s, %q) = %q, want %q", root, c.modDir, c.in, got, c.want)
 		}
+	}
+}
+
+// A file directly in the nested module's root (sub/x.go) is the module's
+// "./" package: the run is from sub with the pattern "./", never ./sub.
+//
+// proved by: resolve the module from the repo root — the run happens in
+// root with ./sub, and this fails on the directory.
+func TestLintGoFileAtTheNestedModuleRoot(t *testing.T) {
+	calls := stubGolangci(t)
+	root := moduleRepo(t, false)
+	file := filepath.Join(root, "sub", "x.go")
+	if err := os.WriteFile(file, []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := lintGo(root, []string{file}, false)
+	cs := calls()
+	if len(cs) != 1 || cs[0].dir != filepath.Join(root, "sub") || !hasArg(cs[0], "./") {
+		t.Fatalf("want one run in sub with ./, got %+v", cs)
+	}
+	if len(got) != 1 || got[0].File != "sub/x.go" {
+		t.Errorf("finding must map to sub/x.go (the stub's file for ./), got %+v", got)
 	}
 }
