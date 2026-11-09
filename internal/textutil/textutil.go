@@ -141,19 +141,81 @@ func collapse(s string) string {
 	return b.String()
 }
 
-// Section returns the body between "## name" and the next section heading —
-// how every Markdown-backed domain (spec, plan, todo, backlog, adr) reads
-// one part of a document.
+// Section returns the body between the "## name" heading and the next
+// section heading — how every Markdown-backed domain (spec, plan, todo,
+// backlog, adr) reads one part of a document. See SectionSpan for what
+// counts as the heading.
 func Section(text, name string) string {
-	i := strings.Index(text, "## "+name)
-	if i < 0 {
+	start, end, ok := SectionSpan(text, name)
+	if !ok {
 		return ""
 	}
-	body := text[i+len("## "+name):]
-	if j := strings.Index(body, "\n## "); j >= 0 {
-		body = body[:j]
+	return text[start:end]
+}
+
+// HasSection reports whether the document carries a "## name" heading, by
+// the same rule Section reads it with.
+func HasSection(text, name string) bool {
+	_, _, ok := SectionSpan(text, name)
+	return ok
+}
+
+// SectionSpan locates the body of the "## name" section as byte offsets:
+// start is just past the heading line, end is the start of the next "## "
+// heading line or the end of the text.
+//
+// A heading is a whole line — exactly "## name", trailing whitespace (a
+// CRLF's \r included) allowed — outside a fenced code block. Finding it by
+// substring let a quote of the heading stand in for the section: prose
+// saying `## Acceptance criteria` above the real one was read as the
+// criteria, a fenced `## Evidence` example as the evidence, and `todo close`
+// closed a task whose real criterion was still unticked (#336). A "## "
+// line inside a fence does not end a section either, for the same reason.
+func SectionSpan(text, name string) (start, end int, ok bool) {
+	heading := "## " + name
+	fence := ""
+	for off := 0; off < len(text); {
+		next := len(text)
+		if j := strings.IndexByte(text[off:], '\n'); j >= 0 {
+			next = off + j + 1
+		}
+		line := strings.TrimRight(text[off:next], " \t\r\n")
+		if f := fenceOf(line); f != "" {
+			switch {
+			case fence == "":
+				fence = f
+			case f[0] == fence[0] && len(f) >= len(fence) && strings.TrimSpace(line) == f:
+				fence = ""
+			}
+		} else if fence == "" {
+			switch {
+			case ok && strings.HasPrefix(line, "## "):
+				return start, off, true
+			case !ok && line == heading:
+				start, ok = next, true
+			}
+		}
+		off = next
 	}
-	return body
+	if !ok {
+		return 0, 0, false
+	}
+	return start, len(text), true
+}
+
+// fenceOf returns the run of backticks or tildes a line opens or closes a
+// fenced code block with (three or more, indented at most three spaces),
+// or "" when the line is not a fence.
+func fenceOf(line string) string {
+	t := strings.TrimLeft(line, " ")
+	if len(line)-len(t) > 3 || len(t) < 3 || (t[0] != '`' && t[0] != '~') {
+		return ""
+	}
+	n := len(t) - len(strings.TrimLeft(t, t[:1]))
+	if n < 3 {
+		return ""
+	}
+	return t[:n]
 }
 
 // StripComments removes HTML comments, so a template's guidance text never

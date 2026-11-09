@@ -308,7 +308,7 @@ func checkOne(root, path string, out func(string)) (int, Verdict) {
 	var gaps, notes []string
 	for _, s := range Sections {
 		body := textutil.Section(text, s)
-		if body == "" && !strings.Contains(text, "## "+s) {
+		if !textutil.HasSection(text, s) {
 			gaps = append(gaps, "section missing: "+s)
 			continue
 		}

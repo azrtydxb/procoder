@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"procoder/internal/textutil"
 )
 
 // This file is the half of spec checking that asks whether a document is
@@ -335,17 +337,7 @@ func containsAny(s string, words []string) bool {
 // passed on three platforms and failed on the fourth. Found by CI, which
 // is what CI is for.
 func sectionOf(text, name string) string {
-	text = normaliseEOL(text)
-	marker := "## " + name + "\n"
-	i := strings.Index(text, marker)
-	if i < 0 {
-		return ""
-	}
-	rest := text[i+len(marker):]
-	if j := strings.Index(rest, "\n## "); j >= 0 {
-		return rest[:j]
-	}
-	return rest
+	return textutil.Section(normaliseEOL(text), name)
 }
 
 // lineOf maps an offset within a section back to a line number in the
@@ -353,12 +345,11 @@ func sectionOf(text, name string) string {
 // section.
 func lineOf(text, section string, withinSection int) int {
 	text = normaliseEOL(text)
-	marker := "## " + section + "\n"
-	i := strings.Index(text, marker)
-	if i < 0 {
+	start, _, ok := textutil.SectionSpan(text, section)
+	if !ok {
 		return 0
 	}
-	return strings.Count(text[:i+len(marker)], "\n") + withinSection + 1
+	return strings.Count(text[:start], "\n") + withinSection + 1
 }
 
 // TruthGaps is both checks, rendered as the chain's other controllers
