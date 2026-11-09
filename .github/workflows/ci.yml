@@ -68,6 +68,19 @@ jobs:
           # failure. Otherwise a broken install would restore the silent
           # skip and the suite would stay green over the guard it disabled.
           echo "PROCODER_PHP_PLUGIN_REQUIRED=1" >> "$GITHUB_ENV"
+      - name: golangci-lint, so the real-binary lint test runs instead of skipping
+        # TestGolangciFindsARealProblemInANestedModule is the only test that
+        # checks procoder's golangci-lint flags and path handling against the
+        # real tool; the stub tests cannot catch a flag it rejects. Pinned
+        # from the same file the gate reads. Linux only, once.
+        if: runner.os == 'Linux'
+        run: |
+          eval "$(grep -E '^[A-Z][A-Z0-9_]*=' .github/tool-versions.env)"
+          cd /tmp
+          curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT}/golangci-lint-${GOLANGCI_LINT}-linux-amd64.tar.gz" | tar xz
+          sudo install -m 0755 "golangci-lint-${GOLANGCI_LINT}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint
+          golangci-lint --version
+          echo "PROCODER_GOLANGCI_REQUIRED=1" >> "$GITHUB_ENV"
       - run: go test ./internal/...
       - name: the binary builds
         run: go build ./cmd/procoder

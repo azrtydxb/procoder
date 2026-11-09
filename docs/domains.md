@@ -54,6 +54,13 @@ complexity check alike. Its lock is machine-wide, so a run from another
 worktree or agent makes this one wait instead of failing. The lint
 deadline still bounds the wait.
 
+Go files are grouped by their nearest `go.mod` and golangci-lint runs once
+per module, from the module's directory, with package patterns relative to
+it; findings are mapped back to repo-root paths. golangci-lint resolves
+packages against the module it runs in, so a file in a nested module named
+from the root used to fail as NOT checked ("main module ... does not contain
+package"). A `go.work` at the root keeps one run from the root.
+
 The commit gate runs SAST and blocks on findings in the files the commit
 carries. semgrep is pointed at the tree and narrowed with one `--include`
 per changed file, never handed the files as targets — naming files
