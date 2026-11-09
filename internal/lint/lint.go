@@ -366,7 +366,7 @@ func lintGoModule(root, bin, modDir string, files []string, block bool) []gitx.F
 	findings := finishParse(raw, err, files[0], "golangci-lint", block)
 	out := baselineNote
 	for _, f := range findings {
-		if strings.HasPrefix(f.Message, "NOT checked") {
+		if f.File == files[0] {
 			// the run-failed refusal already names the absolute file; a
 			// real finding in that same file has a path to map instead
 			out = append(out, f)
