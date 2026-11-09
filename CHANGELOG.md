@@ -51,6 +51,36 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
+## 3.9.5 — 2026-11-09
+
+_The commit gate now lints and tests Go code in nested modules and no
+longer drops golangci-lint findings printed under relative paths; 3.9.4
+was tagged but never published, so this release carries its fixes._
+
+**Fixed — nested Go modules are linted and tested from their own go.mod.**
+([#340](https://github.com/azrtydxb/procoder/pull/340)) A file in a
+subdirectory with its own `go.mod` was blocked as not checked, because
+golangci-lint and `go test` ran once from the repository root, where
+that module is not visible. procoder now runs golangci-lint and `go test`
+once per Go module, each from its own `go.mod`, so those files are
+checked and the suite covers every module. It also passes
+`--path-mode=abs` only to a golangci-lint that knows the flag.
+
+**Fixed — golangci-lint findings are no longer dropped under config-relative paths.**
+([#340](https://github.com/azrtydxb/procoder/pull/340)) When golangci-lint
+printed paths relative to its config, which procoder places in a
+temporary directory for the baseline config, the findings matched no
+changed file and were silently discarded, so a real finding could pass
+the gate. Those paths are now resolved correctly and the findings reach
+the gate.
+
+**Fixed — the Windows test suite passes for the per-module path mapping.**
+([#345](https://github.com/azrtydxb/procoder/pull/345)) The tests for
+that path mapping used a fake root with no drive letter, which is not an
+absolute path on Windows, so the Windows suite failed and the 3.9.4
+release was never published. The tests now build their roots from a real
+temporary directory; the gate itself behaved correctly and is unchanged.
+
 ## 3.9.4 — 2026-11-09
 
 _The commit gate now lints and tests Go code in nested modules, and no
