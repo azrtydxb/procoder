@@ -51,25 +51,6 @@ Rules that earn their place:
   handle opened none of what its paragraph cites.
 -->
 
-## Unreleased
-
-_The commit gate lints and tests a Go file that lives in a nested Go
-module instead of refusing it as not checked._
-
-**Fixed — a file in a nested Go module is checked from its own module.**
-([#340](https://github.com/azrtydxb/procoder/pull/340)) The gate ran one
-golangci-lint from the repository root over every changed Go package, so a
-changed file in a directory with its own `go.mod` (a `bench/` module with
-`replace => ../`, say) failed with "main module does not contain package"
-and was reported NOT checked, blocking a commit whose code was correct.
-`go test` narrowed to such a package failed the same way with "setup
-failed". procoder now groups the changed Go files by their nearest
-`go.mod` and runs golangci-lint and `go test` once per module, from that
-module's directory, then maps each finding back to its path in the
-repository. The project's golangci config applies to every module (a
-nested module without its own file gets the root one), and a `go.work` at
-the root keeps the single run it always had.
-
 ## 3.9.3 — 2026-11-07
 
 _procoder no longer floods a CI container with formatter processes when
