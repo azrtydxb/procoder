@@ -57,12 +57,6 @@ func repoRelPath(root, modDir, p string) string {
 	if rel, ok := under(root, abs); ok {
 		return rel
 	}
-	// the tool may print a symlink-resolved path (macOS /var -> /private/var)
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		if rel, ok := under(real, abs); ok {
-			return rel
-		}
-	}
 	return filepath.ToSlash(p)
 }
 
