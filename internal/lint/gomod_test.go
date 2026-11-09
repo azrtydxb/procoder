@@ -369,7 +369,7 @@ func TestGroupSplitsByModuleUnlessAWorkspace(t *testing.T) {
 // proved by: compute patterns relative to the root — ./sub/x leaks into the
 // nested module's run; drop the dedupe — ./x appears twice.
 func TestGoPatternsAreRelativeToTheModule(t *testing.T) {
-	mod := filepath.Join(string(filepath.Separator), "r", "sub")
+	mod := filepath.Join(t.TempDir(), "r", "sub")
 	got := goPatterns(mod, []string{
 		filepath.Join(mod, "main.go"),
 		filepath.Join(mod, "x", "a.go"),
@@ -385,7 +385,7 @@ func TestGoPatternsAreRelativeToTheModule(t *testing.T) {
 // proved by: return the path unchanged — a finding printed as x/x.go in the
 // sub module no longer matches the wanted sub/x/x.go and is silently dropped.
 func TestRepoRelPathMapsModuleRelativeFindingsToTheRoot(t *testing.T) {
-	root := filepath.Join(string(filepath.Separator), "r")
+	root := t.TempDir() // absolute on every OS, drive letter included
 	sub := filepath.Join(root, "sub")
 	for _, c := range []struct{ modDir, in, want string }{
 		{sub, "x/x.go", "sub/x/x.go"},
