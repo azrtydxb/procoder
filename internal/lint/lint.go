@@ -305,14 +305,20 @@ func lintGoModule(root, bin, modDir string, files []string, block bool) []gitx.F
 	// worktree, agent, or the write hook was mid-run (#324). Waiting for
 	// the lock is the honest answer; the lint deadline still bounds it.
 	args := []string{"run", "--allow-serial-runners", "--output.text.path=stdout", "--show-stats=false",
-		"--max-issues-per-linter=0", "--max-same-issues=0",
-		// golangci-lint v2 prints paths relative to the CONFIG file's
-		// directory by default. The baseline lives in the temp dir and a
-		// root config is passed from outside the module, so every path
-		// arrived as ../../elsewhere/x.go and the wanted filter dropped
-		// the finding. Absolute paths do not depend on where the config
-		// is; repoRelPath maps them to the repo root.
-		"--path-mode=abs"}
+		"--max-issues-per-linter=0", "--max-same-issues=0"}
+	// golangci-lint v2 prints paths relative to the CONFIG file's directory
+	// by default. The baseline lives in the temp dir and a root config is
+	// passed from outside the module, so every path arrived as
+	// ../../elsewhere/x.go and the wanted filter dropped the finding.
+	// Absolute paths do not depend on where the config is; repoRelPath maps
+	// them to the repo root. Only where the binary knows the flag: an older
+	// v2 rejects it, which would turn every Go file into NOT checked. As far
+	// as is known, versions without the flag also predate config-relative
+	// output and print paths relative to the working directory, which
+	// repoRelPath maps too.
+	if supportsPathMode(bin) {
+		args = append(args, "--path-mode=abs")
+	}
 	// the project's own config always wins: the module's own file is found
 	// by golangci-lint from modDir; the repo root's file is passed
 	// explicitly to a nested module that has none, since it now runs from a

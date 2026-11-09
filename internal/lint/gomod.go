@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // golangciConfigNames are the config files golangci-lint itself accepts.
@@ -84,4 +85,21 @@ func under(base, abs string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+// pathModeSupport caches, per binary, whether `golangci-lint run` knows
+// --path-mode: asked once per process, not once per module.
+var pathModeSupport sync.Map // bin path -> bool
+
+// supportsPathMode reports whether bin's `run --help` lists --path-mode.
+// A binary that cannot even print its help is treated as not supporting it;
+// the real run then fails (or not) on its own terms and says so.
+func supportsPathMode(bin string) bool {
+	if v, ok := pathModeSupport.Load(bin); ok {
+		return v.(bool)
+	}
+	raw, _ := execute(filepath.Dir(bin), bin, []string{"run", "--help"})
+	ok := strings.Contains(raw, "--path-mode")
+	pathModeSupport.Store(bin, ok)
+	return ok
 }

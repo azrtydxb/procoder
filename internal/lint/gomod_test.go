@@ -22,21 +22,51 @@ type goCall struct {
 // in that package's x.go, with the path relative to the directory it ran in
 // — which is what the real binary prints. It returns a reader for the calls.
 func stubGolangci(t *testing.T) func() []goCall {
+	return stubGolangciMode(t, stubModern)
+}
+
+// stubMode says how the fake binary behaves.
+type stubMode int
+
+const (
+	// stubModern knows --path-mode and, given it, prints absolute paths.
+	stubModern stubMode = iota
+	// stubOld lacks --path-mode: its help does not list it and it errors
+	// if given the flag; it prints paths relative to its working directory.
+	stubOld
+)
+
+func stubGolangciMode(t *testing.T, mode stubMode) func() []goCall {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stub is a /bin/sh script; the logic it checks is not platform-specific")
 	}
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls.txt")
+	help := "Usage:\n  --allow-serial-runners\n  --path-mode string\n"
+	if mode == stubOld {
+		help = "Usage:\n  --allow-serial-runners\n"
+	}
 	script := `#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = "--help" ]; then printf '` + help + `'; exit 0; fi
+done
 printf 'CALL\n' >> ` + log + `
 printf 'pwd=%s\n' "$(pwd -P)" >> ` + log + `
 for a in "$@"; do printf 'arg=%s\n' "$a" >> ` + log + `; done
+abs=0
+for a in "$@"; do
+  case "$a" in
+    --path-mode=abs) abs=1
+` + map[bool]string{true: "      printf 'Error: unknown flag: --path-mode\n'; exit 3\n", false: ""}[mode == stubOld] + `;;
+  esac
+done
 rc=0
 for a in "$@"; do
   case "$a" in
     ./*) p=${a#./}; p=${p%/}
          if [ -z "$p" ]; then f=x.go; else f=$p/x.go; fi
+         if [ $abs = 1 ]; then f="$(pwd -P)/$f"; fi
          printf '%s:3:1: boom (stub)\n' "$f"; rc=1 ;;
   esac
 done
@@ -268,6 +298,11 @@ func TestLintGoConfigSelectionPerModule(t *testing.T) {
 // message names golangci-lint failing, not an errcheck on sub/x/x.go.
 func TestGolangciFindsARealProblemInANestedModule(t *testing.T) {
 	if tools.Resolve(GolangciLint, "") == "" {
+		// where CI promises the binary, skipping is a failure: otherwise a
+		// broken install restores the silent skip over the guard
+		if os.Getenv("PROCODER_GOLANGCI_REQUIRED") != "" {
+			t.Fatal("golangci-lint is required here and was not found")
+		}
 		t.Skip("golangci-lint not installed; the stub tests carry the logic")
 	}
 	root := moduleRepo(t, false)
@@ -384,5 +419,67 @@ func TestLintGoFileAtTheNestedModuleRoot(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].File != "sub/x.go" {
 		t.Errorf("finding must map to sub/x.go (the stub's file for ./), got %+v", got)
+	}
+}
+
+// golangci-lint v2 prints absolute paths under --path-mode=abs. A finding
+// in the FIRST linted file arrives as that file's absolute path — exactly
+// what the old `File == files[0]` shortcut mistook for the run-failed
+// refusal and passed through unmapped, so the gate printed an absolute path
+// and the wanted filter was never applied.
+//
+// proved by: restore `if f.File == files[0]` in lintGoModule in place of the
+// NOT checked prefix test — the finding keeps its absolute path.
+func TestLintGoMapsAbsoluteFindingInTheFirstFile(t *testing.T) {
+	calls := stubGolangci(t)
+	root := moduleRepo(t, false)
+	file := filepath.Join(root, "sub", "x", "x.go")
+	got := lintGo(root, []string{file}, false)
+	cs := calls()
+	if len(cs) != 1 || !hasArg(cs[0], "--path-mode=abs") {
+		t.Fatalf("a binary that knows --path-mode must be given it: %+v", cs)
+	}
+	if len(got) != 1 || got[0].File != "sub/x/x.go" {
+		t.Errorf("an absolute finding in files[0] must be mapped to sub/x/x.go, got %+v", got)
+	}
+}
+
+// A golangci-lint v2 too old to know --path-mode rejects the flag, which
+// would turn every Go file into NOT checked. Support is read from the
+// binary's own help, the flag is withheld, and its working-directory
+// relative output is still mapped and kept.
+//
+// proved by: pass --path-mode=abs unconditionally — the stub exits 3 and
+// the file reads NOT checked.
+func TestLintGoWithholdsPathModeFromABinaryThatLacksIt(t *testing.T) {
+	calls := stubGolangciMode(t, stubOld)
+	root := moduleRepo(t, false)
+	got := lintGo(root, []string{filepath.Join(root, "sub", "x", "x.go")}, false)
+	cs := calls()
+	if len(cs) != 1 || hasArg(cs[0], "--path-mode=abs") {
+		t.Fatalf("the unknown flag must not be passed: %+v", cs)
+	}
+	if len(got) != 1 || got[0].File != "sub/x/x.go" || strings.Contains(got[0].Message, "NOT checked") {
+		t.Errorf("the file must be linted and mapped, got %+v", got)
+	}
+}
+
+// proved by: drop the symlink fallback in repoRelPath — the resolved path
+// the tool prints is outside the symlinked root and comes back unmapped.
+func TestRepoRelPathMapsAResolvedPathUnderASymlinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(resolved, link); err != nil {
+		t.Skipf("cannot symlink: %v", err)
+	}
+	got := repoRelPath(link, filepath.Join(link, "sub"), filepath.Join(resolved, "sub", "x", "x.go"))
+	if got != "sub/x/x.go" {
+		t.Errorf("repoRelPath = %q, want sub/x/x.go", got)
 	}
 }
