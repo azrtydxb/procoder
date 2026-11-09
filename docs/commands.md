@@ -254,8 +254,12 @@ merely parsed. A linter that could not run is BLOCKING: a green gate has
 to mean the code was checked, not that the machine was empty. Go repositories without a golangci config get Procoder's curated
 baseline (standard set plus gosec, gocritic, errorlint, unparam,
 copyloopvar, nilerr) — the repo's own golangci config always wins,
-whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. Report
-by default; `[lint] policy = "block"` makes findings block.
+whichever of `.golangci.yml`/`.yaml`/`.toml`/`.json` it uses. golangci-lint runs
+once per Go module, from the module's directory: a changed file in a nested
+module (its own `go.mod`, such as a `bench/` with `replace => ../`) is linted
+as that module, and a repository config at the root is passed to a nested
+module that has none. A `go.work` at the root keeps the single run from the
+root. Report by default; `[lint] policy = "block"` makes findings block.
 
 `--types` adds the type-checker where the canonical linter does not
 compile the code: `tsc --noEmit` for TypeScript (grouped under each
@@ -647,7 +651,10 @@ so a failure is attributed to the test the framework failed rather than
 to a line that merely looks like one; a package that failed outside any
 test (a build error, a crash) is named by package, and each Go failure
 carries a bounded excerpt of its own output — the assertion, panic or
-build error — under the FAIL line, in the gate's finding as well. `--coverage` adds the
+build error — under the FAIL line, in the gate's finding as well. When the
+narrowed packages sit in a nested Go module (its own `go.mod`), `go test` runs
+once per module from that module's directory, and the detail is prefixed with
+the module. `--coverage` adds the
 percentage where the runner measures it natively (Go; pytest with
 pytest-cov); a number is reported, never enforced. With
 `--name <pattern>` narrows the run to matching tests — `-run` for Go,

@@ -16,10 +16,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"procoder/internal/gomod"
 	"procoder/internal/textutil"
 )
 
@@ -195,6 +197,76 @@ func goArgs(root string, paths []string, coverage bool, name string) []string {
 }
 
 func runGo(root string, paths []string, coverage bool, name string) Result {
+	// `go test` resolves packages against the module of its working
+	// directory, so a package in a nested module (its own go.mod) cannot be
+	// named from the root: "main module ... does not contain package". Paths
+	// are grouped by owning module and each group runs from its module's
+	// directory. With no paths the whole root module runs, as before — a
+	// nested module is its own module and `./...` has never reached it.
+	if len(paths) > 0 {
+		abs := make([]string, 0, len(paths))
+		for _, p := range paths {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(root, p)
+			}
+			abs = append(abs, p)
+		}
+		groups := gomod.Group(root, abs)
+		if _, onlyRoot := groups[root]; !(onlyRoot && len(groups) == 1) {
+			return runGoModules(root, groups, coverage, name)
+		}
+	}
+	return runGoIn(root, paths, coverage, name)
+}
+
+// runGoModules runs one `go test` per module and folds the answers into
+// one Result: any failure fails, otherwise any run that could not happen
+// is NOT run, otherwise it passes. Each module's detail is prefixed with
+// its directory so a red line says where it came from.
+func runGoModules(root string, groups map[string][]string, coverage bool, name string) Result {
+	dirs := make([]string, 0, len(groups))
+	for d := range groups {
+		dirs = append(dirs, d)
+	}
+	sort.Strings(dirs)
+	merged := Result{Ecosystem: "go", Coverage: -1, Verdict: Pass}
+	var details, outputs []string
+	var covSum float64
+	var covN int
+	for _, dir := range dirs {
+		r := runGoIn(dir, groups[dir], coverage, name)
+		label := "."
+		if rel, err := filepath.Rel(root, dir); err == nil && rel != "." {
+			label = filepath.ToSlash(rel)
+		}
+		details = append(details, label+": "+r.Detail)
+		if r.Output != "" {
+			outputs = append(outputs, r.Output)
+		}
+		merged.Passed += r.Passed
+		merged.Failed += r.Failed
+		merged.Filtered = merged.Filtered || r.Filtered
+		if r.Coverage >= 0 {
+			covSum += r.Coverage
+			covN++
+		}
+		switch {
+		case r.Verdict == Fail:
+			merged.Verdict = Fail
+		case r.Verdict == NotRun && merged.Verdict == Pass:
+			merged.Verdict = NotRun
+		}
+	}
+	if covN > 0 {
+		merged.Coverage = covSum / float64(covN)
+	}
+	merged.Detail = strings.Join(details, "; ")
+	merged.Output = strings.Join(outputs, "\n")
+	return merged
+}
+
+// runGoIn runs `go test` from dir; paths are targets inside that module.
+func runGoIn(root string, paths []string, coverage bool, name string) Result {
 	r := Result{Ecosystem: "go", Coverage: -1, Filtered: name != ""}
 	bin, err := exec.LookPath("go")
 	if err != nil {

@@ -24,6 +24,7 @@ import (
 
 	"procoder/internal/config"
 	"procoder/internal/gitx"
+	"procoder/internal/gomod"
 	"procoder/internal/textutil"
 	"procoder/internal/tools"
 )
@@ -271,19 +272,22 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 	if bin == "" {
 		return notChecked(files[0], "golangci-lint")
 	}
-	dirs := map[string]bool{}
-	for _, f := range files {
-		rel, err := filepath.Rel(root, f)
-		if err != nil {
-			continue
-		}
-		d := filepath.Dir(rel)
-		if d == "." {
-			dirs["./"] = true
-		} else {
-			dirs["./"+filepath.ToSlash(d)] = true
-		}
+	// One run per Go module: golangci-lint resolves packages against the
+	// module of its working directory, so a nested module's files cannot be
+	// linted from the repo root (see gomod.Group).
+	groups := gomod.Group(root, files)
+	var out []gitx.Finding
+	for _, modDir := range sortedKeys(groups) {
+		out = append(out, lintGoModule(root, bin, modDir, groups[modDir], block)...)
 	}
+	return out
+}
+
+// lintGoModule runs golangci-lint once from modDir over the packages
+// holding files (all inside that module) and keeps only the findings that
+// land in them, with paths mapped back to repo-root-relative.
+func lintGoModule(root, bin, modDir string, files []string, block bool) []gitx.Finding {
+	patterns := goPatterns(modDir, files)
 	// No issue caps. golangci-lint defaults to --max-issues-per-linter 50
 	// and --max-same-issues 3, and it lints packages concurrently — so
 	// WHICH issues survive those caps depends on which package finished
@@ -302,13 +306,23 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 	// the lock is the honest answer; the lint deadline still bounds it.
 	args := []string{"run", "--allow-serial-runners", "--output.text.path=stdout", "--show-stats=false",
 		"--max-issues-per-linter=0", "--max-same-issues=0"}
-	// the project's own config always wins; without one, procoder supplies
-	// a curated baseline strong enough to catch the bug classes reviewers
+	// the project's own config always wins: the module's own file is found
+	// by golangci-lint from modDir; the repo root's file is passed
+	// explicitly to a nested module that has none, since it now runs from a
+	// directory that file is not in. Without either, procoder supplies a
+	// curated baseline strong enough to catch the bug classes reviewers
 	// keep finding (security edges, error handling, loop allocations) —
 	// the file lives in the temp dir, nothing is imposed on the repo
 	// (requires golangci-lint v2, the version doctor installs)
 	var baselineNote []gitx.Finding
-	if !hasGolangciConfig(root) {
+	switch {
+	case golangciConfigIn(modDir) != "":
+		// found by golangci-lint itself
+	case golangciConfigIn(root) != "":
+		if modDir != root {
+			args = append(args, "--config", golangciConfigIn(root))
+		}
+	default:
 		cfgFile, err := os.CreateTemp("", "procoder-golangci-*.yml")
 		if err == nil {
 			_, err = cfgFile.WriteString(golangciBaseline)
@@ -328,20 +342,24 @@ func lintGo(root string, files []string, block bool) []gitx.Finding {
 				Message: "go lint ran WITHOUT the procoder baseline (cannot write temp config: " + err.Error() + ") (lint)"})
 		}
 	}
-	for d := range dirs {
-		args = append(args, d)
-	}
+	args = append(args, patterns...)
 	wanted := map[string]bool{}
 	for _, f := range files {
 		if rel, err := filepath.Rel(root, f); err == nil {
 			wanted[filepath.ToSlash(rel)] = true
 		}
 	}
-	raw, err := execute(root, bin, args)
+	raw, err := execute(modDir, bin, args)
 	findings := finishParse(raw, err, files[0], "golangci-lint", block)
 	out := baselineNote
 	for _, f := range findings {
-		if wanted[filepath.ToSlash(f.File)] || f.File == files[0] {
+		if f.File == files[0] {
+			// the run-failed refusal already names the absolute file
+			out = append(out, f)
+			continue
+		}
+		f.File = repoRelPath(root, modDir, f.File)
+		if wanted[f.File] {
 			out = append(out, f)
 		}
 	}
@@ -368,12 +386,7 @@ linters:
 // hasGolangciConfig reports whether the project carries its own golangci
 // config — the repo's file always wins over the baseline (D-OVERRIDE).
 func hasGolangciConfig(root string) bool {
-	for _, name := range []string{".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"} {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return true
-		}
-	}
-	return false
+	return golangciConfigIn(root) != ""
 }
 
 // lintJS runs eslint. The project's config always wins and is resolved the
