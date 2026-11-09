@@ -53,11 +53,16 @@ func repoRelPath(root, modDir, p string) string {
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(modDir, p)
 	}
-	rel, err := filepath.Rel(root, abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return filepath.ToSlash(p)
+	if rel, ok := under(root, abs); ok {
+		return rel
 	}
-	return filepath.ToSlash(rel)
+	// the tool may print a symlink-resolved path (macOS /var -> /private/var)
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		if rel, ok := under(real, abs); ok {
+			return rel
+		}
+	}
+	return filepath.ToSlash(p)
 }
 
 // golangciConfigIn is the golangci config file sitting directly in dir, or
@@ -70,4 +75,13 @@ func golangciConfigIn(dir string) string {
 		}
 	}
 	return ""
+}
+
+// under is abs relative to base as a slash path, false when it is outside.
+func under(base, abs string) (string, bool) {
+	rel, err := filepath.Rel(base, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }

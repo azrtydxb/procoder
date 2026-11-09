@@ -305,7 +305,14 @@ func lintGoModule(root, bin, modDir string, files []string, block bool) []gitx.F
 	// worktree, agent, or the write hook was mid-run (#324). Waiting for
 	// the lock is the honest answer; the lint deadline still bounds it.
 	args := []string{"run", "--allow-serial-runners", "--output.text.path=stdout", "--show-stats=false",
-		"--max-issues-per-linter=0", "--max-same-issues=0"}
+		"--max-issues-per-linter=0", "--max-same-issues=0",
+		// golangci-lint v2 prints paths relative to the CONFIG file's
+		// directory by default. The baseline lives in the temp dir and a
+		// root config is passed from outside the module, so every path
+		// arrived as ../../elsewhere/x.go and the wanted filter dropped
+		// the finding. Absolute paths do not depend on where the config
+		// is; repoRelPath maps them to the repo root.
+		"--path-mode=abs"}
 	// the project's own config always wins: the module's own file is found
 	// by golangci-lint from modDir; the repo root's file is passed
 	// explicitly to a nested module that has none, since it now runs from a
@@ -353,8 +360,9 @@ func lintGoModule(root, bin, modDir string, files []string, block bool) []gitx.F
 	findings := finishParse(raw, err, files[0], "golangci-lint", block)
 	out := baselineNote
 	for _, f := range findings {
-		if f.File == files[0] {
-			// the run-failed refusal already names the absolute file
+		if strings.HasPrefix(f.Message, "NOT checked") {
+			// the run-failed refusal already names the absolute file; a
+			// real finding in that same file has a path to map instead
 			out = append(out, f)
 			continue
 		}
